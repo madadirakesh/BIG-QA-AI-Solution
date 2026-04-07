@@ -176,9 +176,13 @@
 {% endblock %}
 
 {% block extra_js %}
+<!-- Add SheetJS for Excel processing -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
 let selectedOptValue = 0;
 let generatedFileDownloadName = 'test_cases.txt';
+let globalGeneratedContent = '';
+let globalFileExt = '.txt';
 
 function setOpt(opt) {
     selectedOptValue = opt;
@@ -221,24 +225,33 @@ async function startGeneration() {
             
             if (fileInput.files.length > 0) {
                 const file = fileInput.files[0];
-                templateText = await file.text();
                 targetFileName = 'formatted_' + file.name;
                 if (file.name.includes('.')) {
-                    ext = '.' + file.name.split('.').pop();
+                    ext = '.' + file.name.split('.').pop().toLowerCase();
+                }
+
+                if (ext === '.xlsx' || ext === '.xls') {
+                    const arrayBuffer = await file.arrayBuffer();
+                    const workbook = window.XLSX.read(arrayBuffer, { type: 'array' });
+                    const firstSheetName = workbook.SheetNames[0];
+                    const worksheet = workbook.Sheets[firstSheetName];
+                    templateText = window.XLSX.utils.sheet_to_csv(worksheet);
+                } else {
+                    templateText = await file.text();
                 }
             }
 
             let mimeType = 'text/plain';
-            if (ext.toLowerCase() === '.csv') {
+            if (ext === '.csv') {
                 mimeType = 'text/csv';
-            } else if (ext.toLowerCase() === '.xlsx') {
+            } else if (ext === '.xlsx') {
                 mimeType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
-            } else if (ext.toLowerCase() === '.xls') {
+            } else if (ext === '.xls') {
                 mimeType = 'application/vnd.ms-excel';
             }
 
             let typeAccept = {};
-            typeAccept[mimeType] = [ext.toLowerCase()];
+            typeAccept[mimeType] = [ext];
             
             let writable = null;
             let fallbackName = targetFileName;
@@ -273,12 +286,37 @@ async function startGeneration() {
                 throw new Error(data.detail || 'Failed to generate formatted test cases');
             }
 
+            let finalBlob;
+
+            if (ext === '.xlsx' || ext === '.xls') {
+                let csvCleaned = [];
+                let lines = data.content.split('\n');
+                for (let line of lines) {
+                    if (line.includes('|')) {
+                        let trimLine = line.trim();
+                        if (trimLine.startsWith('|')) trimLine = trimLine.substring(1);
+                        if (trimLine.endsWith('|')) trimLine = trimLine.substring(0, trimLine.length - 1);
+                        if (trimLine.replace(/[\-|\s]/g, '') === '') continue; // ignore markdown separator
+                        
+                        let cells = trimLine.split('|').map(c => `"${c.trim().replace(/"/g, '""')}"`);
+                        csvCleaned.push(cells.join(','));
+                    } else {
+                        csvCleaned.push(line);
+                    }
+                }
+                const parsedWb = window.XLSX.read(csvCleaned.join('\n'), { type: 'string' });
+                const blobBuilderType = ext === '.xls' ? 'biff8' : 'xlsx';
+                const wbout = window.XLSX.write(parsedWb, { bookType: blobBuilderType, type: 'array' });
+                finalBlob = new Blob([wbout], { type: mimeType });
+            } else {
+                finalBlob = new Blob([data.content], { type: mimeType });
+            }
+
             if (writable) {
-                await writable.write(data.content);
+                await writable.write(finalBlob);
                 await writable.close();
             } else {
-                const blob = new Blob([data.content], { type: mimeType });
-                const url = window.URL.createObjectURL(blob);
+                const url = window.URL.createObjectURL(finalBlob);
                 const a = document.createElement('a');
                 a.href = url;
                 a.download = fallbackName;
