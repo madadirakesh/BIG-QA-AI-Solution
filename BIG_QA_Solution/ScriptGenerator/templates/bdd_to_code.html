@@ -1,0 +1,162 @@
+{% extends "base.html" %}
+
+{% block title %}BDD to Code - AI QA Portal{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1><i class="fas fa-magic"></i> AI BDD To Code Generation</h1>
+    <p>Upload your BDD feature files and generate matching Step Definitions and Page Objects.</p>
+</div>
+
+<div class="bdd-layout">
+    <div class="form-panel glassmorphism">
+        
+        <div class="wizard-steps">
+            <div class="step active" id="step1-indicator">1. Project Setup</div>
+            <div class="step" id="step2-indicator">2. Provide BDD & Settings</div>
+            <div class="step" id="step3-indicator">3. Generate & Save</div>
+        </div>
+
+        <div id="step-1" class="wizard-content active">
+            <h3>Project Selection</h3>
+            <div class="form-group">
+                <label>Choose Existing Project</label>
+                <select id="projectSelect" class="form-control">
+                    <option value="">-- Select Project --</option>
+                    {% for p in projects %}
+                    <option value="{{ p.project_name }}" 
+                        data-lang="{{ p.project_lang }}" 
+                        data-fw="{{ p.project_fw }}" 
+                        data-path="{{ p.project_path }}">
+                        {{ p.project_name }} ({{ p.project_lang }} / {{ p.project_fw }})
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="text-center mt-3 mb-3">
+                <span class="text-secondary">- OR -</span>
+            </div>
+            <div class="text-center">
+                <button type="button" class="btn btn-outline" onclick="alert('Creating new projects through the UI is currently being refactored for the advanced Flask template. Please select an existing project or create via backend.')">
+                    <i class="fas fa-plus"></i> Create New Project Setup
+                </button>
+            </div>
+
+            <div class="form-actions right mt-4">
+                <button type="button" class="btn btn-primary" onclick="nextStep(2)">Next <i class="fas fa-arrow-right"></i></button>
+            </div>
+        </div>
+
+        <div id="step-2" class="wizard-content" style="display: none;">
+            <h3>Provide BDD & Context</h3>
+            
+            <div class="form-group mt-3">
+                <label>BDD Source Text</label>
+                <textarea id="bddContent" rows="6" placeholder="Feature: Login functionality..."></textarea>
+            </div>
+
+            <div class="form-group row">
+                <div class="col">
+                    <label>Base URL Context</label>
+                    <input type="text" id="baseUrl" placeholder="https://example.com">
+                </div>
+                <div class="col">
+                    <label>Existing Code Context (Optional)</label>
+                    <textarea id="existingCode" rows="2" placeholder="Paste similar existing code or locators..."></textarea>
+                </div>
+            </div>
+
+            <div class="form-actions row mt-4">
+                <div class="col">
+                    <button type="button" class="btn btn-secondary" onclick="nextStep(1)"><i class="fas fa-arrow-left"></i> Back</button>
+                </div>
+                <div class="col text-right">
+                    <button type="button" class="btn btn-primary" onclick="generateCode()">Generate AI Code <i class="fas fa-robot"></i></button>
+                </div>
+            </div>
+        </div>
+
+        <div id="step-3" class="wizard-content" style="display: none;">
+            <h3>Generation Results</h3>
+            
+            <div id="loadingStatus" class="loading-state text-center py-5">
+                <div class="spinner"><i class="fas fa-circle-notch fa-spin fa-3x text-primary"></i></div>
+                <h4 class="mt-3">AI is processing your request...</h4>
+                <p class="text-secondary">This might take up to a minute depending on the complexity.</p>
+            </div>
+
+            <div id="resultContent" style="display: none;">
+                <div class="alert alert-success"><i class="fas fa-check-circle"></i> Code generated successfully!</div>
+                
+                <div class="code-results mt-4" id="codeBlocksContainer">
+                    <!-- Dynamic code blocks will be injected here -->
+                </div>
+
+                <div class="form-actions right mt-4">
+                    <button type="button" class="btn btn-secondary mr-2" onclick="nextStep(2)">Start Over</button>
+                    <button type="button" class="btn btn-success" onclick="saveFiles()"><i class="fas fa-save"></i> Save All Files to Project</button>
+                </div>
+            </div>
+        </div>
+
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+.wizard-steps {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 30px;
+    background: rgba(0,0,0,0.2);
+    border-radius: 8px;
+    padding: 10px;
+}
+.step {
+    flex: 1;
+    text-align: center;
+    padding: 10px;
+    color: var(--text-secondary);
+    font-weight: 500;
+    transition: var(--transition);
+}
+.step.active {
+    color: var(--accent-primary);
+    border-bottom: 2px solid var(--accent-primary);
+}
+.text-center { text-align: center; }
+.text-right { text-align: right; }
+.text-secondary { color: var(--text-secondary); }
+.py-5 { padding: 3rem 0; }
+.mb-3 { margin-bottom: 1rem; }
+.mt-4 { margin-top: 1.5rem; }
+.mr-2 { margin-right: 0.5rem; }
+.btn-secondary { background: rgba(255,255,255,0.1); color: white; border: 1px solid var(--glass-border); }
+.btn-success { background: var(--success); color: white; }
+.code-block-wrapper {
+    background: #0f172a;
+    border-radius: 8px;
+    border: 1px solid var(--glass-border);
+    margin-bottom: 15px;
+    overflow: hidden;
+}
+.code-header {
+    background: #1e293b;
+    padding: 10px 15px;
+    display: flex;
+    justify-content: space-between;
+    font-family: monospace;
+    font-size: 0.9rem;
+    border-bottom: 1px solid var(--glass-border);
+}
+.code-content {
+    padding: 15px;
+    margin: 0;
+    overflow-x: auto;
+    font-family: 'Courier New', Courier, monospace;
+    font-size: 0.85rem;
+    color: #e2e8f0;
+}
+</style>
+{% endblock %}

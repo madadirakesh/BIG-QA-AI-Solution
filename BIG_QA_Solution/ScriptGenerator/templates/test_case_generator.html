@@ -1,0 +1,378 @@
+{% extends "base.html" %}
+
+{% block title %}Test Case Generator - AI QA Portal{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1><i class="fas fa-file-alt"></i> AI Test Case Generator</h1>
+    <p>Convert your business requirements into BDD scenarios or formatted manual test cases instantly.</p>
+</div>
+
+<div class="generator-container">
+    <div class="input-panel glassmorphism">
+        <h3><i class="fas fa-edit"></i> 1. Enter Requirements</h3>
+        <div class="form-group">
+            <textarea id="requirementInput" class="form-control" rows="10" placeholder="Enter your business requirements here... (e.g., User should be able to search for products and add them to cart)"></textarea>
+        </div>
+        
+        <div class="options-grid mt-4">
+            <div class="option-card" onclick="setOpt(1)" id="option1-card">
+                <div class="option-icon"><i class="fas fa-code"></i></div>
+                <h4>Option 1</h4>
+                <p>Generate BDD Scenarios (.feature)</p>
+                <div class="mt-2"><span class="badge badge-pill badge-primary">Select</span></div>
+            </div>
+            
+            <div class="option-card" onclick="setOpt(2)" id="option2-card">
+                <div class="option-icon"><i class="fas fa-table"></i></div>
+                <h4>Option 2</h4>
+                <p>Generate Test Cases with Template</p>
+                <div class="mt-2"><span class="badge badge-pill badge-primary">Select</span></div>
+            </div>
+        </div>
+
+        <!-- Template Upload Section (Hidden by default) -->
+        <div id="template-section" class="mt-4 animate-in" style="display: none;">
+            <div class="form-group border-top pt-3">
+                <label><i class="fas fa-upload"></i> Upload Test Case Template</label>
+                <div class="custom-file-upload">
+                    <input type="file" id="templateFile" accept=".txt,.csv,.xlsx,.xls">
+                    <p class="text-secondary small">Supported formats: .txt, .csv, .xlsx</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="form-actions mt-4">
+            <button id="btnGenerate" class="btn btn-primary btn-lg w-100" onclick="startGeneration()">
+                <i class="fas fa-magic"></i> Generate Now
+            </button>
+        </div>
+    </div>
+
+    <div class="result-panel glassmorphism" id="resultPanel" style="display: none;">
+        <div class="result-header">
+            <h3><i class="fas fa-eye"></i> 2. Review & Edit</h3>
+            <div class="result-actions">
+                <button class="btn btn-sm btn-outline mr-2" onclick="downloadResult()"><i class="fas fa-download"></i> Download</button>
+                <button class="btn btn-sm btn-secondary" onclick="resetGenerator()">Start Over</button>
+            </div>
+        </div>
+        
+        <div class="editor-wrapper mt-3">
+            <textarea id="resultEditor" class="form-control" rows="20" style="background: #0f172a; color: #e2e8f0; font-family: monospace;"></textarea>
+        </div>
+    </div>
+</div>
+
+<div id="loadingOverlay" class="loading-overlay" style="display: none;">
+    <div class="loader-content">
+        <div class="spinner"><i class="fas fa-circle-notch fa-spin fa-3x text-primary"></i></div>
+        <h4 class="mt-3">AI is generating your content...</h4>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+.generator-container {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 20px;
+}
+
+@media (min-width: 1200px) {
+    .generator-container {
+        grid-template-columns: 1fr 1fr;
+    }
+}
+
+.options-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 15px;
+}
+
+.option-card {
+    background: rgba(255,255,255,0.05);
+    border: 1px solid var(--glass-border);
+    border-radius: 12px;
+    padding: 20px;
+    text-align: center;
+    cursor: pointer;
+    transition: var(--transition);
+}
+
+.option-card:hover {
+    background: rgba(255,255,255,0.1);
+    transform: translateY(-5px);
+}
+
+.option-card.selected {
+    border-color: var(--accent-primary);
+    background: rgba(59, 130, 246, 0.1);
+}
+
+.option-icon {
+    font-size: 2rem;
+    color: var(--accent-primary);
+    margin-bottom: 10px;
+}
+
+.custom-file-upload {
+    padding: 20px;
+    border: 2px dashed var(--glass-border);
+    border-radius: 8px;
+    text-align: center;
+}
+
+.result-panel {
+    display: flex;
+    flex-direction: column;
+}
+
+.result-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.editor-wrapper {
+    flex: 1;
+}
+
+.loading-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0,0,0,0.8);
+    backdrop-filter: blur(5px);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 9999;
+}
+
+.loader-content {
+    text-align: center;
+    color: white;
+}
+
+.animate-in {
+    animation: fadeIn 0.3s ease-out;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.w-100 { width: 100%; }
+.mt-4 { margin-top: 1.5rem; }
+.mr-2 { margin-right: 0.5rem; }
+.btn-lg { padding: 12px 24px; font-size: 1.1rem; }
+</style>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let selectedOptValue = 0;
+let generatedFileDownloadName = 'test_cases.txt';
+
+function setOpt(opt) {
+    selectedOptValue = opt;
+    document.getElementById('option1-card').classList.toggle('selected', opt === 1);
+    document.getElementById('option2-card').classList.toggle('selected', opt === 2);
+    
+    const templateSection = document.getElementById('template-section');
+    if (opt === 2) {
+        templateSection.style.display = 'block';
+    } else {
+        templateSection.style.display = 'none';
+    }
+}
+
+async function startGeneration() {
+    const requirement = document.getElementById('requirementInput').value;
+    if (!requirement) {
+        alert('Please enter your requirements first!');
+        return;
+    }
+    
+    if (selectedOptValue === 0) {
+        alert('Please select an option (BDD or Formatted Test Cases)!');
+        return;
+    }
+    
+    try {
+        if (selectedOptValue === 1) {
+            document.getElementById('loadingOverlay').style.display = 'flex';
+            await generateBDDScenarios(requirement);
+            document.getElementById('resultPanel').style.display = 'flex';
+            if (window.innerWidth < 1200) {
+                document.getElementById('resultPanel').scrollIntoView({ behavior: 'smooth' });
+            }
+        } else {
+            const fileInput = document.getElementById('templateFile');
+            let templateText = 'ID | Step | Expected';
+            let ext = '.txt';
+            let targetFileName = 'formatted_test_cases.txt';
+            
+            if (fileInput.files.length > 0) {
+                const file = fileInput.files[0];
+                templateText = await file.text();
+                targetFileName = 'formatted_' + file.name;
+                if (file.name.includes('.')) {
+                    ext = '.' + file.name.split('.').pop();
+                }
+            }
+
+            let mimeType = 'text/plain';
+            if (ext.toLowerCase() === '.csv') {
+                mimeType = 'text/csv';
+            } else if (ext.toLowerCase() === '.xlsx') {
+                mimeType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+            } else if (ext.toLowerCase() === '.xls') {
+                mimeType = 'application/vnd.ms-excel';
+            }
+
+            let typeAccept = {};
+            typeAccept[mimeType] = [ext.toLowerCase()];
+            
+            let writable = null;
+            let fallbackName = targetFileName;
+
+            if (window.showSaveFilePicker) {
+                try {
+                    const handle = await window.showSaveFilePicker({
+                        suggestedName: targetFileName,
+                        types: [{ description: 'Generated Test File', accept: typeAccept }]
+                    });
+                    writable = await handle.createWritable();
+                } catch (err) {
+                    if (err.name !== 'AbortError') alert(err);
+                    return; 
+                }
+            } else {
+                fallbackName = prompt("Enter a file name to save as:", targetFileName);
+                if (!fallbackName) return; 
+            }
+
+            document.getElementById('loadingOverlay').style.display = 'flex';
+
+            const response = await fetch('http://127.0.0.1:8000/generate-formatted-test-cases', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ requirements: requirement, template: templateText })
+            });
+            const data = await response.json();
+            
+            if (!response.ok) {
+                if (writable) await writable.abort();
+                throw new Error(data.detail || 'Failed to generate formatted test cases');
+            }
+
+            if (writable) {
+                await writable.write(data.content);
+                await writable.close();
+            } else {
+                const blob = new Blob([data.content], { type: mimeType });
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = fallbackName;
+                document.body.appendChild(a);
+                a.click();
+                window.URL.revokeObjectURL(url);
+                document.body.removeChild(a);
+            }
+
+            alert("File generated and downloaded successfully!");
+        }
+    } catch (error) {
+        alert('Generation failed: ' + error.message);
+    } finally {
+        document.getElementById('loadingOverlay').style.display = 'none';
+    }
+}
+
+async function generateBDDScenarios(requirement) {
+    const response = await fetch('http://127.0.0.1:8000/generate-bdd-scenarios', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ requirements: requirement })
+    });
+    
+    const data = await response.json();
+    if (response.ok) {
+        document.getElementById('resultEditor').value = data.content;
+        generatedFileDownloadName = data.filename || 'scenarios.feature';
+    } else {
+        throw new Error(data.detail || 'Failed to generate BDD');
+    }
+}
+
+// Formatted Test generation logic merged with direct downloading in startGeneration()
+
+async function performDownload(content, suggestedName, defaultExtension) {
+    if (window.showSaveFilePicker) {
+        try {
+            const handle = await window.showSaveFilePicker({
+                suggestedName: suggestedName,
+                types: [{
+                    description: 'Test File',
+                    accept: {
+                        'text/plain': [defaultExtension, '.txt', '.feature', '.csv']
+                    }
+                }],
+            });
+            const writable = await handle.createWritable();
+            await writable.write(content);
+            await writable.close();
+            return;
+        } catch (err) {
+            if (err.name !== 'AbortError') {
+                alert('Failed to save file: ' + err.message);
+            }
+            return;
+        }
+    }
+
+    let fileName = prompt("Enter a file name to save as:", suggestedName);
+    if (!fileName) {
+        return; 
+    }
+    const blob = new Blob([content], { type: 'text/plain' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = fileName;
+    document.body.appendChild(a);
+    a.click();
+    window.URL.revokeObjectURL(url);
+    document.body.removeChild(a);
+}
+
+async function downloadResult() {
+    const content = document.getElementById('resultEditor').value;
+    let ext = '.txt';
+    if (generatedFileDownloadName.includes('.')) {
+        ext = '.' + generatedFileDownloadName.split('.').pop();
+    }
+    await performDownload(content, generatedFileDownloadName, ext);
+}
+
+function resetGenerator() {
+    if (confirm('Are you sure you want to start over?')) {
+        document.getElementById('requirementInput').value = '';
+        document.getElementById('resultEditor').value = '';
+        document.getElementById('resultPanel').style.display = 'none';
+        selectedOptValue = 0;
+        document.getElementById('option1-card').classList.remove('selected');
+        document.getElementById('option2-card').classList.remove('selected');
+        document.getElementById('template-section').style.display = 'none';
+    }
+}
+</script>
+{% endblock %}

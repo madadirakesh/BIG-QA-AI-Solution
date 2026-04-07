@@ -1,0 +1,59 @@
+<aside class="sidebar">
+    <div class="sidebar-header">
+        <div class="logo">
+            <i class="fas fa-robot logo-icon"></i>
+            <h2>AI-QA Hub</h2>
+        </div>
+    </div>
+    
+    <nav class="sidebar-nav">
+        <ul>
+            <li>
+                <a href="{{ url_for('home') }}" class="{% if request.endpoint == 'home' %}active{% endif %}">
+                    <i class="fas fa-home"></i> <span>Home</span>
+                </a>
+            </li>
+            
+            {% if user_role in ['qa', 'admin'] %}
+            <li>
+                <a href="{{ url_for('test_case_generator') }}" class="{% if request.endpoint == 'test_case_generator' %}active{% endif %}">
+                    <i class="fas fa-file-alt"></i> <span>Test Case Generator</span>
+                </a>
+            </li>
+            <li>
+                <a href="#" onclick="launchElementLocator(); return false;" class="{% if request.endpoint == 'launch_element_locator' %}active{% endif %}">
+                    <i class="fas fa-crosshairs"></i> <span>Element Locator</span>
+                </a>
+            </li>
+            <li>
+                <a href="{{ url_for('bdd_to_code') }}" class="{% if request.endpoint == 'bdd_to_code' %}active{% endif %}">
+                    <i class="fas fa-code"></i> <span>BDD to Code</span>
+                </a>
+            </li>
+            <li>
+                <a href="{{ url_for('script_runner') }}" class="{% if request.endpoint == 'script_runner' %}active{% endif %}">
+                    <i class="fas fa-play-circle"></i> <span>Script Runner</span>
+                </a>
+            </li>
+            {% endif %}
+            
+            {% if user_role == 'admin' %}
+            <li>
+                <a href="{{ url_for('add_user') }}" class="{% if request.endpoint == 'add_user' %}active{% endif %}">
+                    <i class="fas fa-user-plus"></i> <span>Add Users</span>
+                </a>
+            </li>
+            {% endif %}
+        </ul>
+    </nav>
+    
+    <div class="sidebar-footer">
+        <div class="session-info">
+            <i class="fas fa-clock"></i>
+            <span id="sessionTimer">Session Active</span>
+        </div>
+        <a href="{{ url_for('logout') }}" class="btn-logout">
+            <i class="fas fa-sign-out-alt"></i> Logout
+        </a>
+    </div>
+</aside>

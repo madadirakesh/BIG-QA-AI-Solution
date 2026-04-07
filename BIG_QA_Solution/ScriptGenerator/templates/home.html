@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - AI QA Portal{% endblock %}
+
+{% block content %}
+<div class="dashboard-header">
+    <h1>Welcome to BIG AI-QA Hub</h1>
+    <p>Select an action below to get started</p>
+</div>
+
+<div class="dashboard-grid">
+    {% if user_role in ['qa', 'admin'] %}
+    <!-- 1. Test Case Generator -->
+    <a href="{{ url_for('test_case_generator') }}" class="dashboard-card glassmorphism hover-effect">
+        <div class="card-icon"><i class="fas fa-file-alt"></i></div>
+        <h3>Test Case Generator</h3>
+        <p>Convert business requirements into professional BDD scenarios or formatted manual test cases instantly using AI.</p>
+    </a>
+
+    <!-- 2. Element Locator Extractor -->
+    <a href="#" onclick="launchElementLocator(); return false;" class="dashboard-card glassmorphism hover-effect">
+        <div class="card-icon"><i class="fas fa-crosshairs"></i></div>
+        <h3>Element Locator Extractor</h3>
+        <p>Launch the Desktop Studio to inspect elements and generate reliable AI-assisted locators for your framework.</p>
+    </a>
+
+    <!-- 3. BDD to Code Generation -->
+    <a href="{{ url_for('bdd_to_code') }}" class="dashboard-card glassmorphism hover-effect">
+        <div class="card-icon"><i class="fas fa-code"></i></div>
+        <h3>BDD to Code Generaton</h3>
+        <p>Convert BDD Feature files intelligently into Page Object Models, Locators, and Step Definitions using AI.</p>
+    </a>
+
+    <!-- 4. Script Runner -->
+    <a href="{{ url_for('script_runner') }}" class="dashboard-card glassmorphism hover-effect">
+        <div class="card-icon"><i class="fas fa-play-circle"></i></div>
+        <h3>Script Runner</h3>
+        <p>Execute tests seamlessly, generate reports, and analyze execution status via a centralized interface.</p>
+    </a>
+    {% endif %}
+
+    {% if user_role == 'admin' %}
+    <!-- 5. Manage Users -->
+    <a href="{{ url_for('add_user') }}" class="dashboard-card glassmorphism hover-effect">
+        <div class="card-icon"><i class="fas fa-user-plus"></i></div>
+        <h3>Manage Users</h3>
+        <p>Add new QA team members, assign rules, and administer privileges securely.</p>
+    </a>
+    {% endif %}
+</div>
+{% endblock %}

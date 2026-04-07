@@ -1,0 +1,162 @@
+{% extends "base.html" %}
+
+{% block title %}Script Runner - AI QA Portal{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1><i class="fas fa-play-circle"></i> QA Script Execution</h1>
+    <p>Run automated test suites and manage execution environments.</p>
+</div>
+
+<div class="script-runner-layout">
+    <div class="form-panel glassmorphism">
+        <h3>Test Execution Setup</h3>
+        <hr>
+        
+        <div class="form-group">
+            <label>Select Project</label>
+            <select id="runProject" class="form-control">
+                <option value="">-- Choose Project --</option>
+                <option value="Sample Selenium">Sample Selenium (Python / Pytest)</option>
+                <option value="Playwright E2E">Playwright E2E (TypeScript)</option>
+            </select>
+        </div>
+
+        <div class="form-group row mt-3">
+            <div class="col">
+                <label>Environment</label>
+                <select id="runEnv" class="form-control">
+                    <option value="dev">Development</option>
+                    <option value="qa">QA / Staging</option>
+                    <option value="prod">Production</option>
+                </select>
+            </div>
+            <div class="col">
+                <label>Browser</label>
+                <select id="runBrowser" class="form-control">
+                    <option value="chrome">Chrome</option>
+                    <option value="firefox">Firefox</option>
+                    <option value="edge">Edge</option>
+                    <option value="webkit">Webkit (Playwright only)</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="form-group mt-3">
+            <label>Tags / Specific Tests (Optional)</label>
+            <input type="text" placeholder="e.g. @smoke, @regression, tests/login.feature">
+        </div>
+
+        <button type="button" class="btn btn-primary mt-4 btn-block" onclick="runScript()">
+            <i class="fas fa-rocket"></i> Launch Execution
+        </button>
+    </div>
+
+    <!-- Execution Terminal / Logs -->
+    <div class="terminal-panel glassmorphism mt-4">
+        <div class="terminal-header">
+            <span><i class="fas fa-terminal"></i> Execution Logs</span>
+            <div class="terminal-actions">
+                <span class="status-dot offline" id="execStatus"></span> Status: Ready
+            </div>
+        </div>
+        <div class="terminal-body" id="logOutput">
+            Welcome to AI-QA Script Runner.
+            Select a project and click 'Launch Execution' to stream logs here.
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+.terminal-panel {
+    background: #0f172a;
+    border: 1px solid var(--glass-border);
+    border-radius: 8px;
+    overflow: hidden;
+}
+.terminal-header {
+    background: #1e293b;
+    padding: 10px 15px;
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.9rem;
+    font-weight: 500;
+    color: #94a3b8;
+    border-bottom: 1px solid var(--glass-border);
+}
+.terminal-body {
+    padding: 15px;
+    height: 350px;
+    overflow-y: auto;
+    font-family: 'Courier New', Courier, monospace;
+    font-size: 0.85rem;
+    color: #34d399;
+}
+.status-dot {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    margin-right: 5px;
+}
+.status-dot.offline { background: var(--text-secondary); }
+.status-dot.running { background: var(--warning); box-shadow: 0 0 8px var(--warning); }
+.status-dot.done { background: var(--success); box-shadow: 0 0 8px var(--success); }
+.mt-3 { margin-top: 15px; }
+.mt-4 { margin-top: 30px; }
+.row { display: flex; gap: 20px; }
+.col { flex: 1; }
+hr {
+    border: 0;
+    border-top: 1px solid var(--glass-border);
+    margin: 15px 0;
+}
+</style>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function runScript() {
+    const btn = document.querySelector('button.btn-primary');
+    const log = document.getElementById('logOutput');
+    const status = document.getElementById('execStatus');
+    
+    if(!document.getElementById('runProject').value) {
+        alert("Please select a project.");
+        return;
+    }
+
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-circle-notch fa-spin"></i> Initializing...';
+    
+    status.className = 'status-dot running';
+    status.nextSibling.textContent = ' Status: Running';
+
+    log.innerHTML = `<div style="color: #94a3b8;">[System] Preparing test execution environment...</div>
+<div style="color: #94a3b8;">[System] Fetching dependencies...</div>`;
+
+    let step = 0;
+    const interval = setInterval(() => {
+        step++;
+        if (step === 1) {
+            log.innerHTML += `<div>[Runner] Starting test suite execution for project.</div>`;
+        } else if (step === 2) {
+            log.innerHTML += `<div>[Pytest] Testing features/login.feature...</div>`;
+        } else if (step === 4) {
+            log.innerHTML += `<div style="color: #34d399;">[Pytest] PASS  features/login.feature (4s)</div>`;
+        } else if (step === 5) {
+            log.innerHTML += `<div style="color: #60a5fa;">[Runner] Generating HTML Report...</div>`;
+        } else if (step === 6) {
+            clearInterval(interval);
+            log.innerHTML += `<div style="color: #34d399; font-weight: bold; margin-top: 10px;">[System] Execution Completed Successfully!</div>`;
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-rocket"></i> Launch Execution';
+            status.className = 'status-dot done';
+            status.nextSibling.textContent = ' Status: Completed';
+        }
+    }, 1500);
+}
+</script>
+{% endblock %}

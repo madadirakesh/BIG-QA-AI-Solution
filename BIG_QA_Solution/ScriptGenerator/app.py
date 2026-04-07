@@ -1,0 +1,198 @@
+import os
+import sys
+import subprocess
+import threading
+import webbrowser
+from datetime import datetime
+from flask import Flask, render_template, request, redirect, url_for, session, flash, jsonify
+import pytz
+from db.app_db import fetch_data, insert_data, update_data
+
+def install_prerequisites():
+    req_file = os.path.join(os.path.dirname(__file__), '..', 'requirements.txt')
+    if os.path.exists(req_file):
+        print(f"Installing prerequisites from {req_file}...")
+        subprocess.check_call([sys.executable, '-m', 'pip', 'install', '-r', req_file])
+    else:
+        print("requirements.txt not found, skipping prerequisites installation.")
+
+# Install prerequisites before initializing the app
+install_prerequisites()
+
+app = Flask(__name__)
+# In production, use os.environ.get('SECRET_KEY')
+app.secret_key = 'your_super_secret_flask_key_here'
+
+@app.context_processor
+def inject_user():
+    return dict(
+        user_name=session.get('user_name', 'Guest'),
+        user_role=session.get('user_role', 'guest').lower()
+    )
+
+def login_required(role=None):
+    def wrapper(f):
+        def decorated_function(*args, **kwargs):
+            if 'user_id' not in session:
+                flash('Please log in to access this page.', 'warning')
+                return redirect(url_for('login'))
+            if role and session.get('user_role', '').lower() != role.lower() and session.get('user_role', '').lower() != 'admin':
+                flash('You do not have permission to access that page.', 'error')
+                return redirect(url_for('home'))
+            return f(*args, **kwargs)
+        decorated_function.__name__ = f.__name__
+        return decorated_function
+    return wrapper
+
+@app.route('/')
+def index():
+    if 'user_id' in session:
+        return redirect(url_for('home'))
+    return redirect(url_for('login'))
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if request.method == 'POST':
+        email = request.form.get('email', '')
+        password = request.form.get('password', '')
+
+        if not email or not password:
+            flash('All fields are required!', 'error')
+            return render_template('login.html')
+
+        user = fetch_data("SELECT * FROM users WHERE email = ?", (email.lower(),))
+        
+        if not user:
+            flash('Login failed! Unknown username or password.', 'error')
+        else:
+            user = user[0]
+            if user['verified'] == 0:
+                flash(f"Hi, {user['name']}! Your account is pending approval.", 'warning')
+            elif user['verified'] == 2 and user['password'] == password:
+                flash("Account Disabled", 'error')
+            elif user['verified'] == 1 and user['password'] != password:
+                flash('Login failed! Invalid username or password.', 'error')
+            elif user['verified'] == 1 and user['password'] == password:
+                # Login successful
+                session['user_id'] = user['id']
+                session['user_name'] = user['name']
+                session['user_role'] = user['role']
+
+                local_tz = pytz.timezone('US/Eastern')
+                current_time = datetime.now(local_tz)
+
+                # Update session table
+                existing_session = fetch_data("SELECT COUNT(*) as cnt FROM SessionDetails WHERE userid = ?", (user['id'],))
+                if existing_session and existing_session[0]['cnt'] == 0:
+                    insert_data("INSERT INTO SessionDetails (userid, SessionActive, SessionTime) VALUES (?, ?, ?)", 
+                                (user['id'], 1, current_time))
+                else:
+                    update_data("UPDATE SessionDetails SET SessionActive = ?, SessionTime = ? WHERE userid = ?", 
+                                (1, current_time, user['id']))
+
+                flash(f"Login successful! Welcome back, {user['name']}!", 'success')
+                return redirect(url_for('home'))
+
+    return render_template('login.html')
+
+@app.route('/logout')
+def logout():
+    user_id = session.get('user_id')
+    if user_id:
+        local_tz = pytz.timezone('US/Eastern')
+        current_time = datetime.now(local_tz)
+        update_data("UPDATE SessionDetails SET SessionActive = ?, SessionTime = ? WHERE userid = ?",
+                    (0, current_time, user_id))
+    session.clear()
+    flash('You have been logged out!', 'info')
+    return redirect(url_for('login'))
+
+@app.route('/home')
+@login_required()
+def home():
+    return render_template('home.html')
+
+@app.route('/admin/add-user', methods=['GET', 'POST'])
+@login_required(role='admin')
+def add_user():
+    if request.method == 'POST':
+        action = request.form.get('action')
+        
+        if action == 'add':
+            name = request.form.get('name')
+            email = request.form.get('email')
+            role = request.form.get('role', 'QA')
+            password = request.form.get('password')
+            
+            if not name or not email or not password:
+                flash('All fields are required!', 'error')
+            else:
+                existing = fetch_data("SELECT * FROM users WHERE email = ?", (email,))
+                if existing:
+                    flash('User with this email already exists!', 'warning')
+                else:
+                    insert_data("INSERT INTO users (name, email, role, password, verified) VALUES (?, ?, ?, ?, 1)",
+                                (name, email, role, password))
+                    flash(f'User {name} added successfully.', 'success')
+                    return redirect(url_for('add_user'))
+
+    # Fetch existing users
+    users = fetch_data("SELECT id, name, email, role, verified FROM users ORDER BY id DESC")
+    return render_template('add_user.html', users=users)
+
+@app.route('/qa/bdd-to-code', methods=['GET'])
+@login_required()
+def bdd_to_code():
+    if session.get('user_role', '').lower() not in ['qa', 'admin']:
+        flash('Not authorized', 'error')
+        return redirect(url_for('home'))
+        
+    projects = fetch_data("SELECT * FROM ProjectDetails")
+    return render_template('bdd_to_code.html', projects=projects)
+
+@app.route('/qa/script-runner', methods=['GET'])
+@login_required()
+def script_runner():
+    if session.get('user_role', '').lower() not in ['qa', 'admin']:
+        flash('Not authorized', 'error')
+        return redirect(url_for('home'))
+    return render_template('script_runner.html')
+
+@app.route('/qa/test-case-generator', methods=['GET'])
+@login_required()
+def test_case_generator():
+    if session.get('user_role', '').lower() not in ['qa', 'admin']:
+        flash('Not authorized', 'error')
+        return redirect(url_for('home'))
+    return render_template('test_case_generator.html')
+
+@app.route('/qa/launch-element-locator', methods=['GET'])
+@login_required()
+def launch_element_locator():
+    try:
+        locator_path = os.path.join(os.path.dirname(__file__), '..', 'ElementLocator', 'main.py')
+        subprocess.Popen([sys.executable, locator_path], shell=(sys.platform == 'win32'))
+        return jsonify({'status': 'success', 'message': 'Element Locator Studio launched.'})
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+def open_browser():
+    webbrowser.open_new('http://127.0.0.1:5000/')
+
+def launch_backend():
+    """Launches the FastAPI backend service on port 8000."""
+    try:
+        backend_path = os.path.join(os.path.dirname(__file__), 'api', 'backend.py')
+        # Setting the CWD to ensuring relative paths inside backend.py work correctly
+        subprocess.Popen([sys.executable, backend_path], shell=(sys.platform == 'win32'), cwd=os.path.dirname(os.path.dirname(backend_path)))
+        print("AI Backend service (Port 8000) launched in background.")
+    except Exception as e:
+        print(f"Failed to launch backend service: {e}")
+
+if __name__ == '__main__':
+    # Only open the browser and launch backend once (prevents opening twice when Flask reloader is active)
+    if not os.environ.get('WERKZEUG_RUN_MAIN'):
+        threading.Timer(1.25, open_browser).start()
+        launch_backend()
+    
+    app.run(debug=True, port=5000)
