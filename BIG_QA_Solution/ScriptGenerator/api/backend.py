@@ -1554,25 +1554,25 @@ async def generate_formatted_test_cases(req: GenerateTestCasesRequest):
     
     prompt = f"""
     You are an expert QA Automation Engineer.
-    Your task is to map the provided requirements into the provided test case template format.
+    The user requires test cases derived from the provided requirements. They have provided a template/sample dataset which you must format your output to match perfectly.
     
     Requirements:
     {req.requirements}
     
-    Template Format:
+    Template / Sample Format:
     {req.template}
     
     Instructions:
-    1. Extract test cases from the requirements.
-    2. Format them EXACTLY as shown in the template.
-    3. If the template is an Excel-like structure (e.g., columns separated by | or tabs), maintain that structure.
-    4. Return ONLY the formatted test cases. Do NOT include markdown code fences or any other text.
+    1. Extract test cases (Include Positive, Negative and Regression) from the Requirements.
+    2. Return the test cases as a JSON object with a single key "test_cases".
+    3. The value for "test_cases" MUST be a JSON array of objects.
+    4. Each object in the array represents ONE test case.
+    5. The keys in each object MUST EXACTLY MATCH the fields/columns provided in the Template / Sample Format. This ensures headings are correct.
+    6. Include NO other information. Your entire response must be standard, parseable JSON.
     """
     
     try:
-        content = await call_ai(prompt, provider, expect_json=False)
-        # Strip any accidental markdown fences
-        content = re.sub(r"```[a-z]*\s*", "", content).replace("```", "").strip()
+        content = await call_ai(prompt, provider, expect_json=True)
         return {"status": "success", "content": content}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
