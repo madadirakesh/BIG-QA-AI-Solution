@@ -235,9 +235,15 @@ async function startGeneration() {
                     const workbook = window.XLSX.read(arrayBuffer, { type: 'array' });
                     const firstSheetName = workbook.SheetNames[0];
                     const worksheet = workbook.Sheets[firstSheetName];
-                    templateText = window.XLSX.utils.sheet_to_csv(worksheet);
+                    const sheetJson = window.XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+                    if (sheetJson.length > 0) {
+                        templateText = "JSON Keys to use: " + JSON.stringify(sheetJson[0]);
+                    } else {
+                        templateText = "JSON Keys to use: ['ID', 'Step', 'Expected']";
+                    }
                 } else {
-                    templateText = await file.text();
+                    let textContent = await file.text();
+                    templateText = "Sample headers to use: \n" + textContent.split('\n').slice(0, 3).join('\n');
                 }
             }
 
@@ -288,28 +294,29 @@ async function startGeneration() {
 
             let finalBlob;
 
+            let parsedResponse = {};
+            try {
+                let cleanContent = data.content.replace(/```(?:json)?\s*/g, '').replace(/```/g, '').trim();
+                parsedResponse = JSON.parse(cleanContent);
+            } catch(e) {
+                if (writable) await writable.abort();
+                console.error("Parse Error Details:", data.content);
+                throw new Error("AI returned invalid JSON format.");
+            }
+            
+            let testCasesArray = parsedResponse.test_cases || [];
+
             if (ext === '.xlsx' || ext === '.xls') {
-                let csvCleaned = [];
-                let lines = data.content.split('\n');
-                for (let line of lines) {
-                    if (line.includes('|')) {
-                        let trimLine = line.trim();
-                        if (trimLine.startsWith('|')) trimLine = trimLine.substring(1);
-                        if (trimLine.endsWith('|')) trimLine = trimLine.substring(0, trimLine.length - 1);
-                        if (trimLine.replace(/[\-|\s]/g, '') === '') continue; // ignore markdown separator
-                        
-                        let cells = trimLine.split('|').map(c => `"${c.trim().replace(/"/g, '""')}"`);
-                        csvCleaned.push(cells.join(','));
-                    } else {
-                        csvCleaned.push(line);
-                    }
-                }
-                const parsedWb = window.XLSX.read(csvCleaned.join('\n'), { type: 'string' });
+                const ws = window.XLSX.utils.json_to_sheet(testCasesArray);
+                const parsedWb = window.XLSX.utils.book_new();
+                window.XLSX.utils.book_append_sheet(parsedWb, ws, "Test Cases");
                 const blobBuilderType = ext === '.xls' ? 'biff8' : 'xlsx';
                 const wbout = window.XLSX.write(parsedWb, { bookType: blobBuilderType, type: 'array' });
                 finalBlob = new Blob([wbout], { type: mimeType });
             } else {
-                finalBlob = new Blob([data.content], { type: mimeType });
+                const ws = window.XLSX.utils.json_to_sheet(testCasesArray);
+                const csvData = window.XLSX.utils.sheet_to_csv(ws);
+                finalBlob = new Blob([csvData], { type: mimeType });
             }
 
             if (writable) {
