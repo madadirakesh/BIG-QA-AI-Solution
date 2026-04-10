@@ -236,14 +236,25 @@ async function startGeneration() {
                     const firstSheetName = workbook.SheetNames[0];
                     const worksheet = workbook.Sheets[firstSheetName];
                     const sheetJson = window.XLSX.utils.sheet_to_json(worksheet, { header: 1 });
-                    if (sheetJson.length > 0) {
-                        templateText = "JSON Keys to use: " + JSON.stringify(sheetJson[0]);
+                    
+                    let headers = null;
+                    let maxCols = 0;
+                    for (let i = 0; i < Math.min(20, sheetJson.length); i++) {
+                        let row = sheetJson[i];
+                        if (row && row.length > maxCols) {
+                            maxCols = row.length;
+                            headers = row;
+                        }
+                    }
+                    
+                    if (headers && headers.length > 0) {
+                        templateText = "JSON Keys exactly to use for each object (These are the exact columns): " + JSON.stringify(headers);
                     } else {
-                        templateText = "JSON Keys to use: ['ID', 'Step', 'Expected']";
+                        templateText = "JSON Keys exactly to use for each object (These are the exact columns): ['ID', 'Step', 'Expected']";
                     }
                 } else {
                     let textContent = await file.text();
-                    templateText = "Sample headers to use: \n" + textContent.split('\n').slice(0, 3).join('\n');
+                    templateText = "JSON Keys exactly to use for each object (These are the exact columns, parse them from this sample text): \n" + textContent.split('\n').slice(0, 3).join('\n');
                 }
             }
 
