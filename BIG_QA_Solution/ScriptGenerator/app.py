@@ -176,6 +176,70 @@ def launch_element_locator():
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
+@app.route('/api/select-directory', methods=['GET'])
+@login_required()
+def select_directory():
+    try:
+        import tkinter as tk
+        from tkinter import filedialog
+        root = tk.Tk()
+        root.withdraw()
+        root.attributes('-topmost', True)
+        folder_path = filedialog.askdirectory()
+        root.destroy()
+        return jsonify({'path': folder_path})
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+@app.route('/api/detect-project', methods=['POST'])
+@login_required()
+def detect_project():
+    try:
+        data = request.get_json()
+        path = data.get('path')
+        if not path or not os.path.exists(path):
+            return jsonify({"error": "Invalid path"}), 400
+        
+        files = os.listdir(path)
+        language = "Unknown"
+        framework = "Unknown"
+        
+        if 'pom.xml' in files:
+            language = 'Java'
+            with open(os.path.join(path, 'pom.xml'), 'r', encoding='utf-8', errors='ignore') as f:
+                content = f.read()
+                if 'cucumber' in content.lower():
+                    framework = 'Cucumber'
+                else:
+                    framework = 'Maven'
+        elif 'package.json' in files:
+            language = 'TypeScript / JavaScript'
+            with open(os.path.join(path, 'package.json'), 'r', encoding='utf-8', errors='ignore') as f:
+                content = f.read()
+                if 'playwright' in content.lower():
+                    framework = 'Playwright'
+                elif 'cypress' in content.lower():
+                    framework = 'Cypress'
+                else:
+                    framework = 'Node.js'
+        elif 'requirements.txt' in files or 'pytest.ini' in files:
+            language = 'Python'
+            if 'pytest.ini' in files:
+                framework = 'Pytest-BDD'
+            else:
+                framework = 'Pytest'
+                if 'requirements.txt' in files:
+                    with open(os.path.join(path, 'requirements.txt'), 'r', encoding='utf-8', errors='ignore') as f:
+                        content = f.read()
+                        if 'pytest-bdd' in content.lower():
+                            framework = 'Pytest-BDD'
+                        elif 'behave' in content.lower():
+                            framework = 'Behave'
+                            
+        return jsonify({"language": language, "framework": framework})
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
 def open_browser():
     webbrowser.open_new('http://127.0.0.1:5000/')
 

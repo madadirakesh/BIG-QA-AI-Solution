@@ -1,7 +1,7 @@
 import sqlite3
 import os
 
-DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "local_database.db")
+DB_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "local_database.db")
 
 def get_db():
     conn = sqlite3.connect(DB_PATH)
