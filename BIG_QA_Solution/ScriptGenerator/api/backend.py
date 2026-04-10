@@ -32,16 +32,15 @@ DEFAULT_AI_PROVIDER = os.getenv("AI_PROVIDER", "openai").lower()
 
 import openai as _openai_module
 
-def _get_gemini_model():
+def _get_gemini_client():
     try:
-        import google.generativeai as genai
+        from google import genai
         if not API_KEY:
             raise RuntimeError("AI_MODEL_API_KEY not set in .env")
-        genai.configure(api_key=API_KEY)
-        return genai.GenerativeModel(AI_MODEL)
+        return genai.Client(api_key=API_KEY)
     except ImportError:
         raise RuntimeError(
-            "google-generativeai not installed. Run: pip install google-generativeai"
+            "google-genai not installed. Run: pip install google-genai"
         )
 
 app = FastAPI(title="AI QA Backend")
@@ -334,7 +333,7 @@ async def call_openai(prompt: str, expect_json: bool = True) -> str:
 
 
 async def call_gemini(prompt: str, expect_json: bool = True) -> str:
-    model = _get_gemini_model()
+    client = _get_gemini_client()
 
     def _call():
         system_preamble = "You are an expert QA automation engineer.\n\n"
@@ -346,7 +345,10 @@ async def call_gemini(prompt: str, expect_json: bool = True) -> str:
                 "The very first character of your response MUST be '{' "
                 "and the very last character MUST be '}'.\n\n"
             )
-        response = model.generate_content(system_preamble + prompt)
+        response = client.models.generate_content(
+            model=AI_MODEL,
+            contents=system_preamble + prompt
+        )
         return response.text
 
     return await asyncio.to_thread(_call)
@@ -1563,16 +1565,30 @@ async def generate_formatted_test_cases(req: GenerateTestCasesRequest):
     {req.template}
     
     Instructions:
-    1. Extract test cases (Include Positive, Negative and Regression) from the Requirements.
-    2. Return the test cases as a JSON object with a single key "test_cases".
-    3. The value for "test_cases" MUST be a JSON array of objects.
-    4. Each object in the array represents ONE test case.
-    5. The keys in each object MUST EXACTLY MATCH the fields/columns provided in the Template / Sample Format. This ensures headings are correct.
-    6. Include NO other information. Your entire response must be standard, parseable JSON.
+    1. Extract test cases from the Requirements.
+    2. Cover all types of scenarios: Positive, Negative, Edge Cases, Boundary conditions, field level validations, Business rule validations, Error handling, Regression impact scenarios
+    3. Return the test cases as a JSON object with a single key "test_cases".
+    4. The value for "test_cases" MUST be a JSON array of objects.
+    5. Each object in the array represents ONE test case.
+    6. CRITICAL FATAL INSTRUCTION: The keys in each JSON object MUST STRICTLY be the exact column headers specified in the Template / Sample Format. 
+       - Do NOT invent your own keys.
+       - NEVER use standard keys like 'Step No', 'Pre-requisite', 'Test Data', 'Action' unless they are explicitly in the template.
+       - You MUST map the test cases exactly to whatever keys the user provided in the Template string.
+       - Example: if the template provided is ["A", "B", "C"], your JSON must be {{ "test_cases": [ {{ "A": "...", "B": "...", "C": "..." }} ] }}
+    7. Include NO other information. Your entire response must be standard, parseable JSON.
     """
     
+    with open("LastTemplatePayload.txt", "w", encoding="utf-8") as f:
+        f.write("REQUIREMENTS:\n")
+        f.write(req.requirements + "\n\n")
+        f.write("TEMPLATE RECEIVED (req.template):\n")
+        f.write(req.template + "\n")
+        
     try:
         content = await call_ai(prompt, provider, expect_json=True)
+        with open("LastTemplatePayload.txt", "a", encoding="utf-8") as f:
+             f.write("\n\nAI RESPONSE:\n")
+             f.write(content + "\n")
         return {"status": "success", "content": content}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
