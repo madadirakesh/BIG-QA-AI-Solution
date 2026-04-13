@@ -240,6 +240,36 @@ def detect_project():
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
+@app.route('/api/db/tables', methods=['GET'])
+@login_required(role='admin')
+def get_db_tables():
+    try:
+        tables = fetch_data("SELECT name FROM sqlite_master WHERE type='table'")
+        return jsonify({'tables': [t['name'] for t in tables]})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/db/table-data', methods=['GET'])
+@login_required(role='admin')
+def get_table_data():
+    try:
+        table_name = request.args.get('table')
+        if not table_name:
+            return jsonify({'error': 'Table name is required'}), 400
+        
+        tables = fetch_data("SELECT name FROM sqlite_master WHERE type='table'")
+        table_names = [t['name'] for t in tables]
+        if table_name not in table_names:
+            return jsonify({'error': 'Invalid table name'}), 400
+            
+        columns_info = fetch_data(f"PRAGMA table_info({table_name})")
+        columns = [c['name'] for c in columns_info]
+        
+        data = fetch_data(f"SELECT * FROM {table_name}")
+        return jsonify({'columns': columns, 'data': data})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 def open_browser():
     webbrowser.open_new('http://127.0.0.1:5000/')
 
