@@ -1571,6 +1571,7 @@ async def generate_formatted_test_cases(req: GenerateTestCasesRequest):
     4. The value for "test_cases" MUST be a JSON array of objects.
     5. Each object in the array represents ONE test case.
     6. CRITICAL FATAL INSTRUCTION: The keys in each JSON object MUST STRICTLY be the exact column headers specified in the Template / Sample Format. 
+       - Every column header provided in the Template MUST be a key in every JSON object.
        - Do NOT invent your own keys.
        - NEVER use standard keys like 'Step No', 'Pre-requisite', 'Test Data', 'Action' unless they are explicitly in the template.
        - You MUST map the test cases exactly to whatever keys the user provided in the Template string.
