@@ -5,3 +5,13 @@ __pycache__/
 C:/
 .backup/
 error.log
+.env
+.DS_Store
+.vscode/
+.idea/
+node_modules/
+target/
+bin/
+obj/
+*.pyc
+package-lock.json
