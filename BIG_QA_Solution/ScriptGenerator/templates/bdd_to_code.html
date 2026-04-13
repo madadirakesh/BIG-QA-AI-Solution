@@ -31,7 +31,8 @@
         </div>
 
         <div id="step-1" class="wizard-content active">
-            <h3>Project Selection</h3>
+            <div class="step-inner-align">
+                <h3 class="premium-header">Project Selection</h3>
             
             <div class="form-group mb-4">
                 <label>Method</label>
@@ -77,7 +78,6 @@
                         <p class="mb-0"><strong>Framework:</strong> <span id="detFramework" style="color:var(--accent-primary);"></span></p>
                     </div>
                 </div>
-            </div>
 
             <div id="newProjectSection" style="display: none;">
                 <div class="project-creator-card glassmorphism">
@@ -89,8 +89,10 @@
                 </div>
             </div>
 
-            <div id="projectCredentialsSection" class="mt-4 animate-slide-up delay-2">
-                <h4><i class="fas fa-key"></i> Project Configuration</h4>
+                <hr class="my-5" style="border-color: rgba(255,255,255,0.05); margin-left: -60px; margin-right: -60px;">
+
+            <div id="projectCredentialsSection" class="mt-5 animate-slide-up delay-2" style="margin-top: 4rem !important;">
+                    <h3 class="premium-header"><i class="fas fa-key"></i> Project Configuration</h3>
                 <div class="form-group mb-3">
                     <label>Base Url</label>
                     <input type="text" id="projectBaseUrl" class="form-control" placeholder="https://example.com">
@@ -112,9 +114,11 @@
                         class="fas fa-arrow-right"></i></button>
             </div>
         </div>
+    </div>
 
         <div id="step-2" class="wizard-content" style="display: none;">
-            <h3>Provide BDD & Context</h3>
+            <div class="step-inner-align">
+                <h3 class="premium-header">Provide BDD & Context</h3>
 
             <div class="form-group mt-3">
                 <label>BDD Source Text</label>
@@ -520,6 +524,59 @@
         background: rgba(255, 255, 255, 0.1) !important;
     }
 
+    /* Section Headers & Alignment Polish */
+    .step-inner-align {
+        padding: 10px 60px !important; /* Force deep internal horizontal cushion */
+    }
+    
+    .premium-header {
+        font-size: 1.5rem;
+        font-weight: 700;
+        letter-spacing: -0.5px;
+        margin-bottom: 30px;
+        padding-bottom: 15px;
+        border-bottom: 2px solid rgba(234, 108, 11, 0.2);
+        position: relative;
+        display: block;
+        width: 100%;
+    }
+    .premium-header::after {
+        content: '';
+        position: absolute;
+        bottom: -2px;
+        left: 0;
+        width: 100px;
+        height: 2px;
+        background: var(--accent-primary);
+        box-shadow: 0 0 15px var(--accent-glow);
+    }
+
+    .form-group {
+        margin-bottom: 2.5rem !important;
+        width: 100%;
+        max-width: 98% !important; 
+    }
+
+    label {
+        font-size: 0.95rem;
+        font-weight: 600;
+        color: white !important;
+        margin-bottom: 12px !important;
+        display: block;
+        letter-spacing: 0.5px;
+    }
+
+    /* Premium Dropdown Styling */
+    select.form-control {
+        appearance: none;
+        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%23ea6c0b' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") !important;
+        background-repeat: no-repeat !important;
+        background-position: right 15px center !important;
+        background-size: 18px !important;
+        padding-right: 45px !important;
+        cursor: pointer;
+    }
+
     /* Force Stacking and Centering for Project Creator Card */
     .project-creator-card {
         display: flex !important;
@@ -527,12 +584,14 @@
         align-items: center !important;
         justify-content: center !important;
         text-align: center !important;
-        gap: 15px !important;
+        gap: 20px !important;
         min-height: 250px;
         border: 2px dashed var(--accent-primary) !important;
         border-radius: 12px;
         padding: 40px !important;
         background: rgba(255, 255, 255, 0.03);
+        margin: 30px 0 !important;
+        width: 100% !important;
     }
 </style>
 {% endblock %}
