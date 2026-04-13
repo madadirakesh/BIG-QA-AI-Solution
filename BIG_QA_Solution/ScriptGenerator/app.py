@@ -4,15 +4,17 @@ import subprocess
 import threading
 import webbrowser
 import uuid
-import time
 from datetime import datetime
 from flask import Flask, render_template, request, redirect, url_for, session, flash, jsonify
 import pytz
+
+from BIG_QA_Solution.ScriptGenerator.ProjectBootstrapper.bootstrapper_engine import BootstrapperEngine
+from BIG_QA_Solution.ScriptGenerator.ProjectBootstrapper.environment_setup import EnvironmentSetup
 from db.app_db import fetch_data, insert_data, update_data
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'ProjectBootstrapper')))
-from ProjectBootstrapper.bootstrapper_engine import BootstrapperEngine
-from ProjectBootstrapper.environment_setup import EnvironmentSetup
+#from ProjectBootstrapper.bootstrapper_engine import BootstrapperEngine
+#from ProjectBootstrapper.environment_setup import EnvironmentSetup
 
 # Global dictionary for background bootstrapper jobs
 bootstrapper_jobs = {}

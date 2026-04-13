@@ -1581,6 +1581,7 @@ async def generate_formatted_test_cases(req: GenerateTestCasesRequest):
         content = await call_ai(prompt, provider, expect_json=False)
         # Strip any accidental markdown fences
         content = re.sub(r"```[a-z]*\s*", "", content).replace("```", "").strip()
+        print(content)
         return {"status": "success", "content": content}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
