@@ -222,6 +222,7 @@ async function startGeneration() {
             let templateText = 'ID | Step | Expected';
             let ext = '.txt';
             let targetFileName = 'formatted_test_cases.txt';
+            let templateHeaders = ['ID', 'Step', 'Expected'];
             
             if (fileInput.files.length > 0) {
                 const file = fileInput.files[0];
@@ -230,7 +231,7 @@ async function startGeneration() {
                     ext = '.' + file.name.split('.').pop().toLowerCase();
                 }
 
-                if (ext === '.xlsx' || ext === '.xls') {
+                if (ext === '.xlsx' || ext === '.xls' || ext === '.csv') {
                     const arrayBuffer = await file.arrayBuffer();
                     const workbook = window.XLSX.read(arrayBuffer, { type: 'array' });
                     const firstSheetName = workbook.SheetNames[0];
@@ -238,19 +239,22 @@ async function startGeneration() {
                     const sheetJson = window.XLSX.utils.sheet_to_json(worksheet, { header: 1 });
                     
                     let headers = null;
-                    let maxCols = 0;
                     for (let i = 0; i < Math.min(20, sheetJson.length); i++) {
                         let row = sheetJson[i];
-                        if (row && row.length > maxCols) {
-                            maxCols = row.length;
-                            headers = row;
+                        if (row && row.length > 0) {
+                            let potentialHeaders = row.map(col => col !== undefined && col !== null ? col.toString().trim() : "").filter(col => col !== "");
+                            if (potentialHeaders.length > 0) {
+                                headers = potentialHeaders;
+                                break;
+                            }
                         }
                     }
                     
                     if (headers && headers.length > 0) {
+                        templateHeaders = headers;
                         templateText = "JSON Keys exactly to use for each object (These are the exact columns): " + JSON.stringify(headers);
                     } else {
-                        templateText = "JSON Keys exactly to use for each object (These are the exact columns): ['ID', 'Step', 'Expected']";
+                        templateText = "JSON Keys exactly to use for each object (These are the exact columns): " + JSON.stringify(templateHeaders);
                     }
                 } else {
                     let textContent = await file.text();
@@ -317,15 +321,28 @@ async function startGeneration() {
             
             let testCasesArray = parsedResponse.test_cases || [];
 
+            let ws;
+            if (ext === '.xlsx' || ext === '.xls' || ext === '.csv') {
+                let aoa = [templateHeaders];
+                testCasesArray.forEach(tc => {
+                    let row = [];
+                    templateHeaders.forEach(header => {
+                        row.push(tc[header] !== undefined && tc[header] !== null ? tc[header] : "");
+                    });
+                    aoa.push(row);
+                });
+                ws = window.XLSX.utils.aoa_to_sheet(aoa);
+            } else {
+                ws = window.XLSX.utils.json_to_sheet(testCasesArray);
+            }
+
             if (ext === '.xlsx' || ext === '.xls') {
-                const ws = window.XLSX.utils.json_to_sheet(testCasesArray);
                 const parsedWb = window.XLSX.utils.book_new();
                 window.XLSX.utils.book_append_sheet(parsedWb, ws, "Test Cases");
                 const blobBuilderType = ext === '.xls' ? 'biff8' : 'xlsx';
                 const wbout = window.XLSX.write(parsedWb, { bookType: blobBuilderType, type: 'array' });
                 finalBlob = new Blob([wbout], { type: mimeType });
             } else {
-                const ws = window.XLSX.utils.json_to_sheet(testCasesArray);
                 const csvData = window.XLSX.utils.sheet_to_csv(ws);
                 finalBlob = new Blob([csvData], { type: mimeType });
             }
