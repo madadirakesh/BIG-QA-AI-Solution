@@ -211,25 +211,40 @@ def _bootstrapper_worker(job_id, p_name, p_path, tool, lang, fw, pm, url, user, 
     except Exception as e:
         bootstrapper_jobs[job_id] = {"status": "error", "message": str(e)}
 
-import platform
+def _get_directory_path(prompt="Select Directory"):
+    """Helper to get a directory path across different platforms without blocking Flask."""
+    try:
+        import platform
+        import json
+        safe_prompt = json.dumps(prompt)
+        
+        if platform.system() == 'Darwin':
+            # MacOS: Use Native AppleScript (reliable, no threading issues)
+            script = f'tell application "System Events" to activate\ntell application "System Events"\nset folderPath to choose folder with prompt {safe_prompt}\nPOSIX path of folderPath\nend tell'
+            result = subprocess.run(['osascript', '-e', script], capture_output=True, text=True)
+            if result.returncode == 0 and result.stdout.strip():
+                return result.stdout.strip()
+        else:
+            # Windows/Linux: Use a separate process with Tkinter to avoid main-thread GUI locks
+            script = f"import tkinter as tk; from tkinter import filedialog; root = tk.Tk(); root.withdraw(); root.attributes('-topmost', True); folder_path = filedialog.askdirectory(title={safe_prompt}); print(folder_path, end='')"
+            
+            # On Windows, we need to hide the console window for the subprocess
+            creation_flags = 0
+            if platform.system() == 'Windows':
+                creation_flags = 0x08000000 # CREATE_NO_WINDOW
+                
+            result = subprocess.run([sys.executable, '-c', script], capture_output=True, text=True, creationflags=creation_flags)
+            if result.returncode == 0 and result.stdout.strip():
+                import os
+                return os.path.normpath(result.stdout.strip())
+        return ""
+    except Exception:
+        return ""
 
 @app.route('/api/browse-directory', methods=['GET'])
 def browse_directory():
-    try:
-        if platform.system() == 'Darwin':
-            script = 'tell application "System Events" to activate\ntell application "System Events"\nset folderPath to choose folder with prompt "Select Project Save Location"\nPOSIX path of folderPath\nend tell'
-            result = subprocess.run(['osascript', '-e', script], capture_output=True, text=True)
-            if result.returncode == 0 and result.stdout.strip():
-                return jsonify({"path": result.stdout.strip()})
-        else:
-            # Fallback for Windows/Linux using a separate python GUI process to avoid thread locks
-            script = "import tkinter as tk\nfrom tkinter import filedialog\nroot = tk.Tk()\nroot.withdraw()\nroot.attributes('-topmost', True)\nfolder_path = filedialog.askdirectory()\nprint(folder_path, end='')"
-            result = subprocess.run([sys.executable, '-c', script], capture_output=True, text=True)
-            if result.returncode == 0 and result.stdout.strip():
-                return jsonify({"path": result.stdout.strip()})
-        return jsonify({"path": ""})
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    path = _get_directory_path("Select Project Save Location")
+    return jsonify({"path": path})
 
 @app.route('/api/bootstrap-project', methods=['POST'])
 @login_required()
@@ -328,17 +343,8 @@ def launch_element_locator():
 @app.route('/api/select-directory', methods=['GET'])
 @login_required()
 def select_directory():
-    try:
-        import tkinter as tk
-        from tkinter import filedialog
-        root = tk.Tk()
-        root.withdraw()
-        root.attributes('-topmost', True)
-        folder_path = filedialog.askdirectory()
-        root.destroy()
-        return jsonify({'path': folder_path})
-    except Exception as e:
-        return jsonify({'status': 'error', 'message': str(e)}), 500
+    path = _get_directory_path("Select Existing Project Directory")
+    return jsonify({"path": path})
 
 @app.route('/api/detect-project', methods=['POST'])
 @login_required()
