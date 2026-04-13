@@ -1,0 +1,299 @@
+{% extends "base.html" %}
+
+{% block title %}Database Viewer - AI QA Portal{% endblock %}
+
+{% block extra_css %}
+<style>
+    .db-viewer-container {
+        display: flex;
+        gap: 20px;
+        margin-top: 20px;
+    }
+    
+    .db-sidebar {
+        flex: 0 0 250px;
+        background: var(--bg-card, #1e1e2d);
+        border-radius: 12px;
+        padding: 20px;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    }
+    
+    .db-sidebar h3 {
+        margin-top: 0;
+        margin-bottom: 15px;
+        font-size: 1.1rem;
+        color: var(--text-primary, #ffffff);
+    }
+    
+    .table-list {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+    }
+    
+    .table-list li {
+        padding: 10px 15px;
+        margin-bottom: 5px;
+        border-radius: 8px;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        background: rgba(255, 255, 255, 0.05);
+        color: var(--text-secondary, #b5b5c3);
+    }
+    
+    .table-list li:hover {
+        background: rgba(255, 255, 255, 0.1);
+        color: var(--text-primary, #ffffff);
+    }
+    
+    .table-list li.active {
+        background: var(--theme-primary, #3699ff);
+        color: white;
+        font-weight: 500;
+    }
+    
+    .db-main {
+        flex: 1;
+        background: var(--bg-card, #1e1e2d);
+        border-radius: 12px;
+        padding: 20px;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+    }
+    
+    .db-main h3 {
+        margin-top: 0;
+        margin-bottom: 20px;
+        font-size: 1.2rem;
+        color: var(--text-primary, #ffffff);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+    
+    .table-wrapper {
+        overflow-x: auto;
+        overflow-y: auto;
+        max-height: 600px;
+        border-radius: 8px;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+    
+    .data-table {
+        width: 100%;
+        border-collapse: collapse;
+        min-width: 600px;
+    }
+    
+    .data-table th, .data-table td {
+        padding: 12px 15px;
+        text-align: left;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    }
+    
+    .data-table th {
+        background: rgba(255, 255, 255, 0.05);
+        color: var(--text-primary, #ffffff);
+        font-weight: 600;
+        position: sticky;
+        top: 0;
+        z-index: 10;
+    }
+    
+    .data-table tr:hover td {
+        background: rgba(255, 255, 255, 0.02);
+    }
+    
+    .data-table td {
+        color: var(--text-secondary, #b5b5c3);
+        word-break: break-all;
+        max-width: 300px;
+    }
+    
+    .empty-state {
+        text-align: center;
+        padding: 40px;
+        color: var(--text-secondary, #b5b5c3);
+    }
+    
+    .empty-state i {
+        font-size: 48px;
+        margin-bottom: 15px;
+        opacity: 0.5;
+    }
+    
+    .loading-spinner {
+        text-align: center;
+        padding: 30px;
+        color: var(--theme-primary, #3699ff);
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1><i class="fas fa-database"></i> Database Viewer</h1>
+    <p>View and inspect data stored in the local SQLite database.</p>
+</div>
+
+<div class="db-viewer-container">
+    <div class="db-sidebar">
+        <h3>Tables</h3>
+        <ul id="tableList" class="table-list">
+            <li class="loading-spinner"><i class="fas fa-spinner fa-spin"></i> Loading...</li>
+        </ul>
+    </div>
+    
+    <div class="db-main">
+        <h3>
+            <span id="currentTableName">Select a table</span>
+            <button id="refreshBtn" class="btn btn-sm btn-secondary" style="display: none;" onclick="loadTableData(currentSelectedTable)">
+                <i class="fas fa-sync-alt"></i> Refresh
+            </button>
+        </h3>
+        
+        <div class="table-wrapper" id="tableWrapper">
+            <div class="empty-state">
+                <i class="fas fa-table"></i>
+                <p>Select a table from the sidebar to view its data</p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    let currentSelectedTable = null;
+
+    document.addEventListener('DOMContentLoaded', () => {
+        loadTables();
+    });
+
+    async function loadTables() {
+        try {
+            const response = await fetch('/api/db/tables');
+            const data = await response.json();
+            
+            const listEl = document.getElementById('tableList');
+            listEl.innerHTML = '';
+            
+            if (data.error) {
+                listEl.innerHTML = `<li class="text-danger"><i class="fas fa-exclamation-triangle"></i> Error loading tables</li>`;
+                console.error(data.error);
+                return;
+            }
+            
+            if (data.tables.length === 0) {
+                listEl.innerHTML = `<li><i>No tables found</i></li>`;
+                return;
+            }
+            
+            data.tables.forEach(table => {
+                const li = document.createElement('li');
+                li.innerHTML = `<i class="fas fa-list-alt me-2"></i> ${table}`;
+                li.onclick = () => {
+                    // Update active state
+                    document.querySelectorAll('.table-list li').forEach(el => el.classList.remove('active'));
+                    li.classList.add('active');
+                    
+                    // Load data
+                    loadTableData(table);
+                };
+                listEl.appendChild(li);
+            });
+            
+            // Automatically select first table if exists
+            if (data.tables.length > 0) {
+                listEl.firstChild.click();
+            }
+            
+        } catch (error) {
+            console.error('Failed to load tables:', error);
+            document.getElementById('tableList').innerHTML = `<li class="text-danger">Failed to connect</li>`;
+        }
+    }
+
+    async function loadTableData(tableName) {
+        if (!tableName) return;
+        
+        currentSelectedTable = tableName;
+        document.getElementById('currentTableName').textContent = `Table: ${tableName}`;
+        document.getElementById('refreshBtn').style.display = 'inline-block';
+        
+        const wrapper = document.getElementById('tableWrapper');
+        wrapper.innerHTML = `<div class="loading-spinner"><i class="fas fa-spinner fa-spin fa-2x"></i><p class="mt-2">Loading data...</p></div>`;
+        
+        try {
+            const response = await fetch(`/api/db/table-data?table=${tableName}`);
+            const data = await response.json();
+            
+            if (data.error) {
+                wrapper.innerHTML = `
+                    <div class="empty-state">
+                        <i class="fas fa-exclamation-triangle text-danger"></i>
+                        <p class="text-danger">${data.error}</p>
+                    </div>`;
+                return;
+            }
+            
+            if (!data.data || data.data.length === 0) {
+                wrapper.innerHTML = `
+                    <div class="empty-state">
+                        <i class="fas fa-box-open"></i>
+                        <p>This table is currently empty</p>
+                        <table class="data-table mt-4" style="opacity: 0.5;">
+                            <thead>
+                                <tr>${data.columns.map(c => `<th>${c}</th>`).join('')}</tr>
+                            </thead>
+                        </table>
+                    </div>`;
+                return;
+            }
+            
+            // Render table
+            let tableHtml = `<table class="data-table"><thead><tr>`;
+            data.columns.forEach(col => {
+                tableHtml += `<th>${col}</th>`;
+            });
+            tableHtml += `</tr></thead><tbody>`;
+            
+            data.data.forEach(row => {
+                tableHtml += `<tr>`;
+                data.columns.forEach(col => {
+                    // Handle null or undefined
+                    let cellVal = row[col];
+                    if (cellVal === null) cellVal = '<span style="opacity:0.5;font-style:italic">null</span>';
+                    else if (cellVal === undefined) cellVal = '';
+                    else cellVal = escapeHtml(String(cellVal));
+                    
+                    tableHtml += `<td>${cellVal}</td>`;
+                });
+                tableHtml += `</tr>`;
+            });
+            
+            tableHtml += `</tbody></table>`;
+            wrapper.innerHTML = tableHtml;
+            
+        } catch (error) {
+            console.error(`Failed to load data for ${tableName}:`, error);
+            wrapper.innerHTML = `
+                <div class="empty-state">
+                    <i class="fas fa-wifi text-danger"></i>
+                    <p class="text-danger">Network error connecting to API</p>
+                </div>`;
+        }
+    }
+    
+    function escapeHtml(unsafe) {
+        return unsafe
+             .replace(/&/g, "&amp;")
+             .replace(/</g, "&lt;")
+             .replace(/>/g, "&gt;")
+             .replace(/"/g, "&quot;")
+             .replace(/'/g, "&#039;");
+     }
+</script>
+{% endblock %}

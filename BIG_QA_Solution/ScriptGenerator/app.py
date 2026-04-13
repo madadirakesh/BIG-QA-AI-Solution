@@ -427,6 +427,11 @@ def get_table_data():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+@app.route('/admin/db-viewer', methods=['GET'])
+@login_required(role='admin')
+def db_viewer():
+    return render_template('db_viewer.html')
+
 def open_browser():
     webbrowser.open_new('http://127.0.0.1:5000/')
 

@@ -38,3 +38,58 @@ def update_data(query, params=None):
 
 def insert_data(query, params=None):
     return execute_update(query, params)
+
+def init_db():
+    create_users_table = """
+    CREATE TABLE IF NOT EXISTS users (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        email TEXT UNIQUE NOT NULL,
+        role TEXT NOT NULL,
+        password TEXT NOT NULL,
+        verified INTEGER DEFAULT 0
+    );
+    """
+    
+    create_session_table = """
+    CREATE TABLE IF NOT EXISTS SessionDetails (
+        userid INTEGER,
+        SessionActive INTEGER,
+        SessionTime TEXT,
+        FOREIGN KEY(userid) REFERENCES users(id)
+    );
+    """
+    
+    create_project_table = """
+    CREATE TABLE IF NOT EXISTS ProjectDetails (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        project_name TEXT NOT NULL,
+        project_path TEXT NOT NULL,
+        project_lang TEXT NOT NULL,
+        project_fw TEXT NOT NULL,
+        project_tool TEXT NOT NULL
+    );
+    """
+    
+    try:
+        with get_db() as conn:
+            cursor = conn.cursor()
+            cursor.execute(create_users_table)
+            cursor.execute(create_session_table)
+            cursor.execute(create_project_table)
+            
+            # Insert admin user if not exists
+            cursor.execute("SELECT * FROM users WHERE email = 'admin@big.com'")
+            if not cursor.fetchone():
+                cursor.execute(
+                    "INSERT INTO users (name, email, role, password, verified) VALUES (?, ?, ?, ?, ?)",
+                    ('Admin', 'admin@big.com', 'admin', 'admin123', 1)
+                )
+            
+            conn.commit()
+            print("Database initialized successfully.")
+    except Exception as e:
+        print(f"Error initializing database: {e}")
+
+if __name__ == '__main__':
+    init_db()
