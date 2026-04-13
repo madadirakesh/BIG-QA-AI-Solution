@@ -1,0 +1,7 @@
+venv/
+tmp/
+__pycache__/
+*.db
+C:/
+.backup/
+error.log
