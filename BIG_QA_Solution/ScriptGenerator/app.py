@@ -1,13 +1,5 @@
 import os
 import sys
-
-path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'ProjectBootstrapper'))
-print("Resolved path:", path)
-print("Path exists:", os.path.exists(path))
-print("Files in folder:", os.listdir(path) if os.path.exists(path) else "FOLDER NOT FOUND")
-
-sys.path.append(path)
-
 import subprocess
 import threading
 import webbrowser
@@ -21,8 +13,6 @@ from db.app_db import fetch_data, insert_data, update_data
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'ProjectBootstrapper')))
 from ProjectBootstrapper.bootstrapper_engine import BootstrapperEngine
 from ProjectBootstrapper.environment_setup import EnvironmentSetup
-# from bootstrapper_engine import BootstrapperEngine
-# from environment_setup import EnvironmentSetup
 
 # Global dictionary for background bootstrapper jobs
 bootstrapper_jobs = {}
