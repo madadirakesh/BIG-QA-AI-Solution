@@ -3,10 +3,19 @@ import sys
 import subprocess
 import threading
 import webbrowser
+import uuid
+import time
 from datetime import datetime
 from flask import Flask, render_template, request, redirect, url_for, session, flash, jsonify
 import pytz
 from db.app_db import fetch_data, insert_data, update_data
+
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'ProjectBootstrapper')))
+from bootstrapper_engine import BootstrapperEngine
+from environment_setup import EnvironmentSetup
+
+# Global dictionary for background bootstrapper jobs
+bootstrapper_jobs = {}
 
 def install_prerequisites():
     req_file = os.path.join(os.path.dirname(__file__), '..', 'requirements.txt')
@@ -150,6 +159,161 @@ def bdd_to_code():
     projects = fetch_data("SELECT * FROM ProjectDetails")
     return render_template('bdd_to_code.html', projects=projects)
 
+def _build_directory_tree(path):
+    tree = {'name': os.path.basename(path), 'type': 'directory', 'children': []}
+    try:
+        entries = sorted(os.listdir(path))
+        for entry in entries:
+            if entry in ['.DS_Store', '.git', '__pycache__', '.pytest_cache', 'target', 'node_modules', 'bin', 'obj'] or entry.endswith('.pyc'):
+                continue
+            full_path = os.path.join(path, entry)
+            if os.path.isdir(full_path):
+                tree['children'].append(_build_directory_tree(full_path))
+            else:
+                tree['children'].append({'name': entry, 'type': 'file'})
+    except PermissionError:
+        pass
+    return tree
+
+def _bootstrapper_worker(job_id, p_name, p_path, tool, lang, fw, pm, url, user, pwd):
+    try:
+        success, res = BootstrapperEngine.generate_project(p_name, p_path, tool, lang, fw, pm, url, user, pwd)
+        if not success:
+            bootstrapper_jobs[job_id] = {"status": "error", "message": f"Scaffolding failed: {res}"}
+            return
+
+        target_dir = res
+        inst_success, inst_msg = EnvironmentSetup.install_project_dependencies(target_dir, pm, tool)
+        if not inst_success:
+            bootstrapper_jobs[job_id] = {"status": "error", "message": f"Dependency installation failed: {inst_msg}"}
+            return
+
+        smoke_ok, smoke_msg = BootstrapperEngine.execute_smoke_test(target_dir, tool, lang, fw, pm)
+        if not smoke_ok:
+            bootstrapper_jobs[job_id] = {"status": "error", "message": f"Smoke Test failed: {smoke_msg}"}
+            return
+
+        tree_data = _build_directory_tree(target_dir)
+
+        bootstrapper_jobs[job_id] = {
+            "status": "completed", 
+            "message": "Project Scaffolding Complete! All checks passed.",
+            "target_dir": target_dir,
+            "tree": tree_data,
+            "project_metadata": {
+                "projectName": p_name,
+                "projectPath": p_path,
+                "language": lang,
+                "framework": fw,
+                "tool": tool
+            }
+        }
+    except Exception as e:
+        bootstrapper_jobs[job_id] = {"status": "error", "message": str(e)}
+
+def _get_directory_path(prompt="Select Directory"):
+    """Helper to get a directory path across different platforms without blocking Flask."""
+    try:
+        import platform
+        import json
+        safe_prompt = json.dumps(prompt)
+        
+        if platform.system() == 'Darwin':
+            # MacOS: Use Native AppleScript (reliable, no threading issues)
+            script = f'tell application "System Events" to activate\ntell application "System Events"\nset folderPath to choose folder with prompt {safe_prompt}\nPOSIX path of folderPath\nend tell'
+            result = subprocess.run(['osascript', '-e', script], capture_output=True, text=True)
+            if result.returncode == 0 and result.stdout.strip():
+                return result.stdout.strip()
+        else:
+            # Windows/Linux: Use a separate process with Tkinter to avoid main-thread GUI locks
+            script = f"import tkinter as tk; from tkinter import filedialog; root = tk.Tk(); root.withdraw(); root.attributes('-topmost', True); folder_path = filedialog.askdirectory(title={safe_prompt}); print(folder_path, end='')"
+            
+            # On Windows, we need to hide the console window for the subprocess
+            creation_flags = 0
+            if platform.system() == 'Windows':
+                creation_flags = 0x08000000 # CREATE_NO_WINDOW
+                
+            result = subprocess.run([sys.executable, '-c', script], capture_output=True, text=True, creationflags=creation_flags)
+            if result.returncode == 0 and result.stdout.strip():
+                import os
+                return os.path.normpath(result.stdout.strip())
+        return ""
+    except Exception:
+        return ""
+
+@app.route('/api/browse-directory', methods=['GET'])
+def browse_directory():
+    path = _get_directory_path("Select Project Save Location")
+    return jsonify({"path": path})
+
+@app.route('/api/bootstrap-project', methods=['POST'])
+@login_required()
+def bootstrap_project():
+    data = request.json
+    p_name = data.get('projectName', '').strip()
+    p_path = data.get('projectPath', '').strip()
+    tool = data.get('tool', '')
+    lang = data.get('language', '')
+    fw = data.get('framework', '')
+    pm = data.get('packageManager', '')
+    url = data.get('url', '')
+    user = data.get('username', '')
+    pwd = data.get('password', '')
+
+    if not p_name or not p_path:
+        return jsonify({"status": "error", "message": "Project name and path are required."}), 400
+
+    env_ok, missing = EnvironmentSetup.verify_environment(lang)
+    if not env_ok:
+        return jsonify({"status": "error", "message": f"Missing system dependencies: {', '.join(missing)}"}), 400
+
+    job_id = str(uuid.uuid4())
+    bootstrapper_jobs[job_id] = {"status": "processing", "message": "Initializing process..."}
+
+    threading.Thread(target=_bootstrapper_worker, 
+                     args=(job_id, p_name, p_path, tool, lang, fw, pm, url, user, pwd), 
+                     daemon=True).start()
+
+    return jsonify({"status": "processing", "job_id": job_id})
+
+@app.route('/api/bootstrap-status/<job_id>', methods=['GET'])
+@login_required()
+def bootstrap_status(job_id):
+    if job_id not in bootstrapper_jobs:
+        return jsonify({"status": "error", "message": "Job ID not found"}), 404
+        
+    job = bootstrapper_jobs[job_id]
+    
+    # Auto-insert into database on completion to save a frontend roundtrip
+    if job.get('status') == 'completed' and 'db_inserted' not in job:
+        meta = job['project_metadata']
+        try:
+            insert_data("INSERT INTO ProjectDetails (project_name, project_path, project_lang, project_fw, project_tool) VALUES (?, ?, ?, ?, ?)",
+                        (meta['projectName'], meta['projectPath'], meta['language'], meta['framework'], meta['tool']))
+        except Exception as e:
+            pass # might exist or fail
+        job['db_inserted'] = True
+
+    return jsonify(job)
+
+@app.route('/api/remove-missing-projects', methods=['POST'])
+@login_required()
+def remove_missing_projects():
+    if session.get('user_role', '').lower() != 'admin':
+        return jsonify({"status": "error", "message": "Unauthorized"}), 403
+        
+    projects = fetch_data("SELECT id, project_path, project_name FROM ProjectDetails")
+    removed = []
+    
+    for p in projects:
+        # Check if project directory exists
+        full_path = os.path.join(p['project_path'], p['project_name'])
+        if not os.path.exists(full_path):
+            update_data("DELETE FROM ProjectDetails WHERE id = ?", (p['id'],))
+            removed.append(p['project_name'])
+            
+    return jsonify({"status": "success", "removed": removed})
+
 @app.route('/qa/script-runner', methods=['GET'])
 @login_required()
 def script_runner():
@@ -175,6 +339,91 @@ def launch_element_locator():
         return jsonify({'status': 'success', 'message': 'Element Locator Studio launched.'})
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500
+
+@app.route('/api/select-directory', methods=['GET'])
+@login_required()
+def select_directory():
+    path = _get_directory_path("Select Existing Project Directory")
+    return jsonify({"path": path})
+
+@app.route('/api/detect-project', methods=['POST'])
+@login_required()
+def detect_project():
+    try:
+        data = request.get_json()
+        path = data.get('path')
+        if not path or not os.path.exists(path):
+            return jsonify({"error": "Invalid path"}), 400
+        
+        files = os.listdir(path)
+        language = "Unknown"
+        framework = "Unknown"
+        
+        if 'pom.xml' in files:
+            language = 'Java'
+            with open(os.path.join(path, 'pom.xml'), 'r', encoding='utf-8', errors='ignore') as f:
+                content = f.read()
+                if 'cucumber' in content.lower():
+                    framework = 'Cucumber'
+                else:
+                    framework = 'Maven'
+        elif 'package.json' in files:
+            language = 'TypeScript / JavaScript'
+            with open(os.path.join(path, 'package.json'), 'r', encoding='utf-8', errors='ignore') as f:
+                content = f.read()
+                if 'playwright' in content.lower():
+                    framework = 'Playwright'
+                elif 'cypress' in content.lower():
+                    framework = 'Cypress'
+                else:
+                    framework = 'Node.js'
+        elif 'requirements.txt' in files or 'pytest.ini' in files:
+            language = 'Python'
+            if 'pytest.ini' in files:
+                framework = 'Pytest-BDD'
+            else:
+                framework = 'Pytest'
+                if 'requirements.txt' in files:
+                    with open(os.path.join(path, 'requirements.txt'), 'r', encoding='utf-8', errors='ignore') as f:
+                        content = f.read()
+                        if 'pytest-bdd' in content.lower():
+                            framework = 'Pytest-BDD'
+                        elif 'behave' in content.lower():
+                            framework = 'Behave'
+                            
+        return jsonify({"language": language, "framework": framework})
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+@app.route('/api/db/tables', methods=['GET'])
+@login_required(role='admin')
+def get_db_tables():
+    try:
+        tables = fetch_data("SELECT name FROM sqlite_master WHERE type='table'")
+        return jsonify({'tables': [t['name'] for t in tables]})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/db/table-data', methods=['GET'])
+@login_required(role='admin')
+def get_table_data():
+    try:
+        table_name = request.args.get('table')
+        if not table_name:
+            return jsonify({'error': 'Table name is required'}), 400
+        
+        tables = fetch_data("SELECT name FROM sqlite_master WHERE type='table'")
+        table_names = [t['name'] for t in tables]
+        if table_name not in table_names:
+            return jsonify({'error': 'Invalid table name'}), 400
+            
+        columns_info = fetch_data(f"PRAGMA table_info({table_name})")
+        columns = [c['name'] for c in columns_info]
+        
+        data = fetch_data(f"SELECT * FROM {table_name}")
+        return jsonify({'columns': columns, 'data': data})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 def open_browser():
     webbrowser.open_new('http://127.0.0.1:5000/')

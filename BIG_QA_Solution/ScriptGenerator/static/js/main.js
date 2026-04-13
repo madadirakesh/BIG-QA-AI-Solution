@@ -6,7 +6,7 @@ function nextStep(stepNumber) {
         el.style.display = 'none';
         el.classList.remove('active');
     });
-    
+
     // Update step indicators
     document.querySelectorAll('.step').forEach((el, index) => {
         if (index < stepNumber) {
@@ -15,10 +15,10 @@ function nextStep(stepNumber) {
             el.classList.remove('active');
         }
     });
-    
+
     // Show target step
     const target = document.getElementById(`step-${stepNumber}`);
-    if(target) {
+    if (target) {
         target.style.display = 'block';
         target.classList.add('active');
     }
@@ -29,32 +29,45 @@ let pollInterval = null;
 
 async function generateCode() {
     const projectSelect = document.getElementById('projectSelect');
-    const selectedOption = projectSelect.options[projectSelect.selectedIndex];
+    const selectedOption = projectSelect ? projectSelect.options[projectSelect.selectedIndex] : null;
+    const projectPathInput = document.getElementById('projectPath');
     
-    if(!selectedOption.value) {
-        alert("Please select a project in Step 1.");
+    let projectName, language, framework, projectLoc;
+    
+    if (projectPathInput && projectPathInput.value) {
+        projectName = projectPathInput.value.split(/[\\/]/).pop() || "Locally Detected";
+        language = document.getElementById('detLanguage') ? document.getElementById('detLanguage').innerText : "Unknown";
+        framework = document.getElementById('detFramework') ? document.getElementById('detFramework').innerText : "Unknown";
+        projectLoc = projectPathInput.value;
+    } else if (selectedOption && selectedOption.value) {
+        projectName = selectedOption.value;
+        language = selectedOption.dataset.lang;
+        framework = selectedOption.dataset.fw;
+        projectLoc = selectedOption.dataset.path;
+    } else {
+        alert("Please select a project from the dropdown or locate a directory in Step 1.");
         nextStep(1);
         return;
     }
 
     const bddContent = document.getElementById('bddContent').value;
-    if(!bddContent.trim()) {
+    if (!bddContent.trim()) {
         alert("Please provide the BDD Source Text.");
         return;
     }
 
     const baseUrl = document.getElementById('baseUrl').value;
     const existingCode = document.getElementById('existingCode').value;
-    
+
     let supportContent = "";
-    if(baseUrl) supportContent += `Base URL: ${baseUrl}\n`;
-    if(existingCode) supportContent += `\nExisting Code Context:\n${existingCode}`;
+    if (baseUrl) supportContent += `Base URL: ${baseUrl}\n`;
+    if (existingCode) supportContent += `\nExisting Code Context:\n${existingCode}`;
 
     const payload = {
-        project_name: selectedOption.value,
-        language: selectedOption.dataset.lang,
-        framework: selectedOption.dataset.fw,
-        project_path: selectedOption.dataset.path,
+        project_name: projectName,
+        language: language,
+        framework: framework,
+        project_path: projectLoc,
         bdd_content: bddContent,
         support_content: supportContent,
         file_content: "",
@@ -81,10 +94,10 @@ async function generateCode() {
 
         const data = await response.json();
         currentTaskId = data.task_id;
-        
+
         // Start polling
         pollInterval = setInterval(pollTaskResult, 2000);
-        
+
     } catch (error) {
         alert("Failed to start generation: " + error.message);
         nextStep(2);
@@ -114,7 +127,7 @@ async function pollTaskResult() {
 function renderResults(resultStr) {
     document.getElementById('loadingStatus').style.display = 'none';
     document.getElementById('resultContent').style.display = 'block';
-    
+
     const container = document.getElementById('codeBlocksContainer');
     container.innerHTML = ''; // clear 
 
@@ -122,14 +135,14 @@ function renderResults(resultStr) {
     try {
         // Simple heuristic parse similar to python backend
         resultsObj = JSON.parse(resultStr);
-    } catch(e) {
-        resultsObj = {"generated_code.py": resultStr};
+    } catch (e) {
+        resultsObj = { "generated_code.py": resultStr };
     }
 
     // Render each file as a block
-    for(const [filename, content] of Object.entries(resultsObj)) {
+    for (const [filename, content] of Object.entries(resultsObj)) {
         const fileContent = typeof content === 'object' ? content.content || JSON.stringify(content) : content;
-        
+
         const block = `
         <div class="code-block-wrapper">
             <div class="code-header">
@@ -149,11 +162,11 @@ function saveFiles() {
 
 function escapeHtml(unsafe) {
     return unsafe
-         .replace(/&/g, "&amp;")
-         .replace(/</g, "&lt;")
-         .replace(/>/g, "&gt;")
-         .replace(/"/g, "&quot;")
-         .replace(/'/g, "&#039;");
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
 }
 
 async function launchElementLocator() {

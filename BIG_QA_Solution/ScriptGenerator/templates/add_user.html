@@ -3,9 +3,14 @@
 {% block title %}Add User - AI QA Portal{% endblock %}
 
 {% block content %}
-<div class="page-header">
-    <h1><i class="fas fa-users-cog"></i> User Management</h1>
-    <p>Add new QA members or Administrators to the team platform.</p>
+<div class="page-header" style="display: flex; justify-content: space-between; align-items: center;">
+    <div>
+        <h1><i class="fas fa-users-cog"></i> User Management</h1>
+        <p>Add new QA members or Administrators to the team platform.</p>
+    </div>
+    <button class="btn btn-secondary" onclick="toggleDBInteraction()">
+        <i class="fas fa-database"></i> Start DB Interaction
+    </button>
 </div>
 
 <div class="management-layout">
@@ -88,6 +93,24 @@
             </table>
         </div>
     </div>
+
+    <!-- DB Interaction Panel -->
+    <div id="dbInteractionPanel" class="table-panel glassmorphism mt-4" style="display: none;">
+        <h3>Database Interaction</h3>
+        <hr>
+        <div class="form-group mb-3">
+            <label for="dbTableSelect">Select Table</label>
+            <select id="dbTableSelect" class="form-control" onchange="fetchTableData()">
+                <option value="">-- Choose a table --</option>
+            </select>
+        </div>
+        <div id="dbTableDataContainer" class="table-responsive" style="max-height: 400px; overflow-y: auto;">
+            <table class="data-table" id="dbDataTable">
+                <thead id="dbDataTableHead"></thead>
+                <tbody id="dbDataTableBody"></tbody>
+            </table>
+        </div>
+    </div>
 </div>
 {% endblock %}
 
@@ -139,5 +162,90 @@ hr {
 .status-badge.success { background: rgba(16, 185, 129, 0.2); color: var(--success); }
 .status-badge.warning { background: rgba(245, 158, 11, 0.2); color: var(--warning); }
 .status-badge.error { background: rgba(239, 68, 68, 0.2); color: var(--error); }
+.btn-secondary { background: rgba(255, 255, 255, 0.1); color: white; border: 1px solid var(--glass-border); padding: 8px 15px; border-radius: 5px; cursor: pointer; transition: 0.3s; }
+.btn-secondary:hover { background: rgba(255, 255, 255, 0.2); }
+.form-control { width: 100%; padding: 10px; background: rgba(0,0,0,0.2); border: 1px solid var(--glass-border); color: white; border-radius: 5px; }
 </style>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    function toggleDBInteraction() {
+        const panel = document.getElementById('dbInteractionPanel');
+        if (panel.style.display === 'none') {
+            panel.style.display = 'block';
+            fetchTables();
+        } else {
+            panel.style.display = 'none';
+        }
+    }
+
+    function fetchTables() {
+        fetch('/api/db/tables')
+            .then(res => res.json())
+            .then(data => {
+                const select = document.getElementById('dbTableSelect');
+                select.innerHTML = '<option value="">-- Choose a table --</option>';
+                if (data.tables) {
+                    data.tables.forEach(table => {
+                        const opt = document.createElement('option');
+                        opt.value = table;
+                        opt.textContent = table;
+                        select.appendChild(opt);
+                    });
+                }
+            })
+            .catch(err => console.error("Error fetching tables:", err));
+    }
+
+    function fetchTableData() {
+        const tableName = document.getElementById('dbTableSelect').value;
+        const thead = document.getElementById('dbDataTableHead');
+        const tbody = document.getElementById('dbDataTableBody');
+        
+        thead.innerHTML = '';
+        tbody.innerHTML = '';
+
+        if (!tableName) return;
+
+        fetch('/api/db/table-data?table=' + tableName)
+            .then(res => res.json())
+            .then(data => {
+                if (data.error) {
+                    console.error("Error:", data.error);
+                    return;
+                }
+
+                if (data.columns && data.columns.length > 0) {
+                    const trTop = document.createElement('tr');
+                    data.columns.forEach(col => {
+                        const th = document.createElement('th');
+                        th.textContent = col;
+                        trTop.appendChild(th);
+                    });
+                    thead.appendChild(trTop);
+                }
+
+                if (data.data && data.data.length > 0) {
+                    data.data.forEach(row => {
+                        const tr = document.createElement('tr');
+                        data.columns.forEach(col => {
+                            const td = document.createElement('td');
+                            td.textContent = row[col];
+                            tr.appendChild(td);
+                        });
+                        tbody.appendChild(tr);
+                    });
+                } else {
+                    const tr = document.createElement('tr');
+                    const td = document.createElement('td');
+                    td.colSpan = data.columns ? data.columns.length : 1;
+                    td.textContent = "No data found for this table.";
+                    tr.appendChild(td);
+                    tbody.appendChild(tr);
+                }
+            })
+            .catch(err => console.error("Error fetching table data:", err));
+    }
+</script>
 {% endblock %}

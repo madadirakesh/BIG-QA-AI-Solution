@@ -176,13 +176,9 @@
 {% endblock %}
 
 {% block extra_js %}
-<!-- Add SheetJS for Excel processing -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
 let selectedOptValue = 0;
 let generatedFileDownloadName = 'test_cases.txt';
-let globalGeneratedContent = '';
-let globalFileExt = '.txt';
 
 function setOpt(opt) {
     selectedOptValue = opt;
@@ -226,6 +222,7 @@ async function startGeneration() {
             
             if (fileInput.files.length > 0) {
                 const file = fileInput.files[0];
+                templateText = await file.text();
                 targetFileName = 'formatted_' + file.name;
                 if (file.name.includes('.')) {
                     ext = '.' + file.name.split('.').pop().toLowerCase();
@@ -258,21 +255,20 @@ async function startGeneration() {
                     }
                 } else {
                     let textContent = await file.text();
-                    templateText = "JSON Keys exactly to use for each object (These are the exact columns, parse them from this sample text): \n" + textContent.split('\n').slice(0, 3).join('\n');
-                }
+                    templateText = "JSON Keys exactly to use for each object (These are the exact columns, parse them from this sample text): \n" + textContent.split('\n').slice(0, 3).join('\n');                }
             }
 
             let mimeType = 'text/plain';
-            if (ext === '.csv') {
+            if (ext.toLowerCase() === '.csv') {
                 mimeType = 'text/csv';
-            } else if (ext === '.xlsx') {
+            } else if (ext.toLowerCase() === '.xlsx') {
                 mimeType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
-            } else if (ext === '.xls') {
+            } else if (ext.toLowerCase() === '.xls') {
                 mimeType = 'application/vnd.ms-excel';
             }
 
             let typeAccept = {};
-            typeAccept[mimeType] = [ext];
+            typeAccept[mimeType] = [ext.toLowerCase()];
             
             let writable = null;
             let fallbackName = targetFileName;
@@ -306,9 +302,7 @@ async function startGeneration() {
                 if (writable) await writable.abort();
                 throw new Error(data.detail || 'Failed to generate formatted test cases');
             }
-
             let finalBlob;
-
             let parsedResponse = {};
             try {
                 let cleanContent = data.content.replace(/```(?:json)?\s*/g, '').replace(/```/g, '').trim();
@@ -344,14 +338,14 @@ async function startGeneration() {
                 finalBlob = new Blob([wbout], { type: mimeType });
             } else {
                 const csvData = window.XLSX.utils.sheet_to_csv(ws);
-                finalBlob = new Blob([csvData], { type: mimeType });
+                finalBlob = new Blob([csvData], {type: mimeType});
             }
-
             if (writable) {
-                await writable.write(finalBlob);
+                await writable.write(data.content);
                 await writable.close();
             } else {
-                const url = window.URL.createObjectURL(finalBlob);
+                const blob = new Blob([data.content], { type: mimeType });
+                const url = window.URL.createObjectURL(blob);
                 const a = document.createElement('a');
                 a.href = url;
                 a.download = fallbackName;

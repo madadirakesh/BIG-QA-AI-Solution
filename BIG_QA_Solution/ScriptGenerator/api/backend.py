@@ -32,15 +32,16 @@ DEFAULT_AI_PROVIDER = os.getenv("AI_PROVIDER", "openai").lower()
 
 import openai as _openai_module
 
-def _get_gemini_client():
+def _get_gemini_model():
     try:
-        from google import genai
+        import google.generativeai as genai
         if not API_KEY:
             raise RuntimeError("AI_MODEL_API_KEY not set in .env")
-        return genai.Client(api_key=API_KEY)
+        genai.configure(api_key=API_KEY)
+        return genai.GenerativeModel(AI_MODEL)
     except ImportError:
         raise RuntimeError(
-            "google-genai not installed. Run: pip install google-genai"
+            "google-generativeai not installed. Run: pip install google-generativeai"
         )
 
 app = FastAPI(title="AI QA Backend")
@@ -333,7 +334,7 @@ async def call_openai(prompt: str, expect_json: bool = True) -> str:
 
 
 async def call_gemini(prompt: str, expect_json: bool = True) -> str:
-    client = _get_gemini_client()
+    model = _get_gemini_model()
 
     def _call():
         system_preamble = "You are an expert QA automation engineer.\n\n"
@@ -345,10 +346,7 @@ async def call_gemini(prompt: str, expect_json: bool = True) -> str:
                 "The very first character of your response MUST be '{' "
                 "and the very last character MUST be '}'.\n\n"
             )
-        response = client.models.generate_content(
-            model=AI_MODEL,
-            contents=system_preamble + prompt
-        )
+        response = model.generate_content(system_preamble + prompt)
         return response.text
 
     return await asyncio.to_thread(_call)
@@ -1556,12 +1554,12 @@ async def generate_formatted_test_cases(req: GenerateTestCasesRequest):
     
     prompt = f"""
     You are an expert QA Automation Engineer.
-    The user requires test cases derived from the provided requirements. They have provided a template/sample dataset which you must format your output to match perfectly.
+    Your task is to map the provided requirements into the provided test case template format.
     
     Requirements:
     {req.requirements}
     
-    Template / Sample Format:
+    Template Format:
     {req.template}
     
     Instructions:
@@ -1579,17 +1577,10 @@ async def generate_formatted_test_cases(req: GenerateTestCasesRequest):
     7. Include NO other information. Your entire response must be standard, parseable JSON.
     """
     
-    with open("LastTemplatePayload.txt", "w", encoding="utf-8") as f:
-        f.write("REQUIREMENTS:\n")
-        f.write(req.requirements + "\n\n")
-        f.write("TEMPLATE RECEIVED (req.template):\n")
-        f.write(req.template + "\n")
-        
     try:
-        content = await call_ai(prompt, provider, expect_json=True)
-        with open("LastTemplatePayload.txt", "a", encoding="utf-8") as f:
-             f.write("\n\nAI RESPONSE:\n")
-             f.write(content + "\n")
+        content = await call_ai(prompt, provider, expect_json=False)
+        # Strip any accidental markdown fences
+        content = re.sub(r"```[a-z]*\s*", "", content).replace("```", "").strip()
         return {"status": "success", "content": content}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
