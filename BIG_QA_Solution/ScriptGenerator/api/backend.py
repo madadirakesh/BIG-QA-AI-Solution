@@ -32,16 +32,16 @@ DEFAULT_AI_PROVIDER = os.getenv("AI_PROVIDER", "openai").lower()
 
 import openai as _openai_module
 
-def _get_gemini_model():
+def _get_gemini_client():
     try:
-        import google.generativeai as genai
+        from google import genai
         if not API_KEY:
             raise RuntimeError("AI_MODEL_API_KEY not set in .env")
-        genai.configure(api_key=API_KEY)
         return genai.GenerativeModel(AI_MODEL)
+        return genai.Client(api_key=API_KEY)
     except ImportError:
         raise RuntimeError(
-            "google-generativeai not installed. Run: pip install google-generativeai"
+            "google-genai not installed. Run: pip install google-generativeai"
         )
 
 app = FastAPI(title="AI QA Backend")
@@ -334,7 +334,7 @@ async def call_openai(prompt: str, expect_json: bool = True) -> str:
 
 
 async def call_gemini(prompt: str, expect_json: bool = True) -> str:
-    model = _get_gemini_model()
+    client = _get_gemini_client()
 
     def _call():
         system_preamble = "You are an expert QA automation engineer.\n\n"
@@ -346,7 +346,10 @@ async def call_gemini(prompt: str, expect_json: bool = True) -> str:
                 "The very first character of your response MUST be '{' "
                 "and the very last character MUST be '}'.\n\n"
             )
-        response = model.generate_content(system_preamble + prompt)
+        response = client.models.generate_content(
+            model=AI_MODEL,
+            contents=system_preamble + prompt
+        )
         return response.text
 
     return await asyncio.to_thread(_call)
