@@ -70,13 +70,27 @@ def init_db():
         project_tool TEXT NOT NULL
     );
     """
-    
+
+    create_locators_table = """
+                CREATE TABLE IF NOT EXISTS Locators (
+                    ID INTEGER PRIMARY KEY AUTOINCREMENT,
+                    Page_Name VARCHAR(255),
+                    Locator_Name VARCHAR(255),
+                    Locator_Type VARCHAR(255),
+                    Method VARCHAR(255),
+                    Value VARCHAR(500),
+                    Created_On DATETIME,
+                    UNIQUE(Page_Name, Locator_Name)
+                )
+            """
+
     try:
         with get_db() as conn:
             cursor = conn.cursor()
             cursor.execute(create_users_table)
             cursor.execute(create_session_table)
             cursor.execute(create_project_table)
+            cursor.execute(create_locators_table)
             
             # Insert admin user if not exists
             cursor.execute("SELECT * FROM users WHERE email = 'admin@big.com'")

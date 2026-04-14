@@ -12,9 +12,10 @@
     <div class="input-panel glassmorphism">
         <h3><i class="fas fa-edit"></i> 1. Enter Requirements</h3>
         <div class="form-group">
-            <textarea id="requirementInput" class="form-control" rows="10" placeholder="Enter your business requirements here... (e.g., User should be able to search for products and add them to cart)"></textarea>
+            <textarea id="requirementInput" class="form-control" rows="10"
+                placeholder="Enter your business requirements here... (e.g., User should be able to search for products and add them to cart)"></textarea>
         </div>
-        
+
         <div class="options-grid mt-4">
             <div class="option-card" onclick="setOpt(1)" id="option1-card">
                 <div class="option-icon"><i class="fas fa-code"></i></div>
@@ -22,7 +23,7 @@
                 <p>Generate BDD Scenarios (.feature)</p>
                 <div class="mt-2"><span class="badge badge-pill badge-primary">Select</span></div>
             </div>
-            
+
             <div class="option-card" onclick="setOpt(2)" id="option2-card">
                 <div class="option-icon"><i class="fas fa-table"></i></div>
                 <h4>Option 2</h4>
@@ -53,13 +54,15 @@
         <div class="result-header">
             <h3><i class="fas fa-eye"></i> 2. Review & Edit</h3>
             <div class="result-actions">
-                <button class="btn btn-sm btn-outline mr-2" onclick="downloadResult()"><i class="fas fa-download"></i> Download</button>
+                <button class="btn btn-sm btn-outline mr-2" onclick="downloadResult()"><i class="fas fa-download"></i>
+                    Download</button>
                 <button class="btn btn-sm btn-secondary" onclick="resetGenerator()">Start Over</button>
             </div>
         </div>
-        
+
         <div class="editor-wrapper mt-3">
-            <textarea id="resultEditor" class="form-control" rows="20" style="background: #0f172a; color: #e2e8f0; font-family: monospace;"></textarea>
+            <textarea id="resultEditor" class="form-control" rows="20"
+                style="background: #0f172a; color: #e2e8f0; font-family: monospace;"></textarea>
         </div>
     </div>
 </div>
@@ -74,372 +77,397 @@
 
 {% block extra_css %}
 <style>
-.generator-container {
-    display: grid;
-    grid-template-columns: 1fr;
-    gap: 20px;
-}
-
-@media (min-width: 1200px) {
     .generator-container {
-        grid-template-columns: 1fr 1fr;
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 20px;
     }
-}
 
-.options-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 15px;
-}
+    @media (min-width: 1200px) {
+        .generator-container {
+            grid-template-columns: 1fr 1fr;
+        }
+    }
 
-.option-card {
-    background: rgba(255,255,255,0.05);
-    border: 1px solid var(--glass-border);
-    border-radius: 12px;
-    padding: 20px;
-    text-align: center;
-    cursor: pointer;
-    transition: var(--transition);
-}
+    .options-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 15px;
+    }
 
-.option-card:hover {
-    background: rgba(255,255,255,0.1);
-    transform: translateY(-5px);
-}
+    .option-card {
+        background: rgba(255, 255, 255, 0.05);
+        border: 1px solid var(--glass-border);
+        border-radius: 12px;
+        padding: 20px;
+        text-align: center;
+        cursor: pointer;
+        transition: var(--transition);
+    }
 
-.option-card.selected {
-    border-color: var(--accent-primary);
-    background: rgba(59, 130, 246, 0.1);
-}
+    .option-card:hover {
+        background: rgba(255, 255, 255, 0.1);
+        transform: translateY(-5px);
+    }
 
-.option-icon {
-    font-size: 2rem;
-    color: var(--accent-primary);
-    margin-bottom: 10px;
-}
+    .option-card.selected {
+        border-color: var(--accent-primary);
+        background: rgba(59, 130, 246, 0.1);
+    }
 
-.custom-file-upload {
-    padding: 20px;
-    border: 2px dashed var(--glass-border);
-    border-radius: 8px;
-    text-align: center;
-}
+    .option-icon {
+        font-size: 2rem;
+        color: var(--accent-primary);
+        margin-bottom: 10px;
+    }
 
-.result-panel {
-    display: flex;
-    flex-direction: column;
-}
+    .custom-file-upload {
+        padding: 20px;
+        border: 2px dashed var(--glass-border);
+        border-radius: 8px;
+        text-align: center;
+    }
 
-.result-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-}
+    .result-panel {
+        display: flex;
+        flex-direction: column;
+    }
 
-.editor-wrapper {
-    flex: 1;
-}
+    .result-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
 
-.loading-overlay {
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background: rgba(0,0,0,0.8);
-    backdrop-filter: blur(5px);
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    z-index: 9999;
-}
+    .editor-wrapper {
+        flex: 1;
+    }
 
-.loader-content {
-    text-align: center;
-    color: white;
-}
+    .loading-overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0, 0, 0, 0.8);
+        backdrop-filter: blur(5px);
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        z-index: 9999;
+    }
 
-.animate-in {
-    animation: fadeIn 0.3s ease-out;
-}
+    .loader-content {
+        text-align: center;
+        color: white;
+    }
 
-@keyframes fadeIn {
-    from { opacity: 0; transform: translateY(10px); }
-    to { opacity: 1; transform: translateY(0); }
-}
+    .animate-in {
+        animation: fadeIn 0.3s ease-out;
+    }
 
-.w-100 { width: 100%; }
-.mt-4 { margin-top: 1.5rem; }
-.mr-2 { margin-right: 0.5rem; }
-.btn-lg { padding: 12px 24px; font-size: 1.1rem; }
+    @keyframes fadeIn {
+        from {
+            opacity: 0;
+            transform: translateY(10px);
+        }
+
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    }
+
+    .w-100 {
+        width: 100%;
+    }
+
+    .mt-4 {
+        margin-top: 1.5rem;
+    }
+
+    .mr-2 {
+        margin-right: 0.5rem;
+    }
+
+    .btn-lg {
+        padding: 12px 24px;
+        font-size: 1.1rem;
+    }
 </style>
 {% endblock %}
 
 {% block extra_js %}
+<!-- Add SheetJS for Excel processing -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
-let selectedOptValue = 0;
-let generatedFileDownloadName = 'test_cases.txt';
+    let selectedOptValue = 0;
+    let generatedFileDownloadName = 'test_cases.txt';
+    let globalGeneratedContent = '';
+    let globalFileExt = '.txt';
 
-function setOpt(opt) {
-    selectedOptValue = opt;
-    document.getElementById('option1-card').classList.toggle('selected', opt === 1);
-    document.getElementById('option2-card').classList.toggle('selected', opt === 2);
-    
-    const templateSection = document.getElementById('template-section');
-    if (opt === 2) {
-        templateSection.style.display = 'block';
-    } else {
-        templateSection.style.display = 'none';
-    }
-}
+    function setOpt(opt) {
+        selectedOptValue = opt;
+        document.getElementById('option1-card').classList.toggle('selected', opt === 1);
+        document.getElementById('option2-card').classList.toggle('selected', opt === 2);
 
-async function startGeneration() {
-    const requirement = document.getElementById('requirementInput').value;
-    if (!requirement) {
-        alert('Please enter your requirements first!');
-        return;
-    }
-    
-    if (selectedOptValue === 0) {
-        alert('Please select an option (BDD or Formatted Test Cases)!');
-        return;
-    }
-    
-    try {
-        if (selectedOptValue === 1) {
-            document.getElementById('loadingOverlay').style.display = 'flex';
-            await generateBDDScenarios(requirement);
-            document.getElementById('resultPanel').style.display = 'flex';
-            if (window.innerWidth < 1200) {
-                document.getElementById('resultPanel').scrollIntoView({ behavior: 'smooth' });
-            }
+        const templateSection = document.getElementById('template-section');
+        if (opt === 2) {
+            templateSection.style.display = 'block';
         } else {
-            const fileInput = document.getElementById('templateFile');
-            let templateText = 'ID | Step | Expected';
-            let ext = '.txt';
-            let targetFileName = 'formatted_test_cases.txt';
-            let templateHeaders = ['ID', 'Step', 'Expected'];
-            
-            if (fileInput.files.length > 0) {
-                const file = fileInput.files[0];
-                templateText = await file.text();
-                targetFileName = 'formatted_' + file.name;
-                if (file.name.includes('.')) {
-                    ext = '.' + file.name.split('.').pop().toLowerCase();
-                }
+            templateSection.style.display = 'none';
+        }
+    }
 
-                if (ext === '.xlsx' || ext === '.xls' || ext === '.csv') {
-                    const arrayBuffer = await file.arrayBuffer();
-                    const workbook = window.XLSX.read(arrayBuffer, { type: 'array' });
-                    const firstSheetName = workbook.SheetNames[0];
-                    const worksheet = workbook.Sheets[firstSheetName];
-                    const sheetJson = window.XLSX.utils.sheet_to_json(worksheet, { header: 1 });
-                    
-                    let headers = null;
-                    for (let i = 0; i < Math.min(20, sheetJson.length); i++) {
-                        let row = sheetJson[i];
-                        if (row && row.length > 0) {
-                            let potentialHeaders = row.map(col => col !== undefined && col !== null ? col.toString().trim() : "").filter(col => col !== "");
-                            if (potentialHeaders.length > 0) {
-                                headers = potentialHeaders;
-                                break;
+    async function startGeneration() {
+        const requirement = document.getElementById('requirementInput').value;
+        if (!requirement) {
+            alert('Please enter your requirements first!');
+            return;
+        }
+
+        if (selectedOptValue === 0) {
+            alert('Please select an option (BDD or Formatted Test Cases)!');
+            return;
+        }
+
+        try {
+            if (selectedOptValue === 1) {
+                document.getElementById('loadingOverlay').style.display = 'flex';
+                await generateBDDScenarios(requirement);
+                document.getElementById('resultPanel').style.display = 'flex';
+                if (window.innerWidth < 1200) {
+                    document.getElementById('resultPanel').scrollIntoView({ behavior: 'smooth' });
+                }
+            } else {
+                const fileInput = document.getElementById('templateFile');
+                let templateText = 'ID | Step | Expected';
+                let ext = '.txt';
+                let targetFileName = 'formatted_test_cases.txt';
+                let templateHeaders = ['ID', 'Step', 'Expected'];
+
+                if (fileInput.files.length > 0) {
+                    const file = fileInput.files[0];
+                    targetFileName = 'formatted_' + file.name;
+                    if (file.name.includes('.')) {
+                        ext = '.' + file.name.split('.').pop().toLowerCase();
+                    }
+
+                    if (ext === '.xlsx' || ext === '.xls' || ext === '.csv') {
+                        const arrayBuffer = await file.arrayBuffer();
+                        const workbook = window.XLSX.read(arrayBuffer, { type: 'array' });
+                        const firstSheetName = workbook.SheetNames[0];
+                        const worksheet = workbook.Sheets[firstSheetName];
+                        const sheetJson = window.XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+
+                        let headers = null;
+                        for (let i = 0; i < Math.min(20, sheetJson.length); i++) {
+                            let row = sheetJson[i];
+                            if (row && row.length > 0) {
+                                let potentialHeaders = row.map(col => col !== undefined && col !== null ? col.toString().trim() : "").filter(col => col !== "");
+                                if (potentialHeaders.length > 0) {
+                                    headers = potentialHeaders;
+                                    break;
+                                }
                             }
                         }
-                    }
-                    
-                    if (headers && headers.length > 0) {
-                        templateHeaders = headers;
-                        templateText = "JSON Keys exactly to use for each object (These are the exact columns): " + JSON.stringify(headers);
+
+                        if (headers && headers.length > 0) {
+                            templateHeaders = headers;
+                            templateText = "JSON Keys exactly to use for each object (These are the exact columns): " + JSON.stringify(headers);
+                        } else {
+                            templateText = "JSON Keys exactly to use for each object (These are the exact columns): " + JSON.stringify(templateHeaders);
+                        }
                     } else {
-                        templateText = "JSON Keys exactly to use for each object (These are the exact columns): " + JSON.stringify(templateHeaders);
+                        let textContent = await file.text();
+                        templateText = "JSON Keys exactly to use for each object (These are the exact columns, parse them from this sample text): \n" + textContent.split('\n').slice(0, 3).join('\n');
+                    }
+                }
+
+                let mimeType = 'text/plain';
+                if (ext === '.csv') {
+                    mimeType = 'text/csv';
+                } else if (ext === '.xlsx') {
+                    mimeType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+                } else if (ext === '.xls') {
+                    mimeType = 'application/vnd.ms-excel';
+                }
+
+                let typeAccept = {};
+                typeAccept[mimeType] = [ext];
+
+                let writable = null;
+                let fallbackName = targetFileName;
+
+                if (window.showSaveFilePicker) {
+                    try {
+                        const handle = await window.showSaveFilePicker({
+                            suggestedName: targetFileName,
+                            types: [{ description: 'Generated Test File', accept: typeAccept }]
+                        });
+                        writable = await handle.createWritable();
+                    } catch (err) {
+                        if (err.name !== 'AbortError') alert(err);
+                        return;
                     }
                 } else {
-                    let textContent = await file.text();
-                    templateText = "JSON Keys exactly to use for each object (These are the exact columns, parse them from this sample text): \n" + textContent.split('\n').slice(0, 3).join('\n');                }
-            }
-
-            let mimeType = 'text/plain';
-            if (ext.toLowerCase() === '.csv') {
-                mimeType = 'text/csv';
-            } else if (ext.toLowerCase() === '.xlsx') {
-                mimeType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
-            } else if (ext.toLowerCase() === '.xls') {
-                mimeType = 'application/vnd.ms-excel';
-            }
-
-            let typeAccept = {};
-            typeAccept[mimeType] = [ext.toLowerCase()];
-            
-            let writable = null;
-            let fallbackName = targetFileName;
-
-            if (window.showSaveFilePicker) {
-                try {
-                    const handle = await window.showSaveFilePicker({
-                        suggestedName: targetFileName,
-                        types: [{ description: 'Generated Test File', accept: typeAccept }]
-                    });
-                    writable = await handle.createWritable();
-                } catch (err) {
-                    if (err.name !== 'AbortError') alert(err);
-                    return; 
+                    fallbackName = prompt("Enter a file name to save as:", targetFileName);
+                    if (!fallbackName) return;
                 }
-            } else {
-                fallbackName = prompt("Enter a file name to save as:", targetFileName);
-                if (!fallbackName) return; 
-            }
 
-            document.getElementById('loadingOverlay').style.display = 'flex';
+                document.getElementById('loadingOverlay').style.display = 'flex';
 
-            const response = await fetch('http://127.0.0.1:8000/generate-formatted-test-cases', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ requirements: requirement, template: templateText })
-            });
-            const data = await response.json();
-            
-            if (!response.ok) {
-                if (writable) await writable.abort();
-                throw new Error(data.detail || 'Failed to generate formatted test cases');
-            }
-            let finalBlob;
-            let parsedResponse = {};
-            try {
-                let cleanContent = data.content.replace(/```(?:json)?\s*/g, '').replace(/```/g, '').trim();
-                parsedResponse = JSON.parse(cleanContent);
-            } catch(e) {
-                if (writable) await writable.abort();
-                console.error("Parse Error Details:", data.content);
-                throw new Error("AI returned invalid JSON format.");
-            }
-            
-            let testCasesArray = parsedResponse.test_cases || [];
-
-            let ws;
-            if (ext === '.xlsx' || ext === '.xls' || ext === '.csv') {
-                let aoa = [templateHeaders];
-                testCasesArray.forEach(tc => {
-                    let row = [];
-                    templateHeaders.forEach(header => {
-                        row.push(tc[header] !== undefined && tc[header] !== null ? tc[header] : "");
-                    });
-                    aoa.push(row);
+                const response = await fetch('http://127.0.0.1:8000/generate-formatted-test-cases', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ requirements: requirement, template: templateText })
                 });
-                ws = window.XLSX.utils.aoa_to_sheet(aoa);
-            } else {
-                ws = window.XLSX.utils.json_to_sheet(testCasesArray);
-            }
+                const data = await response.json();
 
-            if (ext === '.xlsx' || ext === '.xls') {
-                const parsedWb = window.XLSX.utils.book_new();
-                window.XLSX.utils.book_append_sheet(parsedWb, ws, "Test Cases");
-                const blobBuilderType = ext === '.xls' ? 'biff8' : 'xlsx';
-                const wbout = window.XLSX.write(parsedWb, { bookType: blobBuilderType, type: 'array' });
-                finalBlob = new Blob([wbout], { type: mimeType });
-            } else {
-                const csvData = window.XLSX.utils.sheet_to_csv(ws);
-                finalBlob = new Blob([csvData], {type: mimeType});
+                if (!response.ok) {
+                    if (writable) await writable.abort();
+                    throw new Error(data.detail || 'Failed to generate formatted test cases');
+                }
+
+                let finalBlob;
+
+                let parsedResponse = {};
+                try {
+                    let cleanContent = data.content.replace(/```(?:json)?\s*/g, '').replace(/```/g, '').trim();
+                    parsedResponse = JSON.parse(cleanContent);
+                } catch (e) {
+                    if (writable) await writable.abort();
+                    console.error("Parse Error Details:", data.content);
+                    throw new Error("AI returned invalid JSON format.");
+                }
+
+                let testCasesArray = parsedResponse.test_cases || [];
+
+                let ws;
+                if (ext === '.xlsx' || ext === '.xls' || ext === '.csv') {
+                    let aoa = [templateHeaders];
+                    testCasesArray.forEach(tc => {
+                        let row = [];
+                        templateHeaders.forEach(header => {
+                            row.push(tc[header] !== undefined && tc[header] !== null ? tc[header] : "");
+                        });
+                        aoa.push(row);
+                    });
+                    ws = window.XLSX.utils.aoa_to_sheet(aoa);
+                } else {
+                    ws = window.XLSX.utils.json_to_sheet(testCasesArray);
+                }
+
+                if (ext === '.xlsx' || ext === '.xls') {
+                    const parsedWb = window.XLSX.utils.book_new();
+                    window.XLSX.utils.book_append_sheet(parsedWb, ws, "Test Cases");
+                    const blobBuilderType = ext === '.xls' ? 'biff8' : 'xlsx';
+                    const wbout = window.XLSX.write(parsedWb, { bookType: blobBuilderType, type: 'array' });
+                    finalBlob = new Blob([wbout], { type: mimeType });
+                } else {
+                    const csvData = window.XLSX.utils.sheet_to_csv(ws);
+                    finalBlob = new Blob([csvData], { type: mimeType });
+                }
+
+                if (writable) {
+                    await writable.write(finalBlob);
+                    await writable.close();
+                } else {
+                    const url = window.URL.createObjectURL(finalBlob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = fallbackName;
+                    document.body.appendChild(a);
+                    a.click();
+                    window.URL.revokeObjectURL(url);
+                    document.body.removeChild(a);
+                }
+
+                alert("File generated and downloaded successfully!");
             }
-            if (writable) {
-                await writable.write(data.content);
+        } catch (error) {
+            alert('Generation failed: ' + error.message);
+        } finally {
+            document.getElementById('loadingOverlay').style.display = 'none';
+        }
+    }
+
+    async function generateBDDScenarios(requirement) {
+        const response = await fetch('http://127.0.0.1:8000/generate-bdd-scenarios', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ requirements: requirement })
+        });
+
+        const data = await response.json();
+        if (response.ok) {
+            document.getElementById('resultEditor').value = data.content;
+            generatedFileDownloadName = data.filename || 'scenarios.feature';
+        } else {
+            throw new Error(data.detail || 'Failed to generate BDD');
+        }
+    }
+
+    // Formatted Test generation logic merged with direct downloading in startGeneration()
+
+    async function performDownload(content, suggestedName, defaultExtension) {
+        if (window.showSaveFilePicker) {
+            try {
+                const handle = await window.showSaveFilePicker({
+                    suggestedName: suggestedName,
+                    types: [{
+                        description: 'Test File',
+                        accept: {
+                            'text/plain': [defaultExtension, '.txt', '.feature', '.csv']
+                        }
+                    }],
+                });
+                const writable = await handle.createWritable();
+                await writable.write(content);
                 await writable.close();
-            } else {
-                const blob = new Blob([data.content], { type: mimeType });
-                const url = window.URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = fallbackName;
-                document.body.appendChild(a);
-                a.click();
-                window.URL.revokeObjectURL(url);
-                document.body.removeChild(a);
+                return;
+            } catch (err) {
+                if (err.name !== 'AbortError') {
+                    alert('Failed to save file: ' + err.message);
+                }
+                return;
             }
-
-            alert("File generated and downloaded successfully!");
         }
-    } catch (error) {
-        alert('Generation failed: ' + error.message);
-    } finally {
-        document.getElementById('loadingOverlay').style.display = 'none';
-    }
-}
 
-async function generateBDDScenarios(requirement) {
-    const response = await fetch('http://127.0.0.1:8000/generate-bdd-scenarios', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ requirements: requirement })
-    });
-    
-    const data = await response.json();
-    if (response.ok) {
-        document.getElementById('resultEditor').value = data.content;
-        generatedFileDownloadName = data.filename || 'scenarios.feature';
-    } else {
-        throw new Error(data.detail || 'Failed to generate BDD');
-    }
-}
-
-// Formatted Test generation logic merged with direct downloading in startGeneration()
-
-async function performDownload(content, suggestedName, defaultExtension) {
-    if (window.showSaveFilePicker) {
-        try {
-            const handle = await window.showSaveFilePicker({
-                suggestedName: suggestedName,
-                types: [{
-                    description: 'Test File',
-                    accept: {
-                        'text/plain': [defaultExtension, '.txt', '.feature', '.csv']
-                    }
-                }],
-            });
-            const writable = await handle.createWritable();
-            await writable.write(content);
-            await writable.close();
-            return;
-        } catch (err) {
-            if (err.name !== 'AbortError') {
-                alert('Failed to save file: ' + err.message);
-            }
+        let fileName = prompt("Enter a file name to save as:", suggestedName);
+        if (!fileName) {
             return;
         }
+        const blob = new Blob([content], { type: 'text/plain' });
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = fileName;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
     }
 
-    let fileName = prompt("Enter a file name to save as:", suggestedName);
-    if (!fileName) {
-        return; 
+    async function downloadResult() {
+        const content = document.getElementById('resultEditor').value;
+        let ext = '.txt';
+        if (generatedFileDownloadName.includes('.')) {
+            ext = '.' + generatedFileDownloadName.split('.').pop();
+        }
+        await performDownload(content, generatedFileDownloadName, ext);
     }
-    const blob = new Blob([content], { type: 'text/plain' });
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = fileName;
-    document.body.appendChild(a);
-    a.click();
-    window.URL.revokeObjectURL(url);
-    document.body.removeChild(a);
-}
 
-async function downloadResult() {
-    const content = document.getElementById('resultEditor').value;
-    let ext = '.txt';
-    if (generatedFileDownloadName.includes('.')) {
-        ext = '.' + generatedFileDownloadName.split('.').pop();
+    function resetGenerator() {
+        if (confirm('Are you sure you want to start over?')) {
+            document.getElementById('requirementInput').value = '';
+            document.getElementById('resultEditor').value = '';
+            document.getElementById('resultPanel').style.display = 'none';
+            selectedOptValue = 0;
+            document.getElementById('option1-card').classList.remove('selected');
+            document.getElementById('option2-card').classList.remove('selected');
+            document.getElementById('template-section').style.display = 'none';
+        }
     }
-    await performDownload(content, generatedFileDownloadName, ext);
-}
-
-function resetGenerator() {
-    if (confirm('Are you sure you want to start over?')) {
-        document.getElementById('requirementInput').value = '';
-        document.getElementById('resultEditor').value = '';
-        document.getElementById('resultPanel').style.display = 'none';
-        selectedOptValue = 0;
-        document.getElementById('option1-card').classList.remove('selected');
-        document.getElementById('option2-card').classList.remove('selected');
-        document.getElementById('template-section').style.display = 'none';
-    }
-}
 </script>
 {% endblock %}

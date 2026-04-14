@@ -13,21 +13,10 @@ from dotenv import load_dotenv
 env_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), ".env")
 load_dotenv(dotenv_path=env_path)
 
-#OPENAI_API_KEY      = os.getenv("OPENAI_API_KEY", "")
-#GEMINI_API_KEY      = os.getenv("GEMINI_API_KEY", "")
 AI_TOOL             = os.getenv("AI_TOOL", "GEMINI").upper()
 AI_MODEL            = os.getenv("AI_MODEL", "gemini-2.5-flash")
 API_KEY      = os.getenv("API_KEY", "")
 
-# if AI_TOOL in ["GEMINI", "GOOGLE"]:
-#     AI_MODEL_API_KEY = API_KEY
-# elif AI_TOOL in ["OPENAI", "COPILOT"]:
-#     AI_MODEL_API_KEY = OPENAI_API_KEY
-# elif AI_TOOL in ["CLAUDE", "ANTHROPIC"]:
-#     AI_MODEL_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
-# else:
-#     AI_MODEL_API_KEY = os.getenv("AI_MODEL_API_KEY", "")
-#
 DEFAULT_AI_PROVIDER = os.getenv("AI_PROVIDER", "openai").lower()
 
 import openai as _openai_module
@@ -37,11 +26,10 @@ def _get_gemini_client():
         from google import genai
         if not API_KEY:
             raise RuntimeError("AI_MODEL_API_KEY not set in .env")
-        return genai.GenerativeModel(AI_MODEL)
         return genai.Client(api_key=API_KEY)
     except ImportError:
         raise RuntimeError(
-            "google-genai not installed. Run: pip install google-generativeai"
+            "google-genai not installed. Run: pip install google-genai"
         )
 
 app = FastAPI(title="AI QA Backend")
@@ -301,7 +289,7 @@ async def health_check():
         "service":           "AI QA Backend",
         "ai_provider":       AI_TOOL,
         "ai_configured": bool(API_KEY),
-        #"gemini_configured": bool(GEMINI_API_KEY),
+
     }
 
 
@@ -355,6 +343,38 @@ async def call_gemini(prompt: str, expect_json: bool = True) -> str:
     return await asyncio.to_thread(_call)
 
 
+async def call_anthropic(prompt: str, expect_json: bool = True) -> str:
+    def _call():
+        try:
+            import anthropic
+        except ImportError:
+            raise RuntimeError("anthropic not installed. Run: pip install anthropic")
+
+        client = anthropic.Anthropic(api_key=API_KEY)
+        system_content = "You are an expert QA automation engineer."
+        if expect_json:
+            system_content += (
+                " You MUST respond with ONLY a valid raw JSON object. "
+                "Do NOT include any explanation, markdown code fences (```), "
+                "preamble, postamble, or 'Please note' text. "
+                "The very first character of your response MUST be '{' "
+                "and the very last character MUST be '}'."
+            )
+        
+        response = client.messages.create(
+            model=AI_MODEL,
+            max_tokens=4096,
+            temperature=0,
+            system=system_content,
+            messages=[
+                {"role": "user", "content": prompt}
+            ]
+        )
+        return response.content[0].text
+
+    return await asyncio.to_thread(_call)
+
+
 async def call_ai(prompt: str, provider: str = "", expect_json: bool = True) -> str:
     if AI_TOOL in ["GEMINI", "GOOGLE"]:
         if not API_KEY:
@@ -368,6 +388,12 @@ async def call_ai(prompt: str, provider: str = "", expect_json: bool = True) -> 
                 status_code=500, detail="AI_MODEL_API_KEY not configured in .env"
             )
         return await call_openai(prompt, expect_json)
+    elif AI_TOOL in ["CLAUDE", "ANTHROPIC"]:
+        if not API_KEY:
+            raise HTTPException(
+                status_code=500, detail="AI_MODEL_API_KEY not configured in .env"
+            )
+        return await call_anthropic(prompt, expect_json)
     else:
         # Fallback default
         if not API_KEY:
@@ -1543,7 +1569,7 @@ async def generate_bdd_scenarios(req: GenerateBDDScenariosRequest):
     """
     
     try:
-        content = await call_ai(prompt, provider, expect_json=False)
+        content = await call_ai(prompt, provider, expect_json=True)
         # Strip any accidental markdown fences
         content = re.sub(r"```(?:gherkin|feature)?\s*", "", content).replace("```", "").strip()
         return {"status": "success", "filename": "scenarios.feature", "content": content}
@@ -1572,6 +1598,7 @@ async def generate_formatted_test_cases(req: GenerateTestCasesRequest):
     4. The value for "test_cases" MUST be a JSON array of objects.
     5. Each object in the array represents ONE test case.
     6. CRITICAL FATAL INSTRUCTION: The keys in each JSON object MUST STRICTLY be the exact column headers specified in the Template / Sample Format. 
+       - You MUST create a distinct, separate JSON key-value pair (node) for EVERY single heading in the provided template.
        - Every column header provided in the Template MUST be a key in every JSON object.
        - Do NOT invent your own keys.
        - NEVER use standard keys like 'Step No', 'Pre-requisite', 'Test Data', 'Action' unless they are explicitly in the template.
@@ -1581,7 +1608,7 @@ async def generate_formatted_test_cases(req: GenerateTestCasesRequest):
     """
     
     try:
-        content = await call_ai(prompt, provider, expect_json=False)
+        content = await call_ai(prompt, provider, expect_json=True)
         # Strip any accidental markdown fences
         content = re.sub(r"```[a-z]*\s*", "", content).replace("```", "").strip()
         print(content)

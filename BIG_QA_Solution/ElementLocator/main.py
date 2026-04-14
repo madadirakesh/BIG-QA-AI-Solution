@@ -157,8 +157,8 @@ class MainWindow(QMainWindow):
         self.raise_()
         self.activateWindow()
 
-        # Load keys from the central .env in Script Generator
-        env_path = os.path.normpath(os.path.join(os.path.dirname(__file__), '..', 'Script Generator', '.env'))
+        # Load keys from the central .env in ScriptGenerator
+        env_path = os.path.normpath(os.path.join(os.path.dirname(__file__), '..', 'ScriptGenerator', '.env'))
         load_dotenv(env_path)
         
         self.ai_tool = os.getenv("AI_TOOL", "GEMINI").strip().upper()
@@ -665,8 +665,8 @@ class MainWindow(QMainWindow):
         if not ok or not page_name:
             return
 
-        # Path to the shared local database in Script Generator
-        db_path = os.path.normpath(os.path.join(os.path.dirname(__file__), '..', 'Script Generator', 'local_database.db'))
+        # Path to the shared local database in ScriptGenerator
+        db_path = os.path.normpath(os.path.join(os.path.dirname(__file__), '..', 'ScriptGenerator', 'local_database.db'))
         
         try:
             conn = sqlite3.connect(db_path)

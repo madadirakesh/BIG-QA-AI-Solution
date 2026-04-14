@@ -10,7 +10,7 @@ import pytz
 
 from ProjectBootstrapper.bootstrapper_engine import BootstrapperEngine
 from ProjectBootstrapper.environment_setup import EnvironmentSetup
-from db.app_db import fetch_data, insert_data, update_data
+from db.app_db import fetch_data, insert_data, update_data, init_db, get_db
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'ProjectBootstrapper')))
 #from ProjectBootstrapper.bootstrapper_engine import BootstrapperEngine
@@ -445,9 +445,23 @@ def launch_backend():
     except Exception as e:
         print(f"Failed to launch backend service: {e}")
 
+def check_and_initialize_db():
+    print("Checking database connection...")
+    try:
+        with get_db() as conn:
+            conn.execute("SELECT 1")
+        print("Database connection successful.")
+        init_db()
+        return True
+    except Exception as e:
+        print(f"Database connection failed: {e}")
+        return False
+
 if __name__ == '__main__':
     # Only open the browser and launch backend once (prevents opening twice when Flask reloader is active)
     if not os.environ.get('WERKZEUG_RUN_MAIN'):
+        if not check_and_initialize_db():
+            sys.exit("Exiting: Database connection failed.")
         threading.Timer(1.25, open_browser).start()
         launch_backend()
     
