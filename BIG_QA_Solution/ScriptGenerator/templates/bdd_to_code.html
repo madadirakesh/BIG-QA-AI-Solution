@@ -91,7 +91,7 @@
 
                 <hr class="my-5" style="border-color: rgba(255,255,255,0.05); margin-left: -60px; margin-right: -60px;">
 
-            <div id="projectCredentialsSection" class="mt-5 animate-slide-up delay-2" style="margin-top: 4rem !important;">
+            <div id="projectCredentialsSection" class="mt-5 animate-slide-up delay-2" style="margin-top: 4rem !important; display: none;">
                     <h3 class="premium-header"><i class="fas fa-key"></i> Project Configuration</h3>
                 <div class="form-group mb-3">
                     <label>Base Url</label>
@@ -627,6 +627,16 @@ function toggleProjectMethod() {
     const isNew = document.querySelector('input[name="projectMethod"]:checked').value === 'new';
     document.getElementById('existingProjectSection').style.display = isNew ? 'none' : 'block';
     document.getElementById('newProjectSection').style.display = isNew ? 'block' : 'none';
+    
+    if (isNew) {
+        document.getElementById('projectCredentialsSection').style.display = 'none';
+    } else {
+        if (document.getElementById('projectPath').value) {
+            document.getElementById('projectCredentialsSection').style.display = 'block';
+        } else {
+            document.getElementById('projectCredentialsSection').style.display = 'none';
+        }
+    }
 }
 
 function openBootstrapperModal() {
@@ -809,6 +819,7 @@ function locateDirectory() {
             if (data.path) {
                 document.getElementById('projectPath').value = data.path;
                 detectProject(data.path);
+                document.getElementById('projectCredentialsSection').style.display = 'block';
             }
         })
         .catch(err => console.error("Directory selection failed:", err));
