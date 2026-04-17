@@ -5,6 +5,7 @@ import threading
 import sqlite3
 import logging
 from datetime import datetime
+from pathlib import Path
 
 # Import third-party libraries
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
@@ -14,6 +15,12 @@ from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                              QTextEdit, QFileDialog, QMessageBox, QAbstractScrollArea,
                              QInputDialog)
 from PyQt6.QtCore import Qt, pyqtSignal, QTimer
+
+# Path setup
+BASE_DIR = Path(__file__).resolve().parent
+if str(BASE_DIR) not in sys.path:
+    sys.path.append(str(BASE_DIR))
+
 from browser_controller import BrowserController
 from ai_service import AIService
 from code_generator import CodeGenerator
@@ -158,7 +165,8 @@ class MainWindow(QMainWindow):
         self.activateWindow()
 
         # Load keys from the central .env in ScriptGenerator
-        env_path = os.path.normpath(os.path.join(os.path.dirname(__file__), '..', 'ScriptGenerator', '.env'))
+        base_dir = Path(__file__).resolve().parent
+        env_path = base_dir.parent / "ScriptGenerator" / ".env"
         load_dotenv(env_path)
         
         self.ai_tool = os.getenv("AI_TOOL", "GEMINI").strip().upper()

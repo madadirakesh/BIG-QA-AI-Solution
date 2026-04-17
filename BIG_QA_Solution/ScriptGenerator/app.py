@@ -5,30 +5,40 @@ import threading
 import webbrowser
 import uuid
 from datetime import datetime
+from pathlib import Path
 from flask import Flask, render_template, request, redirect, url_for, session, flash, jsonify
 import pytz
+from dotenv import load_dotenv
+
+# Path setup
+BASE_DIR = Path(__file__).resolve().parent
+ROOT_DIR = BASE_DIR.parent
+PROJECT_BOOTSTRAPPER_DIR = ROOT_DIR / "ProjectBootstrapper"
+
+if str(PROJECT_BOOTSTRAPPER_DIR) not in sys.path:
+    sys.path.append(str(PROJECT_BOOTSTRAPPER_DIR))
 
 from ProjectBootstrapper.bootstrapper_engine import BootstrapperEngine
 from ProjectBootstrapper.environment_setup import EnvironmentSetup
 from db.app_db import fetch_data, insert_data, update_data, init_db, get_db
 
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'ProjectBootstrapper')))
-#from ProjectBootstrapper.bootstrapper_engine import BootstrapperEngine
-#from ProjectBootstrapper.environment_setup import EnvironmentSetup
-
-# Global dictionary for background bootstrapper jobs
-bootstrapper_jobs = {}
+# Load environment variables early
+load_dotenv(BASE_DIR / ".env")
 
 def install_prerequisites():
-    req_file = os.path.join(os.path.dirname(__file__), '..', 'requirements.txt')
-    if os.path.exists(req_file):
-        print(f"Installing prerequisites from {req_file}...")
-        subprocess.check_call([sys.executable, '-m', 'pip', 'install', '-r', req_file])
+    req_file = ROOT_DIR / "requirements.txt"
+    if req_file.exists():
+        print(f"Checking prerequisites from {req_file}...")
+        try:
+            # Using -q to keep it quiet unless there is an error
+            subprocess.check_call([sys.executable, '-m', 'pip', 'install', '-q', '-r', str(req_file)])
+        except subprocess.CalledProcessError as e:
+            print(f"Warning: Failed to install some prerequisites: {e}")
     else:
         print("requirements.txt not found, skipping prerequisites installation.")
 
-# Install prerequisites before initializing the app
-install_prerequisites()
+# Global dictionary for background bootstrapper jobs
+bootstrapper_jobs = {}
 
 app = Flask(__name__)
 # In production, use os.environ.get('SECRET_KEY')
@@ -436,12 +446,23 @@ def open_browser():
     webbrowser.open_new('http://127.0.0.1:5000/')
 
 def launch_backend():
-    """Launches the FastAPI backend service on port 8000."""
+    """Launches the FastAPI backend service using uvicorn."""
     try:
-        backend_path = os.path.join(os.path.dirname(__file__), 'api', 'backend.py')
-        # Setting the CWD to ensuring relative paths inside backend.py work correctly
-        subprocess.Popen([sys.executable, backend_path], shell=(sys.platform == 'win32'), cwd=os.path.dirname(os.path.dirname(backend_path)))
-        print("AI Backend service (Port 8000) launched in background.")
+        # Launching with uvicorn directly if possible, or as a background process
+        # We use the full module path to ensure it's findable
+        env = os.environ.copy()
+        env["PYTHONPATH"] = str(BASE_DIR) + os.pathsep + env.get("PYTHONPATH", "")
+        
+        # Run uvicorn as a subprocess to keep it alive in the background
+        cmd = [
+            sys.executable, "-m", "uvicorn", 
+            "api.backend:app", 
+            "--host", "127.0.0.1", 
+            "--port", "8000"
+        ]
+        
+        subprocess.Popen(cmd, cwd=str(BASE_DIR), env=env)
+        print("AI Backend service (Port 8000) launched via uvicorn.")
     except Exception as e:
         print(f"Failed to launch backend service: {e}")
 
@@ -456,6 +477,23 @@ def check_and_initialize_db():
     except Exception as e:
         print(f"Database connection failed: {e}")
         return False
+
+@app.route('/api/health-status')
+@login_required()
+def health_status():
+    status = {"db": "Healthy", "ai": "Healthy", "server": "Running"}
+    
+    # Check Database
+    try:
+        fetch_data("SELECT 1")
+    except Exception:
+        status["db"] = "Error"
+        
+    # Check AI Config
+    if not os.getenv("API_KEY"):
+        status["ai"] = "Key Missing"
+        
+    return jsonify(status)
 
 if __name__ == '__main__':
     # Only open the browser and launch backend once (prevents opening twice when Flask reloader is active)

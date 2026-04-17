@@ -2,6 +2,8 @@ import os
 import logging
 from datetime import datetime
 
+logger = logging.getLogger("ProjectBootstrapper")
+
 class BootstrapperEngine:
     """
     Dynamically generates the scaffolding for a new QA Automation project.
@@ -12,8 +14,13 @@ class BootstrapperEngine:
         
         try:
             os.makedirs(target_dir, exist_ok=False)
+            logger.info(f"Created project directory: {target_dir}")
         except FileExistsError:
+            logger.warning(f"Project directory already exists: {target_dir}")
             return False, f"Project directory '{target_dir}' already exists."
+        except Exception as e:
+            logger.error(f"Failed to create project directory: {e}")
+            return False, f"System error creating directory: {str(e)}"
 
         # Generate structure based on language
         if language == "Python":
@@ -65,31 +72,31 @@ class BootstrapperEngine:
 
     @staticmethod
     def _generate_python_project(target_dir, tool, framework, url, username, password):
-        os.makedirs(os.path.join(target_dir, "pages"))
-        os.makedirs(os.path.join(target_dir, "tests"))
-        os.makedirs(os.path.join(target_dir, "utils"))
-        os.makedirs(os.path.join(target_dir, "Results"))
+        try:
+            logger.info("Initializing Python project folders...")
+            for folder in ["pages", "tests", "utils", "Results"]:
+                os.makedirs(os.path.join(target_dir, folder), exist_ok=True)
 
-        # BDD Folders
-        if "Behave" in framework or "Jbehave" in framework:
-            os.makedirs(os.path.join(target_dir, "features", "steps"))
+            # BDD Folders
+            if "Behave" in framework or "Jbehave" in framework:
+                os.makedirs(os.path.join(target_dir, "features", "steps"))
 
-        # requirements.txt
-        req_content = ""
-        if tool == "Selenium":
-            req_content = "selenium\npytest\npytest-html\npytest-xdist\nwebdriver-manager\n"
-        elif tool == "Playwright":
-            req_content = "playwright\npytest\npytest-playwright\npytest-html\npytest-xdist\n"
-        
-        if "Behave" in framework or "Jbehave" in framework:
-            req_content += "behave\nbehave-html-formatter\n"
+            # requirements.txt
+            req_content = ""
+            if tool == "Selenium":
+                req_content = "selenium\npytest\npytest-html\npytest-xdist\nwebdriver-manager\n"
+            elif tool == "Playwright":
+                req_content = "playwright\npytest\npytest-playwright\npytest-html\npytest-xdist\n"
+            
+            if "Behave" in framework or "Jbehave" in framework:
+                req_content += "behave\nbehave-html-formatter\n"
 
-        with open(os.path.join(target_dir, "requirements.txt"), "w") as f:
-            f.write(req_content)
+            with open(os.path.join(target_dir, "requirements.txt"), "w") as f:
+                f.write(req_content)
 
-        # conftest.py or Base Setup
-        if tool == "Playwright":
-            base_page_content = f'''\
+            # conftest.py or Base Setup
+            if tool == "Playwright":
+                base_page_content = f'''\
 class BasePage:
     def __init__(self, page):
         self.page = page
@@ -97,7 +104,7 @@ class BasePage:
     def navigate(self):
         self.page.goto("{url}")
 '''
-            test_content = f'''\
+                test_content = f'''\
 import pytest
 from pages.login_page import LoginPage
 
@@ -107,8 +114,8 @@ def test_login(page):
     login_page.login("{username}", "{password}")
     assert True # Replace with actual assertion
 '''
-        else: # Selenium
-            base_page_content = f'''\
+            else: # Selenium
+                base_page_content = f'''\
 class BasePage:
     def __init__(self, driver):
         self.driver = driver
@@ -116,7 +123,7 @@ class BasePage:
     def navigate(self):
         self.driver.get("{url}")
 '''
-            test_content = f'''\
+                test_content = f'''\
 import pytest
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service as ChromeService
@@ -136,24 +143,24 @@ def test_login(driver):
     assert True # Replace with actual assertion
 '''
 
-        with open(os.path.join(target_dir, "pages", "base_page.py"), "w") as f:
-            f.write(base_page_content)
+            with open(os.path.join(target_dir, "pages", "base_page.py"), "w") as f:
+                f.write(base_page_content)
 
-        if "Behave" in framework or "Jbehave" in framework:
-            with open(os.path.join(target_dir, "behave.ini"), "w") as f:
-                f.write("[behave.formatters]\nhtml = behave_html_formatter:HTMLFormatter\n")
-            with open(os.path.join(target_dir, "features", "smoke.feature"), "w") as f:
-                f.write("Feature: Smoke Test\n\n  Scenario: Load Application\n    Given I launch the application\n    Then The application loads\n")
-            with open(os.path.join(target_dir, "features", "environment.py"), "w") as f:
-                f.write("def before_all(context):\n    print('Setup driver')\n\ndef after_all(context):\n    print('Teardown driver')\n")
-            with open(os.path.join(target_dir, "features", "steps", "smoke_steps.py"), "w") as f:
-                f.write("from behave import given, then\n\n@given('I launch the application')\ndef step_impl(context):\n    pass\n\n@then('The application loads')\ndef step_impl(context):\n    pass\n")
-        else:
-            with open(os.path.join(target_dir, "tests", "test_smoke.py"), "w") as f:
-                f.write(test_content)
+            if "Behave" in framework or "Jbehave" in framework:
+                with open(os.path.join(target_dir, "behave.ini"), "w") as f:
+                    f.write("[behave.formatters]\nhtml = behave_html_formatter:HTMLFormatter\n")
+                with open(os.path.join(target_dir, "features", "smoke.feature"), "w") as f:
+                    f.write("Feature: Smoke Test\n\n  Scenario: Load Application\n    Given I launch the application\n    Then The application loads\n")
+                with open(os.path.join(target_dir, "features", "environment.py"), "w") as f:
+                    f.write("def before_all(context):\n    print('Setup driver')\n\ndef after_all(context):\n    print('Teardown driver')\n")
+                with open(os.path.join(target_dir, "features", "steps", "smoke_steps.py"), "w") as f:
+                    f.write("from behave import given, then\n\n@given('I launch the application')\ndef step_impl(context):\n    pass\n\n@then('The application loads')\ndef step_impl(context):\n    pass\n")
+            else:
+                with open(os.path.join(target_dir, "tests", "test_smoke.py"), "w") as f:
+                    f.write(test_content)
 
-        # Basic login page
-        login_page_content = f'''\
+            # Basic login page
+            login_page_content = f'''\
 from .base_page import BasePage
 
 class LoginPage(BasePage):
@@ -161,10 +168,13 @@ class LoginPage(BasePage):
         print(f"Logging in with {{username}} and {{password}}")
         # Add actual locators and click actions here
 '''
-        with open(os.path.join(target_dir, "pages", "login_page.py"), "w") as f:
-            f.write(login_page_content)
+            with open(os.path.join(target_dir, "pages", "login_page.py"), "w") as f:
+                f.write(login_page_content)
 
-        return True, "Python project generated successfully."
+            return True, "Python project generated successfully."
+        except Exception as e:
+            logger.error(f"Error generating Python project: {e}")
+            return False, f"Python generation error: {str(e)}"
 
     @staticmethod
     def _generate_java_project(target_dir, project_name, tool, framework, url, username, password):

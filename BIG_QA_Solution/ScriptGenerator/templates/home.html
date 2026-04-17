@@ -2,10 +2,70 @@
 
 {% block title %}Dashboard - AI QA Portal{% endblock %}
 
+{% block extra_js %}
+<script>
+    async function updateHealthStatus() {
+        try {
+            const response = await fetch('/api/health-status');
+            const data = await response.json();
+            
+            updatePill('status-db', data.db);
+            updatePill('status-ai', data.ai);
+        } catch (error) {
+            console.error('Failed to fetch health status:', error);
+        }
+    }
+
+    function updatePill(elementId, status) {
+        const container = document.getElementById(elementId);
+        const pill = container.querySelector('.status-value-pill');
+        pill.classList.remove('loading', 'healthy', 'error', 'warning');
+        
+        if (status === 'Healthy' || status === 'Configured') {
+            pill.classList.add('healthy');
+            pill.innerHTML = `<i class="fas fa-check-circle"></i> ${status}`;
+        } else if (status === 'Key Missing' || status === 'Warning') {
+            pill.classList.add('warning');
+            pill.innerHTML = `<i class="fas fa-exclamation-triangle"></i> ${status}`;
+        } else {
+            pill.classList.add('error');
+            pill.innerHTML = `<i class="fas fa-times-circle"></i> ${status}`;
+        }
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+        updateHealthStatus();
+        setInterval(updateHealthStatus, 30000); // Update every 30 seconds
+    });
+</script>
+{% endblock %}
+
 {% block content %}
-<div class="dashboard-header">
+<div class="dashboard-header animate-slide-up">
     <h1>Welcome to BIG AI-QA Hub</h1>
     <p>Select an action below to get started</p>
+</div>
+
+<!-- System Status Widget -->
+<div class="status-container glassmorphism animate-fade-in delay-1">
+    <div class="status-header">
+        <i class="fas fa-server"></i>
+        <span>System Status</span>
+    </div>
+    <div class="status-grid">
+        <div class="status-item" id="status-db">
+            <span class="status-label">Database:</span>
+            <span class="status-value-pill loading"><i class="fas fa-spinner fa-spin"></i> Checking...</span>
+        </div>
+        <div class="status-item" id="status-ai">
+            <span class="status-label">AI Engine:</span>
+            <span class="status-value-pill loading"><i class="fas fa-spinner fa-spin"></i> Checking...</span>
+        </div>
+        <div class="status-item" id="status-server">
+            <span class="status-label">Backend:</span>
+            <span class="status-value-pill healthy">Healthy</span>
+        </div>
+    </div>
 </div>
 
 <div class="dashboard-grid">
