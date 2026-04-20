@@ -407,6 +407,72 @@ def detect_project():
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
+@app.route('/api/save-project-config', methods=['POST'])
+@login_required()
+def save_project_config():
+    try:
+        create_project_data_table = """
+        CREATE TABLE IF NOT EXISTS ProjectData (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            baseurl TEXT,
+            username TEXT,
+            password TEXT,
+            project_details_id INTEGER,
+            FOREIGN KEY(project_details_id) REFERENCES ProjectDetails(id)
+        );
+        """
+        update_data(create_project_data_table)
+        
+        data = request.json
+        p_path = data.get('project_path', '').strip()
+        baseurl = data.get('baseurl', '')
+        username = data.get('username', '')
+        password = data.get('password', '')
+        lang = data.get('language', 'Unknown')
+        fw = data.get('framework', 'Unknown')
+        
+        if not p_path:
+            return jsonify({"status": "error", "message": "Project path is required."}), 400
+            
+        existing = fetch_data("SELECT id FROM ProjectDetails WHERE project_path = ?", (p_path,))
+        p_details_id = None
+        
+        if existing:
+            p_details_id = existing[0]['id']
+        else:
+            p_name = os.path.basename(os.path.normpath(p_path))
+            if not p_name:
+                p_name = "Local_Project"
+            insert_data("INSERT INTO ProjectDetails (project_name, project_path, project_lang, project_fw, project_tool) VALUES (?, ?, ?, ?, ?)",
+                        (p_name, p_path, lang, fw, 'Local_Detected'))
+            new_record = fetch_data("SELECT id FROM ProjectDetails WHERE project_path = ?", (p_path,))
+            if new_record:
+                p_details_id = new_record[0]['id']
+                
+        if p_details_id:
+            pd_existing = fetch_data("SELECT id FROM ProjectData WHERE project_details_id = ?", (p_details_id,))
+            if pd_existing:
+                update_data("UPDATE ProjectData SET baseurl=?, username=?, password=? WHERE project_details_id=?", 
+                            (baseurl, username, password, p_details_id))
+            else:
+                insert_data("INSERT INTO ProjectData (baseurl, username, password, project_details_id) VALUES (?, ?, ?, ?)",
+                            (baseurl, username, password, p_details_id))
+                                
+        return jsonify({"status": "success"})
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+@app.route('/api/get-project-config/<int:project_id>', methods=['GET'])
+@login_required()
+def get_project_config(project_id):
+    try:
+        data = fetch_data("SELECT baseurl, username, password FROM ProjectData WHERE project_details_id = ?", (project_id,))
+        if data:
+            return jsonify({"status": "success", "data": data[0]})
+        return jsonify({"status": "success", "data": {"baseurl": "", "username": "", "password": ""}})
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
 @app.route('/api/db/tables', methods=['GET'])
 @login_required(role='admin')
 def get_db_tables():

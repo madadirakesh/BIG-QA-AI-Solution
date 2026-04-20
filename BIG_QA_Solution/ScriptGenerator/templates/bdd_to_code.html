@@ -46,10 +46,10 @@
                 <div class="form-group">
                     <label>Choose Existing Project From Database</label>
                     <div class="d-flex align-items-center gap-2 mb-3">
-                        <select id="projectSelect" class="form-control flex-1" style="margin-bottom:0 !important;">
+                        <select id="projectSelect" class="form-control flex-1" style="margin-bottom:0 !important;" onchange="handleProjectSelect()">
                             <option value="">-- Select Project from DB --</option>
                             {% for p in projects %}
-                            <option value="{{ p.project_name }}" data-lang="{{ p.project_lang }}" data-fw="{{ p.project_fw }}"
+                            <option value="{{ p.project_name }}" data-id="{{ p.id }}" data-lang="{{ p.project_lang }}" data-fw="{{ p.project_fw }}"
                                 data-path="{{ p.project_path }}">
                                 {{ p.project_name }} ({{ p.project_lang }} / {{ p.project_fw }})
                             </option>
@@ -110,7 +110,7 @@
             </div>
 
             <div class="form-actions right mt-4">
-                <button type="button" class="btn btn-primary" onclick="nextStep(2)">Next <i
+                <button type="button" class="btn btn-primary" onclick="handleNextStep1()">Next <i
                         class="fas fa-arrow-right"></i></button>
             </div>
         </div>
@@ -598,6 +598,88 @@
 
 {% block extra_js %}
 <script>
+function handleProjectSelect() {
+    const select = document.getElementById('projectSelect');
+    const selectedOpt = select.options[select.selectedIndex];
+    if (selectedOpt && selectedOpt.value) {
+        document.getElementById('projectPath').value = selectedOpt.getAttribute('data-path');
+        document.getElementById('detLanguage').innerText = selectedOpt.getAttribute('data-lang');
+        document.getElementById('detFramework').innerText = selectedOpt.getAttribute('data-fw');
+        document.getElementById('detectedDetails').style.display = 'block';
+        document.getElementById('projectCredentialsSection').style.display = 'block';
+
+        const pId = selectedOpt.getAttribute('data-id');
+        fetch(`/api/get-project-config/${pId}`)
+            .then(r => r.json())
+            .then(res => {
+                if (res.status === 'success' && res.data) {
+                    document.getElementById('projectBaseUrl').value = res.data.baseurl || '';
+                    document.getElementById('projectUsername').value = res.data.username || '';
+                    document.getElementById('projectPassword').value = res.data.password || '';
+                }
+            })
+            .catch(err => console.error("Error fetching credentials:", err));
+    } else {
+        document.getElementById('projectPath').value = "";
+        document.getElementById('detectedDetails').style.display = 'none';
+        document.getElementById('projectCredentialsSection').style.display = 'none';
+        document.getElementById('projectBaseUrl').value = '';
+        document.getElementById('projectUsername').value = '';
+        document.getElementById('projectPassword').value = '';
+    }
+}
+
+function handleNextStep1() {
+    const isNew = document.querySelector('input[name="projectMethod"]:checked').value === 'new';
+    if(isNew) {
+        nextStep(2);
+        return;
+    }
+
+    const path = document.getElementById('projectPath').value;
+    if (!path) {
+        alert("Please select or locate a project directory.");
+        return; 
+    }
+    
+    const data = {
+        project_path: path,
+        baseurl: document.getElementById('projectBaseUrl').value,
+        username: document.getElementById('projectUsername').value,
+        password: document.getElementById('projectPassword').value,
+        language: document.getElementById('detLanguage').innerText,
+        framework: document.getElementById('detFramework').innerText
+    };
+    
+    // In case there is no btn.closest, handle direct
+    const btn = event.currentTarget || document.querySelector('.form-actions.right.mt-4 button.btn-primary');
+    const ogHtml = btn ? btn.innerHTML : 'Next <i class="fas fa-arrow-right"></i>';
+    if(btn) {
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving...';
+        btn.disabled = true;
+    }
+
+    fetch('/api/save-project-config', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(data)
+    })
+    .then(r => r.json())
+    .then(res => {
+        if(btn) { btn.innerHTML = ogHtml; btn.disabled = false; }
+        if(res.status === 'success') {
+            nextStep(2);
+        } else {
+            alert("Error saving config: " + res.message);
+        }
+    })
+    .catch(err => {
+        if(btn) { btn.innerHTML = ogHtml; btn.disabled = false; }
+        alert("Network error saving configuration.");
+        console.error(err);
+    });
+}
+
 function nextStep(step) {
     // Hide all contents
     document.querySelectorAll('.wizard-content').forEach(c => c.classList.remove('active'));
