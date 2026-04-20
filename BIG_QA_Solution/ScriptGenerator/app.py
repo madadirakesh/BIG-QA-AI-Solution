@@ -217,7 +217,11 @@ def _bootstrapper_worker(job_id, p_name, p_path, tool, lang, fw, pm, url, user, 
                 "projectPath": p_path,
                 "language": lang,
                 "framework": fw,
-                "tool": tool
+                "tool": tool,
+                "packageManager": pm,
+                "url": url,
+                "username": user,
+                "password": pwd
             }
         }
     except Exception as e:
@@ -300,10 +304,17 @@ def bootstrap_status(job_id):
     if job.get('status') == 'completed' and 'db_inserted' not in job:
         meta = job['project_metadata']
         try:
-            insert_data("INSERT INTO ProjectDetails (project_name, project_path, project_lang, project_fw, project_tool) VALUES (?, ?, ?, ?, ?)",
-                        (meta['projectName'], meta['projectPath'], meta['language'], meta['framework'], meta['tool']))
+            insert_data("INSERT INTO ProjectDetails (project_name, project_path, project_lang, project_fw, project_tool, package_manager, project_type) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                        (meta['projectName'], meta['projectPath'], meta['language'], meta['framework'], meta['tool'], meta.get('packageManager'), 'New'))
+            
+            # Save Project Data (URL/Credentials)
+            new_id_res = fetch_data("SELECT id FROM ProjectDetails WHERE project_path = ?", (meta['projectPath'],))
+            if new_id_res:
+                p_id = new_id_res[0]['id']
+                insert_data("INSERT INTO ProjectData (baseurl, username, password, project_details_id) VALUES (?, ?, ?, ?)",
+                            (meta.get('url'), meta.get('username'), meta.get('password'), p_id))
         except Exception as e:
-            pass # might exist or fail
+            pass 
         job['db_inserted'] = True
 
     return jsonify(job)
@@ -445,8 +456,8 @@ def save_project_config():
             p_name = os.path.basename(os.path.normpath(p_path))
             if not p_name:
                 p_name = "Local_Project"
-            insert_data("INSERT INTO ProjectDetails (project_name, project_path, project_lang, project_fw, project_tool) VALUES (?, ?, ?, ?, ?)",
-                        (p_name, p_path, lang, fw, 'Local_Detected'))
+            insert_data("INSERT INTO ProjectDetails (project_name, project_path, project_lang, project_fw, project_tool, package_manager, project_type) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                        (p_name, p_path, lang, fw, 'Local_Detected', 'Manual', 'Existing'))
             new_record = fetch_data("SELECT id FROM ProjectDetails WHERE project_path = ?", (p_path,))
             if new_record:
                 p_details_id = new_record[0]['id']

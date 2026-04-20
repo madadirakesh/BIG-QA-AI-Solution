@@ -246,6 +246,29 @@
                     </div>
                 </div>
 
+                <div class="form-row">
+                    <div class="form-col">
+                        <div class="form-group">
+                            <label><i class="fas fa-link"></i> Application URL</label>
+                            <input type="text" id="bsUrl" class="form-control" placeholder="https://example.com">
+                        </div>
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-col">
+                        <div class="form-group">
+                            <label><i class="fas fa-user-shield"></i> Auth Username</label>
+                            <input type="text" id="bsUsername" class="form-control" placeholder="admin">
+                        </div>
+                    </div>
+                    <div class="form-col">
+                        <div class="form-group">
+                            <label><i class="fas fa-lock"></i> Auth Password</label>
+                            <input type="password" id="bsPassword" class="form-control" placeholder="password123">
+                        </div>
+                    </div>
+                </div>
+
                 <div class="form-actions right mt-4">
                     <button type="button" class="btn btn-secondary" onclick="closeBootstrapperModal()">Cancel</button>
                     <button type="button" class="btn btn-primary" onclick="submitBootstrapper()">Generate Framework</button>
@@ -802,9 +825,9 @@ function submitBootstrapper() {
         language: document.getElementById('bsLanguage').value,
         framework: document.getElementById('bsFramework').value,
         packageManager: document.getElementById('bsPackageManager').value,
-        url: document.getElementById('projectBaseUrl').value,
-        username: document.getElementById('projectUsername').value,
-        password: document.getElementById('projectPassword').value
+        url: document.getElementById('bsUrl').value,
+        username: document.getElementById('bsUsername').value,
+        password: document.getElementById('bsPassword').value
     };
 
     if(!data.projectName || !data.projectPath) {

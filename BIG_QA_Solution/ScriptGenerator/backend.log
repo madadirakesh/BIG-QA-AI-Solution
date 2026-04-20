@@ -1,0 +1,58 @@
+Checking database connection...
+Database connection successful.
+Database initialized successfully.
+AI Backend service (Port 8000) launched via uvicorn.
+ * Serving Flask app 'app'
+ * Debug mode: on
+[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on http://127.0.0.1:5000
+[33mPress CTRL+C to quit[0m
+ * Restarting with stat
+ * Debugger is active!
+ * Debugger PIN: 542-909-508
+INFO:     Started server process [65116]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
+127.0.0.1 - - [21/Apr/2026 04:12:48] "[32mGET / HTTP/1.1[0m" 302 -
+127.0.0.1 - - [21/Apr/2026 04:12:48] "GET /home HTTP/1.1" 200 -
+127.0.0.1 - - [21/Apr/2026 04:12:48] "[36mGET /static/js/main.js HTTP/1.1[0m" 304 -
+127.0.0.1 - - [21/Apr/2026 04:12:48] "[36mGET /static/css/style.css HTTP/1.1[0m" 304 -
+127.0.0.1 - - [21/Apr/2026 04:12:48] "GET /api/health-status HTTP/1.1" 200 -
+127.0.0.1 - - [21/Apr/2026 04:12:56] "GET /home HTTP/1.1" 200 -
+127.0.0.1 - - [21/Apr/2026 04:12:56] "[36mGET /static/css/style.css HTTP/1.1[0m" 304 -
+127.0.0.1 - - [21/Apr/2026 04:12:56] "[36mGET /static/js/main.js HTTP/1.1[0m" 304 -
+127.0.0.1 - - [21/Apr/2026 04:12:56] "GET /api/health-status HTTP/1.1" 200 -
+127.0.0.1 - - [21/Apr/2026 04:13:00] "GET /qa/bdd-to-code HTTP/1.1" 200 -
+127.0.0.1 - - [21/Apr/2026 04:13:00] "[36mGET /static/css/style.css HTTP/1.1[0m" 304 -
+127.0.0.1 - - [21/Apr/2026 04:13:00] "[36mGET /static/js/main.js HTTP/1.1[0m" 304 -
+127.0.0.1 - - [21/Apr/2026 04:13:04] "GET /api/health-status HTTP/1.1" 200 -
+127.0.0.1 - - [21/Apr/2026 04:13:59] "GET /api/browse-directory HTTP/1.1" 200 -
+127.0.0.1 - - [21/Apr/2026 04:14:04] "GET /api/health-status HTTP/1.1" 200 -
+127.0.0.1 - - [21/Apr/2026 04:14:45] "POST /api/bootstrap-project HTTP/1.1" 200 -
+127.0.0.1 - - [21/Apr/2026 04:14:47] "GET /api/bootstrap-status/1a86e409-ec10-4a79-9f97-4a0f8d45888a HTTP/1.1" 200 -
+INFO:werkzeug:127.0.0.1 - - [21/Apr/2026 04:14:47] "GET /api/bootstrap-status/1a86e409-ec10-4a79-9f97-4a0f8d45888a HTTP/1.1" 200 -
+127.0.0.1 - - [21/Apr/2026 04:14:49] "GET /api/bootstrap-status/1a86e409-ec10-4a79-9f97-4a0f8d45888a HTTP/1.1" 200 -
+INFO:werkzeug:127.0.0.1 - - [21/Apr/2026 04:14:49] "GET /api/bootstrap-status/1a86e409-ec10-4a79-9f97-4a0f8d45888a HTTP/1.1" 200 -
+127.0.0.1 - - [21/Apr/2026 04:14:51] "GET /api/bootstrap-status/1a86e409-ec10-4a79-9f97-4a0f8d45888a HTTP/1.1" 200 -
+INFO:werkzeug:127.0.0.1 - - [21/Apr/2026 04:14:51] "GET /api/bootstrap-status/1a86e409-ec10-4a79-9f97-4a0f8d45888a HTTP/1.1" 200 -
+127.0.0.1 - - [21/Apr/2026 04:14:53] "GET /api/bootstrap-status/1a86e409-ec10-4a79-9f97-4a0f8d45888a HTTP/1.1" 200 -
+INFO:werkzeug:127.0.0.1 - - [21/Apr/2026 04:14:53] "GET /api/bootstrap-status/1a86e409-ec10-4a79-9f97-4a0f8d45888a HTTP/1.1" 200 -
+127.0.0.1 - - [21/Apr/2026 04:14:55] "GET /api/bootstrap-status/1a86e409-ec10-4a79-9f97-4a0f8d45888a HTTP/1.1" 200 -
+INFO:werkzeug:127.0.0.1 - - [21/Apr/2026 04:14:55] "GET /api/bootstrap-status/1a86e409-ec10-4a79-9f97-4a0f8d45888a HTTP/1.1" 200 -
+127.0.0.1 - - [21/Apr/2026 04:14:55] "POST /api/detect-project HTTP/1.1" 200 -
+INFO:werkzeug:127.0.0.1 - - [21/Apr/2026 04:14:55] "POST /api/detect-project HTTP/1.1" 200 -
+127.0.0.1 - - [21/Apr/2026 04:14:59] "GET /admin/add-user HTTP/1.1" 200 -
+INFO:werkzeug:127.0.0.1 - - [21/Apr/2026 04:14:59] "GET /admin/add-user HTTP/1.1" 200 -
+127.0.0.1 - - [21/Apr/2026 04:14:59] "[36mGET /static/css/style.css HTTP/1.1[0m" 304 -
+INFO:werkzeug:127.0.0.1 - - [21/Apr/2026 04:14:59] "[36mGET /static/css/style.css HTTP/1.1[0m" 304 -
+127.0.0.1 - - [21/Apr/2026 04:14:59] "[36mGET /static/js/main.js HTTP/1.1[0m" 304 -
+INFO:werkzeug:127.0.0.1 - - [21/Apr/2026 04:14:59] "[36mGET /static/js/main.js HTTP/1.1[0m" 304 -
+127.0.0.1 - - [21/Apr/2026 04:15:02] "GET /api/db/tables HTTP/1.1" 200 -
+INFO:werkzeug:127.0.0.1 - - [21/Apr/2026 04:15:02] "GET /api/db/tables HTTP/1.1" 200 -
+127.0.0.1 - - [21/Apr/2026 04:15:04] "GET /api/health-status HTTP/1.1" 200 -
+INFO:werkzeug:127.0.0.1 - - [21/Apr/2026 04:15:04] "GET /api/health-status HTTP/1.1" 200 -
+127.0.0.1 - - [21/Apr/2026 04:15:07] "GET /api/db/table-data?table=ProjectDetails HTTP/1.1" 200 -
+INFO:werkzeug:127.0.0.1 - - [21/Apr/2026 04:15:07] "GET /api/db/table-data?table=ProjectDetails HTTP/1.1" 200 -
+127.0.0.1 - - [21/Apr/2026 04:15:15] "GET /api/db/table-data?table=ProjectData HTTP/1.1" 200 -
+INFO:werkzeug:127.0.0.1 - - [21/Apr/2026 04:15:15] "GET /api/db/table-data?table=ProjectData HTTP/1.1" 200 -

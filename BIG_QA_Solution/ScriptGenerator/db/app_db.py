@@ -67,7 +67,9 @@ def init_db():
         project_path TEXT NOT NULL,
         project_lang TEXT NOT NULL,
         project_fw TEXT NOT NULL,
-        project_tool TEXT NOT NULL
+        project_tool TEXT NOT NULL,
+        package_manager TEXT,
+        project_type TEXT
     );
     """
 
@@ -80,6 +82,7 @@ def init_db():
                     Method VARCHAR(255),
                     Value VARCHAR(500),
                     Created_On DATETIME,
+                    project_id INTEGER,
                     UNIQUE(Page_Name, Locator_Name)
                 )
             """
@@ -103,6 +106,19 @@ def init_db():
             cursor.execute(create_project_table)
             cursor.execute(create_locators_table)
             cursor.execute(create_project_data_table)
+
+            # Migrations
+            try:
+                cursor.execute("ALTER TABLE ProjectDetails ADD COLUMN package_manager TEXT")
+            except Exception: pass
+            
+            try:
+                cursor.execute("ALTER TABLE ProjectDetails ADD COLUMN project_type TEXT")
+            except Exception: pass
+
+            try:
+                cursor.execute("ALTER TABLE Locators ADD COLUMN project_id INTEGER")
+            except Exception: pass
             
             # Insert admin user if not exists
             cursor.execute("SELECT * FROM users WHERE email = 'admin@big.com'")
