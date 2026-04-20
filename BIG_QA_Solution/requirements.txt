@@ -16,3 +16,4 @@ pytest-html
 webdriver-manager
 PyQt6
 PyQt6-WebEngine
+anthropic

@@ -84,6 +84,17 @@ def init_db():
                 )
             """
 
+    create_project_data_table = """
+    CREATE TABLE IF NOT EXISTS ProjectData (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        baseurl TEXT,
+        username TEXT,
+        password TEXT,
+        project_details_id INTEGER,
+        FOREIGN KEY(project_details_id) REFERENCES ProjectDetails(id)
+    );
+    """
+
     try:
         with get_db() as conn:
             cursor = conn.cursor()
@@ -91,6 +102,7 @@ def init_db():
             cursor.execute(create_session_table)
             cursor.execute(create_project_table)
             cursor.execute(create_locators_table)
+            cursor.execute(create_project_data_table)
             
             # Insert admin user if not exists
             cursor.execute("SELECT * FROM users WHERE email = 'admin@big.com'")

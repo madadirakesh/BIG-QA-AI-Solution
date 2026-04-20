@@ -34,133 +34,120 @@
             <div class="step-inner-align">
                 <h3 class="premium-header">Project Selection</h3>
 
-                <div class="form-group mb-4">
-                    <label>Method</label>
-                    <div>
-                        <label class="mr-3" style="cursor: pointer;"><input type="radio" name="projectMethod"
-                                value="existing" checked onchange="toggleProjectMethod()"> Select Existing
-                            Project</label>
-                        <label style="cursor: pointer;"><input type="radio" name="projectMethod" value="new"
-                                onchange="toggleProjectMethod()"> Create New Project</label>
+            <div class="form-group mb-4">
+                <label>Method</label>
+                <div>
+                    <label class="mr-3" style="cursor: pointer;"><input type="radio" name="projectMethod" value="existing" checked onchange="toggleProjectMethod()"> Select Existing Project</label>
+                    <label style="cursor: pointer;"><input type="radio" name="projectMethod" value="new" onchange="toggleProjectMethod()"> Create New Project</label>
+                </div>
+            </div>
+
+            <div id="existingProjectSection">
+                <div class="form-group">
+                    <label>Choose Existing Project From Database</label>
+                    <div class="d-flex align-items-center gap-2 mb-3">
+                        <select id="projectSelect" class="form-control flex-1" style="margin-bottom:0 !important;" onchange="handleProjectSelect()">
+                            <option value="">-- Select Project from DB --</option>
+                            {% for p in projects %}
+                            <option value="{{ p.project_name }}" data-id="{{ p.id }}" data-lang="{{ p.project_lang }}" data-fw="{{ p.project_fw }}"
+                                data-path="{{ p.project_path }}">
+                                {{ p.project_name }} ({{ p.project_lang }} / {{ p.project_fw }})
+                            </option>
+                            {% endfor %}
+                        </select>
+                        {% if session.get('user_role', '').lower() == 'admin' %}
+                        <button type="button" class="btn btn-danger" onclick="cleanMissingProjects()" style="white-space:nowrap; padding: 10px 15px;"><i class="fas fa-sync"></i> Clean Sync</button>
+                        {% endif %}
                     </div>
                 </div>
 
-                <div id="existingProjectSection">
-                    <div class="form-group">
-                        <label>Choose Existing Project From Database</label>
-                        <div class="d-flex align-items-center gap-2 mb-3">
-                            <select id="projectSelect" class="form-control flex-1" style="margin-bottom:0 !important;">
-                                <option value="">-- Select Project from DB --</option>
-                                {% for p in projects %}
-                                <option value="{{ p.project_name }}" data-lang="{{ p.project_lang }}"
-                                    data-fw="{{ p.project_fw }}" data-path="{{ p.project_path }}">
-                                    {{ p.project_name }} ({{ p.project_lang }} / {{ p.project_fw }})
-                                </option>
-                                {% endfor %}
-                            </select>
-                            {% if session.get('user_role', '').lower() == 'admin' %}
-                            <button type="button" class="btn btn-danger" onclick="cleanMissingProjects()"
-                                style="white-space:nowrap; padding: 10px 15px;"><i class="fas fa-sync"></i> Clean
-                                Sync</button>
-                            {% endif %}
-                        </div>
-                    </div>
-
-                    <div class="text-center mt-2 mb-3">
+                <div class="text-center mt-2 mb-3">
                         <span class="text-secondary">- OR LOCATE FOLDER -</span>
                     </div>
 
                     <label>Locate Project Directory</label>
                     <div class="d-flex align-items-center gap-2">
-                        <input type="text" id="projectPath" class="form-control flex-1"
-                            style="margin-bottom:0 !important;" placeholder="Choose a directory..." readonly>
-                        <button class="btn btn-outline" type="button" onclick="locateDirectory()"
-                            style="white-space:nowrap; height: 46px;"><i class="fas fa-folder-open"></i> Browse</button>
+                        <input type="text" id="projectPath" class="form-control flex-1" style="margin-bottom:0 !important;" placeholder="Choose a directory..." readonly>
+                        <button class="btn btn-outline" type="button" onclick="locateDirectory()" style="white-space:nowrap; height: 46px;"><i class="fas fa-folder-open"></i> Browse</button>
                     </div>
-                    <small class="text-secondary mt-2 d-block">We will auto-detect your framework and language once
-                        selected.</small>
+                    <small class="text-secondary mt-2 d-block">We will auto-detect your framework and language once selected.</small>
 
-                    <div id="detectedDetails" class="mt-3 p-3"
-                        style="display: none; background: rgba(0,0,0,0.2) !important; border-radius: 8px;">
+                    <div id="detectedDetails" class="mt-3 p-3" style="display: none; background: rgba(0,0,0,0.2) !important; border-radius: 8px;">
                         <h5 style="margin-top:0;">Detected Project Settings</h5>
-                        <p class="mb-1"><strong>Language:</strong> <span id="detLanguage"
-                                style="color:var(--accent-primary);"></span></p>
-                        <p class="mb-0"><strong>Framework:</strong> <span id="detFramework"
-                                style="color:var(--accent-primary);"></span></p>
+                        <p class="mb-1"><strong>Language:</strong> <span id="detLanguage" style="color:var(--accent-primary);"></span></p>
+                        <p class="mb-0"><strong>Framework:</strong> <span id="detFramework" style="color:var(--accent-primary);"></span></p>
                     </div>
                 </div>
 
-                <div id="newProjectSection" style="display: none;">
-                    <div class="project-creator-card glassmorphism">
-                        <i class="fas fa-magic fa-3x" style="color: var(--accent-primary); margin-bottom: 10px;"></i>
-                        <h4 style="margin: 0;">Ready to start a fresh project?</h4>
-                        <button type="button" class="btn btn-primary" onclick="openBootstrapperModal()"
-                            style="min-width: 240px; margin-top: 10px;">
-                            <i class="fas fa-plus"></i> Open Project Creator
-                        </button>
-                    </div>
+            <div id="newProjectSection" style="display: none;">
+                <div class="project-creator-card glassmorphism">
+                    <i class="fas fa-magic fa-3x" style="color: var(--accent-primary); margin-bottom: 10px;"></i>
+                    <h4 style="margin: 0;">Ready to start a fresh project?</h4>
+                    <button type="button" class="btn btn-primary" onclick="openBootstrapperModal()" style="min-width: 240px; margin-top: 10px;">
+                        <i class="fas fa-plus"></i> Open Project Creator
+                    </button>
                 </div>
+            </div>
 
                 <hr class="my-5" style="border-color: rgba(255,255,255,0.05); margin-left: -60px; margin-right: -60px;">
 
-                <div id="projectCredentialsSection" class="mt-5 animate-slide-up delay-2"
-                    style="margin-top: 4rem !important; display: none;">
+            <div id="projectCredentialsSection" class="mt-5 animate-slide-up delay-2" style="margin-top: 4rem !important; display: none;">
                     <h3 class="premium-header"><i class="fas fa-key"></i> Project Configuration</h3>
-                    <div class="form-group mb-3">
-                        <label>Base Url</label>
-                        <input type="text" id="projectBaseUrl" class="form-control" placeholder="https://example.com">
-                    </div>
-                    <div class="form-row">
-                        <div class="form-col">
-                            <label>Username</label>
-                            <input type="text" id="projectUsername" class="form-control" placeholder="Username">
-                        </div>
-                        <div class="form-col">
-                            <label>Password</label>
-                            <input type="password" id="projectPassword" class="form-control" placeholder="Password">
-                        </div>
-                    </div>
+                <div class="form-group mb-3">
+                    <label>Base Url</label>
+                    <input type="text" id="projectBaseUrl" class="form-control" placeholder="https://example.com">
                 </div>
-
-                <div class="form-actions right mt-4">
-                    <button type="button" class="btn btn-primary" onclick="nextStep(2)">Next <i
-                            class="fas fa-arrow-right"></i></button>
+                <div class="form-row">
+                    <div class="form-col">
+                        <label>Username</label>
+                        <input type="text" id="projectUsername" class="form-control" placeholder="Username">
+                    </div>
+                    <div class="form-col">
+                        <label>Password</label>
+                        <input type="password" id="projectPassword" class="form-control" placeholder="Password">
+                    </div>
                 </div>
             </div>
+
+            <div class="form-actions right mt-4">
+                <button type="button" class="btn btn-primary" onclick="handleNextStep1()">Next <i
+                        class="fas fa-arrow-right"></i></button>
+            </div>
         </div>
+    </div>
 
         <div id="step-2" class="wizard-content" style="display: none;">
             <div class="step-inner-align">
                 <h3 class="premium-header">Provide BDD & Context</h3>
 
-                <div class="form-group mt-3">
-                    <label>BDD Source Text</label>
-                    <textarea id="bddContent" rows="6" placeholder="Feature: Login functionality..."></textarea>
-                </div>
+            <div class="form-group mt-3">
+                <label>BDD Source Text</label>
+                <textarea id="bddContent" rows="6" placeholder="Feature: Login functionality..."></textarea>
+            </div>
 
-                <div class="form-group row">
-                    <div class="col">
-                        <label>Base URL Context</label>
-                        <input type="text" id="baseUrl" placeholder="https://example.com">
-                    </div>
-                    <div class="col">
-                        <label>Existing Code Context (Optional)</label>
-                        <textarea id="existingCode" rows="2"
-                            placeholder="Paste similar existing code or locators..."></textarea>
-                    </div>
+            <div class="form-group row">
+                <div class="col">
+                    <label>Base URL Context</label>
+                    <input type="text" id="baseUrl" placeholder="https://example.com">
                 </div>
-
-                <div class="form-actions row mt-4">
-                    <div class="col">
-                        <button type="button" class="btn btn-secondary" onclick="nextStep(1)"><i
-                                class="fas fa-arrow-left"></i> Back</button>
-                    </div>
-                    <div class="col text-right">
-                        <button type="button" class="btn btn-primary" onclick="generateCode()">Generate AI Code <i
-                                class="fas fa-robot"></i></button>
-                    </div>
+                <div class="col">
+                    <label>Existing Code Context (Optional)</label>
+                    <textarea id="existingCode" rows="2"
+                        placeholder="Paste similar existing code or locators..."></textarea>
                 </div>
             </div>
+
+            <div class="form-actions row mt-4">
+                <div class="col">
+                    <button type="button" class="btn btn-secondary" onclick="nextStep(1)"><i
+                            class="fas fa-arrow-left"></i> Back</button>
+                </div>
+                <div class="col text-right">
+                    <button type="button" class="btn btn-primary" onclick="generateCode()">Generate AI Code <i
+                            class="fas fa-robot"></i></button>
+                </div>
+            </div>
+        </div>
         </div>
 
         <div id="step-3" class="wizard-content" style="display: none;">
@@ -203,22 +190,18 @@
                     <div class="form-col">
                         <div class="form-group">
                             <label><i class="fas fa-tag"></i> Project Name</label>
-                            <input type="text" id="bsProjectName" class="form-control" placeholder="e.g. MyWebTests"
-                                oninput="updatePathPreview()">
+                            <input type="text" id="bsProjectName" class="form-control" placeholder="e.g. MyWebTests" oninput="updatePathPreview()">
                         </div>
                     </div>
                 </div>
                 <div class="form-group">
                     <label><i class="fas fa-folder"></i> Save Location</label>
                     <div class="d-flex align-items-center gap-2">
-                        <input type="text" id="bsProjectPath" class="form-control flex-1"
-                            style="margin-bottom:0 !important;" placeholder="Select folder..." readonly>
-                        <button class="btn btn-outline" type="button" onclick="browseBsDirectory()"
-                            style="white-space:nowrap;"><i class="fas fa-folder-open"></i> Browse</button>
+                        <input type="text" id="bsProjectPath" class="form-control flex-1" style="margin-bottom:0 !important;" placeholder="Select folder..." readonly>
+                        <button class="btn btn-outline" type="button" onclick="browseBsDirectory()" style="white-space:nowrap;"><i class="fas fa-folder-open"></i> Browse</button>
                     </div>
                     <div class="path-preview-container" id="bsPathPreviewBox">
-                        <i class="fas fa-terminal mr-2"></i> <b>Path:</b> <span
-                            id="bsPathPreview">/Select/A/Folder...</span>
+                        <i class="fas fa-terminal mr-2"></i> <b>Path:</b> <span id="bsPathPreview">/Select/A/Folder...</span>
                     </div>
                 </div>
                 <div class="form-row">
@@ -265,8 +248,7 @@
 
                 <div class="form-actions right mt-4">
                     <button type="button" class="btn btn-secondary" onclick="closeBootstrapperModal()">Cancel</button>
-                    <button type="button" class="btn btn-primary" onclick="submitBootstrapper()">Generate
-                        Framework</button>
+                    <button type="button" class="btn btn-primary" onclick="submitBootstrapper()">Generate Framework</button>
                 </div>
             </div>
 
@@ -283,15 +265,13 @@
                 <h3 id="bsResultTitle" class="mt-3"></h3>
                 <p id="bsResultMsg" class="text-secondary mb-4"></p>
 
-                <div id="bsTreeContainer" class="text-left mt-3 p-3"
-                    style="max-height: 200px; overflow-y: auto; background: rgba(0,0,0,0.3); border-radius: 8px; display:none;">
+                <div id="bsTreeContainer" class="text-left mt-3 p-3" style="max-height: 200px; overflow-y: auto; background: rgba(0,0,0,0.3); border-radius: 8px; display:none;">
                     <h5>Generated Structure:</h5>
                     <div id="bsFileTree" style="font-family: monospace; font-size: 0.8rem;"></div>
                 </div>
 
                 <div class="mt-4">
-                    <button type="button" class="btn btn-primary" onclick="closeBootstrapperModal()">Close &
-                        Refresh</button>
+                    <button type="button" class="btn btn-primary" onclick="closeBootstrapperModal()">Close & Refresh</button>
                 </div>
             </div>
         </div>
@@ -305,14 +285,12 @@
         margin-bottom: 40px;
         padding: 0 20px;
     }
-
     .wizard-steps-premium {
         display: flex;
         align-items: center;
         justify-content: space-between;
         position: relative;
     }
-
     .step-p {
         display: flex;
         flex-direction: column;
@@ -322,18 +300,15 @@
         transition: var(--transition);
         opacity: 0.6;
     }
-
     .step-p.active {
         opacity: 1;
         transform: scale(1.1);
     }
-
     .step-p.completed .step-icon {
         background: var(--success);
         border-color: var(--success);
         box-shadow: 0 0 15px rgba(16, 185, 129, 0.4);
     }
-
     .step-icon {
         width: 50px;
         height: 50px;
@@ -347,13 +322,11 @@
         color: var(--text-primary);
         transition: var(--transition);
     }
-
     .step-p.active .step-icon {
         border-color: var(--accent-primary);
         box-shadow: 0 0 20px var(--accent-glow);
         background: rgba(234, 108, 11, 0.1);
     }
-
     .step-label {
         font-size: 0.85rem;
         font-weight: 600;
@@ -361,11 +334,7 @@
         letter-spacing: 0.5px;
         color: var(--text-secondary);
     }
-
-    .step-p.active .step-label {
-        color: var(--accent-primary);
-    }
-
+    .step-p.active .step-label { color: var(--accent-primary); }
     .step-line {
         flex: 1;
         height: 2px;
@@ -374,22 +343,15 @@
         margin-top: -25px;
         position: relative;
     }
-
     .step-line::after {
         content: '';
         position: absolute;
-        left: 0;
-        top: 0;
-        height: 100%;
-        width: 0;
+        left: 0; top: 0; height: 100%; width: 0;
         background: var(--accent-primary);
         transition: width 0.5s ease-in-out;
     }
 
-    .wizard-content {
-        display: none;
-    }
-
+    .wizard-content { display: none; }
     .wizard-content.active {
         display: block;
         animation: slideUp 0.5s ease-out forwards;
@@ -402,14 +364,10 @@
         border: 1px solid var(--glass-border);
         margin-bottom: 25px;
         overflow: hidden;
-        box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
+        box-shadow: 0 20px 40px rgba(0,0,0,0.4);
         transition: var(--transition);
     }
-
-    .code-window:hover {
-        border-color: rgba(255, 255, 255, 0.2);
-    }
-
+    .code-window:hover { border-color: rgba(255,255,255,0.2); }
     .window-header {
         background: #1e293b;
         padding: 12px 20px;
@@ -418,38 +376,18 @@
         justify-content: space-between;
         border-bottom: 1px solid var(--glass-border);
     }
-
-    .window-controls {
-        display: flex;
-        gap: 8px;
-    }
-
-    .dot {
-        width: 12px;
-        height: 12px;
-        border-radius: 50%;
-    }
-
-    .dot.red {
-        background: #ff5f56;
-    }
-
-    .dot.yellow {
-        background: #ffbd2e;
-    }
-
-    .dot.green {
-        background: #27c93f;
-    }
-
+    .window-controls { display: flex; gap: 8px; }
+    .dot { width: 12px; height: 12px; border-radius: 50%; }
+    .dot.red { background: #ff5f56; }
+    .dot.yellow { background: #ffbd2e; }
+    .dot.green { background: #27c93f; }
     .window-title {
         font-family: monospace;
         font-size: 0.85rem;
         color: var(--text-secondary);
     }
-
     .copy-btn {
-        background: rgba(255, 255, 255, 0.05);
+        background: rgba(255,255,255,0.05);
         border: 1px solid var(--glass-border);
         color: var(--text-secondary);
         padding: 4px 10px;
@@ -458,28 +396,15 @@
         cursor: pointer;
         transition: var(--transition);
     }
-
-    .copy-btn:hover {
-        background: var(--accent-primary);
-        color: white;
-    }
+    .copy-btn:hover { background: var(--accent-primary); color: white; }
 
     /* Transitions */
-    #existingProjectSection,
-    #newProjectSection {
+    #existingProjectSection, #newProjectSection {
         animation: fadeIn 0.4s ease-out;
     }
-
     @keyframes fadeIn {
-        from {
-            opacity: 0;
-            transform: translateY(-10px);
-        }
-
-        to {
-            opacity: 1;
-            transform: translateY(0);
-        }
+        from { opacity: 0; transform: translateY(-10px); }
+        to { opacity: 1; transform: translateY(0); }
     }
 
     /* Modal Styles */
@@ -491,17 +416,14 @@
         top: 0;
         width: 100%;
         height: 100%;
-        background-color: rgba(0, 0, 0, 0.85);
+        background-color: rgba(0,0,0,0.85);
         backdrop-filter: blur(8px);
-        overflow-y: auto;
-        /* Enable scrolling on the container */
+        overflow-y: auto; /* Enable scrolling on the container */
         padding: 20px 0;
     }
-
     .custom-modal-content {
         position: relative;
-        margin: auto;
-        /* Centering */
+        margin: auto; /* Centering */
         width: 90%;
         max-width: 700px;
         max-height: calc(100vh - 40px);
@@ -512,7 +434,6 @@
         border-radius: 12px;
         overflow: hidden;
     }
-
     .modal-header {
         padding: 1.25rem 2rem;
         border-bottom: 1px solid var(--glass-border);
@@ -522,12 +443,7 @@
         background: rgba(255, 255, 255, 0.03);
         flex-shrink: 0;
     }
-
-    .modal-header h2 {
-        margin: 0;
-        font-size: 1.4rem;
-    }
-
+    .modal-header h2 { margin: 0; font-size: 1.4rem; }
     .close-btn {
         color: #aaa;
         font-size: 28px;
@@ -535,15 +451,10 @@
         cursor: pointer;
         line-height: 1;
     }
-
-    .close-btn:hover {
-        color: white;
-    }
-
+    .close-btn:hover { color: white; }
     .modal-body {
         padding: 2rem;
-        overflow-y: auto;
-        /* Scrollable body */
+        overflow-y: auto; /* Scrollable body */
         flex-grow: 1;
     }
 
@@ -557,10 +468,7 @@
         font-size: 0.85rem;
         color: #94a3b8;
     }
-
-    .path-preview-container b {
-        color: var(--accent-primary);
-    }
+    .path-preview-container b { color: var(--accent-primary); }
 
     .help-text {
         font-size: 0.75rem;
@@ -568,66 +476,32 @@
         margin-top: 4px;
         display: block;
     }
-
     .form-row {
         display: flex;
         gap: 20px;
         margin-bottom: 1rem;
     }
-
     .form-col {
         flex: 1;
         min-width: 0;
     }
-
     @media (max-width: 768px) {
-        .form-row {
-            flex-direction: column;
-            gap: 10px;
-        }
+        .form-row { flex-direction: column; gap: 10px; }
     }
 
     /* Missing Utilities for Horizontal Alignment */
-    .d-flex {
-        display: flex !important;
-    }
-
-    .align-items-center {
-        align-items: center !important;
-    }
-
-    .gap-2 {
-        gap: 0.75rem !important;
-    }
-
-    .gap-3 {
-        gap: 1rem !important;
-    }
-
-    .flex-1 {
-        flex: 1 !important;
-    }
-
-    .mb-3 {
-        margin-bottom: 1rem !important;
-    }
-
-    .mb-4 {
-        margin-bottom: 1.5rem !important;
-    }
-
-    .mr-3 {
-        margin-right: 1rem !important;
-    }
-
-    .w-100 {
-        width: 100% !important;
-    }
+    .d-flex { display: flex !important; }
+    .align-items-center { align-items: center !important; }
+    .gap-2 { gap: 0.75rem !important; }
+    .gap-3 { gap: 1rem !important; }
+    .flex-1 { flex: 1 !important; }
+    .mb-3 { margin-bottom: 1rem !important; }
+    .mb-4 { margin-bottom: 1.5rem !important; }
+    .mr-3 { margin-right: 1rem !important; }
+    .w-100 { width: 100% !important; }
 
     /* Match Button Heights to Inputs */
-    .btn-outline,
-    .btn-danger,
-    .btn-primary {
+    .btn-outline, .btn-danger, .btn-primary {
         height: 46px;
         display: inline-flex;
         align-items: center;
@@ -645,21 +519,15 @@
         height: 46px;
         color: white !important;
     }
-
-    input::placeholder {
-        color: rgba(255, 255, 255, 0.4) !important;
-    }
-
-    input:focus,
-    select:focus {
+    input::placeholder { color: rgba(255,255,255,0.4) !important; }
+    input:focus, select:focus {
         border-color: var(--accent-primary) !important;
         background: rgba(255, 255, 255, 0.1) !important;
     }
 
     /* Section Headers & Alignment Polish */
     .step-inner-align {
-        padding: 10px 60px !important;
-        /* Force deep internal horizontal cushion */
+        padding: 10px 60px !important; /* Force deep internal horizontal cushion */
     }
 
     .premium-header {
@@ -673,7 +541,6 @@
         display: block;
         width: 100%;
     }
-
     .premium-header::after {
         content: '';
         position: absolute;
@@ -732,303 +599,385 @@
 
 {% block extra_js %}
 <script>
-    function nextStep(step) {
-        // Hide all contents
-        document.querySelectorAll('.wizard-content').forEach(c => c.classList.remove('active'));
-        // Show target content
-        document.getElementById('step-' + step).classList.add('active');
+function handleProjectSelect() {
+    const select = document.getElementById('projectSelect');
+    const selectedOpt = select.options[select.selectedIndex];
+    if (selectedOpt && selectedOpt.value) {
+        document.getElementById('projectPath').value = selectedOpt.getAttribute('data-path');
+        document.getElementById('detLanguage').innerText = selectedOpt.getAttribute('data-lang');
+        document.getElementById('detFramework').innerText = selectedOpt.getAttribute('data-fw');
+        document.getElementById('detectedDetails').style.display = 'block';
+        document.getElementById('projectCredentialsSection').style.display = 'block';
 
-        // Update Indicators
-        document.querySelectorAll('.step-p').forEach((s, idx) => {
-            const sNum = idx + 1;
-            s.classList.remove('active', 'completed');
-            if (sNum === step) {
-                s.classList.add('active');
-            } else if (sNum < step) {
-                s.classList.add('completed');
-                const icon = s.querySelector('.step-icon');
-                if (icon) icon.innerHTML = '<i class="fas fa-check"></i>';
-            } else {
-                // Restore original icons if moving back
-                const icons = ['fa-project-diagram', 'fa-pen-nib', 'fa-rocket'];
-                const icon = s.querySelector('.step-icon');
-                if (icon) icon.innerHTML = `<i class="fas ${icons[idx]}"></i>`;
+        const pId = selectedOpt.getAttribute('data-id');
+        fetch(`/api/get-project-config/${pId}`)
+            .then(r => r.json())
+            .then(res => {
+                if (res.status === 'success' && res.data) {
+                    document.getElementById('projectBaseUrl').value = res.data.baseurl || '';
+                    document.getElementById('projectUsername').value = res.data.username || '';
+                    document.getElementById('projectPassword').value = res.data.password || '';
+                }
+            })
+            .catch(err => console.error("Error fetching credentials:", err));
+    } else {
+        document.getElementById('projectPath').value = "";
+        document.getElementById('detectedDetails').style.display = 'none';
+        document.getElementById('projectCredentialsSection').style.display = 'none';
+        document.getElementById('projectBaseUrl').value = '';
+        document.getElementById('projectUsername').value = '';
+        document.getElementById('projectPassword').value = '';
+    }
+}
+
+function handleNextStep1() {
+    const isNew = document.querySelector('input[name="projectMethod"]:checked').value === 'new';
+    if(isNew) {
+        nextStep(2);
+        return;
+    }
+
+    const path = document.getElementById('projectPath').value;
+    if (!path) {
+        alert("Please select or locate a project directory.");
+        return;
+    }
+
+    const data = {
+        project_path: path,
+        baseurl: document.getElementById('projectBaseUrl').value,
+        username: document.getElementById('projectUsername').value,
+        password: document.getElementById('projectPassword').value,
+        language: document.getElementById('detLanguage').innerText,
+        framework: document.getElementById('detFramework').innerText
+    };
+
+    // In case there is no btn.closest, handle direct
+    const btn = event.currentTarget || document.querySelector('.form-actions.right.mt-4 button.btn-primary');
+    const ogHtml = btn ? btn.innerHTML : 'Next <i class="fas fa-arrow-right"></i>';
+    if(btn) {
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving...';
+        btn.disabled = true;
+    }
+
+    fetch('/api/save-project-config', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(data)
+    })
+    .then(r => r.json())
+    .then(res => {
+        if(btn) { btn.innerHTML = ogHtml; btn.disabled = false; }
+        if(res.status === 'success') {
+            nextStep(2);
+        } else {
+            alert("Error saving config: " + res.message);
+        }
+    })
+    .catch(err => {
+        if(btn) { btn.innerHTML = ogHtml; btn.disabled = false; }
+        alert("Network error saving configuration.");
+        console.error(err);
+    });
+}
+
+function nextStep(step) {
+    // Hide all contents
+    document.querySelectorAll('.wizard-content').forEach(c => c.classList.remove('active'));
+    // Show target content
+    document.getElementById('step-' + step).classList.add('active');
+
+    // Update Indicators
+    document.querySelectorAll('.step-p').forEach((s, idx) => {
+        const sNum = idx + 1;
+        s.classList.remove('active', 'completed');
+        if (sNum === step) {
+            s.classList.add('active');
+        } else if (sNum < step) {
+            s.classList.add('completed');
+            const icon = s.querySelector('.step-icon');
+            if (icon) icon.innerHTML = '<i class="fas fa-check"></i>';
+        } else {
+            // Restore original icons if moving back
+            const icons = ['fa-project-diagram', 'fa-pen-nib', 'fa-rocket'];
+            const icon = s.querySelector('.step-icon');
+            if (icon) icon.innerHTML = `<i class="fas ${icons[idx]}"></i>`;
+        }
+    });
+}
+
+function toggleProjectMethod() {
+    const isNew = document.querySelector('input[name="projectMethod"]:checked').value === 'new';
+    document.getElementById('existingProjectSection').style.display = isNew ? 'none' : 'block';
+    document.getElementById('newProjectSection').style.display = isNew ? 'block' : 'none';
+
+    if (isNew) {
+        document.getElementById('projectCredentialsSection').style.display = 'none';
+    } else {
+        if (document.getElementById('projectPath').value) {
+            document.getElementById('projectCredentialsSection').style.display = 'block';
+        } else {
+            document.getElementById('projectCredentialsSection').style.display = 'none';
+        }
+    }
+}
+
+function openBootstrapperModal() {
+    document.getElementById('bootstrapperModal').style.display = 'block';
+    document.getElementById('bootstrapperForm').style.display = 'block';
+    document.getElementById('bsLoading').style.display = 'none';
+    document.getElementById('bsResult').style.display = 'none';
+    document.getElementById('bsProjectName').value = '';
+    updateBsOptions(); // Initialize dropdowns
+    updatePathPreview();
+}
+
+function closeBootstrapperModal() {
+    document.getElementById('bootstrapperModal').style.display = 'none';
+}
+
+function browseBsDirectory() {
+    fetch('/api/browse-directory')
+        .then(r => r.json())
+        .then(data => {
+            if(data.path) {
+                document.getElementById('bsProjectPath').value = data.path;
+                updatePathPreview();
             }
         });
+}
+
+function updatePathPreview() {
+    const name = document.getElementById('bsProjectName').value || "ProjectName";
+    const base = document.getElementById('bsProjectPath').value || "/Select/A/Folder";
+    const separator = base.includes("\\") || navigator.platform.includes("Win") ? "\\" : "/";
+    const fullPath = base.endsWith(separator) ? base + name : base + separator + name;
+    document.getElementById('bsPathPreview').innerText = fullPath;
+}
+
+function updateBsOptions() {
+    const tool = document.getElementById('bsTool').value;
+    const langSelect = document.getElementById('bsLanguage');
+    const fwSelect = document.getElementById('bsFramework');
+    const pmSelect = document.getElementById('bsPackageManager');
+
+    const currentLang = langSelect.value;
+    langSelect.innerHTML = "";
+
+    if(tool === "Selenium") {
+        ["Java", "Python", "C#"].forEach(l => langSelect.add(new Option(l, l)));
+    } else {
+        ["Java", "Python", "JS / TS"].forEach(l => langSelect.add(new Option(l, l)));
     }
 
-    function toggleProjectMethod() {
-        const isNew = document.querySelector('input[name="projectMethod"]:checked').value === 'new';
-        document.getElementById('existingProjectSection').style.display = isNew ? 'none' : 'block';
-        document.getElementById('newProjectSection').style.display = isNew ? 'block' : 'none';
+    if(currentLang && Array.from(langSelect.options).some(o => o.value === currentLang)) {
+        langSelect.value = currentLang;
+    }
 
-        if (isNew) {
-            document.getElementById('projectCredentialsSection').style.display = 'none';
+    const lang = langSelect.value;
+    fwSelect.innerHTML = "";
+    pmSelect.innerHTML = "";
+
+    if (lang === "Java") {
+        fwSelect.add(new Option("Cucumber", "Cucumber"));
+        pmSelect.add(new Option("Maven (pom.xml)", "Maven"));
+    } else if (lang === "Python") {
+        fwSelect.add(new Option("Behave", "Behave"));
+        pmSelect.add(new Option("Pip (requirements.txt)", "Pip"));
+    } else if (lang === "C#") {
+        fwSelect.add(new Option("Reqnroll", "Reqnroll"));
+        pmSelect.add(new Option("NuGet", "NuGet"));
+    } else if (lang === "JS / TS") {
+        fwSelect.add(new Option("Cucumber (JS)", "Cucumber"));
+        pmSelect.add(new Option("NPM (package.json)", "NPM"));
+    }
+}
+
+let bsPollInterval;
+function submitBootstrapper() {
+    const data = {
+        projectName: document.getElementById('bsProjectName').value,
+        projectPath: document.getElementById('bsProjectPath').value,
+        tool: document.getElementById('bsTool').value,
+        language: document.getElementById('bsLanguage').value,
+        framework: document.getElementById('bsFramework').value,
+        packageManager: document.getElementById('bsPackageManager').value,
+        url: document.getElementById('projectBaseUrl').value,
+        username: document.getElementById('projectUsername').value,
+        password: document.getElementById('projectPassword').value
+    };
+
+    if(!data.projectName || !data.projectPath) {
+        alert("Please provide project name and location.");
+        return;
+    }
+
+    document.getElementById('bootstrapperForm').style.display = 'none';
+    document.getElementById('bsLoading').style.display = 'block';
+    document.getElementById('bsLoadingText').innerText = "Starting project setup...";
+
+    fetch('/api/bootstrap-project', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(data)
+    })
+    .then(r => r.json())
+    .then(res => {
+        if(res.job_id) {
+            pollBootstrapper(res.job_id);
         } else {
-            if (document.getElementById('projectPath').value) {
-                document.getElementById('projectCredentialsSection').style.display = 'block';
-            } else {
-                document.getElementById('projectCredentialsSection').style.display = 'none';
+            showBsResult(false, "Setup Error", res.error || "Failed to start job.");
+        }
+    })
+    .catch(err => showBsResult(false, "Network Error", err.message));
+}
+
+function pollBootstrapper(job_id) {
+    bsPollInterval = setInterval(() => {
+        fetch(`/api/bootstrap-status/${job_id}`)
+            .then(r => r.json())
+            .then(res => {
+                if(res.status === 'completed') {
+                    clearInterval(bsPollInterval);
+                    document.getElementById('projectPath').value = res.target_dir;
+                    detectProject(res.target_dir);
+                    showBsResult(true, "Project Ready!", res.message, res.tree);
+                } else if(res.status === 'error') {
+                    clearInterval(bsPollInterval);
+                    showBsResult(false, "Setup Failed", res.message);
+                } else {
+                    document.getElementById('bsLoadingText').innerText = res.message;
+                }
+            });
+    }, 2000);
+}
+
+function showBsResult(success, title, msg, tree = null) {
+    document.getElementById('bsLoading').style.display = 'none';
+    document.getElementById('bsResult').style.display = 'block';
+    document.getElementById('bsResultTitle').innerText = title;
+    document.getElementById('bsResultMsg').innerText = msg;
+
+    const iconContainer = document.getElementById('bsResultIcon');
+    iconContainer.innerHTML = success ?
+        '<i class="fas fa-check-circle fa-4x text-success"></i>' :
+        '<i class="fas fa-exclamation-triangle fa-4x text-danger"></i>';
+
+    if(tree) {
+        document.getElementById('bsTreeContainer').style.display = 'block';
+        document.getElementById('bsFileTree').innerHTML = "";
+        document.getElementById('bsFileTree').appendChild(renderTree(tree));
+    }
+}
+
+function renderTree(node) {
+    const ul = document.createElement('ul');
+    ul.style.listStyle = 'none';
+    ul.style.paddingLeft = '15px';
+    const li = document.createElement('li');
+    li.innerHTML = (node.type === 'directory' ? '📁 ' : '📄 ') + node.name;
+    ul.appendChild(li);
+    if (node.children) {
+        node.children.forEach(child => li.appendChild(renderTree(child)));
+    }
+    return ul;
+}
+
+function cleanMissingProjects() {
+    if(!confirm("Scan database and remove projects that no longer exist on disk?")) return;
+    fetch('/api/remove-missing-projects', {method: 'POST'})
+        .then(r => r.json())
+        .then(res => {
+            if(res.status === 'success') {
+                alert("Clean sync complete. Removed: " + (res.removed.length ? res.removed.join(", ") : "None"));
+                location.reload();
             }
+        });
+}
+
+function locateDirectory() {
+    fetch('/api/select-directory')
+        .then(response => response.json())
+        .then(data => {
+            if (data.path) {
+                document.getElementById('projectPath').value = data.path;
+                detectProject(data.path);
+                document.getElementById('projectCredentialsSection').style.display = 'block';
+            }
+        })
+        .catch(err => console.error("Directory selection failed:", err));
+}
+
+function detectProject(path) {
+    fetch('/api/detect-project', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ path: path })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if(data.language && data.framework) {
+            document.getElementById('detLanguage').innerText = data.language;
+            document.getElementById('detFramework').innerText = data.framework;
+            document.getElementById('detectedDetails').style.display = 'block';
         }
+    })
+    .catch(err => console.error("Project detection failed:", err));
+}
+
+let generatedFilesData = [];
+
+function generateCode() {
+    const data = {
+        project_path: document.getElementById('projectPath').value,
+        bdd_content: document.getElementById('bddContent').value,
+        base_url: document.getElementById('baseUrl').value,
+        existing_code: document.getElementById('existingCode').value
+    };
+
+    if (!data.bdd_content) {
+        alert("Please provide BDD feature text.");
+        return;
     }
 
-    function openBootstrapperModal() {
-        document.getElementById('bootstrapperModal').style.display = 'block';
-        document.getElementById('bootstrapperForm').style.display = 'block';
-        document.getElementById('bsLoading').style.display = 'none';
-        document.getElementById('bsResult').style.display = 'none';
-        document.getElementById('bsProjectName').value = '';
-        updateBsOptions(); // Initialize dropdowns
-        updatePathPreview();
-    }
+    nextStep(3);
+    document.getElementById('loadingStatus').style.display = 'block';
+    document.getElementById('resultContent').style.display = 'none';
 
-    function closeBootstrapperModal() {
-        document.getElementById('bootstrapperModal').style.display = 'none';
-    }
-
-    function browseBsDirectory() {
-        fetch('/api/browse-directory')
-            .then(r => r.json())
-            .then(data => {
-                if (data.path) {
-                    document.getElementById('bsProjectPath').value = data.path;
-                    updatePathPreview();
-                }
-            });
-    }
-
-    function updatePathPreview() {
-        const name = document.getElementById('bsProjectName').value || "ProjectName";
-        const base = document.getElementById('bsProjectPath').value || "/Select/A/Folder";
-        const separator = base.includes("\\") || navigator.platform.includes("Win") ? "\\" : "/";
-        const fullPath = base.endsWith(separator) ? base + name : base + separator + name;
-        document.getElementById('bsPathPreview').innerText = fullPath;
-    }
-
-    function updateBsOptions() {
-        const tool = document.getElementById('bsTool').value;
-        const langSelect = document.getElementById('bsLanguage');
-        const fwSelect = document.getElementById('bsFramework');
-        const pmSelect = document.getElementById('bsPackageManager');
-
-        const currentLang = langSelect.value;
-        langSelect.innerHTML = "";
-
-        if (tool === "Selenium") {
-            ["Java", "Python", "C#"].forEach(l => langSelect.add(new Option(l, l)));
+    fetch('/api/generate-bdd-code', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data)
+    })
+    .then(r => r.json())
+    .then(res => {
+        document.getElementById('loadingStatus').style.display = 'none';
+        if (res.status === 'success') {
+            document.getElementById('resultContent').style.display = 'block';
+            generatedFilesData = res.files;
+            renderCodeResults(res.files);
         } else {
-            ["Java", "Python", "JS / TS"].forEach(l => langSelect.add(new Option(l, l)));
+            alert("Generation failed: " + res.message);
+            nextStep(2);
         }
+    })
+    .catch(err => {
+        document.getElementById('loadingStatus').style.display = 'none';
+        alert("Error: " + err.message);
+        nextStep(2);
+    });
+}
 
-        if (currentLang && Array.from(langSelect.options).some(o => o.value === currentLang)) {
-            langSelect.value = currentLang;
-        }
+function renderCodeResults(files) {
+    const container = document.getElementById('codeBlocksContainer');
+    container.innerHTML = "";
 
-        const lang = langSelect.value;
-        fwSelect.innerHTML = "";
-        pmSelect.innerHTML = "";
-
-        if (lang === "Java") {
-            fwSelect.add(new Option("Cucumber", "Cucumber"));
-            pmSelect.add(new Option("Maven (pom.xml)", "Maven"));
-        } else if (lang === "Python") {
-            fwSelect.add(new Option("Behave", "Behave"));
-            pmSelect.add(new Option("Pip (requirements.txt)", "Pip"));
-        } else if (lang === "C#") {
-            fwSelect.add(new Option("Reqnroll", "Reqnroll"));
-            pmSelect.add(new Option("NuGet", "NuGet"));
-        } else if (lang === "JS / TS") {
-            fwSelect.add(new Option("Cucumber (JS)", "Cucumber"));
-            pmSelect.add(new Option("NPM (package.json)", "NPM"));
-        }
-    }
-
-    let bsPollInterval;
-    function submitBootstrapper() {
-        const data = {
-            projectName: document.getElementById('bsProjectName').value,
-            projectPath: document.getElementById('bsProjectPath').value,
-            tool: document.getElementById('bsTool').value,
-            language: document.getElementById('bsLanguage').value,
-            framework: document.getElementById('bsFramework').value,
-            packageManager: document.getElementById('bsPackageManager').value,
-            url: document.getElementById('projectBaseUrl').value,
-            username: document.getElementById('projectUsername').value,
-            password: document.getElementById('projectPassword').value
-        };
-
-        if (!data.projectName || !data.projectPath) {
-            alert("Please provide project name and location.");
-            return;
-        }
-
-        document.getElementById('bootstrapperForm').style.display = 'none';
-        document.getElementById('bsLoading').style.display = 'block';
-        document.getElementById('bsLoadingText').innerText = "Starting project setup...";
-
-        fetch('/api/bootstrap-project', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(data)
-        })
-            .then(r => r.json())
-            .then(res => {
-                if (res.job_id) {
-                    pollBootstrapper(res.job_id);
-                } else {
-                    showBsResult(false, "Setup Error", res.error || "Failed to start job.");
-                }
-            })
-            .catch(err => showBsResult(false, "Network Error", err.message));
-    }
-
-    function pollBootstrapper(job_id) {
-        bsPollInterval = setInterval(() => {
-            fetch(`/api/bootstrap-status/${job_id}`)
-                .then(r => r.json())
-                .then(res => {
-                    if (res.status === 'completed') {
-                        clearInterval(bsPollInterval);
-                        document.getElementById('projectPath').value = res.target_dir;
-                        detectProject(res.target_dir);
-                        showBsResult(true, "Project Ready!", res.message, res.tree);
-                    } else if (res.status === 'error') {
-                        clearInterval(bsPollInterval);
-                        showBsResult(false, "Setup Failed", res.message);
-                    } else {
-                        document.getElementById('bsLoadingText').innerText = res.message;
-                    }
-                });
-        }, 2000);
-    }
-
-    function showBsResult(success, title, msg, tree = null) {
-        document.getElementById('bsLoading').style.display = 'none';
-        document.getElementById('bsResult').style.display = 'block';
-        document.getElementById('bsResultTitle').innerText = title;
-        document.getElementById('bsResultMsg').innerText = msg;
-
-        const iconContainer = document.getElementById('bsResultIcon');
-        iconContainer.innerHTML = success ?
-            '<i class="fas fa-check-circle fa-4x text-success"></i>' :
-            '<i class="fas fa-exclamation-triangle fa-4x text-danger"></i>';
-
-        if (tree) {
-            document.getElementById('bsTreeContainer').style.display = 'block';
-            document.getElementById('bsFileTree').innerHTML = "";
-            document.getElementById('bsFileTree').appendChild(renderTree(tree));
-        }
-    }
-
-    function renderTree(node) {
-        const ul = document.createElement('ul');
-        ul.style.listStyle = 'none';
-        ul.style.paddingLeft = '15px';
-        const li = document.createElement('li');
-        li.innerHTML = (node.type === 'directory' ? '📁 ' : '📄 ') + node.name;
-        ul.appendChild(li);
-        if (node.children) {
-            node.children.forEach(child => li.appendChild(renderTree(child)));
-        }
-        return ul;
-    }
-
-    function cleanMissingProjects() {
-        if (!confirm("Scan database and remove projects that no longer exist on disk?")) return;
-        fetch('/api/remove-missing-projects', { method: 'POST' })
-            .then(r => r.json())
-            .then(res => {
-                if (res.status === 'success') {
-                    alert("Clean sync complete. Removed: " + (res.removed.length ? res.removed.join(", ") : "None"));
-                    location.reload();
-                }
-            });
-    }
-
-    function locateDirectory() {
-        fetch('/api/select-directory')
-            .then(response => response.json())
-            .then(data => {
-                if (data.path) {
-                    document.getElementById('projectPath').value = data.path;
-                    detectProject(data.path);
-                    document.getElementById('projectCredentialsSection').style.display = 'block';
-                }
-            })
-            .catch(err => console.error("Directory selection failed:", err));
-    }
-
-    function detectProject(path) {
-        fetch('/api/detect-project', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({ path: path })
-        })
-            .then(response => response.json())
-            .then(data => {
-                if (data.language && data.framework) {
-                    document.getElementById('detLanguage').innerText = data.language;
-                    document.getElementById('detFramework').innerText = data.framework;
-                    document.getElementById('detectedDetails').style.display = 'block';
-                }
-            })
-            .catch(err => console.error("Project detection failed:", err));
-    }
-
-    let generatedFilesData = [];
-
-    function generateCode() {
-        const data = {
-            project_path: document.getElementById('projectPath').value,
-            bdd_content: document.getElementById('bddContent').value,
-            base_url: document.getElementById('baseUrl').value,
-            existing_code: document.getElementById('existingCode').value
-        };
-
-        if (!data.bdd_content) {
-            alert("Please provide BDD feature text.");
-            return;
-        }
-
-        nextStep(3);
-        document.getElementById('loadingStatus').style.display = 'block';
-        document.getElementById('resultContent').style.display = 'none';
-
-        fetch('/api/generate-bdd-code', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(data)
-        })
-            .then(r => r.json())
-            .then(res => {
-                document.getElementById('loadingStatus').style.display = 'none';
-                if (res.status === 'success') {
-                    document.getElementById('resultContent').style.display = 'block';
-                    generatedFilesData = res.files;
-                    renderCodeResults(res.files);
-                } else {
-                    alert("Generation failed: " + res.message);
-                    nextStep(2);
-                }
-            })
-            .catch(err => {
-                document.getElementById('loadingStatus').style.display = 'none';
-                alert("Error: " + err.message);
-                nextStep(2);
-            });
-    }
-
-    function renderCodeResults(files) {
-        const container = document.getElementById('codeBlocksContainer');
-        container.innerHTML = "";
-
-        files.forEach(file => {
-            const win = document.createElement('div');
-            win.className = 'code-window animate-scale-in';
-            win.innerHTML = `
+    files.forEach(file => {
+        const win = document.createElement('div');
+        win.className = 'code-window animate-scale-in';
+        win.innerHTML = `
             <div class="window-header">
                 <div class="d-flex align-items-center gap-3">
                     <div class="window-controls">
@@ -1044,53 +993,53 @@
             </div>
             <pre class="code-content"><code>${escapeHtml(file.content)}</code></pre>
         `;
-            container.appendChild(win);
-        });
+        container.appendChild(win);
+    });
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+function copyCode(btn, text) {
+    navigator.clipboard.writeText(text).then(() => {
+        const originalContent = btn.innerHTML;
+        btn.innerHTML = '<i class="fas fa-check"></i> Copied!';
+        btn.style.background = 'var(--success)';
+        btn.style.color = 'white';
+        setTimeout(() => {
+            btn.innerHTML = originalContent;
+            btn.style.background = '';
+            btn.style.color = '';
+        }, 2000);
+    });
+}
+
+function saveFiles() {
+    const path = document.getElementById('projectPath').value;
+    if (!path) {
+        alert("No project path selected.");
+        return;
     }
 
-    function escapeHtml(text) {
-        const div = document.createElement('div');
-        div.textContent = text;
-        return div.innerHTML;
-    }
-
-    function copyCode(btn, text) {
-        navigator.clipboard.writeText(text).then(() => {
-            const originalContent = btn.innerHTML;
-            btn.innerHTML = '<i class="fas fa-check"></i> Copied!';
-            btn.style.background = 'var(--success)';
-            btn.style.color = 'white';
-            setTimeout(() => {
-                btn.innerHTML = originalContent;
-                btn.style.background = '';
-                btn.style.color = '';
-            }, 2000);
-        });
-    }
-
-    function saveFiles() {
-        const path = document.getElementById('projectPath').value;
-        if (!path) {
-            alert("No project path selected.");
-            return;
-        }
-
-        fetch('/api/save-generated-files', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                project_path: path,
-                files: generatedFilesData
-            })
+    fetch('/api/save-generated-files', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            project_path: path,
+            files: generatedFilesData
         })
-            .then(r => r.json())
-            .then(res => {
-                if (res.status === 'success') {
-                    alert("All files saved to " + path);
-                } else {
-                    alert("Save failed: " + res.message);
-                }
-            });
-    }
+    })
+    .then(r => r.json())
+    .then(res => {
+        if (res.status === 'success') {
+            alert("All files saved to " + path);
+        } else {
+            alert("Save failed: " + res.message);
+        }
+    });
+}
 </script>
 {% endblock %}
