@@ -15,12 +15,26 @@
             
             <div class="form-group">
                 <label>Select Project</label>
-                <select id="runProject" class="form-control">
+                <select id="runProject" class="form-control" onchange="onProjectSelect()">
                     <option value="">-- Choose Project --</option>
-                    <option value="Sample Selenium">Sample Selenium (Python / Pytest)</option>
-                    <option value="Playwright E2E">Playwright E2E (TypeScript)</option>
+                    {% for p in projects %}
+                        <option value="{{ p.project_name }}" 
+                                data-path="{{ p.project_path }}"
+                                data-lang="{{ p.project_lang }}"
+                                data-fw="{{ p.project_fw }}"
+                                data-tool="{{ p.project_tool }}">
+                            {{ p.project_name }} ({{ p.project_lang }} / {{ p.project_tool }})
+                        </option>
+                    {% endfor %}
                 </select>
             </div>
+
+            <div id="modeSelection" style="display: none; margin-top: 25px; text-align: center; gap: 15px; justify-content: center; display: flex;">
+                <button type="button" class="btn btn-primary" id="btnModeRun" onclick="setMode('run')" style="width: 200px;"><i class="fas fa-play"></i> Run Test</button>
+                <button type="button" class="btn btn-secondary" id="btnModeCmd" onclick="setMode('cmd')" style="width: 200px; background: rgba(255,255,255,0.1); border-color: rgba(255,255,255,0.2);"><i class="fas fa-terminal"></i> Open command prompt</button>
+            </div>
+
+            <div id="runTestConfig" style="display: none;">
 
             <div class="form-row mt-3">
                 <div class="form-col">
@@ -48,10 +62,11 @@
             </div>
 
             <div class="form-actions mt-5 text-right w-100">
-                <button type="button" class="btn btn-primary btn-block" style="height: 46px; font-weight: bold;" onclick="runScript()">
+                <button type="button" id="launchBtn" class="btn btn-primary btn-block" style="height: 46px; font-weight: bold;" onclick="runScript()">
                     <i class="fas fa-rocket"></i> Launch Execution
                 </button>
             </div>
+            </div> <!-- End runTestConfig -->
         </div>
     </div>
 
@@ -63,9 +78,16 @@
                 <span class="status-dot offline" id="execStatus"></span> Status: Ready
             </div>
         </div>
+        </div>
         <div class="terminal-body" id="logOutput">
             Welcome to AI-QA Script Runner.
-            Select a project and click 'Launch Execution' to stream logs here.
+            Select a project and a mode to begin.
+        </div>
+        <div class="terminal-footer" id="cmdFooter" style="display: none; padding: 10px; background: rgba(0,0,0,0.3); border-top: 1px solid var(--glass-border);">
+            <div style="display: flex; gap: 10px;">
+                <span style="color: #34d399; font-family: 'Courier New'; align-self: center;">&gt;</span>
+                <input type="text" id="cmdInput" class="form-control" style="background: transparent !important; border: none !important; box-shadow: none !important; font-family: 'Courier New'; height: 30px;" placeholder="Type command and press Enter..." onkeypress="handleCmdKey(event)">
+            </div>
         </div>
     </div>
 </div>
@@ -208,45 +230,154 @@ hr {
 
 {% block extra_js %}
 <script>
-function runScript() {
-    const btn = document.querySelector('button.btn-primary');
-    const log = document.getElementById('logOutput');
-    const status = document.getElementById('execStatus');
+let currentMode = null;
+
+function onProjectSelect() {
+    const sel = document.getElementById('runProject');
+    const modeDiv = document.getElementById('modeSelection');
+    const runConfigDiv = document.getElementById('runTestConfig');
+    const cmdFooter = document.getElementById('cmdFooter');
     
-    if(!document.getElementById('runProject').value) {
+    if (sel.value) {
+        modeDiv.style.display = 'flex';
+    } else {
+        modeDiv.style.display = 'none';
+        runConfigDiv.style.display = 'none';
+        cmdFooter.style.display = 'none';
+        currentMode = null;
+    }
+}
+
+function setMode(mode) {
+    currentMode = mode;
+    const runConfigDiv = document.getElementById('runTestConfig');
+    const cmdFooter = document.getElementById('cmdFooter');
+    const btnRun = document.getElementById('btnModeRun');
+    const btnCmd = document.getElementById('btnModeCmd');
+    const log = document.getElementById('logOutput');
+
+    if (mode === 'run') {
+        runConfigDiv.style.display = 'block';
+        cmdFooter.style.display = 'none';
+        btnRun.style.background = 'var(--accent-primary)';
+        btnCmd.style.background = 'rgba(255,255,255,0.1)';
+        log.innerHTML = `<div style="color: #94a3b8;">[System] Mode: Run Test Executions. Selected project will be executed using AI generation rules.</div>`;
+    } else {
+        runConfigDiv.style.display = 'none';
+        cmdFooter.style.display = 'block';
+        btnCmd.style.background = 'var(--accent-primary)';
+        btnRun.style.background = 'rgba(255,255,255,0.1)';
+        log.innerHTML = `<div style="color: #60a5fa;">[System] Embedded Command Prompt active. Type a command below.</div>`;
+        document.getElementById('cmdInput').focus();
+    }
+}
+
+async function runScript() {
+    const sel = document.getElementById('runProject');
+    const opt = sel.options[sel.selectedIndex];
+    
+    if(!opt.value) {
         alert("Please select a project.");
         return;
     }
 
+    const btn = document.getElementById('launchBtn');
+    const log = document.getElementById('logOutput');
+    const status = document.getElementById('execStatus');
+    const env = document.getElementById('runEnv').value;
+    const browser = document.getElementById('runBrowser').value;
+    const tags = document.querySelector('input[placeholder*="tags"]').value || '';
+
     btn.disabled = true;
-    btn.innerHTML = '<i class="fas fa-circle-notch fa-spin"></i> Initializing...';
+    btn.innerHTML = '<i class="fas fa-circle-notch fa-spin"></i> Analyzing & Executing...';
     
     status.className = 'status-dot running';
-    status.nextSibling.textContent = ' Status: Running';
+    status.nextSibling.textContent = ' Status: AI Generating Command...';
 
-    log.innerHTML = `<div style="color: #94a3b8;">[System] Preparing test execution environment...</div>
-<div style="color: #94a3b8;">[System] Fetching dependencies...</div>`;
+    log.innerHTML = `<div style="color: #94a3b8;">[System] Preparing test execution environment...</div>`;
+    log.innerHTML += `<div style="color: #94a3b8;">[AI] Generating execution command for ${opt.value}...</div>`;
 
-    let step = 0;
-    const interval = setInterval(() => {
-        step++;
-        if (step === 1) {
-            log.innerHTML += `<div>[Runner] Starting test suite execution for project.</div>`;
-        } else if (step === 2) {
-            log.innerHTML += `<div>[Pytest] Testing features/login.feature...</div>`;
-        } else if (step === 4) {
-            log.innerHTML += `<div style="color: #34d399;">[Pytest] PASS  features/login.feature (4s)</div>`;
-        } else if (step === 5) {
-            log.innerHTML += `<div style="color: #60a5fa;">[Runner] Generating HTML Report...</div>`;
-        } else if (step === 6) {
-            clearInterval(interval);
+    try {
+        const response = await fetch('/api/script-runner/run', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                project: {
+                    name: opt.value,
+                    path: opt.getAttribute('data-path'),
+                    lang: opt.getAttribute('data-lang'),
+                    fw: opt.getAttribute('data-fw'),
+                    tool: opt.getAttribute('data-tool')
+                },
+                environment: env,
+                browser: browser,
+                tags: tags
+            })
+        });
+
+        const data = await response.json();
+        
+        log.innerHTML += `<div style="color: #34d399; white-space: pre-wrap;">${data.log || 'No output'}</div>`;
+        
+        if (data.status === 'success') {
             log.innerHTML += `<div style="color: #34d399; font-weight: bold; margin-top: 10px;">[System] Execution Completed Successfully!</div>`;
-            btn.disabled = false;
-            btn.innerHTML = '<i class="fas fa-rocket"></i> Launch Execution';
             status.className = 'status-dot done';
             status.nextSibling.textContent = ' Status: Completed';
+            
+            if (data.report_url) {
+                log.innerHTML += `<div style="color: #60a5fa; margin-top: 10px;"><a href="${data.report_url}" target="_blank" style="color: #60a5fa; text-decoration: underline;">Open Generated Report</a></div>`;
+                window.open(data.report_url, '_blank');
+            }
+        } else {
+            log.innerHTML += `<div style="color: #ef4444; font-weight: bold; margin-top: 10px;">[System] Execution Failed after retries.</div>`;
+            status.className = 'status-dot offline';
+            status.nextSibling.textContent = ' Status: Error';
         }
-    }, 1500);
+    } catch (e) {
+        log.innerHTML += `<div style="color: #ef4444;">Error: ${e.message}</div>`;
+        status.className = 'status-dot offline';
+        status.nextSibling.textContent = ' Status: Error';
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fas fa-rocket"></i> Launch Execution';
+    }
+}
+
+async function handleCmdKey(e) {
+    if (e.key === 'Enter') {
+        const sel = document.getElementById('runProject');
+        const opt = sel.options[sel.selectedIndex];
+        if (!opt.value) return;
+
+        const input = document.getElementById('cmdInput');
+        const cmd = input.value.trim();
+        if (!cmd) return;
+
+        const log = document.getElementById('logOutput');
+        log.innerHTML += `<div><span style="color: #34d399;">$</span> ${cmd}</div>`;
+        input.value = 'Executing...';
+        input.disabled = true;
+
+        try {
+            const response = await fetch('/api/script-runner/execute-cmd', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    command: cmd,
+                    project_path: opt.getAttribute('data-path') + '/' + opt.value
+                })
+            });
+            const data = await response.json();
+            log.innerHTML += `<div style="color: #cbd5e1; white-space: pre-wrap; margin-bottom: 10px;">${data.output || '(No output)'}</div>`;
+        } catch (err) {
+            log.innerHTML += `<div style="color: #ef4444; margin-bottom: 10px;">Error: ${err.message}</div>`;
+        } finally {
+            input.disabled = false;
+            input.value = '';
+            input.focus();
+            log.scrollTop = log.scrollHeight;
+        }
+    }
 }
 </script>
 {% endblock %}

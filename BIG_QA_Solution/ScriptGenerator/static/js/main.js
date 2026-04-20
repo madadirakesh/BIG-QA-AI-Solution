@@ -71,7 +71,7 @@ async function generateCode() {
         bdd_content: bddContent,
         support_content: supportContent,
         file_content: "",
-        ai_provider: "openai" // Default to openai as in original
+        ai_provider: "" // Will safely default to backend global Env variable configuring AI_TOOL
     };
 
     // Move to step 3 Loading State

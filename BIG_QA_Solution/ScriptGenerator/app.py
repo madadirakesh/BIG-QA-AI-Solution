@@ -332,7 +332,9 @@ def script_runner():
     if session.get('user_role', '').lower() not in ['qa', 'admin']:
         flash('Not authorized', 'error')
         return redirect(url_for('home'))
-    return render_template('script_runner.html')
+        
+    projects = fetch_data("SELECT * FROM ProjectDetails")
+    return render_template('script_runner.html', projects=projects)
 
 @app.route('/qa/test-case-generator', methods=['GET'])
 @login_required()
@@ -441,6 +443,45 @@ def get_table_data():
 @login_required(role='admin')
 def db_viewer():
     return render_template('db_viewer.html')
+
+from ScriptRunnerEngine.runner import ScriptRunnerService
+
+@app.route('/api/script-runner/run', methods=['POST'])
+@login_required()
+def script_runner_run():
+    data = request.json
+    meta = data.get('project', {})
+    env = data.get('environment', '')
+    browser = data.get('browser', '')
+    tags = data.get('tags', '')
+
+    result = ScriptRunnerService.execute_with_healing(meta, env, browser, tags)
+    return jsonify(result)
+
+@app.route('/api/script-runner/execute-cmd', methods=['POST'])
+@login_required()
+def script_runner_execute_cmd():
+    data = request.json
+    cmd = data.get('command', '')
+    project_path = data.get('project_path', '')
+    
+    result = ScriptRunnerService.execute_cmd(cmd, project_path)
+    return jsonify(result)
+
+@app.route('/api/script-runner/report', methods=['GET'])
+@login_required()
+def serve_report():
+    file_path = request.args.get('path')
+    if not file_path or not os.path.exists(file_path):
+        return "Report not found", 404
+    
+    import mimetypes
+    from flask import Response
+    with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+        content = f.read()
+    
+    mime_type, _ = mimetypes.guess_type(file_path)
+    return Response(content, mimetype=mime_type or 'text/html')
 
 def open_browser():
     webbrowser.open_new('http://127.0.0.1:5000/')
