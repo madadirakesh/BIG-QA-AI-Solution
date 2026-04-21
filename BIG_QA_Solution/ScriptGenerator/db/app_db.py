@@ -83,7 +83,7 @@ def init_db():
                     Value VARCHAR(500),
                     Created_On DATETIME,
                     project_id INTEGER,
-                    UNIQUE(Page_Name, Locator_Name)
+                    UNIQUE(project_id, Page_Name, Locator_Name)
                 )
             """
 

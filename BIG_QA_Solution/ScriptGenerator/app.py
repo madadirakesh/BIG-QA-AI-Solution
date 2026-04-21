@@ -381,42 +381,72 @@ def detect_project():
             return jsonify({"error": "Invalid path"}), 400
         
         files = os.listdir(path)
+        tool = "UnKnown"
         language = "Unknown"
         framework = "Unknown"
-        
-        if 'pom.xml' in files:
+        packager = "Unknown"
+
+        # Signature patterns
+        packages = {
+            'pom.xml': 'Maven',
+            'build.gradle':'Gradle',
+            'package.json':'NPM',
+            'requirements.txt': 'Pip',
+        }
+
+        extensions_found = []
+        for root, dirs, files in os.walk(path):
+            if any(skip in root for skip in ['node_modules', '.git', 'venv', 'target', 'bin']):
+                continue
+            for file in files:
+                ext = os.path.splitext(file)[1]
+                if ext not in extensions_found:
+                    extensions_found.append(ext)
+                if file in ['pom.xml', 'package.json', 'requirements.txt', 'build.gradle'] or file.endswith('.csproj'):
+                    try:
+                        with open(os.path.join(root, file), 'r', errors='ignore') as f:
+                            content = f.read().lower()
+
+                            # Tool checks...
+                            if 'selenium' in content: tool='Selenium'
+                            elif 'playwright' in content: tool='Playwright'
+
+                            #Java Framework Check
+                            if 'cucumber' in content: framework = 'Cucumber'
+                            elif 'testng' in content: framework = 'TestNg'
+                            elif 'junit' in content: framework = 'JUnit'
+
+                            #Python Framework Check
+                            if 'jbehave' in content: framework = 'JBehave'
+                            elif 'pytest' in content: framework = 'Pytest'
+
+                            # C# Specific Frameworks
+                            if 'specflow' in content: framework ='SpecFlow'
+                            if 'nunit' in content: framework = 'NUnit'
+                            if 'xunit' in content: framework ='xUnit'
+                            if 'mstest' in content: framework ='MSTest'
+
+                            # Update Packager for C#
+                            if file.endswith('.csproj'):
+                                packager = 'NuGet'
+                            elif file in packages:
+                                packager = packages[file]
+
+                    except Exception:
+                        pass
+
+        if '.java' in extensions_found:
             language = 'Java'
-            with open(os.path.join(path, 'pom.xml'), 'r', encoding='utf-8', errors='ignore') as f:
-                content = f.read()
-                if 'cucumber' in content.lower():
-                    framework = 'Cucumber'
-                else:
-                    framework = 'Maven'
-        elif 'package.json' in files:
-            language = 'TypeScript / JavaScript'
-            with open(os.path.join(path, 'package.json'), 'r', encoding='utf-8', errors='ignore') as f:
-                content = f.read()
-                if 'playwright' in content.lower():
-                    framework = 'Playwright'
-                elif 'cypress' in content.lower():
-                    framework = 'Cypress'
-                else:
-                    framework = 'Node.js'
-        elif 'requirements.txt' in files or 'pytest.ini' in files:
+        elif '.py' in extensions_found:
             language = 'Python'
-            if 'pytest.ini' in files:
-                framework = 'Pytest-BDD'
-            else:
-                framework = 'Pytest'
-                if 'requirements.txt' in files:
-                    with open(os.path.join(path, 'requirements.txt'), 'r', encoding='utf-8', errors='ignore') as f:
-                        content = f.read()
-                        if 'pytest-bdd' in content.lower():
-                            framework = 'Pytest-BDD'
-                        elif 'behave' in content.lower():
-                            framework = 'Behave'
-                            
-        return jsonify({"language": language, "framework": framework})
+        elif '.ts' in extensions_found:
+            language = 'TypeScript'
+        elif '.js' in extensions_found:
+            language = 'JavaScript'
+        elif '.cs' in extensions_found:
+            language = 'C#'
+
+        return jsonify({"tool": tool, "language": language, "framework": framework, "packager": packager})
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
@@ -443,6 +473,8 @@ def save_project_config():
         password = data.get('password', '')
         lang = data.get('language', 'Unknown')
         fw = data.get('framework', 'Unknown')
+        tool = data.get('tool', 'Unknown')
+        packager  = data.get('packager', 'Unknown')
         
         if not p_path:
             return jsonify({"status": "error", "message": "Project path is required."}), 400
@@ -457,7 +489,7 @@ def save_project_config():
             if not p_name:
                 p_name = "Local_Project"
             insert_data("INSERT INTO ProjectDetails (project_name, project_path, project_lang, project_fw, project_tool, package_manager, project_type) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                        (p_name, p_path, lang, fw, 'Local_Detected', 'Manual', 'Existing'))
+                        (p_name, p_path, lang, fw, tool, packager, 'Existing'))
             new_record = fetch_data("SELECT id FROM ProjectDetails WHERE project_path = ?", (p_path,))
             if new_record:
                 p_details_id = new_record[0]['id']

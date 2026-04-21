@@ -279,6 +279,13 @@ textarea:focus {
     outline: none;
     border-color: var(--accent-primary);
     box-shadow: 0 0 0 3px var(--accent-glow);
+    background: rgba(15, 23, 42, 0.9);
+}
+
+select option {
+    background-color: #1e293b;
+    color: white;
+    padding: 10px;
 }
 
 .login-footer {
