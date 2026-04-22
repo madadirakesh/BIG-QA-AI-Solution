@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}BDD to Code - AI QA Portal{% endblock %}
+{% block title %}Script Developer - AI QA Portal{% endblock %}
 
 {% block content %}
 <div class="page-header">
@@ -15,17 +15,17 @@
             <div class="wizard-steps-premium">
                 <div class="step-p active" id="step1-indicator">
                     <div class="step-icon"><i class="fas fa-project-diagram"></i></div>
-                    <div class="step-label">Project Setup</div>
+                    <div class="step-label">Project Initialization</div>
                 </div>
                 <div class="step-line"></div>
                 <div class="step-p" id="step2-indicator">
                     <div class="step-icon"><i class="fas fa-pen-nib"></i></div>
-                    <div class="step-label">Provide BDD</div>
+                    <div class="step-label">Generate Script</div>
                 </div>
                 <div class="step-line"></div>
                 <div class="step-p" id="step3-indicator">
                     <div class="step-icon"><i class="fas fa-rocket"></i></div>
-                    <div class="step-label">Generate</div>
+                    <div class="step-label">Preview & Copy</div>
                 </div>
             </div>
         </div>
@@ -120,36 +120,85 @@
 
         <div id="step-2" class="wizard-content" style="display: none;">
             <div class="step-inner-align">
-                <h3 class="premium-header">Provide BDD & Context</h3>
+                <div class="d-flex justify-content-between align-items-center mb-4">
+                    <h3 class="premium-header mb-0" style="border-bottom: none;">Generate Script</h3>
+                    <button type="button" class="btn btn-outline" style="height:44px; white-space:nowrap; border-color: var(--accent-primary); color: var(--accent-primary);" onclick="window.open('/element-locator', '_blank')"><i class="fas fa-crosshairs"></i> Launch Element Locator</button>
+                </div>
+                <div style="width: 100px; height: 2px; background: var(--accent-primary); box-shadow: 0 0 15px var(--accent-glow); margin-top: -20px; margin-bottom: 30px;"></div>
 
-            <div class="form-group mt-3">
-                <label>BDD Source Text</label>
-                <textarea id="bddContent" rows="6" placeholder="Feature: Login functionality..."></textarea>
-            </div>
+                <div class="form-row">
+                    <div class="form-col">
+                        <div class="form-group">
+                            <label><i class="fas fa-tools"></i> Tool</label>
+                            <select id="genTool" class="form-control" onchange="updateGenLanguage()">
+                                <option value="Selenium">Selenium</option>
+                                <option value="Playwright">Playwright</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="form-col">
+                        <div class="form-group">
+                            <label><i class="fas fa-code"></i> Language</label>
+                            <select id="genLanguage" class="form-control" onchange="updateFileInputAccepts()">
+                                <!-- Dynamic Based on Tool -->
+                            </select>
+                        </div>
+                    </div>
+                </div>
 
-            <div class="form-group row">
-                <div class="col">
-                    <label>Base URL Context</label>
-                    <input type="text" id="baseUrl" placeholder="https://example.com">
+                <div class="form-group mt-3">
+                    <label><i class="fas fa-sitemap"></i> Mapping Strategy <small class="text-secondary">(Choose either DB Locators or Local Page Objects)</small></label>
+                    <div class="d-flex gap-3 mb-3">
+                        <label style="cursor: pointer;"><input type="radio" name="mappingStrategy" value="db" checked onchange="toggleMappingStrategy()"> Use DB Locators</label>
+                        <label style="cursor: pointer;"><input type="radio" name="mappingStrategy" value="local" onchange="toggleMappingStrategy()"> Upload Page Objects</label>
+                    </div>
                 </div>
-                <div class="col">
-                    <label>Existing Code Context (Optional)</label>
-                    <textarea id="existingCode" rows="2"
-                        placeholder="Paste similar existing code or locators..."></textarea>
-                </div>
-            </div>
 
-            <div class="form-actions row mt-4">
-                <div class="col">
-                    <button type="button" class="btn btn-secondary" onclick="nextStep(1)"><i
-                            class="fas fa-arrow-left"></i> Back</button>
+                <div id="mappingDbSection" class="form-group">
+                    <label>Select Locator Pages (DB)</label>
+                    <select id="locatorsDropdown" class="form-control" multiple style="height: auto; min-height: 80px; padding: 10px;">
+                        <!-- JS populated -->
+                    </select>
+                    <small class="text-secondary mt-1 d-block">Hold CTRL/CMD to select multiple pages.</small>
                 </div>
-                <div class="col text-right">
-                    <button type="button" class="btn btn-primary" onclick="generateCode()">Generate AI Code <i
-                            class="fas fa-robot"></i></button>
+
+                <div id="mappingLocalSection" class="form-group" style="display: none;">
+                    <label>Upload Page Object Files</label>
+                    <div class="d-flex align-items-center gap-2">
+                        <input type="file" id="pageObjectFiles" class="form-control flex-1" style="margin-bottom:0 !important; padding-top:10px;" multiple accept=".java,.py,.cs,.ts,.js">
+                    </div>
+                    <small class="text-secondary mt-1 d-block">Select multiple files based on project language.</small>
+                </div>
+
+                <div class="form-row mt-4">
+                    <div class="form-col">
+                        <div class="form-group">
+                            <label><i class="fas fa-file-alt"></i> Type of File</label>
+                            <select id="fileType" class="form-control" onchange="updateFileInputAccepts()">
+                                <option value="BDD">BDD (.txt, .feature)</option>
+                                <option value="Excel">Testcase Excel (.xlsx, .xls)</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="form-col">
+                        <div class="form-group">
+                            <label><i class="fas fa-upload"></i> Upload File</label>
+                            <input type="file" id="scenarioFile" class="form-control" style="padding-top:10px;" accept=".txt,.feature" onchange="validateScenarioFile(this)">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="form-actions row mt-4">
+                    <div class="col">
+                        <button type="button" class="btn btn-secondary" onclick="nextStep(1)"><i
+                                class="fas fa-arrow-left"></i> Back</button>
+                    </div>
+                    <div class="col text-right">
+                        <button type="button" class="btn btn-primary" onclick="generateCode()">Generate Script <i
+                                class="fas fa-robot"></i></button>
+                    </div>
                 </div>
             </div>
-        </div>
         </div>
 
         <div id="step-3" class="wizard-content" style="display: none;">
@@ -168,10 +217,13 @@
                     <!-- Dynamic code blocks will be injected here -->
                 </div>
 
-                <div class="form-actions right mt-4">
-                    <button type="button" class="btn btn-secondary mr-2" onclick="nextStep(2)">Start Over</button>
-                    <button type="button" class="btn btn-success" onclick="saveFiles()"><i class="fas fa-save"></i> Save
-                        All Files to Project</button>
+                <div class="form-actions d-flex justify-content-between mt-4">
+                    <button type="button" class="btn btn-secondary" onclick="nextStep(2)"><i class="fas fa-arrow-left"></i> Back</button>
+                    
+                    <div class="d-flex gap-2">
+                        <button type="button" class="btn btn-danger" id="rollbackBtn" onclick="rollbackFiles()" disabled><i class="fas fa-undo"></i> Rollback</button>
+                        <button type="button" class="btn btn-success" onclick="saveFiles()"><i class="fas fa-save"></i> Copy All to Target</button>
+                    </div>
                 </div>
             </div>
         </div>
@@ -637,6 +689,33 @@ function handleProjectSelect() {
         document.getElementById('projectCredentialsSection').style.display = 'block';
 
         const pId = selectedOpt.getAttribute('data-id');
+        
+        // Populate Tools & Language based on project detection context
+        const toolStr = selectedOpt.getAttribute('data-tool');
+        const langStr = selectedOpt.getAttribute('data-lang');
+        document.getElementById('genTool').value = toolStr || 'Selenium';
+        updateGenLanguage();
+        if(langStr) {
+            document.getElementById('genLanguage').value = langStr;
+            updateFileInputAccepts();
+        }
+
+        // Fetch locators for dropdown
+        fetch(`/api/project-locators/${pId}`)
+            .then(r => r.json())
+            .then(res => {
+                const locatorSelect = document.getElementById('locatorsDropdown');
+                locatorSelect.innerHTML = "";
+                if(res.status === 'success' && res.data.length > 0) {
+                    res.data.forEach(page => {
+                        locatorSelect.add(new Option(page, page));
+                    });
+                } else {
+                    locatorSelect.add(new Option("No Locators Found in DB", ""));
+                }
+            })
+            .catch(err => console.error("Error fetching locators", err));
+
         fetch(`/api/get-project-config/${pId}`)
             .then(r => r.json())
             .then(res => {
@@ -960,17 +1039,126 @@ function detectProject(path) {
 
 let generatedFilesData = [];
 
-function generateCode() {
-    const data = {
-        project_path: document.getElementById('projectPath').value,
-        bdd_content: document.getElementById('bddContent').value,
-        base_url: document.getElementById('baseUrl').value,
-        existing_code: document.getElementById('existingCode').value
-    };
+function updateGenLanguage() {
+    const tool = document.getElementById('genTool').value;
+    const langSelect = document.getElementById('genLanguage');
+    const currentLang = langSelect.value;
+    langSelect.innerHTML = "";
 
-    if (!data.bdd_content) {
-        alert("Please provide BDD feature text.");
+    if(tool === "Selenium") {
+        ["Java", "Python", "C#"].forEach(l => langSelect.add(new Option(l, l)));
+    } else {
+        ["TS", "JS", "Java", "Python"].forEach(l => langSelect.add(new Option(l, l)));
+    }
+    
+    if(currentLang && Array.from(langSelect.options).some(o => o.value === currentLang)) {
+        langSelect.value = currentLang;
+    }
+    updateFileInputAccepts();
+}
+
+function updateFileInputAccepts() {
+    const fileType = document.getElementById('fileType').value;
+    const fileInput = document.getElementById('scenarioFile');
+    if(fileType === 'BDD') {
+        fileInput.accept = ".txt,.feature";
+    } else {
+        fileInput.accept = ".xlsx,.xls";
+    }
+
+    const lang = document.getElementById('genLanguage').value;
+    const poInput = document.getElementById('pageObjectFiles');
+    if(lang === 'Java') poInput.accept = ".java";
+    else if(lang === 'Python') poInput.accept = ".py";
+    else if(lang === 'C#') poInput.accept = ".cs";
+    else if(lang === 'TS') poInput.accept = ".ts";
+    else if(lang === 'JS') poInput.accept = ".js";
+}
+
+function toggleMappingStrategy() {
+    const strategy = document.querySelector('input[name="mappingStrategy"]:checked').value;
+    if(strategy === 'db') {
+        document.getElementById('mappingDbSection').style.display = 'block';
+        document.getElementById('mappingLocalSection').style.display = 'none';
+        document.getElementById('pageObjectFiles').value = "";
+    } else {
+        document.getElementById('mappingDbSection').style.display = 'none';
+        document.getElementById('mappingLocalSection').style.display = 'block';
+        document.getElementById('locatorsDropdown').selectedIndex = -1;
+    }
+}
+
+function validateScenarioFile(input) {
+    if(input.files && input.files[0]) {
+        const file = input.files[0];
+        const type = document.getElementById('fileType').value;
+
+        if (type === 'BDD' && (file.name.endsWith('.txt') || file.name.endsWith('.feature'))) {
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const content = e.target.result;
+                const scenarioMatches = content.match(/Scenario:|Scenario Outline:/gi);
+                if (scenarioMatches && scenarioMatches.length > 10) {
+                    alert(`Too many scenarios (${scenarioMatches.length}). Maximum limit is 10 scenarios per transaction.`);
+                    input.value = ""; // Clear file
+                }
+            };
+            reader.readAsText(file);
+        } else if (type === 'Excel') {
+            if(!file.name.endsWith('.xls') && !file.name.endsWith('.xlsx')) {
+                alert("Please upload a valid Excel file (.xlsx, .xls)");
+                input.value = "";
+            }
+        }
+    }
+}
+
+function generateCode() {
+    const targetPath = document.getElementById('projectPath').value;
+    const tool = document.getElementById('genTool').value;
+    const language = document.getElementById('genLanguage').value;
+    const strategy = document.querySelector('input[name="mappingStrategy"]:checked').value;
+    const fileType = document.getElementById('fileType').value;
+    
+    const scenarioFile = document.getElementById('scenarioFile').files[0];
+    
+    if (!targetPath) {
+        alert("Project Path missing. Please go back to step 1.");
         return;
+    }
+    
+    if(!scenarioFile) {
+        alert("Please upload your Scenario/Test Case file.");
+        return;
+    }
+
+    const formData = new FormData();
+    formData.append('project_path', targetPath);
+    formData.append('tool', tool);
+    formData.append('language', language);
+    formData.append('mapping_strategy', strategy);
+    formData.append('file_type', fileType);
+    formData.append('scenario_file', scenarioFile);
+
+    const projectSelect = document.getElementById('projectSelect');
+    if(projectSelect.selectedIndex > 0) {
+        formData.append('project_id', projectSelect.options[projectSelect.selectedIndex].getAttribute('data-id'));
+    }
+
+    if(strategy === 'db') {
+        const locatorsSelect = document.getElementById('locatorsDropdown');
+        const selectedLocators = Array.from(locatorsSelect.selectedOptions).map(opt => opt.value);
+        if(selectedLocators.length === 0 && locatorsSelect.options[0].value !== "") {
+            alert("Please select at least one Page from DB Locators, or switch to Upload Page Objects.");
+            // Returning so user actually selects locators or switches methodology
+            // But if user meant to just generate without mapping, maybe we shouldn't block? Let's block if DB chosen.
+        }
+        formData.append('db_locators', JSON.stringify(selectedLocators));
+    } else {
+        const poFiles = document.getElementById('pageObjectFiles').files;
+        for(let i=0; i < poFiles.length; i++) {
+            formData.append('po_files', poFiles[i]);
+        }
     }
 
     nextStep(3);
@@ -979,8 +1167,7 @@ function generateCode() {
 
     fetch('/api/generate-bdd-code', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data)
+        body: formData
     })
     .then(r => r.json())
     .then(res => {
@@ -1004,12 +1191,19 @@ function generateCode() {
 function renderCodeResults(files) {
     const container = document.getElementById('codeBlocksContainer');
     container.innerHTML = "";
+    
+    // Enable/Disable Rollback button initially
+    const rbBtn = document.getElementById('rollbackBtn');
+    if (rbBtn) {
+        rbBtn.disabled = true;
+        rbBtn.setAttribute('data-backup-id', '');
+    }
 
-    files.forEach(file => {
+    files.forEach((file, idx) => {
         const win = document.createElement('div');
         win.className = 'code-window animate-scale-in';
         win.innerHTML = `
-            <div class="window-header">
+            <div class="window-header" style="flex-wrap: wrap; gap: 10px;">
                 <div class="d-flex align-items-center gap-3">
                     <div class="window-controls">
                         <div class="dot red"></div>
@@ -1018,9 +1212,21 @@ function renderCodeResults(files) {
                     </div>
                     <div class="window-title">${file.filename}</div>
                 </div>
-                <button class="copy-btn" onclick="copyCode(this, \`${file.content.replace(/`/g, '\\`').replace(/\$/g, '\\$')}\`)">
-                    <i class="fas fa-copy"></i> Copy
-                </button>
+                <div class="d-flex gap-2">
+                    <button class="copy-btn" onclick="copyCode(this, \`${file.content.replace(/`/g, '\\`').replace(/\$/g, '\\$')}\`)">
+                        <i class="fas fa-clipboard"></i> Copy Text
+                    </button>
+                    <button class="copy-btn" style="background:var(--success); border-color:var(--success);" onclick="saveSingleFile(${idx}, false)">
+                        <i class="fas fa-file-download"></i> Commit to File
+                    </button>
+                    <button class="copy-btn text-primary border-primary" onclick="saveSingleFile(${idx}, true)">
+                        <i class="fas fa-share-square"></i> Save As...
+                    </button>
+                </div>
+                <div class="w-100 d-flex align-items-center gap-2 mt-2">
+                    <label class="mb-0" style="font-size:0.8rem; color:var(--text-secondary); white-space:nowrap;">Target Path:</label>
+                    <input type="text" id="targetPath_${idx}" class="form-control" style="height:30px; font-size:0.8rem;" value="${file.path || (document.getElementById('projectPath').value + '/' + file.filename)}">
+                </div>
             </div>
             <pre class="code-content"><code>${escapeHtml(file.content)}</code></pre>
         `;
@@ -1049,26 +1255,94 @@ function copyCode(btn, text) {
 }
 
 function saveFiles() {
-    const path = document.getElementById('projectPath').value;
-    if (!path) {
-        alert("No project path selected.");
+    const projectSelect = document.getElementById('projectSelect');
+    let pId = null;
+    if(projectSelect.selectedIndex > 0) pId = projectSelect.options[projectSelect.selectedIndex].getAttribute('data-id');
+
+    const filesToSave = generatedFilesData.map((f, idx) => ({
+        filename: f.filename,
+        content: f.content,
+        target_path: document.getElementById('targetPath_' + idx).value
+    }));
+
+    if (filesToSave.length === 0) {
+        alert("No files to save.");
         return;
     }
+
+    executeSave(pId, filesToSave);
+}
+
+function saveSingleFile(idx, userSelectPath) {
+    const projectSelect = document.getElementById('projectSelect');
+    let pId = null;
+    if(projectSelect.selectedIndex > 0) pId = projectSelect.options[projectSelect.selectedIndex].getAttribute('data-id');
+
+    let targetPath = document.getElementById('targetPath_' + idx).value;
+    
+    if(userSelectPath) {
+        const newPath = prompt("Enter full destination path for file:", targetPath);
+        if(!newPath) return; // cancelled
+        targetPath = newPath;
+        document.getElementById('targetPath_' + idx).value = targetPath;
+    }
+
+    const fileToSave = {
+        filename: generatedFilesData[idx].filename,
+        content: generatedFilesData[idx].content,
+        target_path: targetPath
+    };
+
+    executeSave(pId, [fileToSave]);
+}
+
+function executeSave(projectId, filesArray) {
+    if(!confirm("Attempt to write to the file system? Existing classes will be safely merged/injected, and a DB Backup will be created.")) return;
 
     fetch('/api/save-generated-files', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-            project_path: path,
-            files: generatedFilesData
+            project_id: projectId,
+            files: filesArray
         })
     })
     .then(r => r.json())
     .then(res => {
         if (res.status === 'success') {
-            alert("All files saved to " + path);
+            alert("Files Successfully Committed to Disk!");
+            if(res.backup_id) {
+                const rbBtn = document.getElementById('rollbackBtn');
+                if (rbBtn) {
+                    rbBtn.disabled = false;
+                    rbBtn.setAttribute('data-backup-id', res.backup_id);
+                }
+            }
         } else {
             alert("Save failed: " + res.message);
+        }
+    });
+}
+
+function rollbackFiles() {
+    const backupId = document.getElementById('rollbackBtn').getAttribute('data-backup-id');
+    if(!backupId) return;
+
+    if(!confirm("Are you sure you want to rollback? This will restore files to their previous state prior to generation injection.")) return;
+
+    fetch('/api/rollback-files', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ backup_id: backupId })
+    })
+    .then(r => r.json())
+    .then(res => {
+        if(res.status === 'success') {
+            alert("Rollback successful! Files restored.");
+            document.getElementById('rollbackBtn').disabled = true;
+            document.getElementById('rollbackBtn').setAttribute('data-backup-id', '');
+        } else {
+            alert("Rollback failed: " + res.message);
         }
     });
 }

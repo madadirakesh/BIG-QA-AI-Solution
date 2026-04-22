@@ -16,3 +16,4 @@ obj/
 *.pyc
 package-lock.json
 .idea/workspace.xml
+./ScriptGenerator/backend.log

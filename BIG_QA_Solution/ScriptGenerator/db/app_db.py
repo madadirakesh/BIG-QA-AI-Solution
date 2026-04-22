@@ -83,6 +83,7 @@ def init_db():
                     Value VARCHAR(500),
                     Created_On DATETIME,
                     project_id INTEGER,
+                    FOREIGN KEY(project_id) REFERENCES ProjectDetails(id)
                     UNIQUE(project_id, Page_Name, Locator_Name)
                 )
             """
@@ -98,6 +99,20 @@ def init_db():
     );
     """
 
+    create_backupfiles_table = """
+    CREATE TABLE IF NOT EXISTS Backupfiles (
+        ID INTEGER PRIMARY KEY AUTOINCREMENT,
+        Project_ID INTEGER,
+        FileName VARCHAR(100),
+        FileContent BLOB,
+        FilePath TEXT,
+        BackupID INTEGER,
+        CreatedOn DATETIME,
+        Type VARCHAR(100),
+        FOREIGN KEY(Project_ID) REFERENCES ProjectDetails(id)
+    );
+    """
+
     try:
         with get_db() as conn:
             cursor = conn.cursor()
@@ -106,6 +121,7 @@ def init_db():
             cursor.execute(create_project_table)
             cursor.execute(create_locators_table)
             cursor.execute(create_project_data_table)
+            cursor.execute(create_backupfiles_table)
 
             # Migrations
             try:

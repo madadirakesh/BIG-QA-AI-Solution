@@ -1,6 +1,11 @@
 import subprocess
 import sys
 import os
+
+# Resolve QtWebEngine GPU / Context Lost Errors
+os.environ["QTWEBENGINE_CHROMIUM_FLAGS"] = "--disable-gpu --no-sandbox"
+os.environ["QT_OPENGL"] = "software"
+
 import threading
 import sqlite3
 import logging
@@ -154,6 +159,79 @@ class MergeDialog(QDialog):
             except Exception as e:
                 QMessageBox.critical(self, "Error", f"Failed to save file: {e}")
 
+class StoreDbDialog(QDialog):
+    def __init__(self, db_path, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Store Locators in DB")
+        self.resize(400, 250)
+        self.db_path = db_path
+        self.page_name = ""
+        self.selected_project_id = None
+        self.new_project_name = ""
+        self._setup_ui()
+
+    def _setup_ui(self):
+        layout = QVBoxLayout(self)
+
+        layout.addWidget(QLabel("Select Project:"))
+        self.project_combo = QComboBox()
+        self.project_combo.addItem("-- Select Project --", None)
+        self._load_projects()
+        layout.addWidget(self.project_combo)
+
+        layout.addWidget(QLabel("Project Not found? provide name:"))
+        self.new_project_edit = QLineEdit()
+        self.new_project_edit.setPlaceholderText("Enter new project name")
+        layout.addWidget(self.new_project_edit)
+
+        layout.addWidget(QLabel("Page Name:"))
+        self.page_name_edit = QLineEdit()
+        layout.addWidget(self.page_name_edit)
+
+        btn_box = QHBoxLayout()
+        save_btn = QPushButton("Save")
+        save_btn.clicked.connect(self.on_save)
+        save_btn.setStyleSheet("background-color: #27ae60; color: white; font-weight: bold;")
+        
+        cancel_btn = QPushButton("Cancel")
+        cancel_btn.clicked.connect(self.reject)
+        cancel_btn.setStyleSheet("background-color: #e74c3c; color: white; font-weight: bold;")
+        
+        btn_box.addWidget(save_btn)
+        btn_box.addWidget(cancel_btn)
+        layout.addLayout(btn_box)
+
+    def _load_projects(self):
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            cursor.execute("SELECT id, project_name FROM ProjectDetails")
+            for pid, pname in cursor.fetchall():
+                self.project_combo.addItem(pname, pid)
+            conn.close()
+        except Exception:
+            pass
+
+    def on_save(self):
+        self.page_name = self.page_name_edit.text().strip()
+        if not self.page_name:
+            QMessageBox.warning(self, "Validation Error", "Page Name is required.")
+            return
+
+        proj_id = self.project_combo.currentData()
+        new_proj = self.new_project_edit.text().strip()
+
+        if new_proj:
+            self.new_project_name = new_proj
+            self.selected_project_id = None
+        elif proj_id:
+            self.selected_project_id = proj_id
+            self.new_project_name = ""
+        else:
+            QMessageBox.warning(self, "Validation Error", "Please select a project or provide a new project name.")
+            return
+
+        self.accept()
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -669,16 +747,44 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Queue is empty", "Add locators to queue first.")
             return
 
-        page_name, ok = QInputDialog.getText(self, "Page Name", "Enter the page name for these locators:")
-        if not ok or not page_name:
-            return
-
         # Path to the shared local database in ScriptGenerator
         db_path = os.path.normpath(os.path.join(os.path.dirname(__file__), '..', 'ScriptGenerator', 'local_database.db'))
+
+        dialog = StoreDbDialog(db_path, self)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+
+        page_name = dialog.page_name
         
         try:
             conn = sqlite3.connect(db_path)
             cursor = conn.cursor()
+
+            # Ensure ProjectDetails exists just in case
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS ProjectDetails (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    project_name TEXT NOT NULL,
+                    project_path TEXT NOT NULL,
+                    project_lang TEXT NOT NULL,
+                    project_fw TEXT NOT NULL,
+                    project_tool TEXT NOT NULL,
+                    package_manager TEXT,
+                    project_type TEXT
+                )
+            """)
+
+            project_id = dialog.selected_project_id
+
+            if dialog.new_project_name:
+                tool = self.tool_combo.currentText()
+                lang = self.lang_combo.currentText()
+                pname = dialog.new_project_name
+                cursor.execute("""
+                    INSERT INTO ProjectDetails (project_name, project_path, project_lang, project_fw, project_tool)
+                    VALUES (?, ?, ?, ?, ?)
+                """, (pname, "N/A", lang, "N/A", tool))
+                project_id = cursor.lastrowid
             
             # Create table if not exists as per requirements
             cursor.execute("""
@@ -690,9 +796,15 @@ class MainWindow(QMainWindow):
                     Method VARCHAR(255),
                     Value VARCHAR(500),
                     Created_On DATETIME,
+                    project_id INTEGER,
                     UNIQUE(Page_Name, Locator_Name)
                 )
             """)
+            
+            try:
+                cursor.execute("ALTER TABLE Locators ADD COLUMN project_id INTEGER")
+            except Exception:
+                pass
             
             inserted_count = 0
             skipped_count = 0
@@ -707,9 +819,9 @@ class MainWindow(QMainWindow):
                 try:
                     # Insert values cautiously using parameterized query
                     cursor.execute("""
-                        INSERT INTO Locators (Page_Name, Locator_Name, Locator_Type, Method, Value, Created_On)
-                        VALUES (?, ?, ?, ?, ?, ?)
-                    """, (page_name, l_name, l_type, l_method, l_value, now))
+                        INSERT INTO Locators (Page_Name, Locator_Name, Locator_Type, Method, Value, Created_On, project_id)
+                        VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """, (page_name, l_name, l_type, l_method, l_value, now, project_id))
                     inserted_count += 1
                 except sqlite3.IntegrityError:
                     skipped_count += 1

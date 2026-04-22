@@ -161,15 +161,15 @@ def add_user():
     users = fetch_data("SELECT id, name, email, role, verified FROM users ORDER BY id DESC")
     return render_template('add_user.html', users=users)
 
-@app.route('/qa/bdd-to-code', methods=['GET'])
+@app.route('/qa/script-developer', methods=['GET'])
 @login_required()
-def bdd_to_code():
+def script_developer():
     if session.get('user_role', '').lower() not in ['qa', 'admin']:
         flash('Not authorized', 'error')
         return redirect(url_for('home'))
         
     projects = fetch_data("SELECT * FROM ProjectDetails")
-    return render_template('bdd_to_code.html', projects=projects)
+    return render_template('script_developer.html', projects=projects)
 
 def _build_directory_tree(path):
     tree = {'name': os.path.basename(path), 'type': 'directory', 'children': []}
@@ -518,6 +518,16 @@ def get_project_config(project_id):
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
+@app.route('/api/project-locators/<int:project_id>', methods=['GET'])
+@login_required()
+def project_locators(project_id):
+    try:
+        pages = fetch_data("SELECT DISTINCT Page_Name FROM Locators WHERE project_id = ?", (project_id,))
+        page_names = [p['Page_Name'] for p in pages if p['Page_Name']]
+        return jsonify({'status': 'success', 'data': page_names})
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
 @app.route('/api/db/tables', methods=['GET'])
 @login_required(role='admin')
 def get_db_tables():
@@ -627,6 +637,163 @@ def check_and_initialize_db():
     except Exception as e:
         print(f"Database connection failed: {e}")
         return False
+
+import asyncio
+import pandas as pd
+from api.code_injector import CodeInjector
+from api.backend import PythonPytestGenerator, PythonBehaveGenerator # assuming defaults
+import datetime
+
+@app.route('/api/generate-bdd-code', methods=['POST'])
+@login_required()
+def generate_bdd_code():
+    try:
+        project_path = request.form.get('project_path')
+        tool = request.form.get('tool')
+        language = request.form.get('language')
+        strategy = request.form.get('mapping_strategy')
+        file_type = request.form.get('file_type')
+        project_id = request.form.get('project_id')
+        db_locators = request.form.get('db_locators') 
+        
+        scenario_file = request.files.get('scenario_file')
+        po_files = request.files.getlist('po_files')
+        
+        if not scenario_file:
+            return jsonify({'status':'error', 'message': 'No scenario file uploaded'}), 400
+            
+        scenarios_text = ""
+        if file_type == 'BDD':
+            scenarios_text = scenario_file.read().decode('utf-8')
+        elif file_type == 'Excel':
+            try:
+                # Need openpyxl for xlsx
+                df = pd.read_excel(scenario_file)
+                df = df.head(10)
+                scenarios_text = df.to_string()
+            except ImportError:
+                return jsonify({'status':'error', 'message': 'Missing pandas or openpyxl. Run: pip install pandas openpyxl'}), 500
+            except Exception as e:
+                return jsonify({'status':'error', 'message': f'Error reading Excel: {e}'}), 500
+            
+        support_content = f"Tool: {tool}\nLanguage: {language}\nStrategy: {strategy}\nProject Path: {project_path}\n"
+        
+        if strategy == 'db' and project_id and db_locators:
+            try:
+                locs = json.loads(db_locators)
+                support_content += "\nDB Locators:\n"
+                for page in locs:
+                    db_data = fetch_data("SELECT Locator_Name, Locator_Type, Locator_Value FROM Locators WHERE project_id = ? AND Page_Name = ?", (project_id, page))
+                    for row in db_data:
+                        support_content += f"{row['Locator_Name']} (Type: {row['Locator_Type']}): {row['Locator_Value']}\n"
+            except Exception:
+                pass
+        elif strategy == 'local':
+            support_content += "\nLocal Page Object Files:\n"
+            for po in po_files:
+                if po.filename:
+                    support_content += f"--- {po.filename} ---\n{po.read().decode('utf-8')}\n"
+                
+        # Invoke generation logic
+        # For this prototype we will assume Python Pytest as fallback logic or use async loop
+        generator = PythonPytestGenerator("OPENAI") # Or whichever is configured
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        
+        support_content += "\nFile Mode: New\n" # Default to generating new structure
+        
+        parsed_files = loop.run_until_complete(generator.generate(scenarios_text, support_content, ""))
+        
+        result_files = []
+        if isinstance(parsed_files, dict):
+            for k, v in parsed_files.items():
+                result_files.append({'filename': k, 'content': v, 'path': os.path.join(project_path, k)})
+        else:
+            result_files.append({'filename': 'generated_code.txt', 'content': "// AI Failed to return valid dict formats.", 'path': os.path.join(project_path, 'generated_code.txt')})
+
+        return jsonify({'status': 'success', 'files': result_files})
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+@app.route('/api/save-generated-files', methods=['POST'])
+@login_required()
+def save_generated_files():
+    try:
+        data = request.json
+        project_id = data.get('project_id')
+        files = data.get('files', [])
+        
+        if not files:
+            return jsonify({'status': 'error', 'message': 'No files provided'}), 400
+
+        backup_id = int(datetime.datetime.now().timestamp())
+        
+        for f in files:
+            target_path = f.get('target_path')
+            content = f.get('content')
+            filename = f.get('filename')
+            
+            # Create Backup
+            if os.path.exists(target_path):
+                with open(target_path, 'r', encoding='utf-8') as exists_f:
+                    existing_content = exists_f.read()
+                
+                # Insert DB Backup
+                insert_data(
+                    "INSERT INTO Backupfiles (Project_ID, FileName, FileContent, FilePath, BackupID, CreatedOn, Type) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    (project_id, filename, existing_content.encode('utf-8'), target_path, backup_id, datetime.datetime.now(), "Backup")
+                )
+                
+                # Safe Inject
+                lang = "python" if filename.endswith('.py') else "java" if filename.endswith('.java') else "ts"
+                final_content = CodeInjector.inject_methods_safely(existing_content, content, lang)
+            else:
+                # Insert DB Backup marker for 'New'
+                insert_data(
+                    "INSERT INTO Backupfiles (Project_ID, FileName, FileContent, FilePath, BackupID, CreatedOn, Type) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    (project_id, filename, b'', target_path, backup_id, datetime.datetime.now(), "New")
+                )
+                final_content = content
+                
+            # Write
+            os.makedirs(os.path.dirname(target_path), exist_ok=True)
+            with open(target_path, 'w', encoding='utf-8') as out_f:
+                out_f.write(final_content)
+                
+        return jsonify({'status': 'success', 'backup_id': backup_id})
+        
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+@app.route('/api/rollback-files', methods=['POST'])
+@login_required()
+def rollback_files():
+    try:
+        data = request.json
+        backup_id = data.get('backup_id')
+        
+        if not backup_id:
+            return jsonify({'status': 'error', 'message': 'Backup ID required'}), 400
+            
+        backups = fetch_data("SELECT * FROM Backupfiles WHERE BackupID = ?", (backup_id,))
+        if not backups:
+            return jsonify({'status': 'error', 'message': 'Backup not found'}), 404
+            
+        for b in backups:
+            path = b['FilePath']
+            b_type = b['Type']
+            content = b['FileContent']
+            
+            if b_type == 'New':
+                if os.path.exists(path):
+                    os.remove(path)
+            elif b_type == 'Backup':
+                with open(path, 'wb') as f:
+                    f.write(content)
+                    
+        return jsonify({'status': 'success'})
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
 
 @app.route('/api/health-status')
 @login_required()
