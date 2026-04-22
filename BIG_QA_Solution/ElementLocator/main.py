@@ -3,8 +3,8 @@ import sys
 import os
 
 # Resolve QtWebEngine GPU / Context Lost Errors
-os.environ["QTWEBENGINE_CHROMIUM_FLAGS"] = "--disable-gpu --no-sandbox"
-os.environ["QT_OPENGL"] = "software"
+# Passing args via sys.argv is much more reliable in PyQt6 than environment variables.
+# os.environ["QTWEBENGINE_CHROMIUM_FLAGS"] = "--disable-gpu --no-sandbox"
 
 import threading
 import sqlite3
@@ -850,6 +850,13 @@ class MainWindow(QMainWindow):
 
 if __name__ == "__main__":
     try:
+        # Append specific Chromium flags to sys.argv *before* QApplication
+        sys.argv.extend([
+            "--no-sandbox",
+            "--disable-gpu", 
+            "--disable-gpu-compositing",
+            "--disable-dev-shm-usage"
+        ])
         app = QApplication(sys.argv)
         window = MainWindow()
         window.showMaximized()

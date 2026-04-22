@@ -4,8 +4,8 @@
 
 {% block content %}
 <div class="page-header">
-    <h1><i class="fas fa-magic"></i> AI BDD To Code Generation</h1>
-    <p>Upload your BDD feature files and generate matching Step Definitions and Page Objects.</p>
+    <h1><i class="fas fa-magic"></i> AI Script Generation</h1>
+    <p>Upload your BDD feature files or Test case excel and generate matching Step Definitions and Page Objects.</p>
 </div>
 
 <div class="bdd-layout">
@@ -50,7 +50,7 @@
                             <option value="">-- Select Project from DB --</option>
                             {% for p in projects %}
                             <option value="{{ p.project_name }}" data-id="{{ p.id }}" data-lang="{{ p.project_lang }}" data-fw="{{ p.project_fw }}"
-                                data-path="{{ p.project_path }}" data-tool = "{{p.project_tool}}">
+                                data-path="{{ p.project_path }}" data-tool="{{p.project_tool}}" data-packager="{{ p.package_manager }}">
                                 {{ p.project_name }} ({{ p.project_tool }} / {{ p.project_lang }} / {{ p.project_fw }})
                             </option>
                             {% endfor %}
@@ -118,11 +118,11 @@
         </div>
     </div>
 
-        <div id="step-2" class="wizard-content" style="display: none;">
+        <div id="step-2" class="wizard-content">
             <div class="step-inner-align">
                 <div class="d-flex justify-content-between align-items-center mb-4">
                     <h3 class="premium-header mb-0" style="border-bottom: none;">Generate Script</h3>
-                    <button type="button" class="btn btn-outline" style="height:44px; white-space:nowrap; border-color: var(--accent-primary); color: var(--accent-primary);" onclick="window.open('/element-locator', '_blank')"><i class="fas fa-crosshairs"></i> Launch Element Locator</button>
+                    <button type="button" class="btn btn-outline" style="height:44px; white-space:nowrap; border-color: var(--accent-primary); color: var(--accent-primary);" onclick="launchElementLocator(); return false;"><i class="fas fa-crosshairs"></i> Launch Element Locator</button>
                 </div>
                 <div style="width: 100px; height: 2px; background: var(--accent-primary); box-shadow: 0 0 15px var(--accent-glow); margin-top: -20px; margin-bottom: 30px;"></div>
 
@@ -201,7 +201,7 @@
             </div>
         </div>
 
-        <div id="step-3" class="wizard-content" style="display: none;">
+        <div id="step-3" class="wizard-content">
             <h3>Generation Results</h3>
 
             <div id="loadingStatus" class="loading-state text-center py-5">

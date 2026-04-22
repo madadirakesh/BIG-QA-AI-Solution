@@ -642,7 +642,6 @@ import asyncio
 import pandas as pd
 from api.code_injector import CodeInjector
 from api.backend import PythonPytestGenerator, PythonBehaveGenerator # assuming defaults
-import datetime
 
 @app.route('/api/generate-bdd-code', methods=['POST'])
 @login_required()
@@ -726,7 +725,7 @@ def save_generated_files():
         if not files:
             return jsonify({'status': 'error', 'message': 'No files provided'}), 400
 
-        backup_id = int(datetime.datetime.now().timestamp())
+        backup_id = int(datetime.now().timestamp())
         
         for f in files:
             target_path = f.get('target_path')
@@ -741,7 +740,7 @@ def save_generated_files():
                 # Insert DB Backup
                 insert_data(
                     "INSERT INTO Backupfiles (Project_ID, FileName, FileContent, FilePath, BackupID, CreatedOn, Type) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                    (project_id, filename, existing_content.encode('utf-8'), target_path, backup_id, datetime.datetime.now(), "Backup")
+                    (project_id, filename, existing_content.encode('utf-8'), target_path, backup_id, datetime.now(), "Backup")
                 )
                 
                 # Safe Inject
@@ -751,7 +750,7 @@ def save_generated_files():
                 # Insert DB Backup marker for 'New'
                 insert_data(
                     "INSERT INTO Backupfiles (Project_ID, FileName, FileContent, FilePath, BackupID, CreatedOn, Type) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                    (project_id, filename, b'', target_path, backup_id, datetime.datetime.now(), "New")
+                    (project_id, filename, b'', target_path, backup_id, datetime.now(), "New")
                 )
                 final_content = content
                 
