@@ -155,7 +155,12 @@
                 </div>
 
                 <div id="mappingDbSection" class="form-group">
-                    <label>Select Locator Pages (DB)</label>
+                    <div class="d-flex justify-content-between align-items-end mb-2" style="padding-bottom: 10px">
+                        <label style="margin-bottom: 10px; padding-right: 10px !important;">Select Locator Pages (DB)</label>
+                        <button type="button" class="btn btn-sm btn-outline" onclick="refreshLocatorPages(event)" style="padding: 2px 10px; font-size: 0.85rem; border-color: var(--accent-primary); color: var(--accent-primary); height: auto; min-height: 24px;">
+                            <i class="fas fa-sync-alt"></i> Refresh DB Pages
+                        </button>
+                    </div>
                     <select id="locatorsDropdown" class="form-control" multiple style="height: auto; min-height: 80px; padding: 10px;">
                         <!-- JS populated -->
                     </select>
@@ -189,10 +194,11 @@
                 </div>
 
                 <div class="form-actions row mt-4">
-                    <div class="col">
+                    <div class="col" style="padding-bottom:10px">
                         <button type="button" class="btn btn-secondary" onclick="nextStep(1)"><i
-                                class="fas fa-arrow-left"></i> Back</button>
+                                class="fas fa-arrow-left" style="padding-bottom: 10px"></i> Back</button>
                     </div>
+
                     <div class="col text-right">
                         <button type="button" class="btn btn-primary" onclick="generateCode()">Generate Script <i
                                 class="fas fa-robot"></i></button>
@@ -736,6 +742,46 @@ function handleProjectSelect() {
     }
 }
 
+function refreshLocatorPages(e) {
+    let icon = null;
+    if (e && e.currentTarget) {
+        icon = e.currentTarget.querySelector('i');
+        if (icon) icon.classList.add('fa-spin');
+    }
+
+    const select = document.getElementById('projectSelect');
+    const selectedOpt = select.options[select.selectedIndex];
+    if (selectedOpt && selectedOpt.value) {
+        const pId = selectedOpt.getAttribute('data-id');
+        fetch(`/api/project-locators/${pId}`)
+            .then(r => r.json())
+            .then(res => {
+                if(icon) icon.classList.remove('fa-spin');
+                const locatorSelect = document.getElementById('locatorsDropdown');
+                const selectedValues = Array.from(locatorSelect.selectedOptions).map(opt => opt.value);
+                locatorSelect.innerHTML = "";
+                if(res.status === 'success' && res.data.length > 0) {
+                    res.data.forEach(page => {
+                        const opt = new Option(page, page);
+                        if(selectedValues.includes(page)) {
+                            opt.selected = true;
+                        }
+                        locatorSelect.add(opt);
+                    });
+                } else {
+                    locatorSelect.add(new Option("No Locators Found in DB", ""));
+                }
+            })
+            .catch(err => {
+                if(icon) icon.classList.remove('fa-spin');
+                console.error("Error fetching locators", err);
+            });
+    } else {
+        if(icon) icon.classList.remove('fa-spin');
+        alert("No project selected to refresh locators.");
+    }
+}
+
 function handleNextStep1() {
     const isNew = document.querySelector('input[name="projectMethod"]:checked').value === 'new';
     if(isNew) {
@@ -1136,6 +1182,7 @@ function generateCode() {
     formData.append('project_path', targetPath);
     formData.append('tool', tool);
     formData.append('language', language);
+    formData.append('framework', document.getElementById('detFramework').innerText);
     formData.append('mapping_strategy', strategy);
     formData.append('file_type', fileType);
     formData.append('scenario_file', scenarioFile);

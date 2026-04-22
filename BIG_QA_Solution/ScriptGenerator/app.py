@@ -641,7 +641,7 @@ def check_and_initialize_db():
 import asyncio
 import pandas as pd
 from api.code_injector import CodeInjector
-from api.backend import PythonPytestGenerator, PythonBehaveGenerator # assuming defaults
+from api.backend import UniversalScriptGenerator, DEFAULT_AI_PROVIDER
 
 @app.route('/api/generate-bdd-code', methods=['POST'])
 @login_required()
@@ -675,8 +675,17 @@ def generate_bdd_code():
             except Exception as e:
                 return jsonify({'status':'error', 'message': f'Error reading Excel: {e}'}), 500
             
+        framework = request.form.get('framework')
+        if not framework:
+            framework = "Pytest" if language.lower() == "python" else "Cucumber" if language.lower() == "java" else "TypeScript"
+
         support_content = f"Tool: {tool}\nLanguage: {language}\nStrategy: {strategy}\nProject Path: {project_path}\n"
         
+        if file_type == 'BDD' and scenario_file:
+            fname = scenario_file.filename
+            if os.path.exists(os.path.join(project_path, fname)) or os.path.exists(os.path.join(project_path, "features", fname)):
+                support_content += "\nDO NOT generate the .feature file.\n"
+
         if strategy == 'db' and project_id and db_locators:
             try:
                 locs = json.loads(db_locators)
@@ -688,21 +697,48 @@ def generate_bdd_code():
             except Exception:
                 pass
         elif strategy == 'local':
-            support_content += "\nLocal Page Object Files:\n"
+            support_content += "\nDO NOT generate Page Object classes.\n"
+            support_content += "Local Page Object Files:\n"
             for po in po_files:
                 if po.filename:
                     support_content += f"--- {po.filename} ---\n{po.read().decode('utf-8')}\n"
-                
-        # Invoke generation logic
-        # For this prototype we will assume Python Pytest as fallback logic or use async loop
-        generator = PythonPytestGenerator("OPENAI") # Or whichever is configured
+
+        # Scan for utilities
+        support_content += "\nProject Reusable Utilities:\n"
+        for util_dir in ["utils", "utilities", "reusables", "src/main/java/utils"]:
+            u_path = os.path.join(project_path, util_dir)
+            if os.path.exists(u_path) and os.path.isdir(u_path):
+                for uf in os.listdir(u_path):
+                    if uf.endswith((".py", ".java", ".ts", ".js", ".cs")):
+                        try:
+                            with open(os.path.join(u_path, uf), "r", encoding="utf-8") as f:
+                                support_content += f"--- {uf} ---\n{''.join(f.readlines()[:100])}\n"
+                        except Exception:
+                            pass
+
+        generator = UniversalScriptGenerator(DEFAULT_AI_PROVIDER, tool, language, framework)
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         
-        support_content += "\nFile Mode: New\n" # Default to generating new structure
+        support_content += "\nFile Mode: New\n"
         
         parsed_files = loop.run_until_complete(generator.generate(scenarios_text, support_content, ""))
         
+        if isinstance(parsed_files, dict):
+            # Enforce selective generation output
+            keys_to_delete = []
+            for k in parsed_files.keys():
+                k_lower = k.lower()
+                if "\nDO NOT generate the .feature file.\n" in support_content and k_lower.endswith(".feature"):
+                    keys_to_delete.append(k)
+                elif "\nDO NOT generate Page Object classes.\n" in support_content and ("page" in k_lower or "pom" in k_lower):
+                    keys_to_delete.append(k)
+                # Universal boilerplate stripping
+                elif any(bp in k_lower for bp in ["pom.xml", "package.json", "requirements.txt", "driverfactory", "hooks", "conftest.py", "playwright.config", "tsconfig.json", ".csproj", ".sln", "specflow.json", "usings.cs"]):
+                    keys_to_delete.append(k)
+            for k in keys_to_delete:
+                del parsed_files[k]
+                
         result_files = []
         if isinstance(parsed_files, dict):
             for k, v in parsed_files.items():

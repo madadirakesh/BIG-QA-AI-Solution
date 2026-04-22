@@ -73,6 +73,7 @@ dedup_index = {}
 
 class GenerateCodeRequest(BaseModel):
     project_name:    str
+    tool:            str = "Selenium"
     language:        str
     framework:       str
     project_path:    str
@@ -1434,15 +1435,41 @@ def navigate_to_login_page(browser):
         return {"error": "Unknown file mode detected in support_content."}
 
 
-class JavaTestNGGenerator(CodeGenerator):
-    def __init__(self, provider: str):
+class UniversalScriptGenerator(CodeGenerator):
+    def __init__(self, provider: str, tool: str, language: str, framework: str):
         super().__init__(provider)
-        self.standards = SELENIUM_STANDARDS_JAVA
+        self.tool = tool
+        self.language = language
+        self.framework = framework
+        self.standards = self._get_standards()
+
+    def _get_standards(self):
+        t = self.tool.lower()
+        l = self.language.lower()
+        if t == "selenium":
+            if l == "python": return SELENIUM_STANDARDS_PYTHON
+            if l == "java": return SELENIUM_STANDARDS_JAVA
+            if "c#" in l: return "Follow Selenium 4 C# standards strictly."
+        elif t == "playwright":
+            if "ts" in l or "js" in l or "typescript" in l or "javascript" in l: return PLAYWRIGHT_STANDARDS_TS
+            if l == "python": return "Follow Playwright Python async standards strictly."
+            if l == "java": return "Follow Playwright Java standards strictly."
+        return f"Follow best practices for {self.tool} with {self.language} using {self.framework}."
 
     async def generate(self, bdd_content, support_content, file_content) -> dict:
         prompt = f"""
-        You are an expert QA automation engineer specialized in Java TestNG framework with Selenium WebDriver.
-        Based on the following BDD content, generate a complete TestNG test structure.
+        You are an expert QA automation engineer specialized in the {self.framework} framework using {self.tool} with {self.language}.
+        Your task: generate a COMPLETE, FULLY WORKING test suite based on the provided content.
+
+        ── OUTPUT FORMAT ──────────────────────────────────────────────────────────────
+        Return ONLY a single valid JSON object. Keys are relative file paths, values are the complete file contents as strings.
+        
+        CRITICAL RULES:
+        1. If 'DO NOT generate the .feature file' is in Supporting Information, omit the .feature file from output.
+        2. If 'DO NOT generate Page Object classes' is in Supporting Information, omit Page Object files and reuse the provided locals.
+        3. ALWAYS look for and call/invoke reusable functions from Project Reusable Utilities instead of rewriting logic if they match the step needs.
+        4. DO NOT GENERATE boilerplate configuration files (e.g. pom.xml, package.json, playwright.config.ts, tsconfig.json, .csproj, DriverFactory, Hooks, conftest.py, specflow.json). ONLY generate actual script layer files (Feature, Step Definitions, Page Objects).
+        5. If 'DB Locators' are provided in Supporting Information, YOU MUST use those exact locators by their 'ElementName' for your Page Object. If an element needed for a step is NOT in the DB Locators, generate a new locator for it. But ALWAYS prioritize using the provided DB Locators first.
 
         {self.standards}
         {LOCATOR_USAGE_STANDARDS}
@@ -1453,50 +1480,14 @@ class JavaTestNGGenerator(CodeGenerator):
         BDD Content:
         {bdd_content}
         """
-        return await self._call_ai_and_parse(prompt, "src/test/java/tests/GeneratedTest.java")
-
-class JavaCucumberGenerator(CodeGenerator):
-    def __init__(self, provider: str):
-        super().__init__(provider)
-        self.standards = SELENIUM_STANDARDS_JAVA
-
-    async def generate(self, bdd_content, support_content, file_content) -> dict:
-        prompt = f"""
-        You are an expert QA automation engineer specialized in Java Cucumber framework with Selenium WebDriver.
-        Based on the following BDD content, generate a complete Cucumber-JVM test structure.
-
-        {self.standards}
-        {LOCATOR_USAGE_STANDARDS}
-
-        Supporting Information:
-        {support_content}
-
-        BDD Content:
-        {bdd_content}
-        """
-        return await self._call_ai_and_parse(prompt, "src/test/resources/features/generated.feature")
-
-class PlaywrightTypeScriptGenerator(CodeGenerator):
-    def __init__(self, provider: str):
-        super().__init__(provider)
-        self.standards = PLAYWRIGHT_STANDARDS_TS
-
-    async def generate(self, bdd_content, support_content, file_content) -> dict:
-        prompt = f"""
-        You are an expert QA automation engineer specialized in Playwright with TypeScript.
-        Based on the following BDD content, generate a complete Playwright TypeScript test structure.
-
-        {self.standards}
-        {LOCATOR_USAGE_STANDARDS}
-
-        Supporting Information:
-        {support_content}
-
-        BDD Content:
-        {bdd_content}
-        """
-        return await self._call_ai_and_parse(prompt, "tests/generated.spec.ts")
-
+        
+        ext = "py" if self.language.lower() == "python" else "java" if self.language.lower() == "java" else "ts" if "ts" in self.language.lower() else "cs"
+        fallback = f"tests/generated_test.{ext}"
+        
+        parsed = await self._call_ai_and_parse(prompt, fallback)
+        if self.language.lower() == "python":
+            return sanitize_step_quoting(parsed)
+        return parsed
 
 async def route_code_generation(
     language: str,
@@ -1505,31 +1496,17 @@ async def route_code_generation(
     support_content: str,
     file_content: str,
     provider: str,
+    tool: str = "Selenium"
 ) -> dict:
-    """Routes code generation to the appropriate strategy based on language and framework."""
-    logger.info(f"Routing code generation for {language} with {framework}")
-    
-    registry = {
-        ("python", "pytest"): PythonPytestGenerator,
-        ("python", "behave"): PythonBehaveGenerator,
-        ("java", "testng"): JavaTestNGGenerator,
-        ("java", "cucumber"): JavaCucumberGenerator,
-        ("playwright", "typescript"): PlaywrightTypeScriptGenerator,
-    }
-
-    key = (language.strip().lower(), framework.strip().lower())
-    generator_class = registry.get(key)
-    
-    if not generator_class:
-        logger.error(f"Unsupported combination requested: {language} - {framework}")
-        raise ValueError(f"Unsupported combination: {language} - {framework}")
-
-    generator = generator_class(provider)
+    """Routes code generation to the universal strategy."""
+    logger.info(f"Routing code generation for {tool} - {language} with {framework}")
+    generator = UniversalScriptGenerator(provider, tool, language, framework)
     return await generator.generate(bdd_content, support_content, file_content)
 
 
 async def async_task_generate_code(
     task_id:         str,
+    tool:            str,
     language:        str,
     framework:       str,
     bdd_content:     str,
@@ -1540,7 +1517,7 @@ async def async_task_generate_code(
     try:
         tasks_store[task_id]["status"] = "processing"
         files_dict = await route_code_generation(
-            language, framework, bdd_content, support_content, file_content, provider
+            language, framework, bdd_content, support_content, file_content, provider, tool
         )
         tasks_store[task_id]["status"] = "done"
         tasks_store[task_id]["result"] = files_dict
@@ -1578,6 +1555,7 @@ async def generate_agent_code(req: GenerateCodeRequest, background_tasks: Backgr
     background_tasks.add_task(
         async_task_generate_code,
         task_id,
+        req.tool,
         req.language,
         req.framework,
         req.bdd_content,

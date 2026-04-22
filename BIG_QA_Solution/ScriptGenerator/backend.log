@@ -200,3 +200,119 @@ INFO:werkzeug:127.0.0.1 - - [21/Apr/2026 04:15:15] "GET /api/db/table-data?table
 2026-04-22 13:25:43,523 - werkzeug - INFO - 127.0.0.1 - - [22/Apr/2026 13:25:43] "GET /api/health-status HTTP/1.1" 200 -
 2026-04-22 13:26:23,518 - werkzeug - INFO - 127.0.0.1 - - [22/Apr/2026 13:26:23] "GET /api/health-status HTTP/1.1" 200 -
 2026-04-22 13:27:23,510 - werkzeug - INFO - 127.0.0.1 - - [22/Apr/2026 13:27:23] "GET /api/health-status HTTP/1.1" 200 -
+2026-04-22 15:16:50,686 - werkzeug - INFO - [31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on http://127.0.0.1:5000
+2026-04-22 15:16:50,687 - werkzeug - INFO - [33mPress CTRL+C to quit[0m
+2026-04-22 15:16:50,689 - werkzeug - INFO -  * Restarting with stat
+2026-04-22 15:16:51,690 - werkzeug - WARNING -  * Debugger is active!
+2026-04-22 15:16:51,694 - werkzeug - INFO -  * Debugger PIN: 937-270-786
+2026-04-22 15:16:52,158 - werkzeug - INFO - 127.0.0.1 - - [22/Apr/2026 15:16:52] "[32mGET / HTTP/1.1[0m" 302 -
+2026-04-22 15:16:52,235 - werkzeug - INFO - 127.0.0.1 - - [22/Apr/2026 15:16:52] "GET /home HTTP/1.1" 200 -
+2026-04-22 15:16:52,323 - werkzeug - INFO - 127.0.0.1 - - [22/Apr/2026 15:16:52] "[36mGET /static/css/style.css HTTP/1.1[0m" 304 -
+2026-04-22 15:16:52,324 - werkzeug - INFO - 127.0.0.1 - - [22/Apr/2026 15:16:52] "[36mGET /static/js/main.js HTTP/1.1[0m" 304 -
+2026-04-22 15:16:52,420 - werkzeug - INFO - 127.0.0.1 - - [22/Apr/2026 15:16:52] "GET /api/health-status HTTP/1.1" 200 -
+2026-04-22 15:16:59,019 - werkzeug - INFO - 127.0.0.1 - - [22/Apr/2026 15:16:59] "GET /qa/script-developer HTTP/1.1" 200 -
+2026-04-22 15:16:59,034 - werkzeug - INFO - 127.0.0.1 - - [22/Apr/2026 15:16:59] "[36mGET /static/css/style.css HTTP/1.1[0m" 304 -
+2026-04-22 15:16:59,038 - werkzeug - INFO - 127.0.0.1 - - [22/Apr/2026 15:16:59] "[36mGET /static/js/main.js HTTP/1.1[0m" 304 -
+2026-04-22 15:17:03,407 - werkzeug - INFO - 127.0.0.1 - - [22/Apr/2026 15:17:03] "GET /api/get-project-config/2 HTTP/1.1" 200 -
+2026-04-22 15:17:03,407 - werkzeug - INFO - 127.0.0.1 - - [22/Apr/2026 15:17:03] "GET /api/project-locators/2 HTTP/1.1" 200 -
+2026-04-22 15:17:06,321 - werkzeug - INFO - 127.0.0.1 - - [22/Apr/2026 15:17:06] "POST /api/save-project-config HTTP/1.1" 200 -
+2026-04-22 15:18:23,551 - werkzeug - INFO - 127.0.0.1 - - [22/Apr/2026 15:18:23] "GET /qa/script-developer HTTP/1.1" 200 -
+2026-04-22 15:18:23,590 - werkzeug - INFO - 127.0.0.1 - - [22/Apr/2026 15:18:23] "GET /static/css/style.css HTTP/1.1" 200 -
+2026-04-22 15:18:23,595 - werkzeug - INFO - 127.0.0.1 - - [22/Apr/2026 15:18:23] "GET /static/js/main.js HTTP/1.1" 200 -
+2026-04-22 15:18:23,772 - werkzeug - INFO - 127.0.0.1 - - [22/Apr/2026 15:18:23] "[33mGET /favicon.ico HTTP/1.1[0m" 404 -
+2026-04-22 15:18:27,246 - werkzeug - INFO - 127.0.0.1 - - [22/Apr/2026 15:18:27] "GET /api/project-locators/2 HTTP/1.1" 200 -
+2026-04-22 15:18:27,246 - werkzeug - INFO - 127.0.0.1 - - [22/Apr/2026 15:18:27] "GET /api/get-project-config/2 HTTP/1.1" 200 -
+2026-04-22 15:18:29,332 - werkzeug - INFO - 127.0.0.1 - - [22/Apr/2026 15:18:29] "POST /api/save-project-config HTTP/1.1" 200 -
+2026-04-22 15:20:04,153 - werkzeug - INFO - 127.0.0.1 - - [22/Apr/2026 15:20:04] "GET /qa/script-developer HTTP/1.1" 200 -
+2026-04-22 15:20:04,188 - werkzeug - INFO - 127.0.0.1 - - [22/Apr/2026 15:20:04] "[36mGET /static/css/style.css HTTP/1.1[0m" 304 -
+2026-04-22 15:20:04,190 - werkzeug - INFO - 127.0.0.1 - - [22/Apr/2026 15:20:04] "[36mGET /static/js/main.js HTTP/1.1[0m" 304 -
+2026-04-22 15:20:07,573 - werkzeug - INFO - 127.0.0.1 - - [22/Apr/2026 15:20:07] "GET /api/project-locators/2 HTTP/1.1" 200 -
+2026-04-22 15:20:07,573 - werkzeug - INFO - 127.0.0.1 - - [22/Apr/2026 15:20:07] "GET /api/get-project-config/2 HTTP/1.1" 200 -
+2026-04-22 15:20:09,987 - werkzeug - INFO - 127.0.0.1 - - [22/Apr/2026 15:20:09] "POST /api/save-project-config HTTP/1.1" 200 -
+2026-04-22 15:23:10,062 - werkzeug - INFO - 127.0.0.1 - - [22/Apr/2026 15:23:10] "GET /qa/script-developer HTTP/1.1" 200 -
+2026-04-22 15:23:10,089 - werkzeug - INFO - 127.0.0.1 - - [22/Apr/2026 15:23:10] "GET /static/css/style.css HTTP/1.1" 200 -
+2026-04-22 15:23:10,094 - werkzeug - INFO - 127.0.0.1 - - [22/Apr/2026 15:23:10] "GET /static/js/main.js HTTP/1.1" 200 -
+2026-04-22 15:23:10,272 - werkzeug - INFO - 127.0.0.1 - - [22/Apr/2026 15:23:10] "[33mGET /favicon.ico HTTP/1.1[0m" 404 -
+2026-04-22 15:23:12,700 - werkzeug - INFO - 127.0.0.1 - - [22/Apr/2026 15:23:12] "GET /api/project-locators/2 HTTP/1.1" 200 -
+2026-04-22 15:23:12,701 - werkzeug - INFO - 127.0.0.1 - - [22/Apr/2026 15:23:12] "GET /api/get-project-config/2 HTTP/1.1" 200 -
+2026-04-22 15:23:15,339 - werkzeug - INFO - 127.0.0.1 - - [22/Apr/2026 15:23:15] "POST /api/save-project-config HTTP/1.1" 200 -
+2026-04-22 15:24:47,663 - werkzeug - INFO - 127.0.0.1 - - [22/Apr/2026 15:24:47] "POST /api/save-project-config HTTP/1.1" 200 -
+2026-04-22 15:24:52,698 - werkzeug - INFO - 127.0.0.1 - - [22/Apr/2026 15:24:52] "GET /qa/script-developer HTTP/1.1" 200 -
+2026-04-22 15:24:52,730 - werkzeug - INFO - 127.0.0.1 - - [22/Apr/2026 15:24:52] "GET /static/css/style.css HTTP/1.1" 200 -
+2026-04-22 15:24:52,734 - werkzeug - INFO - 127.0.0.1 - - [22/Apr/2026 15:24:52] "GET /static/js/main.js HTTP/1.1" 200 -
+2026-04-22 15:24:52,930 - werkzeug - INFO - 127.0.0.1 - - [22/Apr/2026 15:24:52] "[33mGET /favicon.ico HTTP/1.1[0m" 404 -
+2026-04-22 15:24:55,531 - werkzeug - INFO - 127.0.0.1 - - [22/Apr/2026 15:24:55] "GET /api/project-locators/2 HTTP/1.1" 200 -
+2026-04-22 15:24:55,531 - werkzeug - INFO - 127.0.0.1 - - [22/Apr/2026 15:24:55] "GET /api/get-project-config/2 HTTP/1.1" 200 -
+2026-04-22 15:24:57,412 - werkzeug - INFO - 127.0.0.1 - - [22/Apr/2026 15:24:57] "POST /api/save-project-config HTTP/1.1" 200 -
+2026-04-22 15:26:34,956 - werkzeug - INFO - 127.0.0.1 - - [22/Apr/2026 15:26:34] "[36mGET /static/css/style.css HTTP/1.1[0m" 304 -
+2026-04-22 15:26:34,971 - werkzeug - INFO - 127.0.0.1 - - [22/Apr/2026 15:26:34] "[33mGET /.well-known/appspecific/com.chrome.devtools.json HTTP/1.1[0m" 404 -
+2026-04-22 15:29:20,019 - werkzeug - INFO - 127.0.0.1 - - [22/Apr/2026 15:29:20] "GET /qa/test-case-generator HTTP/1.1" 200 -
+2026-04-22 15:29:20,034 - werkzeug - INFO - 127.0.0.1 - - [22/Apr/2026 15:29:20] "[36mGET /static/css/style.css HTTP/1.1[0m" 304 -
+2026-04-22 15:29:20,039 - werkzeug - INFO - 127.0.0.1 - - [22/Apr/2026 15:29:20] "[36mGET /static/js/main.js HTTP/1.1[0m" 304 -
+2026-04-22 15:33:32,679 - werkzeug - INFO - 127.0.0.1 - - [22/Apr/2026 15:33:32] "GET /qa/script-developer HTTP/1.1" 200 -
+2026-04-22 15:33:32,696 - werkzeug - INFO - 127.0.0.1 - - [22/Apr/2026 15:33:32] "[36mGET /static/css/style.css HTTP/1.1[0m" 304 -
+2026-04-22 15:33:32,698 - werkzeug - INFO - 127.0.0.1 - - [22/Apr/2026 15:33:32] "[36mGET /static/js/main.js HTTP/1.1[0m" 304 -
+2026-04-22 16:16:57,249 - werkzeug - INFO - 127.0.0.1 - - [22/Apr/2026 16:16:57] "GET /api/project-locators/2 HTTP/1.1" 200 -
+2026-04-22 16:16:57,252 - werkzeug - INFO - 127.0.0.1 - - [22/Apr/2026 16:16:57] "GET /api/get-project-config/2 HTTP/1.1" 200 -
+2026-04-22 16:17:01,179 - werkzeug - INFO - 127.0.0.1 - - [22/Apr/2026 16:17:01] "POST /api/save-project-config HTTP/1.1" 200 -
+2026-04-22 16:17:07,422 - werkzeug - INFO - 127.0.0.1 - - [22/Apr/2026 16:17:07] "GET /qa/launch-element-locator HTTP/1.1" 200 -
+2026-04-22 16:20:15,685 - werkzeug - INFO - 127.0.0.1 - - [22/Apr/2026 16:20:15] "GET /api/project-locators/2 HTTP/1.1" 200 -
+2026-04-22 16:20:57,453 - AI-QA-Backend - INFO - Starting AI code generation for fallback: tests/generated_test.py
+2026-04-22 16:20:57,455 - AI-QA-Backend - INFO - AI Call attempt 1/3 using GEMINI
+2026-04-22 16:21:02,956 - google_genai.models - INFO - AFC is enabled with max remote calls: 10.
+2026-04-22 16:21:05,172 - httpx - INFO - HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 503 Service Unavailable"
+2026-04-22 16:21:05,193 - AI-QA-Backend - ERROR - AI Call failed on attempt 1: 503 UNAVAILABLE. {'error': {'code': 503, 'message': 'This model is currently experiencing high demand. Spikes in demand are usually temporary. Please try again later.', 'status': 'UNAVAILABLE'}}
+2026-04-22 16:21:05,195 - AI-QA-Backend - INFO - Retrying in 1 seconds...
+2026-04-22 16:21:06,209 - AI-QA-Backend - INFO - AI Call attempt 2/3 using GEMINI
+2026-04-22 16:21:06,987 - google_genai.models - INFO - AFC is enabled with max remote calls: 10.
+2026-04-22 16:21:20,337 - httpx - INFO - HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 200 OK"
+2026-04-22 16:21:20,350 - AI-QA-Backend - INFO - AI Call successful on attempt 2
+2026-04-22 16:21:20,374 - werkzeug - INFO - 127.0.0.1 - - [22/Apr/2026 16:21:20] "POST /api/generate-bdd-code HTTP/1.1" 200 -
+2026-04-22 16:43:25,019 - werkzeug - INFO -  * Detected change in 'C:\\Rakesh\\BIG-QA-AI-Solution\\BIG_QA_Solution\\ScriptGenerator\\api\\backend.py', reloading
+2026-04-22 16:43:25,388 - asyncio - ERROR - Task was destroyed but it is pending!
+task: <Task pending name='Task-3' coro=<AsyncClient.aclose() running at C:\Users\U\AppData\Local\Programs\Python\Python314\Lib\site-packages\google\genai\client.py:247>>
+2026-04-22 16:43:25,457 - asyncio - ERROR - Task was destroyed but it is pending!
+task: <Task pending name='Task-4' coro=<BaseApiClient.aclose() running at C:\Users\U\AppData\Local\Programs\Python\Python314\Lib\site-packages\google\genai\_api_client.py:1963>>
+2026-04-22 16:43:26,053 - werkzeug - INFO -  * Restarting with stat
+2026-04-22 17:02:38,143 - werkzeug - INFO - [31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on http://127.0.0.1:5000
+2026-04-22 17:02:38,144 - werkzeug - INFO - [33mPress CTRL+C to quit[0m
+2026-04-22 17:02:38,145 - werkzeug - INFO -  * Restarting with stat
+2026-04-22 17:02:39,228 - werkzeug - WARNING -  * Debugger is active!
+2026-04-22 17:02:39,231 - werkzeug - INFO -  * Debugger PIN: 937-270-786
+2026-04-22 17:02:39,637 - werkzeug - INFO - 127.0.0.1 - - [22/Apr/2026 17:02:39] "[32mGET / HTTP/1.1[0m" 302 -
+2026-04-22 17:02:39,707 - werkzeug - INFO - 127.0.0.1 - - [22/Apr/2026 17:02:39] "GET /home HTTP/1.1" 200 -
+2026-04-22 17:02:39,803 - werkzeug - INFO - 127.0.0.1 - - [22/Apr/2026 17:02:39] "[36mGET /static/css/style.css HTTP/1.1[0m" 304 -
+2026-04-22 17:02:39,804 - werkzeug - INFO - 127.0.0.1 - - [22/Apr/2026 17:02:39] "[36mGET /static/js/main.js HTTP/1.1[0m" 304 -
+2026-04-22 17:02:39,913 - werkzeug - INFO - 127.0.0.1 - - [22/Apr/2026 17:02:39] "GET /api/health-status HTTP/1.1" 200 -
+2026-04-22 17:02:49,865 - werkzeug - INFO - 127.0.0.1 - - [22/Apr/2026 17:02:49] "GET /qa/script-developer HTTP/1.1" 200 -
+2026-04-22 17:02:49,880 - werkzeug - INFO - 127.0.0.1 - - [22/Apr/2026 17:02:49] "[36mGET /static/css/style.css HTTP/1.1[0m" 304 -
+2026-04-22 17:02:49,881 - werkzeug - INFO - 127.0.0.1 - - [22/Apr/2026 17:02:49] "[36mGET /static/js/main.js HTTP/1.1[0m" 304 -
+2026-04-22 17:02:52,735 - werkzeug - INFO - 127.0.0.1 - - [22/Apr/2026 17:02:52] "GET /api/get-project-config/2 HTTP/1.1" 200 -
+2026-04-22 17:02:52,735 - werkzeug - INFO - 127.0.0.1 - - [22/Apr/2026 17:02:52] "GET /api/project-locators/2 HTTP/1.1" 200 -
+2026-04-22 17:02:56,100 - werkzeug - INFO - 127.0.0.1 - - [22/Apr/2026 17:02:56] "POST /api/save-project-config HTTP/1.1" 200 -
+2026-04-22 17:03:27,260 - AI-QA-Backend - INFO - Starting AI code generation for fallback: tests/generated_test.java
+2026-04-22 17:03:27,261 - AI-QA-Backend - INFO - AI Call attempt 1/3 using GEMINI
+2026-04-22 17:03:29,505 - google_genai.models - INFO - AFC is enabled with max remote calls: 10.
+2026-04-22 17:04:08,689 - httpx - INFO - HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 200 OK"
+2026-04-22 17:04:08,704 - AI-QA-Backend - INFO - AI Call successful on attempt 1
+2026-04-22 17:04:08,714 - werkzeug - INFO - 127.0.0.1 - - [22/Apr/2026 17:04:08] "POST /api/generate-bdd-code HTTP/1.1" 200 -
+2026-04-22 17:19:33,704 - werkzeug - INFO -  * Detected change in 'C:\\Rakesh\\BIG-QA-AI-Solution\\BIG_QA_Solution\\ScriptGenerator\\api\\backend.py', reloading
+2026-04-22 17:19:33,952 - asyncio - ERROR - Task was destroyed but it is pending!
+task: <Task pending name='Task-3' coro=<BaseApiClient.aclose() running at C:\Users\U\AppData\Local\Programs\Python\Python314\Lib\site-packages\google\genai\_api_client.py:1963>>
+2026-04-22 17:19:34,499 - werkzeug - INFO -  * Restarting with stat
+2026-04-22 17:19:35,880 - werkzeug - WARNING -  * Debugger is active!
+2026-04-22 17:19:35,881 - werkzeug - INFO -  * Debugger PIN: 937-270-786
+2026-04-22 17:19:49,988 - werkzeug - INFO -  * Detected change in 'C:\\Rakesh\\BIG-QA-AI-Solution\\BIG_QA_Solution\\ScriptGenerator\\app.py', reloading
+2026-04-22 17:19:50,221 - werkzeug - INFO -  * Restarting with stat
+2026-04-22 17:19:51,227 - werkzeug - WARNING -  * Debugger is active!
+2026-04-22 17:19:51,229 - werkzeug - INFO -  * Debugger PIN: 937-270-786
+2026-04-22 19:23:37,910 - werkzeug - INFO -  * Detected change in 'C:\\Rakesh\\BIG-QA-AI-Solution\\BIG_QA_Solution\\ScriptGenerator\\api\\backend.py', reloading
+2026-04-22 19:23:38,817 - werkzeug - INFO -  * Restarting with stat
+2026-04-22 19:23:45,446 - werkzeug - WARNING -  * Debugger is active!
+2026-04-22 19:23:45,451 - werkzeug - INFO -  * Debugger PIN: 937-270-786
+2026-04-22 19:23:48,508 - werkzeug - INFO -  * Detected change in 'C:\\Rakesh\\BIG-QA-AI-Solution\\BIG_QA_Solution\\ScriptGenerator\\app.py', reloading
+2026-04-22 19:23:48,817 - werkzeug - INFO -  * Restarting with stat
+2026-04-22 19:23:49,975 - werkzeug - WARNING -  * Debugger is active!
+2026-04-22 19:23:49,977 - werkzeug - INFO -  * Debugger PIN: 937-270-786
