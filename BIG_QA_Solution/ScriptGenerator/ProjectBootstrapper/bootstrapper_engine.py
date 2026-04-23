@@ -1,6 +1,7 @@
 import os
 import logging
-from datetime import datetime
+import sqlite3
+from db.app_db import DB_PATH
 
 logger = logging.getLogger("ProjectBootstrapper")
 
@@ -22,22 +23,79 @@ class BootstrapperEngine:
             logger.error(f"Failed to create project directory: {e}")
             return False, f"System error creating directory: {str(e)}"
 
-        # Generate structure based on language
-        if language == "Python":
-            success, msg = BootstrapperEngine._generate_python_project(target_dir, tool, framework, url, username, password)
-        elif language == "Java":
-            success, msg = BootstrapperEngine._generate_java_project(target_dir, project_name, tool, framework, url, username, password)
-        elif language in ["JS / TS", "JavaScript", "TypeScript"]:
-            success, msg = BootstrapperEngine._generate_js_project(target_dir, language, tool, framework, url, username, password)
-        elif language == "C#":
-            success, msg = BootstrapperEngine._generate_csharp_project(target_dir, tool, framework, url, username, password)
-        else:
-            return False, f"Language '{language}' templates are not yet implemented."
+        # Standardize language naming
+        lang_map = {
+            "JS / TS": "TypeScript",
+            "JavaScript": "TypeScript",
+            "JS": "TypeScript",
+            "TS": "TypeScript"
+        }
+        search_lang = lang_map.get(language, language)
 
-        if not success:
-            return False, msg
+        try:
+            conn = sqlite3.connect(DB_PATH)
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
 
-        return True, target_dir
+            # 1. Find the template
+            cursor.execute(
+                "SELECT id FROM ProjectTemplates WHERE tool = ? AND language = ? AND framework = ?",
+                (tool, search_lang, framework)
+            )
+            template_row = cursor.fetchone()
+            
+            if not template_row:
+                logger.warning(f"No template found in DB for: {tool}/{search_lang}/{framework}")
+                return False, f"No project template found in database for {tool} + {search_lang} + {framework}. Please contact admin to ingest this template."
+
+            template_id = template_row['id']
+
+            # 2. Fetch all files
+            cursor.execute("SELECT file_path, file_content, is_binary FROM TemplateFiles WHERE template_id = ?", (template_id,))
+            template_files = cursor.fetchall()
+
+            if not template_files:
+                return False, "Found template metadata but no files are associated with it."
+
+            # 3. Process and write files
+            for file_record in template_files:
+                rel_path = file_record['file_path']
+                content = file_record['file_content']
+                is_binary = file_record['is_binary']
+
+                # Create full destination path
+                full_path = os.path.join(target_dir, rel_path)
+                os.makedirs(os.path.dirname(full_path), exist_ok=True)
+
+                if is_binary:
+                    pass
+                else:
+                    if content:
+                        content = content.replace("{{PROJECT_NAME}}", project_name)
+                        content = content.replace("{{BASE_URL}}", url or "https://example.com")
+                        content = content.replace("{{USERNAME}}", username or "admin")
+                        content = content.replace("{{PASSWORD}}", password or "password123")
+                    
+                    with open(full_path, 'w', encoding='utf-8') as f:
+                        f.write(content or "")
+
+            # 4. Ensure mandatory empty directories for AI generation exist
+            # For Playwright/TS (Cucumber)
+            if search_lang == "TypeScript":
+                for folder in ["test/pageObjects", "test/stepDefinitions", "test/features", "Results"]:
+                    os.makedirs(os.path.join(target_dir, folder), exist_ok=True)
+            # For Python (Generic)
+            elif search_lang == "Python":
+                for folder in ["pages", "tests", "features", "Results"]:
+                    os.makedirs(os.path.join(target_dir, folder), exist_ok=True)
+
+            conn.close()
+            logger.info(f"Successfully generated project '{project_name}' from database template.")
+            return True, target_dir
+
+        except Exception as e:
+            logger.error(f"Error during template-based generation: {e}")
+            return False, f"Template generation error: {str(e)}"
 
     @staticmethod
     def execute_smoke_test(project_path, tool, language, framework, package_manager):

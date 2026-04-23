@@ -99,6 +99,27 @@ def init_db():
     );
     """
 
+    create_project_templates_table = """
+    CREATE TABLE IF NOT EXISTS ProjectTemplates (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        tool TEXT NOT NULL,
+        language TEXT NOT NULL,
+        framework TEXT NOT NULL,
+        description TEXT
+    );
+    """
+
+    create_template_files_table = """
+    CREATE TABLE IF NOT EXISTS TemplateFiles (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        template_id INTEGER NOT NULL,
+        file_path TEXT NOT NULL,
+        file_content TEXT,
+        is_binary BOOLEAN DEFAULT 0,
+        FOREIGN KEY(template_id) REFERENCES ProjectTemplates(id)
+    );
+    """
+
     create_backupfiles_table = """
     CREATE TABLE IF NOT EXISTS Backupfiles (
         ID INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -121,6 +142,8 @@ def init_db():
             cursor.execute(create_project_table)
             cursor.execute(create_locators_table)
             cursor.execute(create_project_data_table)
+            cursor.execute(create_project_templates_table)
+            cursor.execute(create_template_files_table)
             cursor.execute(create_backupfiles_table)
 
             # Migrations
