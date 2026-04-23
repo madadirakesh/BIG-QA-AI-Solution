@@ -1469,7 +1469,8 @@ class UniversalScriptGenerator(CodeGenerator):
         2. If 'DO NOT generate Page Object classes' is in Supporting Information, omit Page Object files and reuse the provided locals.
         3. ALWAYS look for and call/invoke reusable functions from Project Reusable Utilities instead of rewriting logic if they match the step needs.
         4. DO NOT GENERATE boilerplate configuration files (e.g. pom.xml, package.json, playwright.config.ts, tsconfig.json, .csproj, DriverFactory, Hooks, conftest.py, specflow.json). ONLY generate actual script layer files (Feature, Step Definitions, Page Objects).
-        5. If 'DB Locators' are provided in Supporting Information, YOU MUST use those exact locators by their 'ElementName' for your Page Object. If an element needed for a step is NOT in the DB Locators, generate a new locator for it. But ALWAYS prioritize using the provided DB Locators first.
+        5. If 'DB Locators' are provided natively mapped to [Page Object: X] headers, YOU MUST create the exact Page Object class matching 'X' and populate it exclusively with those exact locators. Under NO circumstances should you hallucinate or generate dynamic locators for elements that exist in [Page Object: X]. If an element needed for a step is NOT in the DB Locators, generate a new locator for it. But ALWAYS prioritize using the provided DB Locators first.
+        6. Follow the 'Project Layout Mappings (CRITICAL)' to exactly match the directory structure of the generated files. Check these mappings before formatting the JSON file keys. E.g., if Feature Files must go to 'src/test/resources/features', the output JSON key must be 'src/test/resources/features/MyFeature.feature'.
 
         {self.standards}
         {LOCATOR_USAGE_STANDARDS}

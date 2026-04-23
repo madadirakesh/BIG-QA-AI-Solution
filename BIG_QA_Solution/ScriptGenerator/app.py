@@ -686,14 +686,43 @@ def generate_bdd_code():
             if os.path.exists(os.path.join(project_path, fname)) or os.path.exists(os.path.join(project_path, "features", fname)):
                 support_content += "\nDO NOT generate the .feature file.\n"
 
+        # Path Discovery
+        discovered_features = "features"
+        discovered_steps = "steps"
+        discovered_pages = "pages"
+        
+        if project_path and os.path.exists(project_path):
+            for root, dirs, files in os.walk(project_path):
+                # Depth limit check
+                depth = root[len(project_path):].count(os.sep)
+                if depth > 8:
+                    dirs[:] = []
+                    continue
+                
+                lower_root = root.lower()
+                rel_path = os.path.relpath(root, project_path)
+                if rel_path == ".":
+                    continue
+                    
+                basename_lower = os.path.basename(lower_root)
+                if "feature" in basename_lower or any(f.endswith(".feature") for f in files):
+                    if discovered_features == "features": discovered_features = rel_path
+                if "step" in basename_lower or any("step" in f.lower() for f in files):
+                    if discovered_steps == "steps": discovered_steps = rel_path
+                if "page" in basename_lower or any("page" in f.lower() for f in files):
+                    if discovered_pages == "pages": discovered_pages = rel_path
+
+        support_content += f"\nProject Layout Mappings (CRITICAL):\n- Feature Files MUST be placed inside: {discovered_features}\n- Step Definition Files MUST be placed inside: {discovered_steps}\n- Page Object Files MUST be placed inside: {discovered_pages}\n"
+
         if strategy == 'db' and project_id and db_locators:
             try:
                 locs = json.loads(db_locators)
                 support_content += "\nDB Locators:\n"
                 for page in locs:
+                    support_content += f"\n[Page Object: {page}]\n"
                     db_data = fetch_data("SELECT Locator_Name, Locator_Type, Locator_Value FROM Locators WHERE project_id = ? AND Page_Name = ?", (project_id, page))
                     for row in db_data:
-                        support_content += f"{row['Locator_Name']} (Type: {row['Locator_Type']}): {row['Locator_Value']}\n"
+                        support_content += f"  - {row['Locator_Name']} (Type: {row['Locator_Type']}): {row['Locator_Value']}\n"
             except Exception:
                 pass
         elif strategy == 'local':
@@ -734,7 +763,7 @@ def generate_bdd_code():
                 elif "\nDO NOT generate Page Object classes.\n" in support_content and ("page" in k_lower or "pom" in k_lower):
                     keys_to_delete.append(k)
                 # Universal boilerplate stripping
-                elif any(bp in k_lower for bp in ["pom.xml", "package.json", "requirements.txt", "driverfactory", "hooks", "conftest.py", "playwright.config", "tsconfig.json", ".csproj", ".sln", "specflow.json", "usings.cs"]):
+                elif any(bp in k_lower for bp in ["pom.xml", "package.json", "requirements.txt", "driverfactory", "hooks", "conftest.py", "playwright.config", "tsconfig.json", ".csproj", ".sln", "specflow.json", "usings.cs", "Runner"]):
                     keys_to_delete.append(k)
             for k in keys_to_delete:
                 del parsed_files[k]
