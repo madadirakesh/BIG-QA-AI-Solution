@@ -1617,12 +1617,14 @@ async def generate_bdd_scenarios(req: GenerateBDDScenariosRequest):
     Rules:
     1. Use standard Gherkin syntax (Feature, Scenario, Given, When, Then, And).
     2. Ensure scenarios cover positive and negative cases if applicable.
-    3. Return ONLY the content of the .feature file. Do NOT include markdown code fences or any other text.
+    3. Return ONLY the raw content of the .feature file. 
+    4. Do NOT include markdown code fences (```gherkin) or any other conversational text.
     """
     
     try:
-        content = await call_ai(prompt, provider, expect_json=True)
-        # Strip any accidental markdown fences
+        # expect_json must be False here to get raw Gherkin text
+        content = await call_ai(prompt, provider, expect_json=False)
+        # Strip any accidental markdown fences if they still appear
         content = re.sub(r"```(?:gherkin|feature)?\s*", "", content).replace("```", "").strip()
         return {"status": "success", "filename": "scenarios.feature", "content": content}
     except Exception as e:

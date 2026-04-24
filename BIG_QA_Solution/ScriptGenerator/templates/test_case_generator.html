@@ -98,14 +98,14 @@
                             <button class="copy-btn" onclick="copyResultText()"><i class="fas fa-copy"></i> Copy</button>
                         </div>
                         <div class="editor-wrapper">
-                            <textarea id="resultEditor" class="form-control" rows="18" readonly
-                                style="background: transparent; border: none !important; box-shadow: none !important; font-family: 'Fira Code', monospace; font-size: 0.9rem; line-height: 1.5; color: #cbd5e1;"></textarea>
+                            <textarea id="resultEditor" class="form-control" rows="18"
+                                style="background: rgba(0,0,0,0.2); border: 1px solid var(--glass-border) !important; font-family: 'Fira Code', monospace; font-size: 0.9rem; line-height: 1.5; color: #cbd5e1; padding: 15px;"></textarea>
                         </div>
                     </div>
 
                     <div class="form-actions d-flex justify-content-between mt-4">
                         <button type="button" class="btn btn-secondary" onclick="nextStep(1)"><i class="fas fa-arrow-left"></i> Back</button>
-                        <button type="button" class="btn btn-success" onclick="downloadResult()"><i class="fas fa-download"></i> Download Result</button>
+                        <button type="button" class="btn btn-success" onclick="handleDownload()"><i class="fas fa-download"></i> Download Result</button>
                     </div>
                 </div>
             </div>
@@ -252,7 +252,12 @@
 
         const data = await response.json();
         if (response.ok) {
-            document.getElementById('resultEditor').value = data.content;
+            let content = data.content;
+            // Rule: AI often returns literal '\n' strings or markdown blocks. Clean them.
+            content = content.replace(/\\n/g, '\n');
+            content = content.replace(/```gherkin/g, '').replace(/```/g, '').trim();
+            
+            document.getElementById('resultEditor').value = content;
             generatedFileDownloadName = data.filename || 'scenarios.feature';
         } else {
             throw new Error(data.detail || 'Failed to generate BDD');
@@ -298,10 +303,20 @@
         let parsed = JSON.parse(cleanContent);
         let testCases = parsed.test_cases || [];
 
-        window.generatedBlob = createExportBlob(testCases, templateHeaders, ext);
+        window.lastTemplateHeaders = templateHeaders;
+        window.lastExtension = ext;
         generatedFileDownloadName = targetFileName;
-        document.getElementById('resultEditor').value = JSON.stringify(testCases, null, 2);
-        document.getElementById('previewTitle').innerText = "Test Case Data (JSON Preview)";
+        
+        // Convert JSON to Markdown Table for preview
+        let markdown = "| " + templateHeaders.join(" | ") + " |\n";
+        markdown += "| " + templateHeaders.map(() => "---").join(" | ") + " |\n";
+        testCases.forEach(tc => {
+            let row = templateHeaders.map(h => tc[h] || "");
+            markdown += "| " + row.join(" | ") + " |\n";
+        });
+
+        document.getElementById('resultEditor').value = markdown;
+        document.getElementById('previewTitle').innerText = "Manual Test Case Preview (Editable Table)";
     }
 
     function createExportBlob(data, headers, ext) {
@@ -316,24 +331,90 @@
         return new Blob([wbout], { type: 'application/octet-stream' });
     }
 
-    function downloadResult() {
-        if (window.generatedBlob) {
-            const url = URL.createObjectURL(window.generatedBlob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = generatedFileDownloadName;
-            a.click();
-            URL.revokeObjectURL(url);
-        } else {
-            const content = document.getElementById('resultEditor').value;
-            const blob = new Blob([content], { type: 'text/plain' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = generatedFileDownloadName;
-            a.click();
-            URL.revokeObjectURL(url);
+    async function handleDownload() {
+        const content = document.getElementById('resultEditor').value;
+        if (!content) return;
+
+        // Try modern File System Access API for native "Save As" experience
+        if ('showSaveFilePicker' in window) {
+            try {
+                const opts = {
+                    suggestedName: generatedFileDownloadName,
+                    types: [{
+                        description: selectedOptValue === 2 ? 'Excel/CSV Spreadsheet' : 'Cucumber Feature File',
+                        accept: selectedOptValue === 2 ? 
+                            { 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx'], 'text/csv': ['.csv'] } : 
+                            { 'text/plain': ['.feature', '.txt'] },
+                    }],
+                };
+                const handle = await window.showSaveFilePicker(opts);
+                const writable = await handle.createWritable();
+                
+                let dataToSave;
+                if (selectedOptValue === 2) {
+                    const parsedData = parseMarkdownTable(content);
+                    const ext = '.' + handle.name.split('.').pop().toLowerCase();
+                    dataToSave = createExportBlob(parsedData, window.lastTemplateHeaders || [], ext);
+                } else {
+                    dataToSave = new Blob([content], { type: 'text/plain' });
+                }
+                
+                await writable.write(dataToSave);
+                await writable.close();
+                return; // Success
+            } catch (err) {
+                if (err.name === 'AbortError') return;
+                console.error("Native Save failed, falling back:", err);
+            }
         }
+
+        // Fallback: Original Prompt + Blob Download
+        const suggestedName = prompt("Enter filename to save:", generatedFileDownloadName);
+        if (!suggestedName) return;
+
+        let blob;
+        if (selectedOptValue === 2) {
+            try {
+                const data = parseMarkdownTable(content);
+                const ext = '.' + suggestedName.split('.').pop().toLowerCase();
+                blob = createExportBlob(data, window.lastTemplateHeaders || [], ext);
+            } catch (e) {
+                alert("Error parsing table: " + e.message);
+                return;
+            }
+        } else {
+            blob = new Blob([content], { type: 'text/plain' });
+        }
+
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = suggestedName;
+        a.click();
+        URL.revokeObjectURL(url);
+    }
+
+    function parseMarkdownTable(content) {
+        const lines = content.trim().split('\n');
+        if (lines.length < 2) throw new Error("Invalid table format");
+        
+        const headers = lines[0].split('|').map(h => h.trim()).filter(h => h);
+        const data = [];
+        
+        for (let i = 2; i < lines.length; i++) {
+            const cells = lines[i].split('|').map(c => c.trim()).filter((c, idx, arr) => {
+                return idx > 0 && idx < arr.length - 1;
+            });
+            
+            if (cells.length > 0) {
+                let obj = {};
+                headers.forEach((h, idx) => {
+                    obj[h] = cells[idx] || "";
+                });
+                data.push(obj);
+            }
+        }
+        return data;
     }
 
     function copyResultText() {
