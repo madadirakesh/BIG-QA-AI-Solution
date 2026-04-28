@@ -47,7 +47,7 @@ TEMPLATES_DATA = [
       },
       {
         "file_path": "test/utils/reports.ts",
-        "file_content": "const reporter = require('cucumber-html-reporter');\nconst fs = require('fs');\nconst path = require('path');\n\nlet resultDir = process.env.RESULT_DIR;\nif (!resultDir) {\n    // Find the latest timestamped folder\n    const resultsPath = path.join(process.cwd(), 'results');\n    const folders = fs.readdirSync(resultsPath).filter(f => fs.statSync(path.join(resultsPath, f)).isDirectory());\n    folders.sort((a, b) => fs.statSync(path.join(resultsPath, b)).mtime - fs.statSync(path.join(resultsPath, a)).mtime);\n    resultDir = folders.length > 0 ? path.join('results', folders[0]) : 'results';\n}\n\nconst jsonPath = path.join(process.cwd(), resultDir, 'cucumber_report.json');\n\n// ARCHITECTURAL CHECK: Prevent crash if tests didn't run\nif (!fs.existsSync(jsonPath)) {\n    console.error(\"\u274c Execution Error: The JSON report was not generated. Check your test logs above!\");\n    process.exit(0); // Exit cleanly so you can see the actual error\n}\n\nconst options = {\n    theme: 'bootstrap',\n    jsonFile: jsonPath,\n    output: path.join(process.cwd(), resultDir, 'cucumber_report.html'),\n    reportSuiteAsScenarios: true,\n    scenarioTimestamp: true,\n    launchReport: true\n};\n\nreporter.generate(options);",
+        "file_content": "const reporter = require('cucumber-html-reporter');\nconst fs = require('fs');\nconst path = require('path');\n\nlet resultDir = process.env.RESULT_DIR;\nif (!resultDir) {\n    // Find the latest timestamped folder\n    const resultsPath = path.join(process.cwd(), 'results');\n    const folders = fs.readdirSync(resultsPath).filter(f => fs.statSync(path.join(resultsPath, f)).isDirectory());\n    folders.sort((a, b) => fs.statSync(path.join(resultsPath, b)).mtime - fs.statSync(path.join(resultsPath, a)).mtime);\n    resultDir = folders.length > 0 ? path.join('results', folders[0]) : 'results';\n}\n\nconst jsonPath = path.join(process.cwd(), resultDir, 'cucumber_report.json');\n\n// ARCHITECTURAL CHECK: Prevent crash if tests didn't run\nif (!fs.existsSync(jsonPath)) {\n    console.error(\"\\u274c Execution Error: The JSON report was not generated. Check your test logs above!\");\n    process.exit(0); // Exit cleanly so you can see the actual error\n}\n\nconst options = {\n    theme: 'bootstrap',\n    jsonFile: jsonPath,\n    output: path.join(process.cwd(), resultDir, 'cucumber_report.html'),\n    reportSuiteAsScenarios: true,\n    scenarioTimestamp: true,\n    launchReport: true\n};\n\nreporter.generate(options);",
         "is_binary": 0
       },
       {
@@ -57,7 +57,47 @@ TEMPLATES_DATA = [
       },
       {
         "file_path": "test/hooks/hooks.ts",
-        "file_content": "import { Before, After, Status, BeforeAll, AfterAll } from \"@cucumber/cucumber\";\nimport { chromium, firefox, webkit, Browser, BrowserContext, Page } from \"@playwright/test\";\nconst fs = require('fs-extra');\nimport * as path from \"path\";\nimport { execSync } from \"child_process\";\n\nlet browser: Browser;\nlet context: BrowserContext;\nexport let page: Page;\n\nBeforeAll(async function () {\n    try {\n        console.log(\"\ud83d\udd0d Validating environment dependencies...\");\n        // This check mimics the 'install_dependencies' logic in your invoker\n        execSync(\"npm list @playwright/test\", { stdio: \"ignore\" });\n        // Install Playwright browsers\n        execSync(\"npx playwright install\", { stdio: \"ignore\" });\n    } catch (error) {\n        console.error(\"\u274c Required packages missing. Executing emergency install...\");\n        execSync(\"npm install\", { stdio: \"inherit\" });\n        execSync(\"npx playwright install\", { stdio: \"inherit\" });\n    }\n    // Rule 4: Create result folder with timestamp\n    const resultDir = process.env.RESULT_DIR || path.join(process.cwd(), \"results\", new Date().toISOString().replace(/[:.]/g, \"-\"));\n    fs.ensureDirSync(resultDir);\n    fs.ensureDirSync(path.join(resultDir, \"screenshots\"));\n});\n\nBefore(async function () {\n    // Rule 8: Configurable browser\n    const browserType = process.env.BROWSER || \"chromium\";\n    const launchOptions = { headless: process.env.HEADLESS === \"true\" };\n\n    if (browserType === \"firefox\") browser = await firefox.launch(launchOptions);\n    else if (browserType === \"webkit\") browser = await webkit.launch(launchOptions);\n    else browser = await chromium.launch(launchOptions);\n\n    // Bypassing SSL errors as standard QA practice\n    context = await browser.newContext({ ignoreHTTPSErrors: true });\n    page = await context.newPage();\n});\n\nAfter(async function (scenario) {\n    // Rule 6: Screenshot on failure\n    if (scenario.result?.status === Status.FAILED) {\n        const resultDir = process.env.RESULT_DIR || path.join(process.cwd(), \"results\", new Date().toISOString().replace(/[:.]/g, \"-\"));\n        const image = await page.screenshot({ path: path.join(resultDir, \"screenshots\", `${scenario.pickle.name}.png`), fullPage: true });\n        await this.attach(image, \"image/png\");\n    }\n    // Rule 5: Close instances\n    await page.close();\n    await context.close();\n    await browser.close();\n});",
+        "file_content": "import { Before, After, Status, BeforeAll, AfterAll } from \"@cucumber/cucumber\";\nimport { chromium, firefox, webkit, Browser, BrowserContext, Page } from \"@playwright/test\";\nconst fs = require('fs-extra');\nimport * as path from \"path\";\nimport { execSync } from \"child_process\";\n\nlet browser: Browser;\nlet context: BrowserContext;\nexport let page: Page;\n\nBeforeAll(async function () {\n    try {\n        console.log(\"🔍 Validating environment dependencies...\");\n        // This check mimics the 'install_dependencies' logic in your invoker\n        execSync(\"npm list @playwright/test\", { stdio: \"ignore\" });\n        // Install Playwright browsers\n        execSync(\"npx playwright install\", { stdio: \"ignore\" });\n    } catch (error) {\n        console.error(\"❌ Required packages missing. Executing emergency install...\");\n        execSync(\"npm install\", { stdio: \"inherit\" });\n        execSync(\"npx playwright install\", { stdio: \"inherit\" });\n    }\n    // Rule 4: Create result folder with timestamp\n    const resultDir = process.env.RESULT_DIR || path.join(process.cwd(), \"results\", new Date().toISOString().replace(/[:.]/g, \"-\"));\n    fs.ensureDirSync(resultDir);\n    fs.ensureDirSync(path.join(resultDir, \"screenshots\"));\n});\n\nBefore(async function () {\n    // Rule 8: Configurable browser\n    const browserType = process.env.BROWSER || \"chromium\";\n    const launchOptions = { headless: process.env.HEADLESS === \"true\" };\n\n    if (browserType === \"firefox\") browser = await firefox.launch(launchOptions);\n    else if (browserType === \"webkit\") browser = await webkit.launch(launchOptions);\n    else browser = await chromium.launch(launchOptions);\n\n    // Bypassing SSL errors as standard QA practice\n    context = await browser.newContext({ ignoreHTTPSErrors: true });\n    page = await context.newPage();\n});\n\nAfter(async function (scenario) {\n    // Rule 6: Screenshot on failure\n    if (scenario.result?.status === Status.FAILED) {\n        const resultDir = process.env.RESULT_DIR || path.join(process.cwd(), \"results\", new Date().toISOString().replace(/[:.]/g, \"-\"));\n        const image = await page.screenshot({ path: path.join(resultDir, \"screenshots\", `${scenario.pickle.name}.png`), fullPage: true });\n        await this.attach(image, \"image/png\");\n    }\n    // Rule 5: Close instances\n    await page.close();\n    await context.close();\n    await browser.close();\n});",
+        "is_binary": 0
+      }
+    ]
+  },
+  {
+    "metadata": {
+      "tool": "Playwright",
+      "language": "Python",
+      "framework": "Behave",
+      "description": "Enterprise Playwright Python Behave BDD Template"
+    },
+    "files": [
+      {
+        "file_path": "requirements.txt",
+        "file_content": "behave==1.2.6\nplaywright==1.40.0\npython-dotenv==1.0.1\n",
+        "is_binary": 0
+      },
+      {
+        "file_path": "behave.ini",
+        "file_content": "[behave]\npaths = features\nshow_skipped = false\nformat = pretty\noutfiles = reports/behave_report.txt\nstdout_capture = false\nstderr_capture = false\nlog_capture = false\n",
+        "is_binary": 0
+      },
+      {
+        "file_path": "features/environment.py",
+        "file_content": "import os\nfrom playwright.sync_api import sync_playwright\n\n\ndef before_all(context):\n    context.playwright = sync_playwright().start()\n    browser_name = os.getenv(\"BROWSER\", \"chromium\")\n    headless = os.getenv(\"HEADLESS\", \"false\").lower() == \"true\"\n    browser_type = getattr(context.playwright, browser_name, context.playwright.chromium)\n    context.browser = browser_type.launch(headless=headless)\n    context.page = context.browser.new_page()\n\n\ndef after_all(context):\n    if getattr(context, \"browser\", None):\n        context.browser.close()\n    if getattr(context, \"playwright\", None):\n        context.playwright.stop()\n",
+        "is_binary": 0
+      },
+      {
+        "file_path": "features/example.feature",
+        "file_content": "Feature: Example smoke test\n\n  Scenario: Open the application\n    Given I open the application\n    Then the page title should be visible\n",
+        "is_binary": 0
+      },
+      {
+        "file_path": "features/steps/example_steps.py",
+        "file_content": "from behave import given, then\n\n\n@given(\"I open the application\")\ndef step_open_application(context):\n    context.page.goto(context.config.userdata.get(\"app_url\", \"https://www.saucedemo.com\"))\n\n\n@then(\"the page title should be visible\")\ndef step_title_visible(context):\n    assert context.page.title() is not None\n",
+        "is_binary": 0
+      },
+      {
+        "file_path": ".env",
+        "file_content": "APP_URL=https://www.saucedemo.com\nBROWSER=chromium\nHEADLESS=false\n",
         "is_binary": 0
       }
     ]
@@ -68,9 +108,8 @@ def seed():
     print(f"Connecting to database at: {DB_PATH}")
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
-    
+
     try:
-        # Ensure tables exist
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS ProjectTemplates (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -93,11 +132,10 @@ def seed():
 
         print("Seeding templates...")
         for t in TEMPLATES_DATA:
-            meta = t['metadata']
-            # Check if exists to avoid duplicates
+            meta = t["metadata"]
             cursor.execute(
                 "SELECT id FROM ProjectTemplates WHERE tool=? AND language=? AND framework=?",
-                (meta['tool'], meta['language'], meta['framework'])
+                (meta["tool"], meta["language"], meta["framework"])
             )
             exists = cursor.fetchone()
             if exists:
@@ -106,17 +144,17 @@ def seed():
 
             cursor.execute(
                 "INSERT INTO ProjectTemplates (tool, language, framework, description) VALUES (?, ?, ?, ?)",
-                (meta['tool'], meta['language'], meta['framework'], meta['description'])
+                (meta["tool"], meta["language"], meta["framework"], meta["description"])
             )
             new_id = cursor.lastrowid
-            
+
             print(f"  + Ingesting {meta['tool']}/{meta['language']} (ID: {new_id})")
-            for f in t['files']:
+            for f in t["files"]:
                 cursor.execute(
                     "INSERT INTO TemplateFiles (template_id, file_path, file_content, is_binary) VALUES (?, ?, ?, ?)",
-                    (new_id, f['file_path'], f['file_content'], f['is_binary'])
+                    (new_id, f["file_path"], f["file_content"], f["is_binary"])
                 )
-        
+
         conn.commit()
         print("\nSuccess: Database seeded with team templates.")
     except Exception as e:
