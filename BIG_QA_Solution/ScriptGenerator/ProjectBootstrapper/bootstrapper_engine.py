@@ -90,8 +90,15 @@ class BootstrapperEngine:
                 for folder in ["pages", "tests", "features", "Results"]:
                     os.makedirs(os.path.join(target_dir, folder), exist_ok=True)
 
-            # 5. Generate sample scripts
-            BootstrapperEngine._generate_sample_script(target_dir, tool, search_lang, framework)
+            # 5. Inject dynamic sample app test
+            sample_app_url = "http://127.0.0.1:5000" if not url else url
+            if sample_app_url.endswith("/"):
+                sample_app_url = sample_app_url[:-1]
+                
+            BootstrapperEngine._inject_sample_test(
+                target_dir, search_lang, tool, framework, 
+                sample_app_url, username or "admin", password or "password123"
+            )
 
             conn.close()
             logger.info(f"Successfully generated project '{project_name}' from database template.")
@@ -186,7 +193,64 @@ class BootstrapperEngine:
                 with open(os.path.join(project_path, "Results", "report.html"), "w", encoding="utf-8") as f:
                     f.write(e.stdout)
                 return False, "Behave Smoke Test had failures. Check Results/report.html for detailed output."
-            return False, e.stderr if e.stderr else e.stdout
+            
+            error_msg = e.stdout if e.stdout else ""
+            if e.stderr:
+                error_msg += f"\n\nSTDERR:\n{e.stderr}"
+            return False, error_msg.strip()
+
+    @staticmethod
+    def _inject_sample_test(target_dir, search_lang, tool, framework, url, username, password):
+        """
+        Dynamically injects a sample login test pointing to the sample app.
+        """
+        try:
+            # Ensure we don't duplicate the path if the user already provided it in the base URL
+            target_url = url
+            if not target_url.endswith("/sample-app/login"):
+                target_url = f"{target_url}/sample-app/login"
+                
+            if search_lang == "TypeScript" and tool == "Playwright" and "Cucumber" in framework:
+                # 1. Feature file
+                feature_path = os.path.join(target_dir, "test", "features", "sample_login.feature")
+                os.makedirs(os.path.dirname(feature_path), exist_ok=True)
+                with open(feature_path, 'w', encoding='utf-8') as f:
+                    f.write(f'''Feature: Sample App Login\n\n  Scenario: User can login to the sample application\n    Given I navigate to the sample login page "{target_url}"\n    When I login with username "{username}" and password "{password}"\n    Then I should see the welcome message\n''')
+                
+                # 2. Page Object
+                po_path = os.path.join(target_dir, "test", "pageObjects", "SampleLoginPage.ts")
+                os.makedirs(os.path.dirname(po_path), exist_ok=True)
+                with open(po_path, 'w', encoding='utf-8') as f:
+                    f.write('''import { Page, expect } from "@playwright/test";\n\nexport class SampleLoginPage {\n    constructor(private page: Page) {}\n\n    async navigate(url: string) {\n        await this.page.goto(url);\n    }\n\n    async login(user: string, pass: string) {\n        await this.page.fill('#username', user);\n        await this.page.fill('#password', pass);\n        await this.page.click('#login-button');\n    }\n\n    async verifyWelcome() {\n        await expect(this.page.locator('body')).toContainText('Login Successful!');\n    }\n}\n''')
+                
+                # 3. Step Definition
+                steps_path = os.path.join(target_dir, "test", "stepDefinitions", "sample_login_steps.ts")
+                os.makedirs(os.path.dirname(steps_path), exist_ok=True)
+                with open(steps_path, 'w', encoding='utf-8') as f:
+                    f.write('''import { Given, When, Then, setDefaultTimeout } from "@cucumber/cucumber";\nimport { page } from "../hooks/hooks";\nimport { SampleLoginPage } from "../pageObjects/SampleLoginPage";\n\n// Increase timeout for the smoke test as environment setup might be slow\nsetDefaultTimeout(20000);\n\nlet loginPage: SampleLoginPage;\n\nGiven('I navigate to the sample login page {string}', async function (url: string) {\n    loginPage = new SampleLoginPage(page);\n    await loginPage.navigate(url);\n});\n\nWhen('I login with username {string} and password {string}', async function (username: string, password: string) {\n    await loginPage.login(username, password);\n});\n\nThen('I should see the welcome message', async function () {\n    await loginPage.verifyWelcome();\n});\n''')
+
+            elif search_lang == "Python" and tool == "Playwright" and "Behave" in framework:
+                # 1. Feature file
+                feature_path = os.path.join(target_dir, "features", "sample_login.feature")
+                os.makedirs(os.path.dirname(feature_path), exist_ok=True)
+                with open(feature_path, 'w', encoding='utf-8') as f:
+                    f.write(f'''Feature: Sample App Login\n\n  Scenario: User can login to the sample application\n    Given I navigate to the sample login page "{target_url}"\n    When I login with username "{username}" and password "{password}"\n    Then I should see the welcome message\n''')
+                
+                # 2. Page Object
+                po_path = os.path.join(target_dir, "pages", "sample_login_page.py")
+                os.makedirs(os.path.dirname(po_path), exist_ok=True)
+                with open(po_path, 'w', encoding='utf-8') as f:
+                    f.write('''class SampleLoginPage:\n    def __init__(self, page):\n        self.page = page\n\n    def navigate(self, url):\n        self.page.goto(url)\n\n    def login(self, username, password):\n        self.page.fill('#username', username)\n        self.page.fill('#password', password)\n        self.page.click('#login-button')\n\n    def verify_welcome(self):\n        assert "Login Successful!" in self.page.content()\n''')
+                
+                # 3. Step Definition
+                steps_path = os.path.join(target_dir, "features", "steps", "sample_login_steps.py")
+                os.makedirs(os.path.dirname(steps_path), exist_ok=True)
+                with open(steps_path, 'w', encoding='utf-8') as f:
+                    f.write('''from behave import given, when, then\nimport sys\nimport os\n\nsys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))\nfrom pages.sample_login_page import SampleLoginPage\n\n@given('I navigate to the sample login page "{url}"')\ndef step_navigate(context, url):\n    context.sample_login_page = SampleLoginPage(context.page)\n    context.sample_login_page.navigate(url)\n\n@when('I login with username "{username}" and password "{password}"')\ndef step_login(context, username, password):\n    context.sample_login_page.login(username, password)\n\n@then('I should see the welcome message')\ndef step_verify(context):\n    context.sample_login_page.verify_welcome()\n''')
+            else:
+                logger.info(f"Sample test injection not explicitly mapped for {tool}/{search_lang}/{framework}.")
+        except Exception as e:
+            logger.error(f"Failed to inject sample test: {e}")
 
     @staticmethod
     def _generate_python_project(target_dir, tool, framework, url, username, password):

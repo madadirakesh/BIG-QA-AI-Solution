@@ -63,7 +63,12 @@ TEMPLATES_DATA = [
       },
       {
         "file_path": "test/features/loginFeature.feature",
-        "file_content": "feature: Login Functionality\n  Scenario: Successful Login\n    Given I navigate to the login page\n    When I enter valid credentials\n    And I click the login button\n    Then I should be redirected to the homepage",
+        "file_content": "Feature: Login Functionality\n\n  Scenario: Successful Login\n    Given I navigate to the login page\n    When I enter valid credentials\n    And I click the login button\n    Then I should be redirected to the homepage\n",
+        "is_binary": 0
+      },
+      {
+        "file_path": "test/stepDefinitions/loginSteps.ts",
+        "file_content": "import { Given, When, Then } from \"@cucumber/cucumber\";\nimport { expect } from \"@playwright/test\";\nimport { page } from \"../hooks/hooks\";\n\nGiven('I navigate to the login page', async function () {\n  await page.goto('https://www.saucedemo.com/');\n});\n\nWhen('I enter valid credentials', async function () {\n  await page.locator('[data-test=\"username\"]').fill('standard_user');\n  await page.locator('[data-test=\"password\"]').fill('secret_sauce');\n});\n\nWhen('I click the login button', async function () {\n  await page.locator('[data-test=\"login-button\"]').click();\n});\n\nThen('I should be redirected to the homepage', async function () {\n  await expect(page.locator('.title')).toBeVisible();\n  await expect(page.locator('.title')).toHaveText('Products');\n});\n",
         "is_binary": 0
       }
     ]
