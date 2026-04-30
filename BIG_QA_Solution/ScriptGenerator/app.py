@@ -350,7 +350,7 @@ def script_runner():
         SELECT pd.*, pt.default_run_commands 
         FROM ProjectDetails pd
         LEFT JOIN ProjectTemplates pt ON pd.project_tool = pt.tool 
-            AND (pd.project_lang = pt.language OR (pd.project_lang = 'JS / TS' AND pt.language = 'TypeScript'))
+            AND (LOWER(pd.project_lang) = LOWER(pt.language) OR (pd.project_lang = 'JS / TS' AND pt.language = 'TypeScript'))
             AND pd.project_fw = pt.framework
     """
     projects = fetch_data(query)

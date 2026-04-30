@@ -90,15 +90,7 @@ class BootstrapperEngine:
                 for folder in ["pages", "tests", "features", "Results"]:
                     os.makedirs(os.path.join(target_dir, folder), exist_ok=True)
 
-            # 5. Inject dynamic sample app test
-            sample_app_url = "http://127.0.0.1:5000" if not url else url
-            if sample_app_url.endswith("/"):
-                sample_app_url = sample_app_url[:-1]
-                
-            BootstrapperEngine._inject_sample_test(
-                target_dir, search_lang, tool, framework, 
-                sample_app_url, username or "admin", password or "password123"
-            )
+            # 5. Dynamic sample injection disabled. Relying purely on template files.
 
             conn.close()
             logger.info(f"Successfully generated project '{project_name}' from database template.")
