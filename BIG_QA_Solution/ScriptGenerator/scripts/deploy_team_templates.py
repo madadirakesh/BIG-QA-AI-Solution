@@ -38,7 +38,7 @@ TEMPLATES_DATA = [
       },
       {
         "file_path": "test-runner.js",
-        "file_content": "const { execSync } = require('child_process');\n\nconst timestamp = new Date().toISOString().replace(/[:.]/g, \"-\");\nconst resultDir = `results/${timestamp}`;\nconst extraArgs = process.argv.slice(2).join(' ');\nconst tagArgs = extraArgs ? ` ${extraArgs}` : '';\n\nprocess.env.RESULT_DIR = resultDir;\n\ntry {\n  execSync(`npx cucumber-js test/features/*.feature --require-module ts-node/register --require test/hooks/*.ts --require test/stepDefinitions/*.ts --require test/pageObjects/*.ts --require test/utils/configReader.ts --format json:${resultDir}/cucumber_report.json${tagArgs}`, { stdio: 'inherit' });\n} catch (error) {\n  process.exit(1);\n}",
+        "file_content": "const { execSync } = require('child_process');\n\nconst timestamp = new Date().toISOString().replace(/[:.]/g, \"-\");\nconst resultDir = `results/${timestamp}`;\nconst extraArgs = process.argv.slice(2).join(' ');\nconst tagArgs = extraArgs ? ` ${extraArgs}` : '';\n\nprocess.env.RESULT_DIR = resultDir;\n\ntry {\n  execSync(`npx cucumber-js \"test/features/**/*.feature\" --require-module ts-node/register --require \"test/hooks/**/*.ts\" --require \"test/stepDefinitions/**/*.ts\" --require \"test/pageObjects/**/*.ts\" --require \"test/utils/configReader.ts\" --format json:${resultDir}/cucumber_report.json${tagArgs}`, { stdio: 'inherit' });\n} catch (error) {\n  process.exit(1);\n}",
         "is_binary": 0
       },
       {
