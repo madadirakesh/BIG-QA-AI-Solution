@@ -1,12 +1,13 @@
 import os
 import sys
+import json
 import subprocess
 import threading
 import webbrowser
 import uuid
 from datetime import datetime
 from pathlib import Path
-from flask import Flask, render_template, request, redirect, url_for, session, flash, jsonify
+from flask import Flask, render_template, request, redirect, url_for, session, flash, jsonify, Response, stream_with_context
 import pytz
 from dotenv import load_dotenv
 from scripts.deploy_team_templates import seed
@@ -273,9 +274,9 @@ def bootstrap_project():
     lang = data.get('language', '')
     fw = data.get('framework', '')
     pm = data.get('packageManager', '')
-    url = data.get('url', '')
-    user = data.get('username', '')
-    pwd = data.get('password', '')
+    url = data.get('url', '').strip()
+    user = data.get('username', '').strip()
+    pwd = data.get('password', '').strip()
 
     if not p_name or not p_path:
         return jsonify({"status": "error", "message": "Project name and path are required."}), 400
@@ -345,7 +346,14 @@ def script_runner():
         flash('Not authorized', 'error')
         return redirect(url_for('home'))
         
-    projects = fetch_data("SELECT * FROM ProjectDetails")
+    query = """
+        SELECT pd.*, pt.default_run_commands 
+        FROM ProjectDetails pd
+        LEFT JOIN ProjectTemplates pt ON pd.project_tool = pt.tool 
+            AND (pd.project_lang = pt.language OR (pd.project_lang = 'JS / TS' AND pt.language = 'TypeScript'))
+            AND pd.project_fw = pt.framework
+    """
+    projects = fetch_data(query)
     return render_template('script_runner.html', projects=projects)
 
 @app.route('/qa/test-case-generator', methods=['GET'])
@@ -574,9 +582,42 @@ def script_runner_run():
     env = data.get('environment', '')
     browser = data.get('browser', '')
     tags = data.get('tags', '')
+    custom_commands = data.get('custom_commands', '')
 
-    result = ScriptRunnerService.execute_with_healing(meta, env, browser, tags)
+    result = ScriptRunnerService.execute_with_healing(meta, env, browser, tags, custom_commands)
     return jsonify(result)
+
+@app.route('/api/script-runner/stream')
+@login_required()
+def script_runner_stream():
+    try:
+        project_raw = request.args.get('project', '{}')
+        print(f"DEBUG: Streaming request for project: {project_raw}")
+        meta = json.loads(project_raw)
+        env = request.args.get('environment', '')
+        browser = request.args.get('browser', '')
+        tags = request.args.get('tags', '')
+        custom_commands = request.args.get('custom_commands', '')
+        
+        return Response(stream_with_context(ScriptRunnerService.execute_with_streaming(meta, env, browser, tags, custom_commands)), mimetype='text/event-stream')
+    except Exception as e:
+        print(f"DEBUG: Streaming route failed: {e}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/script-runner/stop', methods=['POST'])
+@login_required()
+def script_runner_stop():
+    from ScriptRunnerEngine.runner import active_processes
+    import os, signal
+    for pid in list(active_processes.keys()):
+        try:
+            # On Windows this might need taskkill, on Unix SIGTERM
+            if os.name == 'nt':
+                os.system(f"taskkill /F /T /PID {pid}")
+            else:
+                os.kill(pid, signal.SIGTERM)
+        except: pass
+    return jsonify({"status": "success"})
 
 @app.route('/api/script-runner/execute-cmd', methods=['POST'])
 @login_required()
@@ -876,6 +917,16 @@ def health_status():
         status["ai"] = "Key Missing"
         
     return jsonify(status)
+
+@app.route('/sample-app/login', methods=['GET', 'POST'])
+def sample_app_login():
+    if request.method == 'POST':
+        username = request.form.get('username')
+        password = request.form.get('password')
+        if username == 'admin' and password == 'password123':
+            return "Login Successful! Welcome to the sample dashboard."
+        return "Invalid credentials."
+    return render_template('sample_login.html')
 
 if __name__ == '__main__':
     # Only open the browser and launch backend once (prevents opening twice when Flask reloader is active)

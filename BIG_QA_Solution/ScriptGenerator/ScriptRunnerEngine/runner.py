@@ -3,6 +3,10 @@ import json
 import glob
 import shutil
 import subprocess
+import signal
+import time
+
+active_processes = {} # pid -> process object
 
 
 class ScriptRunnerService:
@@ -26,11 +30,58 @@ class ScriptRunnerService:
             return {}
 
     @classmethod
-    def execute_with_healing(cls, meta: dict, env: str, browser: str, tags: str) -> dict:
+    def execute_with_streaming(cls, meta: dict, env: str, browser: str, tags: str, custom_commands: str = ""):
         project_path = meta.get('path', '')
         project_name = meta.get('name', '')
         full_path = os.path.join(project_path, project_name) if project_name not in project_path else project_path
+        
+        print(f"DEBUG: Starting streaming in {full_path}")
+        
+        # Mode A: Custom Sequential Commands
+        if custom_commands.strip():
+            commands = [c.strip() for c in custom_commands.split('\n') if c.strip()]
+            print(f"DEBUG: Found {len(commands)} custom commands")
+            yield f"event: progress\ndata: {json.dumps({'msg': f'[Sequential Mode] Starting {len(commands)} commands...', 'type': 'system'})}\n\n"
+            
+            success = True
+            for i, cmd in enumerate(commands):
+                print(f"DEBUG: Running step {i+1}: {cmd}")
+                yield f"event: progress\ndata: {json.dumps({'msg': f'[Step {i+1}/{len(commands)}]: {cmd}', 'type': 'step_start', 'step': i+1})}\n\n"
+                
+                # Automatically detect and use venv if present
+                env_vars = os.environ.copy()
+                venv_bin = os.path.join(full_path, "venv", "Scripts" if os.name == 'nt' else "bin")
+                if os.path.exists(venv_bin):
+                    env_vars["PATH"] = venv_bin + os.pathsep + env_vars.get("PATH", "")
+                
+                process = subprocess.Popen(cmd, cwd=full_path, shell=True, env=env_vars, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1, universal_newlines=True)
+                active_processes[process.pid] = process
+                
+                for line in process.stdout:
+                    yield f"event: log\ndata: {json.dumps({'msg': line.rstrip()})}\n\n"
+                
+                process.stdout.close()
+                return_code = process.wait()
+                del active_processes[process.pid]
+                
+                if return_code != 0:
+                    yield f"event: progress\ndata: {json.dumps({'msg': f'[Error] Command failed with exit code {return_code}', 'type': 'step_fail', 'step': i+1})}\n\n"
+                    success = False
+                    break
+                else:
+                    yield f"event: progress\ndata: {json.dumps({'msg': f'[Success] Step {i+1} completed', 'type': 'step_pass', 'step': i+1})}\n\n"
 
+            # Finalize
+            report_url = cls._get_latest_report(full_path)
+            yield f"event: result\ndata: {json.dumps({'status': 'success' if success else 'error', 'report_url': report_url})}\n\n"
+            return
+
+        # Mode B: AI Generation (Simplified for streaming)
+        yield f"event: progress\ndata: {json.dumps({'msg': '[AI Mode] Analyzing & generating execution command...', 'type': 'system'})}\n\n"
+        # ... existing AI logic simplified or wrapped ...
+        # (For now, let's just implement sequential streaming as it's the primary request)
+
+        # Mode B: AI Generation with Self-Healing (Existing logic)
         # Step 1: AI generates command
         prompt = f"""
         The user wants to run an automated test.
@@ -150,18 +201,24 @@ class ScriptRunnerService:
                 break
             attempts += 1
 
-        # Step 3: Find Result file
+        # Step 3: Finalize
+        return cls._finalize_execution(success, output_log, full_path)
+
+    @classmethod
+    def _get_latest_report(cls, full_path):
         report_url = ""
         try:
             html_files = glob.glob(os.path.join(full_path, '**', '*.html'), recursive=True)
-            # Sort by latest modified
             if html_files:
                 html_files.sort(key=os.path.getmtime, reverse=True)
                 report_file = html_files[0]
-                # Create a simple mapping to serve this
                 report_url = f"/api/script-runner/report?path={report_file}"
-        except Exception:
-            pass
+        except Exception: pass
+        return report_url
+
+    @classmethod
+    def _finalize_execution(cls, success, output_log, full_path):
+        report_url = cls._get_latest_report(full_path)
 
         return {
             "status": "success" if success else "error",

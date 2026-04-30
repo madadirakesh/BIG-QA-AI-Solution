@@ -27,11 +27,11 @@ class EnvironmentSetup:
             if not cls.check_system_dependency("Java", "java -version"): missing.append("Java")
             if not cls.check_system_dependency("Maven", "mvn -version"): missing.append("Maven")
         elif language == "Python":
-            py_cmd = "python --version" if cls.is_windows() else "python3 --version"
-            pip_cmd = "python -m pip --version" if cls.is_windows() else "python3 -m pip --version"
-            if not cls.check_system_dependency("Python", py_cmd): missing.append("Python")
-            if not cls.check_system_dependency("Pip", pip_cmd): missing.append("Pip")
-        elif language in ["Typescript", "JavaScript"]:
+            py_cmd = "python --version" if cls.is_windows() else "python3.12 --version"
+            pip_cmd = "pip --version" if cls.is_windows() else "pip3.12 --version"
+            if not cls.check_system_dependency("Python", py_cmd): missing.append("Python 3.12")
+            if not cls.check_system_dependency("Pip", pip_cmd): missing.append("Pip 3.12")
+        elif language in ["JS / TS", "JavaScript", "TypeScript"]:
             if not cls.check_system_dependency("Node", "node -v"): missing.append("Node.js")
             if not cls.check_system_dependency("NPM", "npm -v"): missing.append("NPM")
         elif language == "C#":
@@ -51,9 +51,9 @@ class EnvironmentSetup:
                 if tool == "Playwright":
                     cmd += " && venv\\Scripts\\python -m playwright install"
             else:
-                cmd = "python3 -m venv venv && venv/bin/pip install -r requirements.txt"
+                cmd = "python3.12 -m venv venv && venv/bin/pip install --upgrade pip setuptools wheel && venv/bin/pip install -r requirements.txt"
                 if tool == "Playwright":
-                    cmd += " && venv/bin/python3 -m playwright install"
+                    cmd += " && venv/bin/python3.12 -m playwright install"
         elif "NPM" in package_manager:
             cmd = "npm install"
             if tool == "Playwright":

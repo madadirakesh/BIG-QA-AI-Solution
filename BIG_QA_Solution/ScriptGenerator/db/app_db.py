@@ -105,7 +105,8 @@ def init_db():
         tool TEXT NOT NULL,
         language TEXT NOT NULL,
         framework TEXT NOT NULL,
-        description TEXT
+        description TEXT,
+        default_run_commands TEXT
     );
     """
 
@@ -153,6 +154,10 @@ def init_db():
             
             try:
                 cursor.execute("ALTER TABLE ProjectDetails ADD COLUMN project_type TEXT")
+            except Exception: pass
+
+            try:
+                cursor.execute("ALTER TABLE ProjectTemplates ADD COLUMN default_run_commands TEXT")
             except Exception: pass
 
             try:

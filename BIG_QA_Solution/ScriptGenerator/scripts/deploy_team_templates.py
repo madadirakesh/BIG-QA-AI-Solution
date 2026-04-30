@@ -12,7 +12,8 @@ TEMPLATES_DATA = [
       "tool": "Playwright",
       "language": "TypeScript",
       "framework": "Cucumber",
-      "description": "Enterprise Playwright TS BDD Template"
+      "description": "Enterprise Playwright TS BDD Template",
+      "default_run_commands": "npm test -- --tags \"@smoke\"\nnpm run report"
     },
     "files": [
       {
@@ -72,7 +73,8 @@ TEMPLATES_DATA = [
       "tool": "Playwright",
       "language": "Python",
       "framework": "Behave",
-      "description": "Enterprise Playwright Python Behave BDD Template"
+      "description": "Enterprise Playwright Python Behave BDD Template",
+      "default_run_commands": "behave"
     },
     "files": [
       {
@@ -121,7 +123,8 @@ def seed():
                 tool TEXT NOT NULL,
                 language TEXT NOT NULL,
                 framework TEXT NOT NULL,
-                description TEXT
+                description TEXT,
+                default_run_commands TEXT
             )
         """)
         cursor.execute("""
@@ -144,12 +147,19 @@ def seed():
             )
             exists = cursor.fetchone()
             if exists:
-                print(f"  - Template {meta['tool']}/{meta['language']} already exists. Skipping.")
+                template_id = exists[0]
+                print(f"  - Template {meta['tool']}/{meta['language']} exists. Updating metadata...")
+                cursor.execute(
+                    "UPDATE ProjectTemplates SET description=?, default_run_commands=? WHERE id=?",
+                    (meta["description"], meta.get("default_run_commands", ""), template_id)
+                )
+                # For existing templates, we skip re-inserting files to avoid duplicates, 
+                # but metadata is updated.
                 continue
 
             cursor.execute(
-                "INSERT INTO ProjectTemplates (tool, language, framework, description) VALUES (?, ?, ?, ?)",
-                (meta["tool"], meta["language"], meta["framework"], meta["description"])
+                "INSERT INTO ProjectTemplates (tool, language, framework, description, default_run_commands) VALUES (?, ?, ?, ?, ?)",
+                (meta["tool"], meta["language"], meta["framework"], meta["description"], meta.get("default_run_commands", ""))
             )
             new_id = cursor.lastrowid
 
