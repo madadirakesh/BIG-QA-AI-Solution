@@ -79,12 +79,12 @@ TEMPLATES_DATA = [
     "files": [
       {
         "file_path": "requirements.txt",
-        "file_content": "behave==1.2.6\nplaywright==1.40.0\npython-dotenv==1.0.1\n",
+        "file_content": "behave\nbehave-html-formatter\nplaywright\npytest\npytest-playwright\npytest-html\npython-dotenv\n",
         "is_binary": 0
       },
       {
         "file_path": "behave.ini",
-        "file_content": "[behave]\npaths = features\nshow_skipped = false\nformat = pretty\noutfiles = reports/behave_report.txt\nstdout_capture = false\nstderr_capture = false\nlog_capture = false\n",
+        "file_content": "[behave]\npaths = features\nshow_skipped = false\nformat = pretty\noutfiles = Results/behave_report.txt\nstdout_capture = false\nstderr_capture = false\nlog_capture = false\n\n[behave.formatters]\nhtml = behave_html_formatter:HTMLFormatter\n",
         "is_binary": 0
       },
       {
@@ -153,8 +153,13 @@ def seed():
                     "UPDATE ProjectTemplates SET description=?, default_run_commands=? WHERE id=?",
                     (meta["description"], meta.get("default_run_commands", ""), template_id)
                 )
-                # For existing templates, we skip re-inserting files to avoid duplicates, 
-                # but metadata is updated.
+                # Refresh files for existing templates
+                cursor.execute("DELETE FROM TemplateFiles WHERE template_id=?", (template_id,))
+                for f in t["files"]:
+                    cursor.execute(
+                        "INSERT INTO TemplateFiles (template_id, file_path, file_content, is_binary) VALUES (?, ?, ?, ?)",
+                        (template_id, f["file_path"], f["file_content"], f["is_binary"])
+                    )
                 continue
 
             cursor.execute(
