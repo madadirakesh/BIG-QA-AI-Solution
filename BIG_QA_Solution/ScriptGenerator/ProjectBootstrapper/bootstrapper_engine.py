@@ -90,6 +90,9 @@ class BootstrapperEngine:
                 for folder in ["pages", "tests", "features", "Results"]:
                     os.makedirs(os.path.join(target_dir, folder), exist_ok=True)
 
+            # 5. Generate sample scripts
+            BootstrapperEngine._generate_sample_script(target_dir, tool, search_lang, framework)
+
             conn.close()
             logger.info(f"Successfully generated project '{project_name}' from database template.")
             return True, target_dir
@@ -97,6 +100,62 @@ class BootstrapperEngine:
         except Exception as e:
             logger.error(f"Error during template-based generation: {e}")
             return False, f"Template generation error: {str(e)}"
+
+    @staticmethod
+    def _generate_sample_script(target_dir, tool, language, framework):
+        import glob
+        import asyncio
+        import sys
+        sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+        try:
+            from api.backend import route_code_generation
+        except ImportError as e:
+            logger.error(f"Could not import backend for AI generation: {e}")
+            return
+            
+        feature_files = glob.glob(os.path.join(target_dir, "**", "*.feature"), recursive=True)
+        if not feature_files:
+            logger.info("No feature file found to generated framework.")
+            return
+            
+        with open(feature_files[0], "r", encoding="utf-8") as f:
+            bdd_content = f.read()
+            
+        support_content = "File Mode: New\nDO NOT generate the .feature file\nDO NOT generate boilerplate configuration files\nGenerate only stepdefinition file and pageobject file"
+        
+        try:
+            logger.info(f"Generating sample script for {feature_files[0]}...")
+            files_dict = asyncio.run(route_code_generation(
+                language=language,
+                framework=framework,
+                bdd_content=bdd_content,
+                support_content=support_content,
+                file_content="",
+                provider="",
+                tool=tool
+            ))
+            
+            for rel_path, file_content in files_dict.items():
+                if rel_path.endswith(".feature"):
+                    continue
+                
+                if tool.lower() == "playwright" and language in ["TS / JS", "TypeScript", "JavaScript"]:
+                    base_name = os.path.basename(rel_path)
+                    if "step" in rel_path.lower() or base_name.lower().endswith("steps.ts") or base_name.lower().endswith("steps.js"):
+                        rel_path = f"test/stepDefinitions/{base_name}"
+                        import_line = 'import { ConfigReader } from "../utils/configReader";\n'
+                        if import_line not in file_content:
+                            file_content = import_line + file_content
+                    elif "page" in rel_path.lower() or base_name.lower().endswith("page.ts") or base_name.lower().endswith("page.js"):
+                        rel_path = f"test/pageObjects/{base_name}"
+
+                full_path = os.path.join(target_dir, rel_path)
+                os.makedirs(os.path.dirname(full_path), exist_ok=True)
+                with open(full_path, "w", encoding="utf-8") as f:
+                    f.write(file_content)
+            logger.info("Successfully generated sample scripts for feature file.")
+        except Exception as e:
+            logger.error(f"Error during AI generation of sample scripts: {e}")
 
     @staticmethod
     def execute_smoke_test(project_path, tool, language, framework, package_manager):
