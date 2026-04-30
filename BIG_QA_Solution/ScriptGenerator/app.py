@@ -9,6 +9,7 @@ from pathlib import Path
 from flask import Flask, render_template, request, redirect, url_for, session, flash, jsonify
 import pytz
 from dotenv import load_dotenv
+from scripts.deploy_team_templates import seed
 
 # Path setup
 BASE_DIR = Path(__file__).resolve().parent
@@ -882,6 +883,8 @@ if __name__ == '__main__':
         if not check_and_initialize_db():
             sys.exit("Exiting: Database connection failed.")
         threading.Timer(1.25, open_browser).start()
+        #threading.Timer(1.25, seed).start()
+        seed()
         launch_backend()
     
     app.run(debug=True, port=5000)

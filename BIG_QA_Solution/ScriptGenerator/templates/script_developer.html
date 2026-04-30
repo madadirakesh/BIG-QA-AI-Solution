@@ -980,7 +980,7 @@ function submitBootstrapper() {
         if(res.job_id) {
             pollBootstrapper(res.job_id);
         } else {
-            showBsResult(false, "Setup Error", res.error || "Failed to start job.");
+            showBsResult(false, "Setup Error", res.message || res.error || "Failed to start job.");
         }
     })
     .catch(err => showBsResult(false, "Network Error", err.message));

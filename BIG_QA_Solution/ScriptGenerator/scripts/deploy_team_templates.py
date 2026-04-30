@@ -27,7 +27,7 @@ TEMPLATES_DATA = [
       },
       {
         "file_path": ".env",
-        "file_content": "APP_URL=https://www.saucedemo.com\nBROWSER=chromium\nHEADLESS=false\nADMIN_USER=standard_user\nADMIN_PASS=secret_sauce\n",
+        "file_content": "APP_URL={{BASE_URL}}\nBROWSER=chromium\nHEADLESS=false\nUSER={{USERNAME}}\nPASSWORD={{PASSWORD}}\n",
         "is_binary": 0
       },
       {
@@ -58,6 +58,11 @@ TEMPLATES_DATA = [
       {
         "file_path": "test/hooks/hooks.ts",
         "file_content": "import { Before, After, Status, BeforeAll, AfterAll } from \"@cucumber/cucumber\";\nimport { chromium, firefox, webkit, Browser, BrowserContext, Page } from \"@playwright/test\";\nconst fs = require('fs-extra');\nimport * as path from \"path\";\nimport { execSync } from \"child_process\";\n\nlet browser: Browser;\nlet context: BrowserContext;\nexport let page: Page;\n\nBeforeAll(async function () {\n    try {\n        console.log(\"🔍 Validating environment dependencies...\");\n        // This check mimics the 'install_dependencies' logic in your invoker\n        execSync(\"npm list @playwright/test\", { stdio: \"ignore\" });\n        // Install Playwright browsers\n        execSync(\"npx playwright install\", { stdio: \"ignore\" });\n    } catch (error) {\n        console.error(\"❌ Required packages missing. Executing emergency install...\");\n        execSync(\"npm install\", { stdio: \"inherit\" });\n        execSync(\"npx playwright install\", { stdio: \"inherit\" });\n    }\n    // Rule 4: Create result folder with timestamp\n    const resultDir = process.env.RESULT_DIR || path.join(process.cwd(), \"results\", new Date().toISOString().replace(/[:.]/g, \"-\"));\n    fs.ensureDirSync(resultDir);\n    fs.ensureDirSync(path.join(resultDir, \"screenshots\"));\n});\n\nBefore(async function () {\n    // Rule 8: Configurable browser\n    const browserType = process.env.BROWSER || \"chromium\";\n    const launchOptions = { headless: process.env.HEADLESS === \"true\" };\n\n    if (browserType === \"firefox\") browser = await firefox.launch(launchOptions);\n    else if (browserType === \"webkit\") browser = await webkit.launch(launchOptions);\n    else browser = await chromium.launch(launchOptions);\n\n    // Bypassing SSL errors as standard QA practice\n    context = await browser.newContext({ ignoreHTTPSErrors: true });\n    page = await context.newPage();\n});\n\nAfter(async function (scenario) {\n    // Rule 6: Screenshot on failure\n    if (scenario.result?.status === Status.FAILED) {\n        const resultDir = process.env.RESULT_DIR || path.join(process.cwd(), \"results\", new Date().toISOString().replace(/[:.]/g, \"-\"));\n        const image = await page.screenshot({ path: path.join(resultDir, \"screenshots\", `${scenario.pickle.name}.png`), fullPage: true });\n        await this.attach(image, \"image/png\");\n    }\n    // Rule 5: Close instances\n    await page.close();\n    await context.close();\n    await browser.close();\n});",
+        "is_binary": 0
+      },
+      {
+        "file_path": "test/features/loginFeature.feature",
+        "file_content": "feature: Login Functionality\n  Scenario: Successful Login\n    Given I navigate to the login page\n    When I enter valid credentials\n    And I click the login button\n    Then I should be redirected to the homepage",
         "is_binary": 0
       }
     ]
@@ -97,7 +102,7 @@ TEMPLATES_DATA = [
       },
       {
         "file_path": ".env",
-        "file_content": "APP_URL=https://www.saucedemo.com\nBROWSER=chromium\nHEADLESS=false\n",
+        "file_content": "APP_URL={{BASE_URL}}\nBROWSER=chromium\nHEADLESS=false\nUSER={{USERNAME}}\nPASSWORD={{PASSWORD}}\n",
         "is_binary": 0
       }
     ]
