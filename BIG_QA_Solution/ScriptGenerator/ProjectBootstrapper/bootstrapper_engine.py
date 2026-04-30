@@ -1,6 +1,7 @@
 import os
 import logging
 import sqlite3
+#from BIG_QA_Solution.ScriptGenerator.db.app_db import DB_PATH
 from db.app_db import DB_PATH
 
 logger = logging.getLogger("ProjectBootstrapper")
@@ -25,7 +26,7 @@ class BootstrapperEngine:
 
         # Standardize language naming
         lang_map = {
-            "JS / TS": "TypeScript",
+            "Typescript": "TypeScript",
             "JavaScript": "TypeScript",
             "JS": "TypeScript",
             "TS": "TypeScript"
@@ -106,7 +107,7 @@ class BootstrapperEngine:
                 cmd = "venv\\Scripts\\python -m pytest tests/ --html=Results/report.html" if os.name == 'nt' else "venv/bin/python3 -m pytest tests/ --html=Results/report.html"
         elif language == "Java":
             cmd = "mvn test"
-        elif language in ["JS / TS", "JavaScript", "TypeScript"]:
+        elif language in ["Typescript", "JavaScript", "TypeScript"]:
             cmd = "npm test"
         elif language == "C#":
             cmd = 'dotnet test --logger "html;LogFileName=Results/report.html"'

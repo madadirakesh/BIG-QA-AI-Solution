@@ -28,10 +28,10 @@ class EnvironmentSetup:
             if not cls.check_system_dependency("Maven", "mvn -version"): missing.append("Maven")
         elif language == "Python":
             py_cmd = "python --version" if cls.is_windows() else "python3 --version"
-            pip_cmd = "pip --version" if cls.is_windows() else "pip3 --version"
+            pip_cmd = "python -m pip --version" if cls.is_windows() else "python3 -m pip --version"
             if not cls.check_system_dependency("Python", py_cmd): missing.append("Python")
             if not cls.check_system_dependency("Pip", pip_cmd): missing.append("Pip")
-        elif language in ["JS / TS", "JavaScript", "TypeScript"]:
+        elif language in ["Typescript", "JavaScript"]:
             if not cls.check_system_dependency("Node", "node -v"): missing.append("Node.js")
             if not cls.check_system_dependency("NPM", "npm -v"): missing.append("NPM")
         elif language == "C#":

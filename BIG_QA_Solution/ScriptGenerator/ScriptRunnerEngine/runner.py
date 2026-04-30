@@ -4,13 +4,15 @@ import glob
 import shutil
 import subprocess
 
+
 class ScriptRunnerService:
     @staticmethod
     def _call_ai_sync_json(prompt: str) -> dict:
         try:
             import asyncio
             import json
-            from api.backend import call_ai
+            from BIG_QA_Solution.ScriptGenerator.api.backend import call_ai
+            #from api.backend import call_ai
             
             # call_ai respects the global AI_TOOL environment variable and routes logic correctly
             result_str = asyncio.run(call_ai(prompt, expect_json=True))
@@ -50,7 +52,7 @@ class ScriptRunnerService:
             # Fallback if AI fails
             if meta.get('language') == 'Python':
                 cmd = "pytest tests/ --html=Results/report.html"
-            elif meta.get('language') in ['JS / TS', 'JavaScript', 'TypeScript']:
+            elif meta.get('language') in ['Typescript', 'JavaScript', 'TypeScript']:
                 cmd = "npx playwright test"
             else:
                 cmd = "echo 'Unsupported'"

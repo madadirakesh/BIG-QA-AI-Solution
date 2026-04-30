@@ -131,8 +131,13 @@
                         <div class="form-group">
                             <label><i class="fas fa-tools"></i> Tool</label>
                             <select id="genTool" class="form-control" onchange="updateGenLanguage()">
-                                <option value="Selenium">Selenium</option>
-                                <option value="Playwright">Playwright</option>
+                                {% set tools = [] %}
+                                {% for p in projects %}
+                                    {% if p.project_tool not in tools %}
+                                        {% set _ = tools.append(p.project_tool) %}
+                                        <option value="{{ p.project_tool }}">{{ p.project_tool }}</option>
+                                    {% endif %}
+                                {% endfor %}
                             </select>
                         </div>
                     </div>
@@ -140,7 +145,13 @@
                         <div class="form-group">
                             <label><i class="fas fa-code"></i> Language</label>
                             <select id="genLanguage" class="form-control" onchange="updateFileInputAccepts()">
-                                <!-- Dynamic Based on Tool -->
+                                {% set langs = [] %}
+                                {% for p in projects %}
+                                    {% if p.project_lang not in langs %}
+                                        {% set _ = langs.append(p.project_lang) %}
+                                        <option value="{{ p.project_lang }}">{{ p.project_lang }}</option>
+                                    {% endif %}
+                                {% endfor %}
                             </select>
                         </div>
                     </div>
@@ -225,7 +236,7 @@
 
                 <div class="form-actions d-flex justify-content-between mt-4">
                     <button type="button" class="btn btn-secondary" onclick="nextStep(2)"><i class="fas fa-arrow-left"></i> Back</button>
-                    
+
                     <div class="d-flex gap-2">
                         <button type="button" class="btn btn-danger" id="rollbackBtn" onclick="rollbackFiles()" disabled><i class="fas fa-undo"></i> Rollback</button>
                         <button type="button" class="btn btn-success" onclick="saveFiles()"><i class="fas fa-save"></i> Copy All to Target</button>
@@ -695,7 +706,7 @@ function handleProjectSelect() {
         document.getElementById('projectCredentialsSection').style.display = 'block';
 
         const pId = selectedOpt.getAttribute('data-id');
-        
+
         // Populate Tools & Language based on project detection context
         const toolStr = selectedOpt.getAttribute('data-tool');
         const langStr = selectedOpt.getAttribute('data-lang');
@@ -921,7 +932,7 @@ function updateBsOptions() {
     if(tool === "Selenium") {
         ["Java", "Python", "C#"].forEach(l => langSelect.add(new Option(l, l)));
     } else {
-        ["Java", "Python", "JS / TS"].forEach(l => langSelect.add(new Option(l, l)));
+        ["Java", "Python", "Typescript"].forEach(l => langSelect.add(new Option(l, l)));
     }
 
     if(currentLang && Array.from(langSelect.options).some(o => o.value === currentLang)) {
@@ -941,7 +952,7 @@ function updateBsOptions() {
     } else if (lang === "C#") {
         fwSelect.add(new Option("Reqnroll", "Reqnroll"));
         pmSelect.add(new Option("NuGet", "NuGet"));
-    } else if (lang === "JS / TS") {
+    } else if (lang === "Typescript") {
         fwSelect.add(new Option("Cucumber (JS)", "Cucumber"));
         pmSelect.add(new Option("NPM (package.json)", "NPM"));
     }
@@ -980,7 +991,7 @@ function submitBootstrapper() {
         if(res.job_id) {
             pollBootstrapper(res.job_id);
         } else {
-            showBsResult(false, "Setup Error", res.error || "Failed to start job.");
+            showBsResult(false, "Setup Error", res.message || res.error || "Failed to start job.");
         }
     })
     .catch(err => showBsResult(false, "Network Error", err.message));
@@ -1094,9 +1105,9 @@ function updateGenLanguage() {
     if(tool === "Selenium") {
         ["Java", "Python", "C#"].forEach(l => langSelect.add(new Option(l, l)));
     } else {
-        ["TS", "JS", "Java", "Python"].forEach(l => langSelect.add(new Option(l, l)));
+        ["Typescript", "Javascript", "Java", "Python"].forEach(l => langSelect.add(new Option(l, l)));
     }
-    
+
     if(currentLang && Array.from(langSelect.options).some(o => o.value === currentLang)) {
         langSelect.value = currentLang;
     }
@@ -1117,8 +1128,8 @@ function updateFileInputAccepts() {
     if(lang === 'Java') poInput.accept = ".java";
     else if(lang === 'Python') poInput.accept = ".py";
     else if(lang === 'C#') poInput.accept = ".cs";
-    else if(lang === 'TS') poInput.accept = ".ts";
-    else if(lang === 'JS') poInput.accept = ".js";
+    else if(lang === 'Typescript') poInput.accept = ".ts";
+    else if(lang === 'Javascript') poInput.accept = ".js";
 }
 
 function toggleMappingStrategy() {
@@ -1165,14 +1176,14 @@ function generateCode() {
     const language = document.getElementById('genLanguage').value;
     const strategy = document.querySelector('input[name="mappingStrategy"]:checked').value;
     const fileType = document.getElementById('fileType').value;
-    
+
     const scenarioFile = document.getElementById('scenarioFile').files[0];
-    
+
     if (!targetPath) {
         alert("Project Path missing. Please go back to step 1.");
         return;
     }
-    
+
     if(!scenarioFile) {
         alert("Please upload your Scenario/Test Case file.");
         return;
@@ -1238,7 +1249,7 @@ function generateCode() {
 function renderCodeResults(files) {
     const container = document.getElementById('codeBlocksContainer');
     container.innerHTML = "";
-    
+
     // Enable/Disable Rollback button initially
     const rbBtn = document.getElementById('rollbackBtn');
     if (rbBtn) {
@@ -1326,7 +1337,7 @@ function saveSingleFile(idx, userSelectPath) {
     if(projectSelect.selectedIndex > 0) pId = projectSelect.options[projectSelect.selectedIndex].getAttribute('data-id');
 
     let targetPath = document.getElementById('targetPath_' + idx).value;
-    
+
     if(userSelectPath) {
         const newPath = prompt("Enter full destination path for file:", targetPath);
         if(!newPath) return; // cancelled

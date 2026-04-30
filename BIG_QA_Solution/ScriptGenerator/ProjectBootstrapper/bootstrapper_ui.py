@@ -93,7 +93,7 @@ class BootstrapperUI(QWidget):
         if tool == "Selenium":
             self.lang_combo.addItems(["Java", "Python", "C#"])
         elif tool == "Playwright":
-            self.lang_combo.addItems(["Java", "Python", "JS / TS"])
+            self.lang_combo.addItems(["Java", "Python", "Typescript"])
 
     def update_frameworks(self):
         tool = self.tool_combo.currentText()
@@ -110,7 +110,7 @@ class BootstrapperUI(QWidget):
         elif lang == "C#":
             self.fw_combo.addItem("Reqnroll")
             self.pm_combo.addItem("NuGet")
-        elif lang == "JS / TS":
+        elif lang == "Typescript":
             self.fw_combo.addItem("Cucumber (JS)")
             self.pm_combo.addItem("NPM (package.json)")
 

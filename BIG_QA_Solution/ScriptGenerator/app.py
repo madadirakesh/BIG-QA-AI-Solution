@@ -296,7 +296,7 @@ def bootstrap_project():
 @login_required()
 def bootstrap_status(job_id):
     if job_id not in bootstrapper_jobs:
-        return jsonify({"status": "error", "message": "Job ID not found"}), 404
+        return jsonify({"status": "error", "message": "Job ID not found"})
         
     job = bootstrapper_jobs[job_id]
     
