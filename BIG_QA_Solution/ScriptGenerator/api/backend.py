@@ -232,12 +232,18 @@ PLAYWRIGHT_STANDARDS_TS = """
 IMPORTANT - Follow Playwright TypeScript standards strictly:
 
 Required imports in every file:
-    import {{ test, expect }} from '@playwright/test';
-    import {{ Page, Locator, Browser, BrowserContext }} from '@playwright/test';  (as needed)
+    import { test, expect } from '@playwright/test';
+    import { Page, Locator, Browser, BrowserContext } from '@playwright/test';  (as needed)
+
+If generating BDD step definitions for Cucumber, ensure you include:
+    import { Given, When, Then, And } from '@cucumber/cucumber';
+    import { expect } from '@playwright/test';
+    // Use an appropriate page fixture or state manager for Playwright in Cucumber (e.g., a global page object or passing page via custom World).
+    // Do NOT mix Playwright's `test` runner (`test.step`, `test.page`) inside Cucumber steps.
 
 Use ONLY these Playwright locator strategies:
     page.locator('css-or-xpath')
-    page.getByRole('button', {{ name: 'Submit' }})
+    page.getByRole('button', { name: 'Submit' })
     page.getByLabel('Username')
     page.getByPlaceholder('Enter username')
     page.getByText('Welcome')
@@ -254,31 +260,32 @@ Use await for ALL Playwright actions and assertions:
     await expect(page).toHaveURL('url');
 
 Page Object Model pattern:
-    export class LoginPage {{
+    export class LoginPage {
         readonly page: Page;
         readonly usernameInput: Locator;
 
-        constructor(page: Page) {{
+        constructor(page: Page) {
             this.page = page;
             this.usernameInput = page.getByLabel('Username');
-        }}
-    }}
+        }
+    }
 
 Always generate a package.json with ALL required dependencies:
-    {{
-        "dependencies": {{
+    {
+        "dependencies": {
             "@playwright/test": "^1.40.0",
-            "typescript": "^5.0.0"
-        }},
-        "devDependencies": {{
+            "typescript": "^5.0.0",
+            "@cucumber/cucumber": "^10.0.0"
+        },
+        "devDependencies": {
             "@types/node": "^20.0.0"
-        }},
-        "scripts": {{
+        },
+        "scripts": {
             "test": "playwright test",
             "test:headed": "playwright test --headed",
             "test:report": "playwright show-report"
-        }}
-    }}
+        }
+    }
 
 NEVER use:
     Selenium-style locators or methods

@@ -871,6 +871,67 @@ def save_generated_files():
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
+@app.route('/api/preview-merge', methods=['POST'])
+@login_required()
+def preview_merge():
+    try:
+        data = request.json
+        target_path = data.get('target_path')
+        content = data.get('content')
+        filename = data.get('filename')
+
+        existing_content = ""
+        merged_content = content
+
+        if os.path.exists(target_path):
+            with open(target_path, 'r', encoding='utf-8') as exists_f:
+                existing_content = exists_f.read()
+            
+            lang = "python" if filename.endswith('.py') else "java" if filename.endswith('.java') else "ts"
+            merged_content = CodeInjector.inject_methods_safely(existing_content, content, lang)
+
+        return jsonify({
+            'status': 'success',
+            'existing_content': existing_content,
+            'merged_content': merged_content
+        })
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+@app.route('/api/save-merged-file', methods=['POST'])
+@login_required()
+def save_merged_file():
+    try:
+        data = request.json
+        project_id = data.get('project_id')
+        target_path = data.get('target_path')
+        final_content = data.get('final_content')
+        filename = data.get('filename')
+
+        backup_id = int(datetime.now().timestamp())
+
+        if os.path.exists(target_path):
+            with open(target_path, 'r', encoding='utf-8') as exists_f:
+                existing_content = exists_f.read()
+            
+            insert_data(
+                "INSERT INTO Backupfiles (Project_ID, FileName, FileContent, FilePath, BackupID, CreatedOn, Type) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (project_id, filename, existing_content.encode('utf-8'), target_path, backup_id, datetime.now(), "Backup")
+            )
+        else:
+            insert_data(
+                "INSERT INTO Backupfiles (Project_ID, FileName, FileContent, FilePath, BackupID, CreatedOn, Type) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (project_id, filename, b'', target_path, backup_id, datetime.now(), "New")
+            )
+
+        os.makedirs(os.path.dirname(target_path), exist_ok=True)
+        with open(target_path, 'w', encoding='utf-8') as out_f:
+            out_f.write(final_content)
+
+        return jsonify({'status': 'success', 'backup_id': backup_id})
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
 @app.route('/api/rollback-files', methods=['POST'])
 @login_required()
 def rollback_files():

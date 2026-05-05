@@ -30,7 +30,7 @@ class CodeGenerator:
                     for loc in locators:
                         name = CodeGenerator.clean_name(loc.get("name", ""), "element")
                         val = CodeGenerator.escape_quotes(loc.get("value", ""))
-                        lines.append(f"        this.{name} = page.locator(\"{val}\");")
+                        lines.append(f"        this.{name} = this.page.locator(\"{val}\");")
                 lines.append("    }\n")
 
             if locators:
@@ -125,8 +125,41 @@ class CodeGenerator:
             lines.append("}\n")
 
         elif language.lower() in ["javascript", "typescript"]:
-            lines.append(f"class {page_name} {{")
-            lines.append("    constructor() {")
+            is_ts = language.lower() == "typescript"
+            is_pw = tool.lower() == "playwright"
+
+            if is_pw:
+                if is_ts:
+                    lines.append("import { Page, Locator } from '@playwright/test';\n")
+                else:
+                    lines.append("const { expect } = require('@playwright/test');\n")
+
+            if is_ts:
+                lines.append(f"export class {page_name} {{")
+            else:
+                lines.append(f"class {page_name} {{")
+
+            if is_ts:
+                if is_pw:
+                    lines.append("    readonly page: Page;")
+                if locators:
+                    for loc in locators:
+                        name = CodeGenerator.clean_name(loc.get("name", ""), "element")
+                        if is_pw:
+                            lines.append(f"    readonly {name}: Locator;")
+                        else:
+                            lines.append(f"    readonly {name}: string;")
+                lines.append("")
+
+            if is_pw:
+                if is_ts:
+                    lines.append("    constructor(page: Page) {")
+                else:
+                    lines.append("    constructor(page) {")
+                lines.append("        this.page = page;")
+            else:
+                lines.append("    constructor() {")
+
             if locators:
                 for loc in locators:
                     name = CodeGenerator.clean_name(loc.get("name", ""), "element")
@@ -134,16 +167,25 @@ class CodeGenerator:
                     category = loc.get("category", "Ok")
 
                     lines.append(f"        // Priority: {category}")
-                    lines.append(f"        this.{name} = \"{val}\";\n")
+                    if is_pw:
+                        lines.append(f"        this.{name} = page.locator(\"{val}\");\n")
+                    else:
+                        lines.append(f"        this.{name} = \"{val}\";\n")
 
+            lines.append("    }\n")
+
+            if locators:
                 for loc in locators:
                     name = CodeGenerator.clean_name(loc.get("name", ""), "element")
                     action = loc.get("action", "Click")
                     lines.append(CodeGenerator._js_action(tool, name, action))
             
-            lines.append("    }")
-            lines.append("}")
-            lines.append(f"module.exports = new {page_name}();\n")
+            lines.append("}\n")
+            if not is_ts:
+                if is_pw:
+                    lines.append(f"module.exports = {page_name};\n")
+                else:
+                    lines.append(f"export default {page_name}();\n")
 
         return "\n".join(lines)
 
