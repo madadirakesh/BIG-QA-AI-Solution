@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}Database Viewer - AI QA Portal{% endblock %}
+{% block title %}Database Viewer — BIG AI QA Solution{% endblock %}
 
 {% block extra_css %}
 <style>
@@ -47,7 +47,7 @@
     }
     
     .table-list li.active {
-        background: var(--theme-primary, #3699ff);
+        background: var(--accent-primary);
         color: white;
         font-weight: 500;
     }
@@ -133,6 +133,13 @@
 {% endblock %}
 
 {% block content %}
+<div class="breadcrumb animate-fade-in">
+    <i class="fas fa-home" style="font-size:0.75rem;"></i>
+    <span class="sep">/</span>
+    <a href="/home">Dashboard</a>
+    <span class="sep">/</span>
+    <span class="current">Database Viewer</span>
+</div>
 <div class="page-header">
     <h1><i class="fas fa-database"></i> Database Viewer</h1>
     <p>View and inspect data stored in the local SQLite database.</p>

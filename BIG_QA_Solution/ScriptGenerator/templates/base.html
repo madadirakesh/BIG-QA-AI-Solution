@@ -3,9 +3,10 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{% block title %}AI QA Portal{% endblock %}</title>
+    <title>{% block title %}BIG AI QA Solution{% endblock %}</title>
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='favicon.png') }}">
     <!-- Google Fonts -->
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <!-- Font Awesome -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <!-- Custom CSS -->
@@ -23,6 +24,7 @@
                     <h2>Hello, {{ user_name }}! 👋</h2>
                     <span class="role-badge role-{{ user_role }}">{{ user_role|title }}</span>
                 </div>
+                <div class="top-header-brand">BIG AI QA Solution</div>
             </header>
             
             <div class="content-wrapper">
@@ -58,7 +60,25 @@
         {% block login_content %}{% endblock %}
     {% endif %}
 
+    <!-- Global Toast Container -->
+    <div class="toast-container" id="toastContainer"></div>
+
     <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+    <script>
+        // Global toast utility
+        function showToast(message, type = 'info', duration = 4000) {
+            const container = document.getElementById('toastContainer');
+            const icons = { info: 'fa-info-circle', success: 'fa-check-circle', error: 'fa-times-circle', warning: 'fa-exclamation-triangle', loading: 'fa-spinner fa-spin' };
+            const toast = document.createElement('div');
+            toast.className = `toast toast-${type}`;
+            toast.innerHTML = `<i class="fas ${icons[type] || icons.info}"></i><span>${message}</span>`;
+            container.appendChild(toast);
+            if (duration > 0) {
+                setTimeout(() => { toast.style.animation = 'fadeIn 0.3s ease-out reverse forwards'; setTimeout(() => toast.remove(), 300); }, duration);
+            }
+            return toast;
+        }
+    </script>
     {% block extra_js %}{% endblock %}
 </body>
 </html>

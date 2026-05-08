@@ -1,8 +1,15 @@
 {% extends "base.html" %}
 
-{% block title %}Script Developer - AI QA Portal{% endblock %}
+{% block title %}Script Generation — BIG AI QA Solution{% endblock %}
 
 {% block content %}
+<div class="breadcrumb animate-fade-in">
+    <i class="fas fa-home" style="font-size:0.75rem;"></i>
+    <span class="sep">/</span>
+    <a href="/home">Dashboard</a>
+    <span class="sep">/</span>
+    <span class="current">Script Generation</span>
+</div>
 <div class="page-header">
     <h1><i class="fas fa-magic"></i> AI Script Generation</h1>
     <p>Upload your BDD feature files or Test case excel and generate matching Step Definitions and Page Objects.</p>
@@ -446,7 +453,7 @@
     .step-p.active .step-icon {
         border-color: var(--accent-primary);
         box-shadow: 0 0 20px var(--accent-glow);
-        background: rgba(234, 108, 11, 0.1);
+        background: rgba(0, 120, 212, 0.1);
     }
     .step-label {
         font-size: 0.85rem;
@@ -622,11 +629,12 @@
     .w-100 { width: 100% !important; }
 
     /* Match Button Heights to Inputs */
-    .btn-outline, .btn-danger, .btn-primary {
+    .btn-outline, .btn-danger, .btn-primary, .btn-secondary, .btn-success {
         height: 46px;
         display: inline-flex;
         align-items: center;
         justify-content: center;
+        padding: 0 20px;
     }
 
     /* Improve Contrast for Inputs */
@@ -657,7 +665,7 @@
         letter-spacing: -0.5px;
         margin-bottom: 30px;
         padding-bottom: 15px;
-        border-bottom: 2px solid rgba(234, 108, 11, 0.2);
+        border-bottom: 2px solid var(--accent-glow);
         position: relative;
         display: block;
         width: 100%;

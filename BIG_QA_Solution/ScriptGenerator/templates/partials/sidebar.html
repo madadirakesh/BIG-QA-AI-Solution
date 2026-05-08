@@ -1,8 +1,7 @@
 <aside class="sidebar">
     <div class="sidebar-header">
         <div class="logo">
-            <i class="fas fa-robot logo-icon"></i>
-            <h2>AI-QA Hub</h2>
+            <img src="{{ url_for('static', filename='images/big_logo_horizontal.png') }}" alt="BIG Logo" style="height: 40px; width: auto;">
         </div>
     </div>
     
@@ -15,6 +14,7 @@
             </li>
             
             {% if user_role in ['qa', 'admin'] %}
+            <li class="sidebar-section-label">Tools</li>
             <li>
                 <a href="{{ url_for('test_case_generator') }}" class="{% if request.endpoint == 'test_case_generator' %}active{% endif %}">
                     <i class="fas fa-file-alt"></i> <span>Test Case Generator</span>
@@ -38,9 +38,10 @@
             {% endif %}
             
             {% if user_role == 'admin' %}
+            <li class="sidebar-section-label">Admin</li>
             <li>
                 <a href="{{ url_for('add_user') }}" class="{% if request.endpoint == 'add_user' %}active{% endif %}">
-                    <i class="fas fa-user-plus"></i> <span>Add Users</span>
+                    <i class="fas fa-user-plus"></i> <span>Manage Users</span>
                 </a>
             </li>
             {% endif %}
@@ -55,5 +56,6 @@
         <a href="{{ url_for('logout') }}" class="btn-logout">
             <i class="fas fa-sign-out-alt"></i> Logout
         </a>
+        <p class="sidebar-tagline">Elegance in Automation</p>
     </div>
 </aside>

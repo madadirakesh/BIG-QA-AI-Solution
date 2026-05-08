@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}Dashboard - AI QA Portal{% endblock %}
+{% block title %}Dashboard — BIG AI QA Solution{% endblock %}
 
 {% block extra_js %}
 <script>
@@ -33,6 +33,15 @@
         }
     }
 
+    function launchLocatorWithToast() {
+        const toast = showToast('Launching BIG Locator Studio…', 'loading', 0);
+        launchElementLocator();
+        setTimeout(() => {
+            toast.remove();
+            showToast('Locator Studio launched successfully!', 'success', 4000);
+        }, 3000);
+    }
+
     document.addEventListener('DOMContentLoaded', () => {
         updateHealthStatus();
         setInterval(updateHealthStatus, 30000); // Update every 30 seconds
@@ -41,9 +50,15 @@
 {% endblock %}
 
 {% block content %}
+<div class="breadcrumb animate-fade-in">
+    <i class="fas fa-home" style="font-size:0.75rem;"></i>
+    <span class="sep">/</span>
+    <span class="current">Dashboard</span>
+</div>
+
 <div class="dashboard-header animate-slide-up">
-    <h1>Welcome to BIG AI-QA Hub</h1>
-    <p>Select an action below to get started</p>
+    <h1>Welcome to BIG AI QA Solution</h1>
+    <p>Elegance in Automation by Bits In Glass</p>
 </div>
 
 <!-- System Status Widget -->
@@ -71,29 +86,29 @@
 <div class="dashboard-grid">
     {% if user_role in ['qa', 'admin'] %}
     <!-- 1. Test Case Generator -->
-    <a href="{{ url_for('test_case_generator') }}" class="dashboard-card glassmorphism hover-effect">
-        <div class="card-icon"><i class="fas fa-file-alt"></i></div>
+    <a href="{{ url_for('test_case_generator') }}" class="dashboard-card glassmorphism hover-effect animate-slide-up delay-1">
+        <div class="card-icon" style="background: rgba(0,120,212,0.12); color: #00bcf2; border-color: rgba(0,188,242,0.2);"><i class="fas fa-file-alt"></i></div>
         <h3>Test Case Generator</h3>
         <p>Convert business requirements into professional BDD scenarios or formatted manual test cases instantly using AI.</p>
     </a>
 
     <!-- 2. Element Locator Extractor -->
-    <a href="#" onclick="launchElementLocator(); return false;" class="dashboard-card glassmorphism hover-effect">
-        <div class="card-icon"><i class="fas fa-crosshairs"></i></div>
+    <a href="#" onclick="launchLocatorWithToast(); return false;" class="dashboard-card glassmorphism hover-effect animate-slide-up delay-2">
+        <div class="card-icon" style="background: rgba(16,185,129,0.1); color: #10b981; border-color: rgba(16,185,129,0.2);"><i class="fas fa-crosshairs"></i></div>
         <h3>Element Locator Extractor</h3>
         <p>Launch the Desktop Studio to inspect elements and generate reliable AI-assisted locators for your framework.</p>
     </a>
 
     <!-- 3. Code Generation -->
-    <a href="{{ url_for('script_developer') }}" class="dashboard-card glassmorphism hover-effect">
-        <div class="card-icon"><i class="fas fa-code"></i></div>
+    <a href="{{ url_for('script_developer') }}" class="dashboard-card glassmorphism hover-effect animate-slide-up delay-3">
+        <div class="card-icon" style="background: rgba(139,92,246,0.1); color: #a78bfa; border-color: rgba(139,92,246,0.2);"><i class="fas fa-code"></i></div>
         <h3>Script Generation</h3>
         <p>Convert BDD Feature or test cases files intelligently into Page Object Models, Locators, and Step Definitions using AI.</p>
     </a>
 
     <!-- 4. Script Runner -->
-    <a href="{{ url_for('script_runner') }}" class="dashboard-card glassmorphism hover-effect">
-        <div class="card-icon"><i class="fas fa-play-circle"></i></div>
+    <a href="{{ url_for('script_runner') }}" class="dashboard-card glassmorphism hover-effect animate-slide-up" style="animation-delay: 0.4s;">
+        <div class="card-icon" style="background: rgba(245,158,11,0.1); color: #f59e0b; border-color: rgba(245,158,11,0.2);"><i class="fas fa-play-circle"></i></div>
         <h3>Script Runner</h3>
         <p>Execute tests seamlessly, generate reports, and analyze execution status via a centralized interface.</p>
     </a>
@@ -101,8 +116,8 @@
 
     {% if user_role == 'admin' %}
     <!-- 5. Manage Users -->
-    <a href="{{ url_for('add_user') }}" class="dashboard-card glassmorphism hover-effect">
-        <div class="card-icon"><i class="fas fa-user-plus"></i></div>
+    <a href="{{ url_for('add_user') }}" class="dashboard-card glassmorphism hover-effect animate-slide-up" style="animation-delay: 0.5s;">
+        <div class="card-icon" style="background: rgba(239,68,68,0.1); color: #f87171; border-color: rgba(239,68,68,0.2);"><i class="fas fa-user-plus"></i></div>
         <h3>Manage Users</h3>
         <p>Add new QA team members, assign rules, and administer privileges securely.</p>
     </a>

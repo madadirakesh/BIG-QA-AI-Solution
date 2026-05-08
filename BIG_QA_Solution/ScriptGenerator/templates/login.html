@@ -6,12 +6,12 @@
 <div class="login-container">
     <div class="login-card glassmorphism">
         <div class="login-header">
-            <i class="fas fa-robot login-logo"></i>
-            <h1>BIG-QA AI Hub</h1>
-            <p>Sign in to access your dashboard</p>
+            <img src="{{ url_for('static', filename='images/big_logo_stacked_navy.png') }}" alt="BIG Logo" style="height: 120px; width: auto; margin-bottom: 1.5rem;">
+            <h1>BIG AI QA Solution</h1>
+            <p>Elegance in Automation by Bits In Glass</p>
         </div>
         
-        <form method="POST" action="{{ url_for('login') }}" class="login-form">
+        <form method="POST" action="{{ url_for('login') }}" class="login-form" id="loginForm">
             <div class="form-group">
                 <label for="email"><i class="fas fa-envelope"></i> Email Address</label>
                 <input type="email" id="email" name="email" required placeholder="name@company.com">
@@ -23,8 +23,9 @@
             </div>
             
             <div class="form-actions">
-                <button type="submit" class="btn btn-primary btn-block">
-                    <span>Login</span> <i class="fas fa-arrow-right"></i>
+                <button type="submit" class="btn btn-primary btn-block" id="loginBtn">
+                    <span id="loginBtnText"><i class="fas fa-arrow-right"></i> Sign In</span>
+                    <span id="loginBtnLoading" style="display:none;"><i class="fas fa-spinner fa-spin"></i> Signing in...</span>
                 </button>
             </div>
         </form>
@@ -34,4 +35,15 @@
         </div>
     </div>
 </div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    document.getElementById('loginForm').addEventListener('submit', function() {
+        const btn = document.getElementById('loginBtn');
+        document.getElementById('loginBtnText').style.display = 'none';
+        document.getElementById('loginBtnLoading').style.display = 'inline-flex';
+        btn.disabled = true;
+    });
+</script>
 {% endblock %}

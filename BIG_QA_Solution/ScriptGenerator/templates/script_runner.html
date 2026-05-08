@@ -1,8 +1,15 @@
 {% extends "base.html" %}
 
-{% block title %}Script Runner - AI QA Portal{% endblock %}
+{% block title %}Script Runner — BIG AI QA Solution{% endblock %}
 
 {% block content %}
+<div class="breadcrumb animate-fade-in">
+    <i class="fas fa-home" style="font-size:0.75rem;"></i>
+    <span class="sep">/</span>
+    <a href="/home">Dashboard</a>
+    <span class="sep">/</span>
+    <span class="current">Script Runner</span>
+</div>
 <div class="page-header">
     <h1><i class="fas fa-play-circle"></i> QA Script Execution</h1>
     <p>Run automated test suites and manage execution environments.</p>
@@ -13,11 +20,11 @@
         <div class="step-inner-align">
     <style>
         .terminal-panel {
-            box-shadow: 0 0 20px rgba(99, 102, 241, 0.1);
+            box-shadow: 0 0 20px rgba(0, 120, 212, 0.1);
             transition: box-shadow 0.3s ease;
         }
         .terminal-panel.running {
-            box-shadow: 0 0 30px rgba(99, 102, 241, 0.2);
+            box-shadow: 0 0 30px rgba(0, 188, 242, 0.2);
         }
         .log-line {
             margin-bottom: 2px;
@@ -59,9 +66,9 @@
             transition: all 0.3s ease;
         }
         .step-pill.active {
-            background: rgba(99, 102, 241, 0.1);
+            background: rgba(0, 120, 212, 0.1);
             color: #818cf8;
-            border-color: rgba(99, 102, 241, 0.3);
+            border-color: rgba(0, 188, 242, 0.3);
             font-weight: bold;
         }
         .step-pill.completed {
@@ -161,7 +168,7 @@
         </div>
     </div>
     <div class="terminal-body" id="logOutput">
-        Welcome to AI-QA Script Runner.
+        Welcome to BIG AI QA Solution - Script Runner.
         Select a project and a mode to begin.
     </div>
     <div class="terminal-footer" id="cmdFooter"
@@ -263,7 +270,7 @@
         letter-spacing: -0.5px;
         margin-bottom: 30px;
         padding-bottom: 15px;
-        border-bottom: 2px solid rgba(234, 108, 11, 0.2);
+        border-bottom: 2px solid var(--accent-glow);
         position: relative;
         display: block;
         width: 100%;
