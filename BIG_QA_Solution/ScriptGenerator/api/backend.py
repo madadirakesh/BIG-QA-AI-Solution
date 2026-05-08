@@ -236,13 +236,12 @@ Required imports in every file:
     import { Page, Locator, Browser, BrowserContext } from '@playwright/test';  (as needed)
 
 If generating BDD step definitions for Cucumber, ensure you include:
-    import { Given, When, Then, And } from '@cucumber/cucumber';
+    import { Given, When, Then } from '@cucumber/cucumber';
     import { expect } from '@playwright/test';
     // Use an appropriate page fixture or state manager for Playwright in Cucumber (e.g., a global page object or passing page via custom World).
     // Do NOT mix Playwright's `test` runner (`test.step`, `test.page`) inside Cucumber steps.
-
-Use ONLY these Playwright locator strategies:
-    page.locator('css-or-xpath')
+Example : Use page.locator('[data-test="username"]') for locator in typescript test automation framework as primary.
+if not able to generate as above use these Playwright locator strategies as alternate:
     page.getByRole('button', { name: 'Submit' })
     page.getByLabel('Username')
     page.getByPlaceholder('Enter username')
@@ -266,26 +265,28 @@ Page Object Model pattern:
 
         constructor(page: Page) {
             this.page = page;
-            this.usernameInput = page.getByLabel('Username');
+            this.usernameInput =page.locator('[data-test="username"]');
         }
     }
 
-Always generate a package.json with ALL required dependencies:
-    {
-        "dependencies": {
-            "@playwright/test": "^1.40.0",
-            "typescript": "^5.0.0",
-            "@cucumber/cucumber": "^10.0.0"
-        },
-        "devDependencies": {
-            "@types/node": "^20.0.0"
-        },
-        "scripts": {
-            "test": "playwright test",
-            "test:headed": "playwright test --headed",
-            "test:report": "playwright show-report"
-        }
+CRITICAL - Page Object Methods:
+    - Generate ONE corresponding method per unique action/step mentioned in the BDD scenarios.
+    - Every action in a Step Definition MUST call a corresponding method in the Page Object.
+    - Each method must perform exactly one action (single responsibility).
+    - Use async methods for all actions.
+    Example:
+    async enterUsername(username: string) {
+        await this.usernameInput.fill(username);
     }
+    async clickSubmit() {
+        await this.submitButton.click();
+    }
+
+CRITICAL - File Structure & Naming Convention:
+    - Page Object files MUST be placed in a `pageObjects/` directory (e.g., `test/pageObjects/loginPage.ts`).
+    - Step Definition files MUST be placed in a `stepDefinitions/` directory (e.g., `test/stepDefinitions/loginSteps.ts`).
+    - Use camelCase for folder names (`pageObjects`, `stepDefinitions`) and file names (`loginPage.ts`, `loginSteps.ts`).
+    - Do NOT generate root-level files for page objects or step definitions.
 
 NEVER use:
     Selenium-style locators or methods

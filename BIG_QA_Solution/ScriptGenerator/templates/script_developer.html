@@ -383,12 +383,12 @@
             <p class="text-secondary mb-3">Review the existing file and the auto-merged output. You can edit the merged output before saving.</p>
             <div style="display: flex; gap: 20px; flex-grow: 1; min-height: 0;">
                 <div style="flex: 1; display: flex; flex-direction: column;">
-                    <label>Existing File</label>
-                    <textarea id="existingFileContent" class="form-control" style="flex-grow: 1; font-family: monospace; font-size: 0.85rem; resize: none;" readonly></textarea>
+                    <label>Newly Generated File (Read-only)</label>
+                    <textarea id="generatedFileContent" class="form-control" style="flex-grow: 1; font-family: monospace; font-size: 0.85rem; resize: none;" readonly></textarea>
                 </div>
                 <div style="flex: 1; display: flex; flex-direction: column;">
-                    <label>Merged / New File (Editable)</label>
-                    <textarea id="mergedFileContent" class="form-control" style="flex-grow: 1; font-family: monospace; font-size: 0.85rem; resize: none; background: rgba(0,0,0,0.5) !important; color: #a5d6ff !important;"></textarea>
+                    <label>Existing File (Editable - Merge Here)</label>
+                    <textarea id="existingFileContent" class="form-control" style="flex-grow: 1; font-family: monospace; font-size: 0.85rem; resize: none; background: rgba(0,0,0,0.5) !important; color: #a5d6ff !important;"></textarea>
                 </div>
             </div>
             <div class="form-actions right mt-4">
@@ -1413,8 +1413,8 @@ function openMergeDialog(idx) {
     const file = generatedFilesData[idx];
     const targetPath = document.getElementById('targetPath_' + idx).value;
     
+    document.getElementById('generatedFileContent').value = "Loading...";
     document.getElementById('existingFileContent').value = "Loading...";
-    document.getElementById('mergedFileContent').value = "Loading...";
     document.getElementById('mergeModal').style.display = "block";
     document.body.style.overflow = "hidden"; // Prevent background scrolling
 
@@ -1430,8 +1430,12 @@ function openMergeDialog(idx) {
     .then(r => r.json())
     .then(res => {
         if (res.status === 'success') {
-            document.getElementById('existingFileContent').value = res.existing_content || "// No existing file found at this path.";
-            document.getElementById('mergedFileContent').value = res.merged_content || file.content;
+            document.getElementById('generatedFileContent').value = file.content;
+            if (res.existing_content) {
+                document.getElementById('existingFileContent').value = res.existing_content;
+            } else {
+                document.getElementById('existingFileContent').value = file.content;
+            }
             
             // Re-assign the click event handler with the current idx
             const btn = document.getElementById('confirmMergeBtn');
@@ -1453,7 +1457,7 @@ function closeMergeModal() {
 }
 
 function confirmMergeSave(idx) {
-    const finalContent = document.getElementById('mergedFileContent').value;
+    const finalContent = document.getElementById('existingFileContent').value;
     const targetPath = document.getElementById('targetPath_' + idx).value;
     const file = generatedFilesData[idx];
     

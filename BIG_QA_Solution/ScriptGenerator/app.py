@@ -197,11 +197,14 @@ def _bootstrapper_worker(job_id, p_name, p_path, tool, lang, fw, pm, url, user, 
             return
 
         target_dir = res
+        bootstrapper_jobs[job_id] = {"status": "processing", "message": "Scaffolding complete. Installing dependencies..."}
+
         inst_success, inst_msg = EnvironmentSetup.install_project_dependencies(target_dir, pm, tool)
         if not inst_success:
             bootstrapper_jobs[job_id] = {"status": "error", "message": f"Dependency installation failed: {inst_msg}"}
             return
 
+        bootstrapper_jobs[job_id] = {"status": "processing", "message": "Dependencies installed. Running smoke test..."}
         smoke_ok, smoke_msg = BootstrapperEngine.execute_smoke_test(target_dir, tool, lang, fw, pm)
         if not smoke_ok:
             bootstrapper_jobs[job_id] = {"status": "error", "message": f"Smoke Test failed: {smoke_msg}"}
@@ -210,7 +213,7 @@ def _bootstrapper_worker(job_id, p_name, p_path, tool, lang, fw, pm, url, user, 
         tree_data = _build_directory_tree(target_dir)
 
         bootstrapper_jobs[job_id] = {
-            "status": "completed", 
+            "status": "completed",
             "message": "Project Scaffolding Complete! All checks passed.",
             "target_dir": target_dir,
             "tree": tree_data,
@@ -302,21 +305,22 @@ def bootstrap_status(job_id):
         
     job = bootstrapper_jobs[job_id]
     
-    # Auto-insert into database on completion to save a frontend roundtrip
-    if job.get('status') == 'completed' and 'db_inserted' not in job:
-        meta = job['project_metadata']
-        try:
-            insert_data("INSERT INTO ProjectDetails (project_name, project_path, project_lang, project_fw, project_tool, package_manager, project_type) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                        (meta['projectName'], meta['projectPath'], meta['language'], meta['framework'], meta['tool'], meta.get('packageManager'), 'New'))
-            
-            # Save Project Data (URL/Credentials)
-            new_id_res = fetch_data("SELECT id FROM ProjectDetails WHERE project_path = ?", (meta['projectPath'],))
-            if new_id_res:
-                p_id = new_id_res[0]['id']
-                insert_data("INSERT INTO ProjectData (baseurl, username, password, project_details_id) VALUES (?, ?, ?, ?)",
-                            (meta.get('url'), meta.get('username'), meta.get('password'), p_id))
-        except Exception as e:
-            pass 
+    # Auto-insert into database immediately after scaffolding completes
+    if job.get('status') in ['completed'] and 'db_inserted' not in job:
+        meta = job.get('project_metadata', {})
+        if meta:
+            try:
+                insert_data("INSERT INTO ProjectDetails (project_name, project_path, project_lang, project_fw, project_tool, package_manager, project_type) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                            (meta['projectName'], meta['projectPath'], meta['language'], meta['framework'], meta['tool'], meta.get('packageManager'), 'New'))
+                
+                # Save Project Data (URL/Credentials)
+                new_id_res = fetch_data("SELECT id FROM ProjectDetails WHERE project_path = ?", (meta['projectPath'],))
+                if new_id_res:
+                    p_id = new_id_res[0]['id']
+                    insert_data("INSERT INTO ProjectData (baseurl, username, password, project_details_id) VALUES (?, ?, ?, ?)",
+                                (meta.get('url'), meta.get('username'), meta.get('password'), p_id))
+            except Exception as e:
+                logger.error(f"Database insertion failed: {e}")
         job['db_inserted'] = True
 
     return jsonify(job)
@@ -887,8 +891,8 @@ def preview_merge():
             with open(target_path, 'r', encoding='utf-8') as exists_f:
                 existing_content = exists_f.read()
             
-            lang = "python" if filename.endswith('.py') else "java" if filename.endswith('.java') else "ts"
-            merged_content = CodeInjector.inject_methods_safely(existing_content, content, lang)
+            # Merged content is no longer generated on the fly to save time, as the UI expects the user to manually merge from the newly generated file.
+            merged_content = content
 
         return jsonify({
             'status': 'success',
@@ -999,4 +1003,4 @@ if __name__ == '__main__':
         seed()
         launch_backend()
     
-    app.run(debug=True, port=5000)
+    app.run(debug=True, use_reloader=False, port=5000)

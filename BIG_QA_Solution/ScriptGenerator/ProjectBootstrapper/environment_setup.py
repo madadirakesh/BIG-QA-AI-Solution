@@ -42,6 +42,32 @@ class EnvironmentSetup:
         return True, []
 
     @staticmethod
+    def _run_command(cmd, cwd, timeout=1800):
+        try:
+            proc = subprocess.Popen(
+                cmd,
+                cwd=cwd,
+                shell=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                universal_newlines=True
+            )
+            stdout, _ = proc.communicate(timeout=timeout)
+            if proc.returncode != 0:
+                return False, f"Command failed (exit {proc.returncode}): {cmd}\nOutput:\n{stdout}"
+            return True, stdout
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            stdout, _ = proc.communicate()
+            return False, f"Command timed out after {timeout}s: {cmd}\nOutput until timeout:\n{stdout}"
+        except Exception as e:
+            try:
+                proc.kill()
+            except Exception:
+                pass
+            return False, str(e)
+
+    @staticmethod
     def install_project_dependencies(project_path, package_manager, tool=""):
         if "Maven" in package_manager:
             cmd = "mvn install -DskipTests"
@@ -65,13 +91,8 @@ class EnvironmentSetup:
         else:
             return False, f"Unknown package manager {package_manager}"
 
-        try:
-            logging.info(f"Running dependency installation: {cmd} in {project_path}")
-            # Ensure folder exists
-            if not os.path.exists(project_path):
-                return False, f"Project path {project_path} does not exist."
-                
-            result = subprocess.run(cmd, cwd=project_path, shell=True, check=True, capture_output=True, text=True)
-            return True, result.stdout
-        except subprocess.CalledProcessError as e:
-            return False, e.stderr
+        if not os.path.exists(project_path):
+            return False, f"Project path {project_path} does not exist."
+
+        logging.info(f"Running dependency installation: {cmd} in {project_path}")
+        return EnvironmentSetup._run_command(cmd, project_path)

@@ -54,7 +54,7 @@ class ScriptRunnerService:
                 if os.path.exists(venv_bin):
                     env_vars["PATH"] = venv_bin + os.pathsep + env_vars.get("PATH", "")
                 
-                process = subprocess.Popen(cmd, cwd=full_path, shell=True, env=env_vars, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1, universal_newlines=True)
+                process = subprocess.Popen(cmd, cwd=full_path, shell=True, env=env_vars, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1, universal_newlines=True, encoding='utf-8', errors='replace')
                 active_processes[process.pid] = process
                 
                 for line in process.stdout:
@@ -117,7 +117,7 @@ class ScriptRunnerService:
         while attempts <= max_retries and not success:
             try:
                 print(f"Running command: {cmd} in {full_path}")
-                result = subprocess.run(cmd, cwd=full_path, shell=True, capture_output=True, text=True, timeout=120)
+                result = subprocess.run(cmd, cwd=full_path, shell=True, capture_output=True, text=True, timeout=120, encoding='utf-8', errors='replace')
                 output_log += f"\\n\\n[Attempt {attempts+1} Command]: {cmd}\\n"
                 output_log += result.stdout + "\\n" + result.stderr
                 if result.returncode == 0:
@@ -232,7 +232,7 @@ class ScriptRunnerService:
             return {"output": "No command provided."}
             
         try:
-            result = subprocess.run(cmd, cwd=project_path, shell=True, capture_output=True, text=True, timeout=30)
+            result = subprocess.run(cmd, cwd=project_path, shell=True, capture_output=True, text=True, timeout=30, encoding='utf-8', errors='replace')
             output = result.stdout + result.stderr
             return {"output": output}
         except Exception as e:
