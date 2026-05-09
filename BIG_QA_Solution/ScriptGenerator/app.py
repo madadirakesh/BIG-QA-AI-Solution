@@ -267,6 +267,42 @@ def browse_directory():
     path = _get_directory_path("Select Project Save Location")
     return jsonify({"path": path})
 
+def _get_file_path(prompt="Select File"):
+    """Helper to get a file path across different platforms without blocking Flask."""
+    try:
+        import platform
+        import json
+        safe_prompt = json.dumps(prompt)
+        
+        if platform.system() == 'Darwin':
+            script = f'tell application "System Events" to activate\ntell application "System Events"\nset filePath to choose file with prompt {safe_prompt}\nPOSIX path of filePath\nend tell'
+            result = subprocess.run(['osascript', '-e', script], capture_output=True, text=True)
+            if result.returncode == 0 and result.stdout.strip():
+                return result.stdout.strip()
+        else:
+            script = f"import tkinter as tk; from tkinter import filedialog; root = tk.Tk(); root.withdraw(); root.attributes('-topmost', True); root.lift(); root.focus_force(); file_path = filedialog.askopenfilename(title={safe_prompt}); print(file_path, end='')"
+            creation_flags = 0
+            if platform.system() == 'Windows':
+                creation_flags = 0x08000000
+                
+            result = subprocess.run([sys.executable, '-c', script], capture_output=True, text=True, creationflags=creation_flags)
+            if result.returncode == 0 and result.stdout.strip():
+                import os
+                return os.path.normpath(result.stdout.strip())
+        return ""
+    except Exception:
+        return ""
+
+@app.route('/api/browse-file', methods=['GET'])
+@login_required()
+def browse_file():
+    path = _get_file_path("Select File to Load")
+    content = ""
+    if path and os.path.exists(path):
+        with open(path, 'r', encoding='utf-8', errors='ignore') as f:
+            content = f.read()
+    return jsonify({"path": path, "content": content})
+
 @app.route('/api/bootstrap-project', methods=['POST'])
 @login_required()
 def bootstrap_project():

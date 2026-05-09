@@ -449,7 +449,12 @@
                     <textarea id="generatedFileContent" class="form-control" style="flex-grow: 1; font-family: monospace; font-size: 0.85rem; resize: none;" readonly></textarea>
                 </div>
                 <div style="flex: 1; display: flex; flex-direction: column;">
-                    <label>Existing File (Editable - Merge Here)</label>
+                    <div class="d-flex justify-content-between align-items-center mb-2" style="padding-bottom: 2px;">
+                        <label class="mb-0">Existing File (Editable - Merge Here)</label>
+                        <button type="button" class="btn btn-sm btn-outline" style="padding: 2px 10px; font-size: 0.8rem; border-color: var(--accent-primary); color: var(--accent-primary); height: 26px;" id="browseMergeFileBtn">
+                            <i class="fas fa-folder-open"></i> Browse
+                        </button>
+                    </div>
                     <textarea id="existingFileContent" class="form-control" style="flex-grow: 1; font-family: monospace; font-size: 0.85rem; resize: none; background: rgba(0,0,0,0.5) !important; color: #a5d6ff !important;"></textarea>
                 </div>
             </div>
@@ -1632,12 +1637,15 @@ function openMergeDialog(idx) {
             if (res.existing_content) {
                 document.getElementById('existingFileContent').value = res.existing_content;
             } else {
-                document.getElementById('existingFileContent').value = file.content;
+                document.getElementById('existingFileContent').value = "";
             }
             
-            // Re-assign the click event handler with the current idx
+            // Re-assign the click event handlers with the current idx
             const btn = document.getElementById('confirmMergeBtn');
             btn.onclick = () => confirmMergeSave(idx);
+
+            const browseBtn = document.getElementById('browseMergeFileBtn');
+            browseBtn.onclick = () => browseExistingFileForMerge(idx);
         } else {
             alert("Error previewing merge: " + res.message);
             closeMergeModal();
@@ -1647,6 +1655,36 @@ function openMergeDialog(idx) {
         alert("Error: " + err.message);
         closeMergeModal();
     });
+}
+
+function browseExistingFileForMerge(idx) {
+    const browseBtn = document.getElementById('browseMergeFileBtn');
+    const ogHtml = browseBtn.innerHTML;
+    browseBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Browsing...';
+    browseBtn.disabled = true;
+
+    fetch('/api/browse-file')
+        .then(r => r.json())
+        .then(data => {
+            browseBtn.innerHTML = ogHtml;
+            browseBtn.disabled = false;
+            
+            if (data.path && data.content !== undefined) {
+                document.getElementById('existingFileContent').value = data.content;
+                document.getElementById('targetPath_' + idx).value = data.path;
+            } else if (!data.path) {
+                // User cancelled or dialog failed silently
+                console.log("Browse cancelled or failed.");
+            } else {
+                alert("Could not load file content.");
+            }
+        })
+        .catch(err => {
+            browseBtn.innerHTML = ogHtml;
+            browseBtn.disabled = false;
+            console.error("Error browsing file:", err);
+            alert("Error opening file dialog. Check console.");
+        });
 }
 
 function closeMergeModal() {
