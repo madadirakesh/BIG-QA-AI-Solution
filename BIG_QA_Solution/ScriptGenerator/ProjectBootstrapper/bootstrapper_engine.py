@@ -291,7 +291,7 @@ class BootstrapperEngine:
                     "DO NOT use 'And' or 'But' keywords; instead, substitute them with appropriate 'Given', 'When', or 'Then'.\n"
                     "Ensure proper imports are present, including importing 'Page' from '@playwright/test' or 'page' from '../hooks/hooks' as needed.\n"
                     "CRITICAL LOCATORS: Ensure to use the real and unique locators with out any hallucination for the elements in the page.\n"
-                    "CRITICAL VERIFICATION: For 'Then I should be redirected to the homepage', DO NOT check the URL for 'dashboard' or hallucinate URLs. Instead, verify that the url changed and no Log in or Sign in button captured in previous steps is not displayed"
+                    "CRITICAL VERIFICATION: For 'Then I should be redirected to the homepage', DO NOT check the URL for 'dashboard' or hallucinate URLs. Instead, verify that Log in or Sign in button captured in previous steps is not displayed"
                 )
 
                 try:
