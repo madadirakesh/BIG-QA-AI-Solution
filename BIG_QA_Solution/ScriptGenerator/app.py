@@ -408,13 +408,36 @@ def detect_project():
         }
 
         extensions_found = []
+        feature_path = "none"
+        page_path = "none"
+        step_path = "none"
+
         for root, dirs, files in os.walk(path):
             if any(skip in root for skip in ['node_modules', '.git', 'venv', 'target', 'bin']):
                 continue
+            
+            rel_root = os.path.relpath(root, path)
+            basename_lower = os.path.basename(root).lower()
+
+            # Feature Path Detection (look for .feature files)
+            if feature_path == "none" and any(f.endswith(".feature") for f in files):
+                feature_path = rel_root
+
+            # Step Path Detection (look for folders with 'step' or files with 'step')
+            if step_path == "none":
+                if "step" in basename_lower or any("step" in f.lower() for f in files):
+                    step_path = rel_root
+
+            # Page Path Detection (look for folders with 'page' or files with 'page')
+            if page_path == "none":
+                if "page" in basename_lower or any("page" in f.lower() for f in files):
+                    page_path = rel_root
+
             for file in files:
                 ext = os.path.splitext(file)[1]
                 if ext not in extensions_found:
                     extensions_found.append(ext)
+
                 if file in ['pom.xml', 'package.json', 'requirements.txt', 'build.gradle'] or file.endswith('.csproj'):
                     try:
                         with open(os.path.join(root, file), 'r', errors='ignore') as f:
@@ -459,7 +482,15 @@ def detect_project():
         elif '.cs' in extensions_found:
             language = 'C#'
 
-        return jsonify({"tool": tool, "language": language, "framework": framework, "packager": packager})
+        return jsonify({
+            "tool": tool, 
+            "language": language, 
+            "framework": framework, 
+            "packager": packager,
+            "feature_path": feature_path,
+            "page_path": page_path,
+            "step_path": step_path
+        })
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
@@ -739,6 +770,11 @@ def generate_bdd_code():
         
         if project_path and os.path.exists(project_path):
             for root, dirs, files in os.walk(project_path):
+                # Folder exclusions
+                if any(skip in root for skip in ['node_modules', '.git', 'venv', 'target', 'bin']):
+                    dirs[:] = []
+                    continue
+                
                 # Depth limit check
                 depth = root[len(project_path):].count(os.sep)
                 if depth > 8:

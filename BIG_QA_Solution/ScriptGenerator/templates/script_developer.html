@@ -133,6 +133,41 @@
                 </div>
                 <div style="width: 100px; height: 2px; background: var(--accent-primary); box-shadow: 0 0 15px var(--accent-glow); margin-top: -20px; margin-bottom: 30px;"></div>
 
+                <!-- Project Summary Section -->
+                <div id="projectSummaryStep2" class="mb-4 p-4" style="display: none; background: rgba(255,255,255,0.04); border-radius: 12px; border-left: 4px solid var(--accent-primary); border-top: 1px solid rgba(255,255,255,0.05); border-right: 1px solid rgba(255,255,255,0.05); border-bottom: 1px solid rgba(255,255,255,0.05);">
+                    <div class="form-row" style="margin-bottom: 1rem;">
+                        <div class="form-col">
+                            <p style="margin-bottom: 4px; font-size: 0.85rem; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 1px;">Selected Project Context</p>
+                            <p class="mb-0" style="font-size: 1.1rem; font-weight: 700;"><strong>ProjectPath:</strong> <span id="summaryPath" style="color:var(--accent-primary);"></span></p>
+                        </div>
+                    </div>
+                    <div class="form-row" style="background: rgba(0,0,0,0.2); border-radius: 8px; padding: 15px; margin-bottom: 1.5rem;">
+                        <div class="form-col">
+                            <p class="mb-0"><strong>Tool:</strong> <span id="summaryTool" style="color:var(--accent-primary);"></span></p>
+                        </div>
+                        <div class="form-col">
+                            <p class="mb-0"><strong>Language:</strong> <span id="summaryLanguage" style="color:var(--accent-primary);"></span></p>
+                        </div>
+                        <div class="form-col">
+                            <p class="mb-0"><strong>Framework:</strong> <span id="summaryFramework" style="color:var(--accent-primary);"></span></p>
+                        </div>
+                        <div class="form-col">
+                            <p class="mb-0"><strong>ProjectBuilder:</strong> <span id="summaryPackager" style="color:var(--accent-primary);"></span></p>
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-col">
+                            <p class="mb-0"><strong>FeaturePath:</strong> <span id="summaryFeature" style="color:var(--accent-primary);">none</span></p>
+                        </div>
+                        <div class="form-col">
+                            <p class="mb-0"><strong>PageObjectPath:</strong> <span id="summaryPage" style="color:var(--accent-primary);">none</span></p>
+                        </div>
+                        <div class="form-col">
+                            <p class="mb-0"><strong>StepDefinitionPath:</strong> <span id="summaryStep" style="color:var(--accent-primary);">none</span></p>
+                        </div>
+                    </div>
+                </div>
+
                 <div class="form-row">
                     <div class="form-col">
                         <div class="form-group">
@@ -226,7 +261,27 @@
         </div>
 
         <div id="step-3" class="wizard-content">
-            <h3>Generation Results</h3>
+            <h3 class="premium-header">Preview & Copy</h3>
+
+            <!-- Project Summary Section (Same as Step 2) -->
+            <div id="projectSummaryStep3" class="mb-4 p-4" style="display: none; background: rgba(255,255,255,0.04); border-radius: 12px; border-left: 4px solid var(--accent-primary); border-top: 1px solid rgba(255,255,255,0.05); border-right: 1px solid rgba(255,255,255,0.05); border-bottom: 1px solid rgba(255,255,255,0.05);">
+                <div class="form-row" style="margin-bottom: 0.5rem;">
+                    <div class="form-col">
+                        <p class="mb-0" style="font-size: 1rem; font-weight: 600;"><strong>ProjectPath:</strong> <span id="summaryPathStep3" style="color:var(--accent-primary);"></span></p>
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-col">
+                        <p class="mb-0" style="font-size: 0.85rem;"><strong>FeaturePath:</strong> <span id="summaryFeatureStep3" style="color:var(--accent-primary);">none</span></p>
+                    </div>
+                    <div class="form-col">
+                        <p class="mb-0" style="font-size: 0.85rem;"><strong>PageObjectPath:</strong> <span id="summaryPageStep3" style="color:var(--accent-primary);">none</span></p>
+                    </div>
+                    <div class="form-col">
+                        <p class="mb-0" style="font-size: 0.85rem;"><strong>StepDefinitionPath:</strong> <span id="summaryStepStep3" style="color:var(--accent-primary);">none</span></p>
+                    </div>
+                </div>
+            </div>
 
             <div id="loadingStatus" class="loading-state text-center py-5">
                 <div class="spinner"><i class="fas fa-circle-notch fa-spin fa-3x text-primary"></i></div>
@@ -731,14 +786,39 @@
 function handleProjectSelect() {
     const select = document.getElementById('projectSelect');
     const selectedOpt = select.options[select.selectedIndex];
+    
     if (selectedOpt && selectedOpt.value) {
-        document.getElementById('projectPath').value = selectedOpt.getAttribute('data-path');
+        const pName = selectedOpt.value;
+        const pPath = selectedOpt.getAttribute('data-path');
+        let fullPath = pPath;
+
+        if (pPath && pName) {
+            const pathNormalized = pPath.replace(/\\/g, '/');
+            const nameNormalized = pName.replace(/\\/g, '/');
+            if (!pathNormalized.endsWith('/' + nameNormalized) && !pathNormalized.endsWith(nameNormalized)) {
+                const sep = pPath.includes('\\') ? '\\' : '/';
+                fullPath = pPath.endsWith(sep) ? pPath + pName : pPath + sep + pName;
+            }
+        }
+
+        document.getElementById('projectPath').value = fullPath;
         document.getElementById('detLanguage').innerText = selectedOpt.getAttribute('data-lang');
         document.getElementById('detFramework').innerText = selectedOpt.getAttribute('data-fw');
         document.getElementById('detTool').innerText = selectedOpt.getAttribute('data-tool');
         document.getElementById('detPackager').innerText = selectedOpt.getAttribute('data-packager');
         document.getElementById('detectedDetails').style.display = 'block';
         document.getElementById('projectCredentialsSection').style.display = 'block';
+
+        // Update Summary Fields for Step 2
+        document.getElementById('summaryPath').innerText = fullPath;
+        document.getElementById('summaryTool').innerText = selectedOpt.getAttribute('data-tool');
+        document.getElementById('summaryLanguage').innerText = selectedOpt.getAttribute('data-lang');
+        document.getElementById('summaryFramework').innerText = selectedOpt.getAttribute('data-fw');
+        document.getElementById('summaryPackager').innerText = selectedOpt.getAttribute('data-packager');
+        document.getElementById('projectSummaryStep2').style.display = 'block';
+
+        // Trigger deep detection to find feature/page/step paths
+        detectProject(fullPath);
 
         const pId = selectedOpt.getAttribute('data-id');
 
@@ -893,6 +973,15 @@ function nextStep(step) {
         s.classList.remove('active', 'completed');
         if (sNum === step) {
             s.classList.add('active');
+            
+            // Sync Step 3 summary if needed
+            if (step === 3) {
+                document.getElementById('summaryPathStep3').innerText = document.getElementById('summaryPath').innerText;
+                document.getElementById('summaryFeatureStep3').innerText = document.getElementById('summaryFeature').innerText;
+                document.getElementById('summaryPageStep3').innerText = document.getElementById('summaryPage').innerText;
+                document.getElementById('summaryStepStep3').innerText = document.getElementById('summaryStep').innerText;
+                document.getElementById('projectSummaryStep3').style.display = 'block';
+            }
         } else if (sNum < step) {
             s.classList.add('completed');
             const icon = s.querySelector('.step-icon');
@@ -1124,6 +1213,19 @@ function detectProject(path) {
             document.getElementById('detFramework').innerText = data.framework;
             document.getElementById('detPackager').innerText = data.packager;
             document.getElementById('detectedDetails').style.display = 'block';
+
+            // Also update Step 2 summary
+            document.getElementById('summaryPath').innerText = path;
+            document.getElementById('summaryTool').innerText = data.tool;
+            document.getElementById('summaryLanguage').innerText = data.language;
+            document.getElementById('summaryFramework').innerText = data.framework;
+            document.getElementById('summaryPackager').innerText = data.packager;
+            
+            document.getElementById('summaryFeature').innerText = data.feature_path || 'none';
+            document.getElementById('summaryPage').innerText = data.page_path || 'none';
+            document.getElementById('summaryStep').innerText = data.step_path || 'none';
+            
+            document.getElementById('projectSummaryStep2').style.display = 'block';
         }
     })
     .catch(err => console.error("Project detection failed:", err));
@@ -1295,6 +1397,31 @@ function renderCodeResults(files) {
     files.forEach((file, idx) => {
         const win = document.createElement('div');
         win.className = 'code-window animate-scale-in';
+        
+        // Intelligent Target Path Assignment
+        const pRoot = document.getElementById('summaryPath').innerText;
+        const fPath = document.getElementById('summaryFeature').innerText;
+        const pPath = document.getElementById('summaryPage').innerText;
+        const sPath = document.getElementById('summaryStep').innerText;
+        
+        let subDir = "";
+        const fn = file.filename.toLowerCase();
+        if (fn.endsWith('.feature')) {
+            if (fPath !== 'none') subDir = fPath;
+        } else if (fn.includes('step') || fn.includes('definition')) {
+            if (sPath !== 'none') subDir = sPath;
+        } else if (fn.includes('page')) {
+            if (pPath !== 'none') subDir = pPath;
+        }
+        
+        let targetFullPath = pRoot;
+        if (subDir && subDir !== "." && subDir !== "none") {
+            const sep = targetFullPath.includes('\\') ? '\\' : '/';
+            targetFullPath = targetFullPath.endsWith(sep) ? targetFullPath + subDir : targetFullPath + sep + subDir;
+        }
+        const finalSep = targetFullPath.includes('\\') ? '\\' : '/';
+        targetFullPath = targetFullPath.endsWith(finalSep) ? targetFullPath + file.filename : targetFullPath + finalSep + file.filename;
+
         win.innerHTML = `
             <div class="window-header" style="flex-wrap: wrap; gap: 10px;">
                 <div class="d-flex align-items-center gap-3">
@@ -1318,7 +1445,7 @@ function renderCodeResults(files) {
                 </div>
                 <div class="w-100 d-flex align-items-center gap-2 mt-2">
                     <label class="mb-0" style="font-size:0.8rem; color:var(--text-secondary); white-space:nowrap;">Target Path:</label>
-                    <input type="text" id="targetPath_${idx}" class="form-control" style="height:30px; font-size:0.8rem;" value="${file.path || (document.getElementById('projectPath').value + '/' + file.filename)}">
+                    <input type="text" id="targetPath_${idx}" class="form-control" style="height:30px; font-size:0.8rem;" value="${(file.path && !file.path.includes('node_modules')) ? file.path : targetFullPath}">
                 </div>
             </div>
             <pre class="code-content"><code>${escapeHtml(file.content)}</code></pre>
