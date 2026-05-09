@@ -547,7 +547,7 @@ def save_project_config():
                 insert_data("INSERT INTO ProjectData (baseurl, username, password, project_details_id) VALUES (?, ?, ?, ?)",
                             (baseurl, username, password, p_details_id))
                                 
-        return jsonify({"status": "success"})
+        return jsonify({"status": "success", "project_id": p_details_id})
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500
 

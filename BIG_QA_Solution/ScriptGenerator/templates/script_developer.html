@@ -868,6 +868,25 @@ function handleProjectSelect() {
     }
 }
 
+function fetchLocators(pId) {
+    if(!pId) return;
+    fetch(`/api/project-locators/${pId}`)
+        .then(r => r.json())
+        .then(res => {
+            const locatorSelect = document.getElementById('locatorsDropdown');
+            if (!locatorSelect) return;
+            locatorSelect.innerHTML = "";
+            if(res.status === 'success' && res.data.length > 0) {
+                res.data.forEach(page => {
+                    locatorSelect.add(new Option(page, page));
+                });
+            } else {
+                locatorSelect.add(new Option("No Locators Found in DB", ""));
+            }
+        })
+        .catch(err => console.error("Error fetching locators", err));
+}
+
 function refreshLocatorPages(e) {
     let icon = null;
     if (e && e.currentTarget) {
@@ -876,9 +895,14 @@ function refreshLocatorPages(e) {
     }
 
     const select = document.getElementById('projectSelect');
-    const selectedOpt = select.options[select.selectedIndex];
-    if (selectedOpt && selectedOpt.value) {
-        const pId = selectedOpt.getAttribute('data-id');
+    let pId = null;
+    if (select.selectedIndex > 0) {
+        pId = select.options[select.selectedIndex].getAttribute('data-id');
+    } else {
+        pId = select.getAttribute('data-manual-id');
+    }
+
+    if (pId) {
         fetch(`/api/project-locators/${pId}`)
             .then(r => r.json())
             .then(res => {
@@ -904,7 +928,7 @@ function refreshLocatorPages(e) {
             });
     } else {
         if(icon) icon.classList.remove('fa-spin');
-        alert("No project selected to refresh locators.");
+        alert("No project selected or manual path established to refresh locators.");
     }
 }
 
@@ -933,7 +957,8 @@ function handleNextStep1() {
     };
 
     // In case there is no btn.closest, handle direct
-    const btn = event.currentTarget || document.querySelector('.form-actions.right.mt-4 button.btn-primary');
+    const currentEvt = (typeof event !== 'undefined') ? event : null;
+    const btn = (currentEvt && currentEvt.currentTarget) ? currentEvt.currentTarget : document.querySelector('button[onclick="handleNextStep1()"]');
     const ogHtml = btn ? btn.innerHTML : 'Next <i class="fas fa-arrow-right"></i>';
     if(btn) {
         btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving...';
@@ -949,6 +974,10 @@ function handleNextStep1() {
     .then(res => {
         if(btn) { btn.innerHTML = ogHtml; btn.disabled = false; }
         if(res.status === 'success') {
+            if (res.project_id) {
+                document.getElementById('projectSelect').setAttribute('data-manual-id', res.project_id);
+                fetchLocators(res.project_id); // Fetch locators for the manual project
+            }
             nextStep(2);
         } else {
             alert("Error saving config: " + res.message);
@@ -1214,6 +1243,26 @@ function detectProject(path) {
             document.getElementById('detPackager').innerText = data.packager;
             document.getElementById('detectedDetails').style.display = 'block';
 
+            // Sync Step 2 dropdowns
+            const gTool = document.getElementById('genTool');
+            const gLang = document.getElementById('genLanguage');
+            
+            if (data.tool && data.tool !== "UnKnown") {
+                let tExists = Array.from(gTool.options).some(o => o.value === data.tool);
+                if (!tExists) gTool.add(new Option(data.tool, data.tool));
+                gTool.value = data.tool;
+                
+                // Refresh language options based on tool
+                updateGenLanguage();
+                
+                if (data.language && data.language !== "Unknown") {
+                    let lExists = Array.from(gLang.options).some(o => o.value === data.language);
+                    if (!lExists) gLang.add(new Option(data.language, data.language));
+                    gLang.value = data.language;
+                    updateFileInputAccepts();
+                }
+            }
+
             // Also update Step 2 summary
             document.getElementById('summaryPath').innerText = path;
             document.getElementById('summaryTool').innerText = data.tool;
@@ -1336,17 +1385,31 @@ function generateCode() {
     formData.append('scenario_file', scenarioFile);
 
     const projectSelect = document.getElementById('projectSelect');
+    let pId = null;
     if(projectSelect.selectedIndex > 0) {
-        formData.append('project_id', projectSelect.options[projectSelect.selectedIndex].getAttribute('data-id'));
+        pId = projectSelect.options[projectSelect.selectedIndex].getAttribute('data-id');
+    } else {
+        pId = projectSelect.getAttribute('data-manual-id');
+    }
+    
+    if(pId) {
+        formData.append('project_id', pId);
     }
 
     if(strategy === 'db') {
         const locatorsSelect = document.getElementById('locatorsDropdown');
+        if (!locatorsSelect) {
+            alert("Internal Error: Locators dropdown not found.");
+            return;
+        }
         const selectedLocators = Array.from(locatorsSelect.selectedOptions).map(opt => opt.value);
-        if(selectedLocators.length === 0 && locatorsSelect.options[0].value !== "") {
-            alert("Please select at least one Page from DB Locators, or switch to Upload Page Objects.");
-            // Returning so user actually selects locators or switches methodology
-            // But if user meant to just generate without mapping, maybe we shouldn't block? Let's block if DB chosen.
+        if(selectedLocators.length === 0) {
+             // Check if there are any valid options besides the default
+             const hasOptions = Array.from(locatorsSelect.options).some(o => o.value !== "");
+             if (hasOptions) {
+                alert("Please select at least one Page from DB Locators, or switch to Upload Page Objects.");
+                return;
+             }
         }
         formData.append('db_locators', JSON.stringify(selectedLocators));
     } else {
