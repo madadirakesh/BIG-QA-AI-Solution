@@ -12,6 +12,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from dotenv import load_dotenv
 
+try:
+    from jira import JIRA
+except ImportError:
+    JIRA = None
+
 # Setup logging
 logging.basicConfig(
     level=logging.INFO,
@@ -57,6 +62,34 @@ def _get_gemini_client():
         raise RuntimeError(
             "google-genai not installed. Run: pip install google-genai"
         )
+
+_jira_client = None
+
+def _get_jira_client():
+    global _jira_client
+    if _jira_client is None:
+        if JIRA is None:
+            raise RuntimeError("jira library not installed. Run: pip install jira")
+        
+        server = os.getenv("jira_server", "").strip().strip('"')
+        email = os.getenv("email", "").strip().strip('"')
+        token = os.getenv("api_token", "").strip().strip('"')
+        
+        if not all([server, email, token]):
+            # Try without spaces in env names if they were misparsed
+            server = server or os.getenv("JIRA_SERVER", "").strip().strip('"')
+            email = email or os.getenv("EMAIL", "").strip().strip('"')
+            token = token or os.getenv("API_TOKEN", "").strip().strip('"')
+
+        if not all([server, email, token]):
+            raise RuntimeError("Jira credentials not found in .env")
+            
+        try:
+            _jira_client = JIRA(server=server, basic_auth=(email, token))
+        except Exception as e:
+            raise RuntimeError(f"Failed to connect to Jira: {str(e)}")
+            
+    return _jira_client
 
 app = FastAPI(title="AI QA Backend")
 app.add_middleware(
@@ -1678,6 +1711,38 @@ async def generate_formatted_test_cases(req: GenerateTestCasesRequest):
         print(content)
         return {"status": "success", "content": content}
     except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/jira/projects")
+async def get_jira_projects():
+    try:
+        jira = _get_jira_client()
+        projects = jira.projects()
+        return [{"key": p.key, "name": p.name} for p in projects]
+    except Exception as e:
+        logger.error(f"Jira Projects Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/jira/projects/{project_key}/tasks")
+async def get_jira_tasks(project_key: str):
+    try:
+        jira = _get_jira_client()
+        # Fetch up to 50 issues for the project
+        issues = jira.search_issues(f'project="{project_key}"', maxResults=50)
+        return [{"key": i.key, "summary": i.fields.summary} for i in issues]
+    except Exception as e:
+        logger.error(f"Jira Tasks Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/jira/tasks/{issue_key}")
+async def get_jira_task_detail(issue_key: str):
+    try:
+        jira = _get_jira_client()
+        issue = jira.issue(issue_key)
+        description = issue.fields.description or "No description provided."
+        return {"key": issue.key, "summary": issue.fields.summary, "description": description}
+    except Exception as e:
+        logger.error(f"Jira Task Detail Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 

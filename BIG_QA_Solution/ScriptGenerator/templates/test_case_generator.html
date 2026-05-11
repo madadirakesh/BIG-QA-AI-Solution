@@ -41,6 +41,56 @@
                     <label>What are we testing? <small class="text-secondary">(Describe features or user stories)</small></label>
                     <textarea id="requirementInput" rows="8" 
                         placeholder="e.g., User should be able to search for products, filter by category, and add items to the shopping cart."></textarea>
+                    <div class="mt-3">
+                        <button type="button" id="jiraConnectBtn" class="btn btn-outline-primary btn-sm" onclick="toggleJiraSection()">
+                            <i class="fab fa-jira"></i> Connect with Jira
+                        </button>
+                    </div>
+
+                    <!-- Inline Jira Section -->
+                    <div id="jiraInlineSection" class="jira-inline-section animate-slide-up" style="display: none;">
+                        <div class="jira-header-inline">
+                            <h4><i class="fab fa-jira"></i> Jira Integration</h4>
+                            <button type="button" class="close-jira" style="font-size: 1rem;" onclick="toggleJiraSection()">&times;</button>
+                        </div>
+                        
+                        <!-- Projects View -->
+                        <div id="jiraProjectsView">
+                            <div class="jira-view-header">
+                                <span class="text-secondary small">Select a Jira Project:</span>
+                            </div>
+                            <div id="jiraProjectList" class="jira-list">
+                                <div class="text-center py-3"><i class="fas fa-spinner fa-spin"></i> Loading projects...</div>
+                            </div>
+                        </div>
+
+                        <!-- Tasks View -->
+                        <div id="jiraTasksView" style="display: none;">
+                            <div class="jira-view-header">
+                                <button type="button" class="btn btn-link btn-sm p-0 me-2 text-decoration-none" onclick="showJiraProjects()"><i class="fas fa-arrow-left"></i> Projects</button>
+                                <span id="selectedProjectName" class="badge bg-primary"></span>
+                            </div>
+                            <div id="jiraTaskList" class="jira-list">
+                                <div class="text-center py-3"><i class="fas fa-spinner fa-spin"></i> Loading tasks...</div>
+                            </div>
+                        </div>
+
+                        <!-- Task Detail View -->
+                        <div id="jiraTaskDetailView" style="display: none;">
+                            <div class="jira-view-header">
+                                <button type="button" class="btn btn-link btn-sm p-0 me-2 text-decoration-none" onclick="showJiraTasks()"><i class="fas fa-arrow-left"></i> Tasks</button>
+                                <span id="selectedTaskKey" class="badge bg-success"></span>
+                            </div>
+                            <div class="jira-description-container">
+                                <div id="jiraTaskDescription" class="jira-description-box"></div>
+                            </div>
+                            <div class="text-end">
+                                <button type="button" class="btn btn-primary btn-sm" onclick="copyJiraDescription()">
+                                    <i class="fas fa-copy"></i> Copy Description
+                                </button>
+                            </div>
+                        </div>
+                    </div>
                 </div>
 
                 <div class="form-group mt-4">
@@ -120,6 +170,8 @@
     </div>
 </div>
 
+<!-- Jira Integration Section will be added inline -->
+
 <!-- Premium Loading Overlay -->
 <div id="loadingOverlay" class="loading-overlay" style="display: none;">
     <div class="loader-content">
@@ -181,6 +233,20 @@
         .options-grid { grid-template-columns: 1fr; }
         .step-inner-align { padding: 10px 10px !important; }
     }
+
+    /* Jira Inline Styles */
+    .jira-inline-section { margin-top: 20px; border: 1px solid var(--glass-border); border-radius: 12px; padding: 18px; background: rgba(0,0,0,0.25); }
+    .jira-header-inline { margin-bottom: 18px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--glass-border); padding-bottom: 12px; }
+    .jira-header-inline h4 { margin: 0; font-size: 1.05rem; display: flex; align-items: center; gap: 8px; color: var(--accent-primary); }
+    .jira-view-header { display: flex; align-items: center; margin-bottom: 15px; min-height: 32px; }
+    .jira-list { display: flex; flex-direction: column; gap: 10px; max-height: 250px; overflow-y: auto; padding-right: 5px; }
+    .jira-item { padding: 12px 15px; background: rgba(255,255,255,0.03); border: 1px solid var(--glass-border); border-radius: 8px; cursor: pointer; transition: var(--transition); display: flex; justify-content: space-between; align-items: center; }
+    .jira-item:hover { background: rgba(255,255,255,0.08); border-color: var(--accent-primary); transform: translateX(3px); }
+    .jira-item .item-name { font-weight: 500; font-size: 0.9rem; }
+    .jira-item .item-key { font-size: 0.75rem; color: var(--text-secondary); background: rgba(0,0,0,0.2); padding: 2px 8px; border-radius: 4px; }
+    .jira-description-box { background: rgba(0,0,0,0.3); border: 1px solid var(--glass-border); border-radius: 8px; padding: 15px; font-size: 0.9rem; line-height: 1.6; color: #cbd5e1; max-height: 250px; overflow-y: auto; white-space: pre-wrap; margin-bottom: 15px; }
+    .btn-outline-primary { border: 1px solid var(--accent-primary); color: var(--accent-primary); background: transparent; transition: all 0.3s; }
+    .btn-outline-primary:hover { background: var(--accent-primary); color: white; box-shadow: 0 0 10px var(--accent-glow); }
 </style>
 {% endblock %}
 
@@ -430,6 +496,136 @@
         const btn = document.querySelector('.copy-btn');
         btn.innerHTML = '<i class="fas fa-check"></i> Copied';
         setTimeout(() => btn.innerHTML = '<i class="fas fa-copy"></i> Copy', 2000);
+    }
+
+    // Jira Integration Logic
+    const BACKEND_URL = 'http://127.0.0.1:8000';
+    let currentJiraProject = null;
+    let currentJiraTask = null;
+
+    function toggleJiraSection() {
+        const section = document.getElementById('jiraInlineSection');
+        const btn = document.getElementById('jiraConnectBtn');
+        if (section.style.display === 'none') {
+            section.style.display = 'block';
+            btn.style.display = 'none';
+            showJiraProjects();
+        } else {
+            section.style.display = 'none';
+            btn.style.display = 'inline-block';
+        }
+    }
+
+    async function showJiraProjects() {
+        document.getElementById('jiraProjectsView').style.display = 'block';
+        document.getElementById('jiraTasksView').style.display = 'none';
+        document.getElementById('jiraTaskDetailView').style.display = 'none';
+        
+        const listEl = document.getElementById('jiraProjectList');
+        listEl.innerHTML = '<div class="text-center py-3"><i class="fas fa-spinner fa-spin"></i> Loading projects...</div>';
+
+        try {
+            const response = await fetch(`${BACKEND_URL}/jira/projects`);
+            if (!response.ok) throw new Error('Failed to fetch projects');
+            const projects = await response.json();
+            
+            if (projects.length === 0) {
+                listEl.innerHTML = '<div class="text-center py-3 text-secondary">No projects found.</div>';
+                return;
+            }
+
+            listEl.innerHTML = '';
+            projects.forEach(p => {
+                const item = document.createElement('div');
+                item.className = 'jira-item';
+                item.onclick = () => selectJiraProject(p);
+                item.innerHTML = `
+                    <span class="item-name">${p.name}</span>
+                    <span class="item-key">${p.key}</span>
+                `;
+                listEl.appendChild(item);
+            });
+        } catch (error) {
+            listEl.innerHTML = `<div class="text-center py-3 text-danger">Error: ${error.message}</div>`;
+        }
+    }
+
+    async function selectJiraProject(project) {
+        currentJiraProject = project;
+        document.getElementById('selectedProjectName').innerText = project.name;
+        showJiraTasks();
+    }
+
+    async function showJiraTasks() {
+        document.getElementById('jiraProjectsView').style.display = 'none';
+        document.getElementById('jiraTasksView').style.display = 'block';
+        document.getElementById('jiraTaskDetailView').style.display = 'none';
+
+        const listEl = document.getElementById('jiraTaskList');
+        listEl.innerHTML = '<div class="text-center py-3"><i class="fas fa-spinner fa-spin"></i> Loading tasks...</div>';
+
+        try {
+            const response = await fetch(`${BACKEND_URL}/jira/projects/${currentJiraProject.key}/tasks`);
+            if (!response.ok) throw new Error('Failed to fetch tasks');
+            const tasks = await response.json();
+
+            if (tasks.length === 0) {
+                listEl.innerHTML = '<div class="text-center py-3 text-secondary">No tasks found.</div>';
+                return;
+            }
+
+            listEl.innerHTML = '';
+            tasks.forEach(t => {
+                const item = document.createElement('div');
+                item.className = 'jira-item';
+                item.onclick = () => selectJiraTask(t);
+                item.innerHTML = `
+                    <span class="item-name">${t.summary}</span>
+                    <span class="item-key">${t.key}</span>
+                `;
+                listEl.appendChild(item);
+            });
+        } catch (error) {
+            listEl.innerHTML = `<div class="text-center py-3 text-danger">Error: ${error.message}</div>`;
+        }
+    }
+
+    async function selectJiraTask(task) {
+        currentJiraTask = task;
+        document.getElementById('selectedTaskKey').innerText = task.key;
+        
+        document.getElementById('jiraTasksView').style.display = 'none';
+        document.getElementById('jiraTaskDetailView').style.display = 'block';
+        
+        const descEl = document.getElementById('jiraTaskDescription');
+        descEl.innerHTML = '<div class="text-center py-3"><i class="fas fa-spinner fa-spin"></i> Loading description...</div>';
+
+        try {
+            const response = await fetch(`${BACKEND_URL}/jira/tasks/${task.key}`);
+            if (!response.ok) throw new Error('Failed to fetch task details');
+            const detail = await response.json();
+            
+            descEl.innerText = detail.description;
+        } catch (error) {
+            descEl.innerHTML = `<div class="text-center py-3 text-danger">Error: ${error.message}</div>`;
+        }
+    }
+
+    function copyJiraDescription() {
+        const text = document.getElementById('jiraTaskDescription').innerText;
+        document.getElementById('requirementInput').value = text;
+        
+        // Visual feedback
+        const btn = document.querySelector('#jiraTaskDetailView .btn-primary');
+        const originalText = btn.innerHTML;
+        btn.innerHTML = '<i class="fas fa-check"></i> Copied to Input!';
+        btn.classList.replace('btn-primary', 'btn-success');
+        
+        setTimeout(() => {
+            btn.innerHTML = originalText;
+            btn.classList.replace('btn-success', 'btn-primary');
+            toggleJiraSection(); // Automatically close section after copying
+        }, 1500);
     }
 </script>
 {% endblock %}
