@@ -1479,6 +1479,8 @@ class UniversalScriptGenerator(CodeGenerator):
         4. DO NOT GENERATE boilerplate configuration files (e.g. pom.xml, package.json, playwright.config.ts, tsconfig.json, .csproj, DriverFactory, Hooks, conftest.py, specflow.json). ONLY generate actual script layer files (Feature, Step Definitions, Page Objects).
         5. If 'DB Locators' are provided natively mapped to [Page Object: X] headers, YOU MUST create the exact Page Object class matching 'X' and populate it exclusively with those exact locators. Under NO circumstances should you hallucinate or generate dynamic locators for elements that exist in [Page Object: X]. If an element needed for a step is NOT in the DB Locators, generate a new locator for it. But ALWAYS prioritize using the provided DB Locators first.
         6. Follow the 'Project Layout Mappings (CRITICAL)' to exactly match the directory structure of the generated files. Check these mappings before formatting the JSON file keys. E.g., if Feature Files must go to 'src/test/resources/features', the output JSON key must be 'src/test/resources/features/MyFeature.feature'.
+        7. Do not generate Step definitions if the step definition is already defined in 'EXISTING STEP DEFINITIONS' in the Supporting Information. Only generate NEW step definitions that are missing.
+        8. For BDD Step Definitions, NEVER use 'And', 'Or', or 'But' as the step annotation keyword (e.g., @And, @But). Always substitute them with the appropriate 'Given', 'When', or 'Then' keyword that logically corresponds to the step's preceding context in the scenario.
 
         {self.standards}
         {LOCATOR_USAGE_STANDARDS}

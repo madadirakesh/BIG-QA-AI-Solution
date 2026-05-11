@@ -346,17 +346,21 @@ def bootstrap_status(job_id):
         meta = job.get('project_metadata', {})
         if meta:
             try:
+                # Ensure the project name is appended to the base path
+                full_project_path = os.path.join(meta['projectPath'], meta['projectName'])
+                
                 insert_data("INSERT INTO ProjectDetails (project_name, project_path, project_lang, project_fw, project_tool, package_manager, project_type) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                            (meta['projectName'], meta['projectPath'], meta['language'], meta['framework'], meta['tool'], meta.get('packageManager'), 'New'))
+                            (meta['projectName'], full_project_path, meta['language'], meta['framework'], meta['tool'], meta.get('packageManager'), 'New'))
                 
                 # Save Project Data (URL/Credentials)
-                new_id_res = fetch_data("SELECT id FROM ProjectDetails WHERE project_path = ?", (meta['projectPath'],))
+                new_id_res = fetch_data("SELECT id FROM ProjectDetails WHERE project_path = ?", (full_project_path,))
                 if new_id_res:
                     p_id = new_id_res[0]['id']
                     insert_data("INSERT INTO ProjectData (baseurl, username, password, project_details_id) VALUES (?, ?, ?, ?)",
                                 (meta.get('url'), meta.get('username'), meta.get('password'), p_id))
             except Exception as e:
-                logger.error(f"Database insertion failed: {e}")
+                import logging
+                logging.error(f"Database insertion failed: {e}")
         job['db_inserted'] = True
 
     return jsonify(job)
@@ -831,6 +835,25 @@ def generate_bdd_code():
                     if discovered_pages == "pages": discovered_pages = rel_path
 
         support_content += f"\nProject Layout Mappings (CRITICAL):\n- Feature Files MUST be placed inside: {discovered_features}\n- Step Definition Files MUST be placed inside: {discovered_steps}\n- Page Object Files MUST be placed inside: {discovered_pages}\n"
+
+        # Collect existing step definitions to avoid regenerating them
+        if project_path and os.path.exists(project_path) and discovered_steps != "steps":
+            steps_dir = os.path.join(project_path, discovered_steps)
+            if os.path.exists(steps_dir):
+                existing_steps = []
+                for root, _, files in os.walk(steps_dir):
+                    for f in files:
+                        if f.endswith(('.py', '.java', '.ts', '.js', '.cs')):
+                            try:
+                                with open(os.path.join(root, f), 'r', encoding='utf-8', errors='ignore') as st_file:
+                                    existing_steps.append(f"--- {f} ---\n{st_file.read()}")
+                            except Exception:
+                                pass
+                if existing_steps:
+                    # Truncate to avoid massive context payloads, but usually steps are manageable
+                    steps_text = "\n".join(existing_steps)[:20000]
+                    support_content += f"\nEXISTING STEP DEFINITIONS (DO NOT regenerate these):\n{steps_text}\n"
+
 
         if strategy == 'db' and project_id and db_locators:
             try:
