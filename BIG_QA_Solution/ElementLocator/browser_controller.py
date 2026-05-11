@@ -16,19 +16,14 @@ class PyBridge(QObject):
         except Exception as e:
             print(f"Failed to parse payload from JS: {e}")
 
-class CustomWebEnginePage(QWebEnginePage):
-    def certificateError(self, error):
-        # Ignore SSL errors which frequently block local staging sites in QA tools
-        return True
-
 class BrowserController(QObject):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.view = QWebEngineView()
         
-        # Override the page with our custom page that ignores SSL errors
-        self.custom_page = CustomWebEnginePage(self.view)
-        self.view.setPage(self.custom_page)
+        # In PyQt6, SSL errors are handled via a signal, not a virtual method override.
+        self.view.page().certificateError.connect(self._handle_certificate_error)
+        
         self.view.setUrl(QUrl("about:blank"))
         
         # Setup channel
@@ -41,6 +36,9 @@ class BrowserController(QObject):
         self.is_capturing = False
 
         self.view.loadFinished.connect(self._on_load_finished)
+
+    def _handle_certificate_error(self, error):
+        error.acceptCertificate()
 
     def get_ui_component(self):
         return self.view
