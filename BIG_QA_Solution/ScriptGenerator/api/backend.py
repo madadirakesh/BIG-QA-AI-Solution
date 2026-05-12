@@ -1737,6 +1737,7 @@ async def get_jira_tasks(project_key: str):
 @app.get("/jira/tasks/{issue_key}")
 async def get_jira_task_detail(issue_key: str):
     try:
+
         jira = _get_jira_client()
         issue = jira.issue(issue_key)
         description = issue.fields.description or "No description provided."

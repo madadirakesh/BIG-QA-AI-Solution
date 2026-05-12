@@ -35,7 +35,8 @@ if (!window.desktopInspectorInitialized) {
         if (!window.desktopInspectorActive) {
             document.addEventListener('mouseover', handleMouseOver, true);
             document.addEventListener('mouseout', handleMouseOut, true);
-            document.addEventListener('click', handleClick, true);
+            document.addEventListener('mousedown', handleCapture, true);
+            document.addEventListener('click', preventDefaultClick, true);
             window.desktopInspectorActive = true;
         }
     };
@@ -44,7 +45,8 @@ if (!window.desktopInspectorInitialized) {
         if (window.desktopInspectorActive) {
             document.removeEventListener('mouseover', handleMouseOver, true);
             document.removeEventListener('mouseout', handleMouseOut, true);
-            document.removeEventListener('click', handleClick, true);
+            document.removeEventListener('mousedown', handleCapture, true);
+            document.removeEventListener('click', preventDefaultClick, true);
             highlightBox.style.setProperty('display', 'none', 'important');
             window.desktopInspectorActive = false;
         }
@@ -72,19 +74,99 @@ if (!window.desktopInspectorInitialized) {
         window.currentHighlightedElement = null;
     }
 
-    function handleClick(e) {
+    function preventDefaultClick(e) {
         if (!window.desktopInspectorActive) return;
+        e.preventDefault();
+        e.stopPropagation();
+    }
+
+    function toCamelCase(str) {
+        if (!str) return '';
+        // Remove special chars except spaces, split, camel case, then join
+        return str.replace(/[^a-zA-Z0-9\s]/g, ' ')
+                  .trim()
+                  .split(/\s+/)
+                  .map((word, index) => {
+                      if (index === 0) return word.toLowerCase();
+                      return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
+                  })
+                  .join('');
+    }
+
+    function generateSmartName(el) {
+        const tagName = el.tagName.toLowerCase();
+        
+        // 1. Try explicit identifiers first
+        const pegaId = el.getAttribute('data-test-id');
+        if (pegaId) return toCamelCase(pegaId);
+        
+        const testId = el.getAttribute('data-testid');
+        if (testId) return toCamelCase(testId);
+        
+        const nameAttr = el.getAttribute('name');
+        if (nameAttr) return toCamelCase(nameAttr);
+        
+        const idAttr = el.getAttribute('id');
+        if (idAttr && !idAttr.match(/^[0-9]+$/)) return toCamelCase(idAttr); // avoid pure numeric IDs
+        
+        const ariaLabel = el.getAttribute('aria-label');
+        if (ariaLabel) return toCamelCase(ariaLabel);
+        
+        const placeholder = el.getAttribute('placeholder');
+        if (placeholder) {
+            let pName = toCamelCase(placeholder);
+            if (tagName === 'input' && !pName.toLowerCase().endsWith('input')) pName += 'Input';
+            return pName;
+        }
+        
+        // 2. Try text content
+        const text = el.textContent.trim();
+        if (text && text.length < 40) {
+            let suffix = '';
+            if (tagName === 'button' || el.getAttribute('role') === 'button') suffix = 'Button';
+            else if (tagName === 'a') suffix = 'Link';
+            let tName = toCamelCase(text);
+            if (tName) return tName + suffix;
+        }
+        
+        // 3. Fallback to closest label if it's an input
+        if (tagName === 'input' || tagName === 'textarea' || tagName === 'select') {
+            if (idAttr) {
+                const label = document.querySelector(`label[for="${CSS.escape(idAttr)}"]`);
+                if (label && label.textContent.trim()) {
+                    let lName = toCamelCase(label.textContent.trim());
+                    if (lName) return lName + (tagName === 'input' ? 'Input' : tagName === 'select' ? 'Select' : 'Textarea');
+                }
+            }
+            // Try parent label
+            const parentLabel = el.closest('label');
+            if (parentLabel && parentLabel.textContent.trim()) {
+                const labelText = parentLabel.textContent.replace(el.textContent, '').trim();
+                let lName = toCamelCase(labelText);
+                if (lName) return lName + (tagName === 'input' ? 'Input' : tagName === 'select' ? 'Select' : 'Textarea');
+            }
+        }
+        
+        // 4. Try class name as last resort
+        const className = el.getAttribute('class');
+        if (className) {
+            const firstClass = className.split(/\s+/).filter(c => c)[0];
+            if (firstClass) return toCamelCase(firstClass);
+        }
+        
+        return tagName + Math.floor(Math.random() * 1000);
+    }
+
+    function handleCapture(e) {
+        if (!window.desktopInspectorActive) return;
+        
         e.preventDefault();
         e.stopPropagation();
 
         const el = window.currentHighlightedElement || e.target;
         const locators = generateLocators(el);
 
-        let textC = el.textContent ? el.textContent : '';
-        const id = el.getAttribute('id');
-        const name = el.getAttribute('name');
-        let nameHint = id || name || textC.substring(0, 15).replace(/[^a-zA-Z0-9]/g, '');
-        if (!nameHint) nameHint = (el.tagName || 'ELEM').toLowerCase();
+        const nameHint = generateSmartName(el);
 
         const outerHtml = (el.outerHTML || '').substring(0, 2000);
         const pTitle = document.title || 'MyPage';
@@ -100,59 +182,162 @@ if (!window.desktopInspectorInitialized) {
         }
     }
 
+    function isCssUnique(selector) {
+        try { return document.querySelectorAll(selector).length === 1; } catch(e) { return false; }
+    }
+
+    function isXpathUnique(xpath) {
+        try {
+            const result = document.evaluate('count(' + xpath + ')', document, null, XPathResult.NUMBER_TYPE, null);
+            return result.numberValue === 1;
+        } catch(e) { return false; }
+    }
+
+    function escapeXPathString(str) {
+        if (!str.includes("'")) return `'${str}'`;
+        if (!str.includes('"')) return `"${str}"`;
+        return "concat('" + str.replace(/'/g, "',\"'\",'") + "')";
+    }
+
+    function buildSmartXPath(el) {
+        if (!el || el.nodeType !== 1) return '';
+        
+        const pathSteps = [];
+        let currentEl = el;
+
+        while (currentEl && currentEl.nodeType === 1) {
+            const curTag = currentEl.tagName.toLowerCase();
+            let step = '';
+
+            const pId = currentEl.getAttribute('data-test-id');
+            const tId = currentEl.getAttribute('data-testid');
+            const cId = currentEl.id;
+            const cName = currentEl.getAttribute('name');
+
+            if (pId) step = `/${curTag}[@data-test-id=${escapeXPathString(pId)}]`;
+            else if (tId) step = `/${curTag}[@data-testid=${escapeXPathString(tId)}]`;
+            else if (cId && isCssUnique(`#${CSS.escape(cId)}`)) step = `/${curTag}[@id=${escapeXPathString(cId)}]`;
+            else if (cName) step = `/${curTag}[@name=${escapeXPathString(cName)}]`;
+            else {
+                let index = 1;
+                let sibling = currentEl.previousElementSibling;
+                while (sibling) {
+                    if (sibling.tagName === currentEl.tagName) index++;
+                    sibling = sibling.previousElementSibling;
+                }
+                step = `/${curTag}[${index}]`;
+            }
+
+            pathSteps.unshift(step);
+
+            const globalXPath = '/' + pathSteps.join('');
+            if (isXpathUnique('/' + globalXPath)) {
+                return '/' + globalXPath;
+            }
+
+            currentEl = currentEl.parentElement;
+        }
+
+        return pathSteps.join(''); // absolute fallback
+    }
+
     function generateLocators(el) {
         const list = [];
-        const id = el.getAttribute('id');
-        const name = el.getAttribute('name');
         const tagName = el.tagName.toLowerCase();
 
-        // 1. ID
-        if (id) {
-            list.push({ type: 'ID', value: id });
-            list.push({ type: 'CSS', value: `#${id}` });
-            list.push({ type: 'XPath', value: `//${tagName}[@id='${id}']` });
-        }
-
-        // 2. Name
-        if (name) {
-            list.push({ type: 'Name', value: name });
-            list.push({ type: 'CSS', value: `[name='${name}']` });
-            list.push({ type: 'XPath', value: `//${tagName}[@name='${name}']` });
-        }
-
-        if (tagName) {
-            list.push({ type: 'Tag Name', value: tagName });
+        // 0. Check Pega data-test-id first
+        const pegaTestId = el.getAttribute('data-test-id');
+        if (pegaTestId) {
+            const xp = `//${tagName}[@data-test-id='${pegaTestId}']`;
+            if (isXpathUnique(xp)) {
+                list.push({ type: 'Test ID', value: pegaTestId });
+                list.push({ type: 'getByTestId', value: pegaTestId });
+                list.push({ type: 'XPath', value: xp });
+                list.push({ type: 'CSS', value: `[data-test-id='${pegaTestId}']` });
+            } else {
+                const scoped = buildSmartXPath(el);
+                if (scoped) list.push({ type: 'XPath', value: scoped });
+            }
         }
 
         const testId = el.getAttribute('data-testid');
         if (testId) {
-            list.push({ type: 'Test ID', value: testId });
-            list.push({ type: 'getByTestId', value: testId });
+            const xp = `//${tagName}[@data-testid='${testId}']`;
+            if (isXpathUnique(xp)) {
+                list.push({ type: 'Test ID', value: testId });
+                list.push({ type: 'getByTestId', value: testId });
+                list.push({ type: 'XPath', value: xp });
+            } else {
+                const scoped = buildSmartXPath(el);
+                if (scoped) list.push({ type: 'XPath', value: scoped });
+            }
         }
 
+        // 1. ID
+        const id = el.getAttribute('id');
+        if (id) {
+            const css = `#${CSS.escape(id)}`;
+            const xp = `//${tagName}[@id='${id}']`;
+            if (isCssUnique(css)) {
+                list.push({ type: 'ID', value: id });
+                list.push({ type: 'CSS', value: css });
+                list.push({ type: 'XPath', value: xp });
+            } else {
+                const scoped = buildSmartXPath(el);
+                if (scoped) list.push({ type: 'XPath', value: scoped });
+            }
+        }
+
+        // 2. Name
+        const name = el.getAttribute('name');
+        if (name) {
+            const xp = `//${tagName}[@name='${name}']`;
+            if (isXpathUnique(xp)) {
+                list.push({ type: 'Name', value: name });
+                list.push({ type: 'CSS', value: `[name='${name}']` });
+                list.push({ type: 'XPath', value: xp });
+            } else {
+                const scoped = buildSmartXPath(el);
+                if (scoped) list.push({ type: 'XPath', value: scoped });
+            }
+        }
+        
+        // Class Name
         const className = el.getAttribute('class');
         if (className && typeof className === 'string') {
             const classes = className.split(/\s+/).filter(c => c.length > 0);
             if (classes.length > 0) {
-                list.push({ type: 'CSS', value: `${tagName}.${classes.join('.')}` });
+                const css = `${tagName}.${classes.join('.')}`;
+                if (isCssUnique(css)) {
+                    list.push({ type: 'CSS', value: css });
+                } else if (classes.length === 1) {
+                    const scoped = buildSmartXPath(el);
+                    if (scoped) list.push({ type: 'XPath', value: scoped });
+                }
             }
         }
 
         // 3. Link text
         if (tagName === 'a' && el.textContent.trim().length > 0) {
             const t = el.textContent.trim();
-            list.push({ type: 'Link Text', value: t });
-            list.push({ type: 'Partial Link', value: t.substring(0, Math.min(15, t.length)) });
-            list.push({ type: 'XPath', value: `//a[contains(text(), '${t}')]` });
+            const xp = `//a[contains(text(), '${t.replace(/'/g, "\\'")}')]`;
+            if (isXpathUnique(xp)) {
+                list.push({ type: 'Link Text', value: t });
+                list.push({ type: 'Partial Link', value: t.substring(0, Math.min(15, t.length)) });
+                list.push({ type: 'XPath', value: xp });
+            }
         }
 
-        // 4. Semantic bindings for Playwright
+        // 4. Semantic bindings for Playwright (assuming unique conceptually)
         const role = el.getAttribute('role');
         if (role) { list.push({ type: 'getByRole', value: role }); }
 
         const text = el.textContent.trim();
         if (text.length > 0 && text.length < 40) {
-            list.push({ type: 'getByText', value: text });
+            const xp = `//${tagName}[contains(text(), '${text.replace(/'/g, "\\'")}')]`;
+            if (isXpathUnique(xp)) {
+                list.push({ type: 'getByText', value: text });
+            }
         }
 
         const ariaLabel = el.getAttribute('aria-label');
@@ -160,8 +345,11 @@ if (!window.desktopInspectorInitialized) {
 
         const placeholder = el.getAttribute('placeholder');
         if (placeholder) {
-            list.push({ type: 'getByPlaceholder', value: placeholder });
-            list.push({ type: 'XPath', value: `//${tagName}[@placeholder='${placeholder}']` });
+            const xp = `//${tagName}[@placeholder='${placeholder}']`;
+            if (isXpathUnique(xp)) {
+                list.push({ type: 'getByPlaceholder', value: placeholder });
+                list.push({ type: 'XPath', value: xp });
+            }
         }
 
         const alt = el.getAttribute('alt');
@@ -170,30 +358,34 @@ if (!window.desktopInspectorInitialized) {
         const title = el.getAttribute('title');
         if (title) { list.push({ type: 'getByTitle', value: title }); }
 
-        // 5. Absolute / Smart Xpath Fallback
-        list.push({ type: 'XPath', value: createAbsoluteXPath(el) });
-
-        return list;
-    }
-
-    function createAbsoluteXPath(element) {
-        if (!element || element.nodeType !== 1) return '';
-        if (element.id) return `//*[@id="${element.id}"]`;
-        const path = [];
-        while (element && element.nodeType === 1) {
-            let index = 1;
-            let sibling = element.previousSibling;
-            while (sibling) {
-                if (sibling.nodeType === 1 && sibling.tagName === element.tagName) {
-                    index++;
-                }
-                sibling = sibling.previousSibling;
+        // Deduplicate
+        const uniqueList = [];
+        const seen = new Set();
+        for (const item of list) {
+            const key = item.type + '::' + item.value;
+            if (!seen.has(key)) {
+                seen.add(key);
+                uniqueList.push(item);
             }
-            const tagName = element.tagName.toLowerCase();
-            path.unshift(`${tagName}[${index}]`);
-            element = element.parentNode;
         }
-        return path.length ? '/' + path.join('/') : '';
+
+        // 5. Absolute / Smart Xpath Fallback
+        const hasRobustXPath = uniqueList.some(l => l.type === 'XPath' && !l.value.startsWith('/html'));
+        if (!hasRobustXPath) {
+            const smartXp = buildSmartXPath(el);
+            if (smartXp && smartXp.startsWith('//')) {
+                uniqueList.push({ type: 'XPath', value: smartXp });
+            } else if (smartXp) {
+                // if it falls back to absolute, make sure it's valid xpath syntax starting with /html
+                uniqueList.push({ type: 'XPath', value: smartXp });
+            }
+        }
+        
+        if (uniqueList.length === 0 && tagName) {
+            uniqueList.push({ type: 'Tag Name', value: tagName });
+        }
+
+        return uniqueList;
     }
 
     window.freezePage = function (duration) {
