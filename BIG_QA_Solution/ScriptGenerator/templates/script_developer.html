@@ -246,6 +246,17 @@
                     </div>
                 </div>
 
+                <!-- Editable BDD Content Area -->
+                <div id="bddEditableSection" class="form-group mt-4 animate-slide-up" style="display: none;">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <label class="mb-0"><i class="fas fa-edit"></i> Edit BDD Content</label>
+                        <span class="badge bg-info text-dark" id="bddFileNameBadge"></span>
+                    </div>
+                    <textarea id="bddContentEditor" class="form-control" rows="12" 
+                        style="height: auto; font-family: 'Fira Code', monospace; font-size: 0.9rem; line-height: 1.5; background: rgba(0,0,0,0.3) !important; color: #cbd5e1; padding: 15px; border: 1px solid var(--glass-border) !important;"></textarea>
+                    <small class="text-secondary mt-1 d-block">You can modify the scenarios above before generating the script.</small>
+                </div>
+
                 <div class="form-actions row mt-4">
                     <div class="col" style="padding-bottom:10px">
                         <button type="button" class="btn btn-secondary" onclick="nextStep(1)"><i
@@ -1337,6 +1348,10 @@ function toggleMappingStrategy() {
 }
 
 function validateScenarioFile(input) {
+    const editableSection = document.getElementById('bddEditableSection');
+    const editor = document.getElementById('bddContentEditor');
+    const nameBadge = document.getElementById('bddFileNameBadge');
+
     if(input.files && input.files[0]) {
         const file = input.files[0];
         const type = document.getElementById('fileType').value;
@@ -1349,15 +1364,24 @@ function validateScenarioFile(input) {
                 if (scenarioMatches && scenarioMatches.length > 10) {
                     alert(`Too many scenarios (${scenarioMatches.length}). Maximum limit is 10 scenarios per transaction.`);
                     input.value = ""; // Clear file
+                    editableSection.style.display = 'none';
+                } else {
+                    // Show in editable mode
+                    editor.value = content;
+                    nameBadge.innerText = file.name;
+                    editableSection.style.display = 'block';
                 }
             };
             reader.readAsText(file);
         } else if (type === 'Excel') {
+            editableSection.style.display = 'none';
             if(!file.name.endsWith('.xls') && !file.name.endsWith('.xlsx')) {
                 alert("Please upload a valid Excel file (.xlsx, .xls)");
                 input.value = "";
             }
         }
+    } else {
+        editableSection.style.display = 'none';
     }
 }
 
@@ -1387,7 +1411,15 @@ function generateCode() {
     formData.append('framework', document.getElementById('detFramework').innerText);
     formData.append('mapping_strategy', strategy);
     formData.append('file_type', fileType);
-    formData.append('scenario_file', scenarioFile);
+    
+    // Use edited content for BDD if available
+    if (fileType === 'BDD' && document.getElementById('bddContentEditor').value.trim()) {
+        const bddContent = document.getElementById('bddContentEditor').value;
+        const blob = new Blob([bddContent], { type: 'text/plain' });
+        formData.append('scenario_file', blob, scenarioFile.name);
+    } else {
+        formData.append('scenario_file', scenarioFile);
+    }
 
     const projectSelect = document.getElementById('projectSelect');
     let pId = null;
