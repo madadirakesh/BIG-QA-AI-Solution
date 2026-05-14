@@ -18,15 +18,14 @@ class AIService:
             if tool.lower() == "playwright":
                 extra_tooling = ", getByTestId, getByText, getByRole, getByLabel"
 
-            prompt = (
-                f"Analyze this HTML snippet and suggest the best element locators for a '{tool}' automation script. "
-                "Return ONLY a JSON array of objects, where each object has 'name', 'type', 'value', and 'rating' fields. "
-                "The 'name' should be a descriptive, camelCase element name based on the HTML attributes (e.g., loginButton, emailInput). "
-                f"The 'type' should be one of (CSS, XPath, ID, Name, Link Text, Partial Link, Tag Name{extra_tooling}). "
-                "The XPath is relative XPath. Use Contains, Text, and other attributes as applicable. "
-                "The 'rating' MUST be exactly one of: 'Best', 'Good', 'Ok', 'Un-Reliable'. "
-                f"HTML:\n{outer_html}"
-            )
+            import sys
+            import os
+            # Ensure the parent directory is in sys.path to import prompts
+            parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            if parent_dir not in sys.path:
+                sys.path.insert(0, parent_dir)
+            from prompts.element_locator_prompts import get_locator_generation_prompt
+            prompt = get_locator_generation_prompt(tool, extra_tooling, outer_html)
 
             headers = {"Content-Type": "application/json"}
             payload = {}

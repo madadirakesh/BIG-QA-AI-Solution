@@ -719,6 +719,78 @@ def serve_report():
     mime_type, _ = mimetypes.guess_type(file_path)
     return Response(content, mimetype=mime_type or 'text/html')
 
+@app.route('/api/configure-ai', methods=['GET', 'POST'])
+@login_required()
+def configure_ai_endpoint():
+    env_path = os.path.join(BASE_DIR, '.env')
+    
+    if request.method == 'GET':
+        config = {'AI_TOOL': '', 'AI_MODEL': '', 'API_KEY': ''}
+        if os.path.exists(env_path):
+            with open(env_path, 'r') as f:
+                for line in f:
+                    if line.startswith('AI_TOOL'):
+                        config['AI_TOOL'] = line.split('=', 1)[1].strip().strip('"').strip("'")
+                    elif line.startswith('AI_MODEL'):
+                        config['AI_MODEL'] = line.split('=', 1)[1].strip().strip('"').strip("'")
+                    elif line.startswith('API_KEY'):
+                        config['API_KEY'] = line.split('=', 1)[1].strip().strip('"').strip("'")
+        return jsonify({"status": "success", "config": config})
+        
+    # POST
+    data = request.json
+    ai_tool = data.get('ai_tool')
+    ai_model = data.get('ai_model')
+    api_key = data.get('api_key')
+    
+    env_lines = []
+    if os.path.exists(env_path):
+        with open(env_path, 'r') as f:
+            env_lines = f.readlines()
+            
+    new_env_lines = []
+    updated_keys = {'AI_TOOL': False, 'AI_MODEL': False, 'API_KEY': False}
+    
+    for line in env_lines:
+        if line.startswith('AI_TOOL'):
+            new_env_lines.append(f'AI_TOOL = "{ai_tool}"\n')
+            updated_keys['AI_TOOL'] = True
+        elif line.startswith('AI_MODEL'):
+            new_env_lines.append(f'AI_MODEL = "{ai_model}"\n')
+            updated_keys['AI_MODEL'] = True
+        elif line.startswith('API_KEY'):
+            new_env_lines.append(f'API_KEY = "{api_key}"\n')
+            updated_keys['API_KEY'] = True
+        else:
+            new_env_lines.append(line)
+            
+    if not updated_keys['AI_TOOL']:
+        new_env_lines.append(f'AI_TOOL = "{ai_tool}"\n')
+    if not updated_keys['AI_MODEL']:
+        new_env_lines.append(f'AI_MODEL = "{ai_model}"\n')
+    if not updated_keys['API_KEY']:
+        new_env_lines.append(f'API_KEY = "{api_key}"\n')
+        
+    with open(env_path, 'w') as f:
+        f.writelines(new_env_lines)
+        
+    # Also update current env for immediately running backend.py or others
+    os.environ['AI_TOOL'] = str(ai_tool)
+    os.environ['AI_MODEL'] = str(ai_model)
+    os.environ['API_KEY'] = str(api_key)
+        
+    status_data = None
+    try:
+        import urllib.request
+        import json
+        req = urllib.request.Request('http://127.0.0.1:8000/health')
+        with urllib.request.urlopen(req, timeout=3) as response:
+            status_data = json.loads(response.read().decode())
+    except Exception as e:
+        status_data = {"error": str(e)}
+        
+    return jsonify({"status": "success", "system_status": status_data})
+
 def open_browser():
     webbrowser.open_new('http://127.0.0.1:5000/')
 

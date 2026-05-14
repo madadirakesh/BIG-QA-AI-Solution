@@ -83,18 +83,21 @@ class ScriptRunnerService:
 
         # Mode B: AI Generation with Self-Healing (Existing logic)
         # Step 1: AI generates command
-        prompt = f"""
-        The user wants to run an automated test.
-        Tool: {meta.get('tool')}
-        Language: {meta.get('language')}
-        Framework: {meta.get('framework')}
-        Environment: {env}
-        Browser: {browser}
-        Tags: {tags}
-        
-        Generate the terminal command to execute this test suite locally. Wait, for Python it's usually `pytest` or `behave`, for Node it's `npm run test` or `npx playwright test`, for Java it's `mvn test`. Include any tags/browser parameters as standard arguments for the given framework.
-        Return only JSON like: {{"command": "the command string"}}
-        """
+        import sys
+        import os
+        parent_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        if parent_dir not in sys.path:
+            sys.path.insert(0, parent_dir)
+        from prompts.script_runner_prompts import get_execution_command_prompt, get_diagnose_error_prompt, get_fix_script_prompt, get_correct_command_prompt
+
+        prompt = get_execution_command_prompt(
+            tool=meta.get('tool'),
+            language=meta.get('language'),
+            framework=meta.get('framework'),
+            env=env,
+            browser=browser,
+            tags=tags
+        )
         
         ai_resp = cls._call_ai_sync_json(prompt)
         cmd = ai_resp.get("command", "")
@@ -125,21 +128,7 @@ class ScriptRunnerService:
                 else:
                     # Execution failed. Let's ask AI to diagnose the error (COMMAND vs SCRIPT)
                     error_output = result.stderr or result.stdout
-                    prompt_diag = f"""
-                    The test execution failed.
-                    Command: {cmd}
-                    Output: {error_output}
-                    
-                    Analyze the error. Return ONLY JSON exactly matching this format:
-                    {{
-                      "error_type": "COMMAND_ERROR" or "SCRIPT_ERROR",
-                      "file_to_fix": "relative/path/to/failed_script.py", 
-                      "reason": "short description"
-                    }}
-                    If the error is related to element not found, syntax error in test script, assertion failure, etc., classify as SCRIPT_ERROR and provide the correct relative path to the failing script file.
-                    If it's an issue with the command itself (e.g. pytest not found), classify as COMMAND_ERROR.
-                    If no specific file is found, use empty string for file_to_fix.
-                    """
+                    prompt_diag = get_diagnose_error_prompt(cmd, error_output)
                     diag_resp = cls._call_ai_sync_json(prompt_diag)
                     error_type = diag_resp.get("error_type", "COMMAND_ERROR")
                     file_to_fix = diag_resp.get("file_to_fix", "")
@@ -154,21 +143,7 @@ class ScriptRunnerService:
                             with open(file_target, 'r', encoding='utf-8') as f:
                                 file_content = f.read()
                                 
-                            prompt_fix = f"""
-                            The test failed with this error:
-                            {error_output}
-                            
-                            Here is the current content of {file_to_fix}:
-                            ```
-                            {file_content}
-                            ```
-                            
-                            Fix the source code (e.g., self-heal the locator or assertion) so the test will pass. Keep imports and class structures intact.
-                            Return ONLY JSON:
-                            {{
-                              "fixed_content": "the completely rewritten file content here"
-                            }}
-                            """
+                            prompt_fix = get_fix_script_prompt(error_output, file_to_fix, file_content)
                             fix_resp = cls._call_ai_sync_json(prompt_fix)
                             fixed_code = fix_resp.get("fixed_content", "")
                             
@@ -185,11 +160,12 @@ class ScriptRunnerService:
                             error_type = "COMMAND_ERROR" # Fallback
                             
                     if error_type == "COMMAND_ERROR" or not file_to_fix:
-                        prompt2 = f"""
-                        The command `{cmd}` failed with this error: {error_output}
-                        For a project using {meta.get('tool')}/{meta.get('framework')}.
-                        Provide a corrected command in JSON like {{"command": "new command string"}}.
-                        """
+                        prompt2 = get_correct_command_prompt(
+                            cmd=cmd,
+                            error_output=error_output,
+                            tool=meta.get('tool'),
+                            framework=meta.get('framework')
+                        )
                         ai_correction = cls._call_ai_sync_json(prompt2)
                         new_cmd = ai_correction.get("command", "")
                         if new_cmd:

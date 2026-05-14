@@ -181,3 +181,69 @@ async function launchElementLocator() {
         console.error("Network error when launching element locator", error);
     }
 }
+
+// AI Configuration Modal Functions
+function openConfigureAIModal() {
+    const modal = document.getElementById('configureAIModal');
+    if (modal) {
+        modal.style.display = 'block';
+        fetch('/api/configure-ai')
+            .then(res => res.json())
+            .then(data => {
+                if (data.status === 'success' && data.config) {
+                    if (data.config.AI_TOOL) document.getElementById('aiToolSelect').value = data.config.AI_TOOL;
+                    if (data.config.AI_MODEL) document.getElementById('aiModelInput').value = data.config.AI_MODEL;
+                    if (data.config.API_KEY) document.getElementById('apiKeyInput').value = data.config.API_KEY;
+                }
+            })
+            .catch(err => console.error("Could not load AI config", err));
+    }
+}
+
+function closeConfigureAIModal() {
+    const modal = document.getElementById('configureAIModal');
+    if (modal) {
+        modal.style.display = 'none';
+    }
+}
+
+function submitAIConfiguration() {
+    const tool = document.getElementById('aiToolSelect').value;
+    const model = document.getElementById('aiModelInput').value;
+    const apiKey = document.getElementById('apiKeyInput').value;
+
+    if (!tool || !model || !apiKey) {
+        if(typeof showToast === 'function') showToast("All fields are required.", "warning");
+        else alert("All fields are required.");
+        return;
+    }
+
+    fetch('/api/configure-ai', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ ai_tool: tool, ai_model: model, api_key: apiKey })
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (data.status === 'success') {
+            closeConfigureAIModal();
+            if(typeof showToast === 'function') showToast("AI Configuration saved successfully!", "success");
+            
+            if (data.system_status) {
+                if (data.system_status.status === 'healthy') {
+                    if(typeof showToast === 'function') showToast("System Status: Healthy", "success");
+                } else {
+                    if(typeof showToast === 'function') showToast("System Status Warning: " + (data.system_status.error || "Unknown"), "warning");
+                }
+            }
+        } else {
+            if(typeof showToast === 'function') showToast("Failed to save config: " + data.message, "error");
+        }
+    })
+    .catch(err => {
+        if(typeof showToast === 'function') showToast("Error saving AI configuration", "error");
+        console.error(err);
+    });
+}
