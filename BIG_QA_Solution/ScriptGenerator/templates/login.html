@@ -10,16 +10,35 @@
             <h1>BIG AI QA Solution</h1>
             <p>Elegance in Automation by Bits In Glass</p>
         </div>
+
+        <!-- H5: Flash messages inside card flow -->
+        {% with messages = get_flashed_messages(with_categories=true) %}
+          {% if messages %}
+            <div class="login-flash">
+              {% for category, message in messages %}
+                <div class="alert alert-{{ category }}">{{ message }}</div>
+              {% endfor %}
+            </div>
+          {% endif %}
+        {% endwith %}
         
         <form method="POST" action="{{ url_for('login') }}" class="login-form" id="loginForm">
             <div class="form-group">
                 <label for="email"><i class="fas fa-envelope"></i> Email Address</label>
                 <input type="email" id="email" name="email" required placeholder="name@company.com">
+                <div class="field-error" id="emailErr"></div>
             </div>
             
             <div class="form-group">
                 <label for="password"><i class="fas fa-lock"></i> Password</label>
-                <input type="password" id="password" name="password" required placeholder="••••••••">
+                <!-- H6: Password visibility toggle -->
+                <div class="password-wrapper">
+                    <input type="password" id="password" name="password" required placeholder="••••••••">
+                    <button type="button" class="pwd-toggle" id="pwdToggleLogin" onclick="togglePwd('password', this)" aria-label="Show/hide password">
+                        <i class="fas fa-eye"></i>
+                    </button>
+                </div>
+                <div class="field-error" id="pwdErr"></div>
             </div>
             
             <div class="form-actions">
@@ -39,11 +58,59 @@
 
 {% block extra_js %}
 <script>
-    document.getElementById('loginForm').addEventListener('submit', function() {
+    // Login form loading state
+    document.getElementById('loginForm').addEventListener('submit', function(e) {
+        const emailEl = document.getElementById('email');
+        const pwdEl = document.getElementById('password');
+        let valid = true;
+
+        // M10: Field-level validation
+        if (!emailEl.value.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailEl.value)) {
+            setFieldError(emailEl, 'emailErr', 'Please enter a valid email address.');
+            valid = false;
+        } else {
+            setFieldValid(emailEl, 'emailErr');
+        }
+
+        if (!pwdEl.value) {
+            setFieldError(pwdEl, 'pwdErr', 'Password is required.');
+            valid = false;
+        } else {
+            setFieldValid(pwdEl, 'pwdErr');
+        }
+
+        if (!valid) { e.preventDefault(); return; }
+
+        // Show loading state
         const btn = document.getElementById('loginBtn');
         document.getElementById('loginBtnText').style.display = 'none';
         document.getElementById('loginBtnLoading').style.display = 'inline-flex';
         btn.disabled = true;
+    });
+
+    function setFieldError(input, errId, msg) {
+        input.classList.add('input-error');
+        input.classList.remove('input-valid');
+        const err = document.getElementById(errId);
+        if (err) { err.textContent = '⚠ ' + msg; err.classList.add('visible'); }
+    }
+    function setFieldValid(input, errId) {
+        input.classList.remove('input-error');
+        input.classList.add('input-valid');
+        const err = document.getElementById(errId);
+        if (err) err.classList.remove('visible');
+    }
+
+    // Live validation on blur
+    document.getElementById('email').addEventListener('blur', function() {
+        if (this.value && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(this.value)) {
+            setFieldError(this, 'emailErr', 'Please enter a valid email address.');
+        } else if (this.value) {
+            setFieldValid(this, 'emailErr');
+        }
+    });
+    document.getElementById('password').addEventListener('input', function() {
+        if (this.value.length > 0) setFieldValid(this, 'pwdErr');
     });
 </script>
 {% endblock %}

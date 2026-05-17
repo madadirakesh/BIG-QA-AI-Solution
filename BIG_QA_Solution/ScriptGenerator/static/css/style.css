@@ -1,29 +1,197 @@
 :root {
     /* Color Palette - Premium Dark Mode */
-    --bg-primary: #0f172a;      /* Slate 900 */
-    --bg-secondary: #1e293b;    /* Slate 800 */
+    --bg-primary: #0f172a;
+    --bg-secondary: #1e293b;
     --bg-overlay: rgba(30, 41, 59, 0.7);
     --bg-card: rgba(30, 41, 59, 0.4);
-    
-    --text-primary: #f8fafc;    /* Slate 50 */
-    --text-secondary: #94a3b8;  /* Slate 400 */
-    
-    --accent-primary: #0078d4;  /* Vibrant BIG Blue */
-    --accent-secondary: #00bcf2; /* Luminous Blue */
+
+    --text-primary: #f8fafc;
+    --text-secondary: #94a3b8;
+
+    --accent-primary: #0078d4;
+    --accent-secondary: #00bcf2;
     --accent-glow: rgba(0, 188, 242, 0.4);
-    
+
     --success: #10b981;
     --error: #ef4444;
     --warning: #f59e0b;
     --info: #3b82f6;
-    
+
     --glass-border: rgba(255, 255, 255, 0.1);
     --glass-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3);
-    
+
     --transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
     --transition-slow: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
     --border-radius: 12px;
     --border-radius-lg: 20px;
+}
+
+/* ========================================
+   M11 — Light Mode Theme
+   ======================================== */
+[data-theme="light"] {
+    --bg-primary: #f1f5f9;
+    --bg-secondary: #ffffff;
+    --bg-overlay: rgba(241, 245, 249, 0.9);
+    --bg-card: rgba(255, 255, 255, 0.85);
+    --text-primary: #0f172a;
+    --text-secondary: #475569;
+    --glass-border: rgba(0, 0, 0, 0.1);
+    --glass-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.12);
+    --accent-glow: rgba(0, 120, 212, 0.2);
+}
+[data-theme="light"] body {
+    background: linear-gradient(135deg, #e2e8f0 0%, #f1f5f9 100%);
+}
+[data-theme="light"] .sidebar {
+    background: linear-gradient(180deg, #ffffff 0%, #f1f5f9 100%);
+}
+[data-theme="light"] input[type="text"],
+[data-theme="light"] input[type="email"],
+[data-theme="light"] input[type="password"],
+[data-theme="light"] select,
+[data-theme="light"] textarea {
+    background: rgba(255,255,255,0.9) !important;
+    color: #0f172a !important;
+    border-color: rgba(0,0,0,0.15) !important;
+}
+[data-theme="light"] .glassmorphism {
+    background: rgba(255, 255, 255, 0.85);
+    border-color: rgba(0, 0, 0, 0.08);
+}
+[data-theme="light"] .top-header {
+    background: rgba(255, 255, 255, 0.9);
+}
+[data-theme="light"] .terminal-body {
+    background: #1e293b;
+}
+
+/* ========================================
+   M11 — Theme Toggle Button
+   ======================================== */
+.theme-toggle {
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    z-index: 500;
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    background: var(--bg-secondary);
+    border: 1px solid var(--glass-border);
+    color: var(--text-primary);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.1rem;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.25);
+    transition: var(--transition);
+}
+.theme-toggle:hover {
+    background: var(--accent-primary);
+    color: white;
+    border-color: var(--accent-primary);
+    transform: scale(1.1) rotate(15deg);
+    box-shadow: 0 6px 25px var(--accent-glow);
+}
+
+/* ========================================
+   M8 — AI Status Badge
+   ======================================== */
+.ai-status-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    background: rgba(0, 120, 212, 0.1);
+    color: var(--accent-secondary);
+    border: 1px solid rgba(0, 188, 242, 0.25);
+    cursor: pointer;
+    transition: var(--transition);
+    white-space: nowrap;
+}
+.ai-status-badge:hover {
+    background: rgba(0, 120, 212, 0.2);
+    border-color: var(--accent-primary);
+}
+.ai-status-badge i { font-size: 0.8rem; }
+.ai-status-badge.not-configured {
+    background: rgba(245, 158, 11, 0.1);
+    color: var(--warning);
+    border-color: rgba(245, 158, 11, 0.25);
+}
+
+/* ========================================
+   M10 — Field-Level Validation
+   ======================================== */
+.field-error {
+    display: none;
+    color: var(--error);
+    font-size: 0.8rem;
+    margin-top: 5px;
+    align-items: center;
+    gap: 5px;
+    animation: slideUp 0.2s ease-out;
+}
+.field-error.visible {
+    display: flex;
+}
+input.input-error,
+select.input-error,
+textarea.input-error {
+    border-color: var(--error) !important;
+    box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.15) !important;
+}
+input.input-valid,
+select.input-valid {
+    border-color: var(--success) !important;
+    box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.1) !important;
+}
+
+/* ========================================
+   M7 — Keyboard Shortcut Hint
+   ======================================== */
+.kbd-hint {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 0.7rem;
+    color: var(--text-secondary);
+    opacity: 0.7;
+    margin-left: 6px;
+}
+.kbd {
+    background: var(--bg-secondary);
+    border: 1px solid var(--glass-border);
+    border-radius: 4px;
+    padding: 1px 5px;
+    font-family: monospace;
+    font-size: 0.7rem;
+}
+
+/* ========================================
+   M6 — Console Clear Button
+   ======================================== */
+.terminal-clear-btn {
+    background: rgba(239, 68, 68, 0.08);
+    border: 1px solid rgba(239, 68, 68, 0.2);
+    color: var(--error);
+    border-radius: 5px;
+    padding: 3px 10px;
+    font-size: 0.75rem;
+    cursor: pointer;
+    transition: var(--transition);
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+.terminal-clear-btn:hover {
+    background: var(--error);
+    color: white;
 }
 
 /* Animations */
@@ -742,6 +910,278 @@ select option {
         grid-template-columns: 1fr;
     }
 }
+
+/* ========================================
+   C1 — DB / Data Table: No-wrap & scroll
+   ======================================== */
+.table-wrapper {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+}
+.data-table {
+    min-width: 600px;
+    width: 100%;
+    border-collapse: collapse;
+}
+.data-table th,
+.data-table td {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 280px;
+    padding: 12px 15px;
+    text-align: left;
+    border-bottom: 1px solid var(--glass-border);
+}
+.data-table th {
+    color: var(--text-secondary);
+    font-weight: 600;
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    position: sticky;
+    top: 0;
+    background: var(--bg-secondary);
+    z-index: 5;
+}
+/* H_M3 — Table row hover */
+.data-table tbody tr {
+    transition: background 0.15s ease;
+}
+.data-table tbody tr:hover td {
+    background: rgba(0, 120, 212, 0.06);
+}
+
+/* ========================================
+   H3 — Empty State Component
+   ======================================== */
+.empty-state-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+    padding: 60px 40px;
+    text-align: center;
+    border: 2px dashed var(--glass-border);
+    border-radius: var(--border-radius);
+    background: rgba(255,255,255,0.015);
+    animation: fadeIn 0.4s ease-out;
+}
+.empty-state-card i {
+    font-size: 3rem;
+    color: var(--text-secondary);
+    opacity: 0.5;
+}
+.empty-state-card h4 {
+    margin: 0;
+    font-size: 1.1rem;
+    color: var(--text-primary);
+}
+.empty-state-card p {
+    margin: 0;
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+}
+
+/* ========================================
+   H4 — Mobile Sidebar Collapse
+   ======================================== */
+.sidebar-toggle {
+    display: none;
+    position: fixed;
+    top: 14px;
+    left: 14px;
+    z-index: 200;
+    background: var(--bg-secondary);
+    border: 1px solid var(--glass-border);
+    color: var(--text-primary);
+    width: 40px;
+    height: 40px;
+    border-radius: 8px;
+    cursor: pointer;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.1rem;
+    transition: var(--transition);
+}
+.sidebar-toggle:hover {
+    background: var(--accent-primary);
+    border-color: var(--accent-primary);
+}
+.sidebar-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.6);
+    z-index: 99;
+    backdrop-filter: blur(4px);
+}
+@media (max-width: 900px) {
+    .sidebar {
+        transform: translateX(-270px);
+        transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    .sidebar.sidebar-open {
+        transform: translateX(0);
+        box-shadow: 4px 0 30px rgba(0,0,0,0.5);
+    }
+    .sidebar-overlay.active {
+        display: block;
+    }
+    .main-content {
+        margin-left: 0 !important;
+    }
+    .sidebar-toggle {
+        display: flex;
+    }
+    .top-header {
+        padding-left: 65px;
+    }
+    .dashboard-grid {
+        grid-template-columns: 1fr;
+    }
+    .status-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+/* ========================================
+   H5 — Login Flash Messages (in-flow)
+   ======================================== */
+.login-flash {
+    margin-bottom: 1.25rem;
+}
+.flash-messages-global {
+    position: fixed;
+    top: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 9999;
+    width: 100%;
+    max-width: 440px;
+    pointer-events: none;
+}
+
+/* ========================================
+   H6 — Password Visibility Toggle
+   ======================================== */
+.password-wrapper {
+    position: relative;
+}
+.password-wrapper input {
+    padding-right: 46px !important;
+}
+.pwd-toggle {
+    position: absolute;
+    right: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+    font-size: 1rem;
+    padding: 0;
+    line-height: 1;
+    transition: color 0.2s;
+    z-index: 2;
+}
+.pwd-toggle:hover { color: var(--accent-secondary); }
+
+/* ========================================
+   H8 — Confirm Dialog Modal
+   ======================================== */
+.confirm-backdrop {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.7);
+    backdrop-filter: blur(6px);
+    z-index: 10000;
+    align-items: center;
+    justify-content: center;
+}
+.confirm-backdrop.active {
+    display: flex;
+}
+.confirm-dialog {
+    background: var(--bg-secondary);
+    border: 1px solid var(--glass-border);
+    border-radius: var(--border-radius);
+    padding: 2rem;
+    max-width: 420px;
+    width: 90%;
+    box-shadow: 0 25px 50px rgba(0,0,0,0.5);
+    animation: scaleIn 0.2s ease-out;
+}
+.confirm-dialog .confirm-icon {
+    font-size: 2.5rem;
+    text-align: center;
+    margin-bottom: 1rem;
+    display: block;
+}
+.confirm-dialog h4 {
+    text-align: center;
+    font-size: 1.15rem;
+    margin-bottom: 0.5rem;
+}
+.confirm-dialog p {
+    text-align: center;
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+    margin-bottom: 1.5rem;
+}
+.confirm-actions {
+    display: flex;
+    gap: 12px;
+    justify-content: center;
+}
+
+/* ========================================
+   H7 — Sidebar AI config active state
+   ======================================== */
+.sidebar-nav a.ai-active {
+    background: rgba(0, 120, 212, 0.15);
+    color: var(--accent-secondary);
+    border-left: 3px solid var(--accent-primary);
+}
+
+/* ========================================
+   Page transition fade
+   ======================================== */
+body {
+    transition: opacity 0.15s ease;
+}
+body.page-leaving {
+    opacity: 0;
+}
+
+/* ========================================
+   Top header — breadcrumb / page context
+   ======================================== */
+.top-header {
+    gap: 20px;
+}
+.page-context {
+    flex: 1;
+}
+.page-context .page-title {
+    font-size: 1rem;
+    font-weight: 600;
+    margin: 0;
+    color: var(--text-primary);
+    line-height: 1.2;
+}
+.page-context .breadcrumb {
+    padding: 2px 0 0;
+    font-size: 0.75rem;
+}
+
+/* ========================================
+   Session Timer
+   ======================================== */
+#sessionTimer { font-variant-numeric: tabular-nums; }
 
 .empty-card {
     opacity: 0.6;

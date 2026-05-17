@@ -1,5 +1,14 @@
 // main.js - Client side logic for AI-QA Hub
 
+// ── H6: Password visibility toggle (global) ───────────────────────
+function togglePwd(inputId, btn) {
+    const input = document.getElementById(inputId);
+    if (!input) return;
+    const isHidden = input.type === 'password';
+    input.type = isHidden ? 'text' : 'password';
+    const icon = btn.querySelector('i');
+    if (icon) { icon.className = isHidden ? 'fas fa-eye-slash' : 'fas fa-eye'; }
+}
 function nextStep(stepNumber) {
     // Hide all steps
     document.querySelectorAll('.wizard-content').forEach(el => {

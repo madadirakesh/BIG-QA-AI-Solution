@@ -16,15 +16,31 @@
 <body class="{% if not session.get('user_id') %}login-bg{% else %}app-bg{% endif %} dark-theme">
 
     {% if session.get('user_id') %}
+    <!-- H4: Mobile sidebar overlay -->
+    <div class="sidebar-overlay" id="sidebarOverlay" onclick="closeSidebar()"></div>
+    <!-- H4: Hamburger toggle -->
+    <button class="sidebar-toggle" id="sidebarToggle" onclick="toggleSidebar()" aria-label="Toggle navigation">
+        <i class="fas fa-bars"></i>
+    </button>
+
     <div class="app-layout">
         {% include 'partials/sidebar.html' %}
         <main class="main-content">
             <header class="top-header">
-                <div class="user-greeting">
-                    <h2>Hello, {{ user_name }}! 👋</h2>
-                    <span class="role-badge role-{{ user_role }}">{{ user_role|title }}</span>
+                <!-- H1: Page context / breadcrumb slot -->
+                <div class="page-context">
+                    <h3 class="page-title">{% block page_title %}Dashboard{% endblock %}</h3>
+                    <nav class="breadcrumb" aria-label="breadcrumb">{% block header_breadcrumb %}{% endblock %}</nav>
                 </div>
-                <div class="top-header-brand">BIG AI QA Solution</div>
+                <div class="user-greeting">
+                    <!-- M8: AI Status Badge -->
+                    <button class="ai-status-badge" id="aiStatusBadge" onclick="openConfigureAIModal()" title="Click to configure AI">
+                        <i class="fas fa-robot"></i>
+                        <span id="aiStatusText">AI</span>
+                    </button>
+                    <span class="role-badge role-{{ user_role }}">{{ user_role|title }}</span>
+                    <span style="color:var(--text-secondary);font-size:0.9rem;">{{ user_name }}</span>
+                </div>
             </header>
             
             <div class="content-wrapper">
@@ -32,9 +48,7 @@
                   {% if messages %}
                     <div class="flash-messages">
                       {% for category, message in messages %}
-                        <div class="alert alert-{{ category }}">
-                          {{ message }}
-                        </div>
+                        <div class="alert alert-{{ category }}">{{ message }}</div>
                       {% endfor %}
                     </div>
                   {% endif %}
@@ -43,6 +57,19 @@
                 {% block content %}{% endblock %}
             </div>
         </main>
+    </div>
+
+    <!-- H8: Global Confirm Dialog -->
+    <div class="confirm-backdrop" id="confirmBackdrop">
+        <div class="confirm-dialog">
+            <span class="confirm-icon" id="confirmIcon">⚠️</span>
+            <h4 id="confirmTitle">Are you sure?</h4>
+            <p id="confirmMessage">This action cannot be undone.</p>
+            <div class="confirm-actions">
+                <button class="btn" style="background:rgba(255,255,255,0.08);color:var(--text-primary);" onclick="resolveConfirm(false)">Cancel</button>
+                <button class="btn" id="confirmOkBtn" style="background:var(--error);color:white;" onclick="resolveConfirm(true)">Confirm</button>
+            </div>
+        </div>
     </div>
     {% else %}
         <!-- For Login Page -->
@@ -63,9 +90,16 @@
     <!-- Global Toast Container -->
     <div class="toast-container" id="toastContainer"></div>
 
+    <!-- M11: Theme Toggle FAB -->
+    {% if session.get('user_id') %}
+    <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()" title="Toggle light/dark mode" aria-label="Toggle theme">
+        <i class="fas fa-moon" id="themeIcon"></i>
+    </button>
+    {% endif %}
+
     <script src="{{ url_for('static', filename='js/main.js') }}"></script>
     <script>
-        // Global toast utility
+        // ── Toast utility ──────────────────────────────────────────────
         function showToast(message, type = 'info', duration = 4000) {
             const container = document.getElementById('toastContainer');
             const icons = { info: 'fa-info-circle', success: 'fa-check-circle', error: 'fa-times-circle', warning: 'fa-exclamation-triangle', loading: 'fa-spinner fa-spin' };
@@ -78,6 +112,174 @@
             }
             return toast;
         }
+
+        // ── H8: Confirm Dialog ─────────────────────────────────────────
+        let _confirmResolve = null;
+        function showConfirm(title, message, icon = '⚠️', okLabel = 'Confirm', okStyle = 'background:var(--error);color:white;') {
+            document.getElementById('confirmTitle').textContent = title;
+            document.getElementById('confirmMessage').textContent = message;
+            document.getElementById('confirmIcon').textContent = icon;
+            document.getElementById('confirmOkBtn').setAttribute('style', okStyle);
+            document.getElementById('confirmOkBtn').textContent = okLabel;
+            document.getElementById('confirmBackdrop').classList.add('active');
+            return new Promise(resolve => { _confirmResolve = resolve; });
+        }
+        function resolveConfirm(result) {
+            document.getElementById('confirmBackdrop').classList.remove('active');
+            if (_confirmResolve) { _confirmResolve(result); _confirmResolve = null; }
+        }
+        document.addEventListener('keydown', e => { if (e.key === 'Escape') resolveConfirm(false); });
+
+        // ── H4: Sidebar mobile toggle ──────────────────────────────────
+        function toggleSidebar() {
+            document.querySelector('.sidebar')?.classList.toggle('sidebar-open');
+            document.getElementById('sidebarOverlay')?.classList.toggle('active');
+        }
+        function closeSidebar() {
+            document.querySelector('.sidebar')?.classList.remove('sidebar-open');
+            document.getElementById('sidebarOverlay')?.classList.remove('active');
+        }
+
+        // ── H7: Configure AI link — active state when modal open ───────
+        function openConfigureAIModal() {
+            document.getElementById('configureAIModal').style.display = 'flex';
+            document.querySelector('.sidebar-nav a[onclick*="openConfigureAIModal"]')?.classList.add('ai-active');
+            fetch('/api/configure-ai').then(r => r.json()).then(d => {
+                if (d.status === 'success') {
+                    document.getElementById('aiToolSelect').value = d.config.AI_TOOL || 'GEMINI';
+                    document.getElementById('aiModelInput').value = d.config.AI_MODEL || '';
+                    document.getElementById('apiKeyInput').value = d.config.API_KEY || '';
+                }
+            }).catch(() => {});
+        }
+        function closeConfigureAIModal() {
+            document.getElementById('configureAIModal').style.display = 'none';
+            document.querySelector('.sidebar-nav a[onclick*="openConfigureAIModal"]')?.classList.remove('ai-active');
+        }
+        async function submitAIConfiguration() {
+            const btn = document.querySelector('#configureAIModal .btn-primary');
+            btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving...';
+            try {
+                const r = await fetch('/api/configure-ai', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ ai_tool: document.getElementById('aiToolSelect').value, ai_model: document.getElementById('aiModelInput').value, api_key: document.getElementById('apiKeyInput').value }) });
+                const d = await r.json();
+                if (d.status === 'success') { showToast('AI configuration saved!', 'success'); closeConfigureAIModal(); }
+                else showToast('Failed to save: ' + (d.message || 'Unknown error'), 'error');
+            } catch (e) { showToast('Error saving configuration', 'error'); }
+            finally { btn.disabled = false; btn.innerHTML = 'Submit'; }
+        }
+
+        // ── Session Timer ──────────────────────────────────────────────
+        (function() {
+            const el = document.getElementById('sessionTimer');
+            if (!el) return;
+            const start = Date.now();
+            setInterval(() => {
+                const s = Math.floor((Date.now() - start) / 1000);
+                const h = String(Math.floor(s / 3600)).padStart(2,'0');
+                const m = String(Math.floor((s % 3600) / 60)).padStart(2,'0');
+                const sec = String(s % 60).padStart(2,'0');
+                el.textContent = `${h}:${m}:${sec}`;
+            }, 1000);
+        })();
+
+        // ── Page transitions ───────────────────────────────────────────
+        document.querySelectorAll('a[href]').forEach(link => {
+            const href = link.getAttribute('href');
+            if (!href || href.startsWith('#') || href.startsWith('javascript') || link.target === '_blank') return;
+            link.addEventListener('click', e => {
+                if (e.metaKey || e.ctrlKey) return;
+                document.body.classList.add('page-leaving');
+            });
+        });
+        window.addEventListener('pageshow', () => document.body.classList.remove('page-leaving'));
+
+        // ── M11: Theme Toggle ──────────────────────────────────────────
+        (function initTheme() {
+            const saved = localStorage.getItem('big-theme') || 'dark';
+            applyTheme(saved);
+        })();
+        function applyTheme(theme) {
+            document.documentElement.setAttribute('data-theme', theme);
+            const icon = document.getElementById('themeIcon');
+            if (icon) icon.className = theme === 'light' ? 'fas fa-sun' : 'fas fa-moon';
+            localStorage.setItem('big-theme', theme);
+        }
+        function toggleTheme() {
+            const current = document.documentElement.getAttribute('data-theme') || 'dark';
+            applyTheme(current === 'dark' ? 'light' : 'dark');
+            showToast(current === 'dark' ? '☀️ Light mode on' : '🌙 Dark mode on', 'info', 2000);
+        }
+
+        // ── M8: AI Badge Loader ────────────────────────────────────────
+        function updateAiBadge() {
+            const badge = document.getElementById('aiStatusBadge');
+            const text = document.getElementById('aiStatusText');
+            if (!badge || !text) return;
+            fetch('/api/configure-ai').then(r => r.json()).then(d => {
+                if (d.status === 'success' && d.config && d.config.AI_MODEL) {
+                    const model = d.config.AI_MODEL;
+                    const tool = d.config.AI_TOOL || '';
+                    text.textContent = `${tool} · ${model}`;
+                    badge.classList.remove('not-configured');
+                    badge.title = `AI: ${tool} / ${model} — Click to change`;
+                } else {
+                    text.textContent = 'Configure AI';
+                    badge.classList.add('not-configured');
+                    badge.title = 'AI not configured — Click to set up';
+                }
+            }).catch(() => {
+                text.textContent = 'AI';
+            });
+        }
+        document.addEventListener('DOMContentLoaded', updateAiBadge);
+
+        // Patch submitAIConfiguration to refresh badge after save
+        const _origSubmitAI = typeof submitAIConfiguration !== 'undefined' ? submitAIConfiguration : null;
+        async function submitAIConfiguration() {
+            const btn = document.querySelector('#configureAIModal .btn-primary');
+            if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving...'; }
+            try {
+                const r = await fetch('/api/configure-ai', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ ai_tool: document.getElementById('aiToolSelect').value, ai_model: document.getElementById('aiModelInput').value, api_key: document.getElementById('apiKeyInput').value }) });
+                const d = await r.json();
+                if (d.status === 'success') { showToast('AI configuration saved!', 'success'); closeConfigureAIModal(); updateAiBadge(); }
+                else showToast('Failed to save: ' + (d.message || 'Unknown error'), 'error');
+            } catch (e) { showToast('Error saving configuration', 'error'); }
+            finally { if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-save"></i> Submit'; } }
+        }
+
+        // ── M7: Global Keyboard Shortcuts ─────────────────────────────
+        document.addEventListener('keydown', function(e) {
+            // Escape — already closes confirm dialog above
+            // Ctrl+Enter — submit the primary action button on the page
+            if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+                e.preventDefault();
+                // Try to click the most relevant primary button
+                const candidates = [
+                    document.querySelector('#generateBtn'),
+                    document.querySelector('button[onclick*="generateCode"]'),
+                    document.querySelector('button[onclick*="startGeneration"]'),
+                    document.querySelector('button[onclick*="runScript"]'),
+                    document.querySelector('.form-actions .btn-primary'),
+                    document.querySelector('[type="submit"].btn-primary'),
+                ];
+                const btn = candidates.find(b => b && !b.disabled);
+                if (btn) { btn.click(); showToast('⌨️ Ctrl+Enter triggered', 'info', 1500); }
+            }
+            // Ctrl+K — focus project selector or first visible search input
+            if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+                e.preventDefault();
+                const target = document.getElementById('projectSelect') ||
+                               document.getElementById('runProject') ||
+                               document.querySelector('input[type="search"]') ||
+                               document.querySelector('input[type="text"]:not([readonly])');
+                if (target) { target.focus(); target.select?.(); showToast('⌨️ Ctrl+K — focus project', 'info', 1500); }
+            }
+            // Escape — close any open custom modals
+            if (e.key === 'Escape') {
+                const aiModal = document.getElementById('configureAIModal');
+                if (aiModal && aiModal.classList.contains('active')) closeConfigureAIModal();
+            }
+        });
     </script>
     {% block extra_js %}{% endblock %}
 </body>

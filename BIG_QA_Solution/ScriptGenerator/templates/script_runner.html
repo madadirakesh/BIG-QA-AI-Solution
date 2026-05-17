@@ -1,6 +1,8 @@
 {% extends "base.html" %}
 
 {% block title %}Script Runner — BIG AI QA Solution{% endblock %}
+{% block page_title %}Script Runner{% endblock %}
+{% block header_breadcrumb %}<a href="/home">Home</a> <span class="sep">/</span> <span class="current">Script Runner</span>{% endblock %}
 
 {% block content %}
 <div class="breadcrumb animate-fade-in">
@@ -148,6 +150,7 @@
                     <button type="button" id="launchBtn" class="btn btn-primary btn-block"
                         style="height: 46px; font-weight: bold; flex: 1;" onclick="runScript()">
                         <i class="fas fa-rocket"></i> Launch Execution
+                        <span class="kbd-hint"><span class="kbd">Ctrl</span>+<span class="kbd">Enter</span></span>
                     </button>
                     <button type="button" id="abortBtn" class="btn btn-danger"
                         style="height: 46px; width: 60px; display: none; background: #ef4444; border: none;" onclick="abortExecution()" title="Abort Execution">
@@ -162,8 +165,12 @@
     <div class="terminal-panel glassmorphism mt-4 mx-auto" style="max-width: 98%;">
         <div class="terminal-header">
             <span><i class="fas fa-terminal"></i> Execution Logs</span>
-            <div class="terminal-actions">
-                <span class="status-dot offline" id="execStatus"></span> Status: Ready
+            <div class="terminal-actions" style="display:flex;align-items:center;gap:12px;">
+                <!-- M6: Clear Console Button -->
+                <button class="terminal-clear-btn" onclick="clearConsole()" title="Clear logs (Ctrl+L)">
+                    <i class="fas fa-eraser"></i> Clear
+                </button>
+                <span class="status-dot offline" id="execStatus"></span><span id="execStatusText"> Status: Ready</span>
             </div>
         </div>
     </div>
@@ -482,6 +489,21 @@
             addLog("[System] Stop signal sent. Terminating processes...", "log-error");
         } catch (e) { console.error(e); }
     }
+
+    // M6: Clear Console
+    function clearConsole() {
+        const log = document.getElementById('logOutput');
+        log.innerHTML = '<div style="color:#94a3b8;font-style:italic;">[Console cleared]</div>';
+        showToast('Console cleared', 'info', 2000);
+    }
+
+    // M7: Ctrl+L shortcut for clear
+    document.addEventListener('keydown', function(e) {
+        if ((e.ctrlKey || e.metaKey) && e.key === 'l') {
+            e.preventDefault();
+            clearConsole();
+        }
+    });
 
     async function runScript() {
         const sel = document.getElementById('runProject');

@@ -2,6 +2,13 @@
 
 {% block title %}Manage Users — BIG AI QA Solution{% endblock %}
 
+{% block page_title %}User Management{% endblock %}
+{% block header_breadcrumb %}
+    <a href="/home">Home</a>
+    <span class="sep">/</span>
+    <span class="current">Manage Users</span>
+{% endblock %}
+
 {% block content %}
 <div class="breadcrumb animate-fade-in">
     <i class="fas fa-home" style="font-size:0.75rem;"></i>
@@ -15,9 +22,10 @@
         <h1><i class="fas fa-users-cog"></i> User Management</h1>
         <p>Add new QA members or Administrators to the team platform.</p>
     </div>
-    <button class="btn btn-secondary" onclick="toggleDBInteraction()">
-        <i class="fas fa-database"></i> Start DB Interaction
-    </button>
+    <!-- H2: Fixed button — links to DB Viewer -->
+    <a href="{{ url_for('db_viewer') }}" class="btn btn-secondary">
+        <i class="fas fa-database"></i> DB Viewer
+    </a>
 </div>
 
 <div class="management-layout">
@@ -32,10 +40,12 @@
                 <div class="col">
                     <label for="name">Full Name</label>
                     <input type="text" id="name" name="name" required placeholder="John Doe">
+                    <div class="field-error" id="nameErr"></div>
                 </div>
                 <div class="col">
                     <label for="email">Email Address</label>
                     <input type="email" id="email" name="email" required placeholder="john@example.com">
+                    <div class="field-error" id="emailErr"></div>
                 </div>
             </div>
 
@@ -49,7 +59,12 @@
                 </div>
                 <div class="col">
                     <label for="password">Initial Password</label>
-                    <input type="password" id="password" name="password" required placeholder="••••••••">
+                    <!-- H6: Password toggle -->
+                    <div class="password-wrapper">
+                        <input type="password" id="password" name="password" required placeholder="••••••••">
+                        <button type="button" class="pwd-toggle" onclick="togglePwd('password', this)"><i class="fas fa-eye"></i></button>
+                    </div>
+                    <div class="field-error" id="pwdErr"></div>
                 </div>
             </div>
 
@@ -92,8 +107,15 @@
                         </td>
                     </tr>
                     {% else %}
+                    <!-- H3: Proper empty state -->
                     <tr>
-                        <td colspan="5" class="text-center">No users found.</td>
+                        <td colspan="5">
+                            <div class="empty-state-card" style="border:none;padding:40px 20px;">
+                                <i class="fas fa-users"></i>
+                                <h4>No users found</h4>
+                                <p>Add your first team member using the form above.</p>
+                            </div>
+                        </td>
                     </tr>
                     {% endfor %}
                 </tbody>
@@ -209,20 +231,13 @@ hr {
         const tableName = document.getElementById('dbTableSelect').value;
         const thead = document.getElementById('dbDataTableHead');
         const tbody = document.getElementById('dbDataTableBody');
-        
         thead.innerHTML = '';
         tbody.innerHTML = '';
-
         if (!tableName) return;
-
         fetch('/api/db/table-data?table=' + tableName)
             .then(res => res.json())
             .then(data => {
-                if (data.error) {
-                    console.error("Error:", data.error);
-                    return;
-                }
-
+                if (data.error) { console.error("Error:", data.error); return; }
                 if (data.columns && data.columns.length > 0) {
                     const trTop = document.createElement('tr');
                     data.columns.forEach(col => {
@@ -232,7 +247,6 @@ hr {
                     });
                     thead.appendChild(trTop);
                 }
-
                 if (data.data && data.data.length > 0) {
                     data.data.forEach(row => {
                         const tr = document.createElement('tr');
@@ -254,5 +268,63 @@ hr {
             })
             .catch(err => console.error("Error fetching table data:", err));
     }
+
+    // M10: Add User form field-level validation
+    (function() {
+        const form = document.querySelector('form[action*="add_user"]');
+        if (!form) return;
+
+        function setErr(inputId, errId, msg) {
+            const el = document.getElementById(inputId);
+            const err = document.getElementById(errId);
+            if (el) { el.classList.add('input-error'); el.classList.remove('input-valid'); }
+            if (err) { err.textContent = '⚠ ' + msg; err.classList.add('visible'); }
+        }
+        function setOk(inputId, errId) {
+            const el = document.getElementById(inputId);
+            const err = document.getElementById(errId);
+            if (el) { el.classList.remove('input-error'); el.classList.add('input-valid'); }
+            if (err) err.classList.remove('visible');
+        }
+
+        form.addEventListener('submit', function(e) {
+            let valid = true;
+            const name = document.getElementById('name');
+            const email = document.getElementById('email');
+            const pwd = document.getElementById('password');
+
+            if (!name || !name.value.trim() || name.value.trim().length < 2) {
+                setErr('name', 'nameErr', 'Full name must be at least 2 characters.'); valid = false;
+            } else { setOk('name', 'nameErr'); }
+
+            if (!email || !email.value.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.value)) {
+                setErr('email', 'emailErr', 'Please enter a valid email address.'); valid = false;
+            } else { setOk('email', 'emailErr'); }
+
+            if (!pwd || !pwd.value || pwd.value.length < 6) {
+                setErr('password', 'pwdErr', 'Password must be at least 6 characters.'); valid = false;
+            } else { setOk('password', 'pwdErr'); }
+
+            if (!valid) e.preventDefault();
+        });
+
+        // Live blur validation
+        ['name','email','password'].forEach(id => {
+            const el = document.getElementById(id);
+            if (!el) return;
+            el.addEventListener('blur', function() {
+                if (!this.value.trim()) return;
+                if (id === 'email' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(this.value)) {
+                    setErr('email', 'emailErr', 'Invalid email format.');
+                } else if (id === 'password' && this.value.length < 6) {
+                    setErr('password', 'pwdErr', 'Min 6 characters required.');
+                } else if (id === 'name' && this.value.trim().length < 2) {
+                    setErr('name', 'nameErr', 'Name too short.');
+                } else {
+                    setOk(id, id === 'name' ? 'nameErr' : id === 'email' ? 'emailErr' : 'pwdErr');
+                }
+            });
+        });
+    })();
 </script>
 {% endblock %}
