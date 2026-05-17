@@ -27,7 +27,7 @@
 }
 
 /* ========================================
-   M11 — Light Mode Theme
+   M11 — Light Mode Theme: CSS Variable Overrides
    ======================================== */
 [data-theme="light"] {
     --bg-primary: #f1f5f9;
@@ -40,30 +40,256 @@
     --glass-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.12);
     --accent-glow: rgba(0, 120, 212, 0.2);
 }
-[data-theme="light"] body {
+
+/* ========================================
+   M11 — Light Mode: High-Specificity Overrides
+   Uses html[data-theme="light"] to beat !important in page <style> blocks
+   ======================================== */
+
+/* Base & Layout */
+html[data-theme="light"] body {
     background: linear-gradient(135deg, #e2e8f0 0%, #f1f5f9 100%);
+    color: #0f172a;
 }
-[data-theme="light"] .sidebar {
+html[data-theme="light"] .sidebar {
     background: linear-gradient(180deg, #ffffff 0%, #f1f5f9 100%);
+    border-right: 1px solid rgba(0,0,0,0.08);
 }
-[data-theme="light"] input[type="text"],
-[data-theme="light"] input[type="email"],
-[data-theme="light"] input[type="password"],
-[data-theme="light"] select,
-[data-theme="light"] textarea {
+html[data-theme="light"] .glassmorphism {
     background: rgba(255,255,255,0.9) !important;
+    border-color: rgba(0,0,0,0.08) !important;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.08) !important;
+}
+html[data-theme="light"] .top-header {
+    background: rgba(255,255,255,0.95);
+    border-bottom: 1px solid rgba(0,0,0,0.08);
+}
+html[data-theme="light"] .main-content {
+    background: transparent;
+}
+
+/* ── Typography: Labels, Headings, Paragraphs ── */
+html[data-theme="light"] label,
+html[data-theme="light"] .form-group label,
+html[data-theme="light"] .step-inner-align label,
+html[data-theme="light"] .form-panel label {
     color: #0f172a !important;
+}
+html[data-theme="light"] h1,
+html[data-theme="light"] h2,
+html[data-theme="light"] h3,
+html[data-theme="light"] h4,
+html[data-theme="light"] h5 {
+    color: #0f172a !important;
+}
+html[data-theme="light"] p,
+html[data-theme="light"] .text-secondary,
+html[data-theme="light"] .page-header p {
+    color: #475569 !important;
+}
+html[data-theme="light"] .premium-header,
+html[data-theme="light"] .page-title {
+    color: #0f172a !important;
+}
+
+/* ── Form Inputs & Selects ── */
+html[data-theme="light"] input[type="text"],
+html[data-theme="light"] input[type="email"],
+html[data-theme="light"] input[type="password"],
+html[data-theme="light"] input[type="search"],
+html[data-theme="light"] select,
+html[data-theme="light"] textarea,
+html[data-theme="light"] .form-control {
+    background: rgba(255,255,255,0.95) !important;
+    color: #0f172a !important;
+    border-color: rgba(0,0,0,0.2) !important;
+}
+html[data-theme="light"] input::placeholder,
+html[data-theme="light"] textarea::placeholder {
+    color: rgba(15,23,42,0.4) !important;
+}
+html[data-theme="light"] select option {
+    background: #ffffff;
+    color: #0f172a;
+}
+html[data-theme="light"] input:focus,
+html[data-theme="light"] select:focus,
+html[data-theme="light"] textarea:focus {
+    background: #ffffff !important;
+    border-color: var(--accent-primary) !important;
+    color: #0f172a !important;
+}
+
+/* ── Breadcrumb ── */
+html[data-theme="light"] .breadcrumb,
+html[data-theme="light"] .breadcrumb a,
+html[data-theme="light"] .breadcrumb span,
+html[data-theme="light"] .breadcrumb .sep {
+    color: #475569 !important;
+}
+html[data-theme="light"] .breadcrumb .current,
+html[data-theme="light"] .breadcrumb a:hover {
+    color: var(--accent-primary) !important;
+}
+
+/* ── Sidebar Nav ── */
+html[data-theme="light"] .sidebar-nav a {
+    color: #334155 !important;
+}
+html[data-theme="light"] .sidebar-nav a:hover,
+html[data-theme="light"] .sidebar-nav a.active {
+    color: var(--accent-primary) !important;
+    background: rgba(0,120,212,0.08) !important;
+}
+html[data-theme="light"] .sidebar-nav .nav-section-label {
+    color: #94a3b8 !important;
+}
+html[data-theme="light"] .sidebar-brand,
+html[data-theme="light"] .sidebar-logo-text,
+html[data-theme="light"] .sidebar-footer,
+html[data-theme="light"] .sidebar-footer span {
+    color: #475569 !important;
+}
+
+/* ── Cards & Panels ── */
+html[data-theme="light"] .stat-card,
+html[data-theme="light"] .dashboard-card,
+html[data-theme="light"] .glass-card {
+    background: rgba(255,255,255,0.9) !important;
+    border-color: rgba(0,0,0,0.08) !important;
+}
+html[data-theme="light"] .stat-card .stat-value,
+html[data-theme="light"] .stat-card .stat-label,
+html[data-theme="light"] .card-title {
+    color: #0f172a !important;
+}
+html[data-theme="light"] .stat-card .stat-change {
+    color: #475569 !important;
+}
+
+/* ── Badges & Roles ── */
+html[data-theme="light"] .role-badge {
+    background: rgba(0,120,212,0.12) !important;
+    color: #0057a3 !important;
+}
+html[data-theme="light"] .status-badge {
+    color: #0f172a !important;
+}
+
+/* ── Tables ── */
+html[data-theme="light"] .data-table th {
+    background: #f8fafc !important;
+    color: #475569 !important;
+}
+html[data-theme="light"] .data-table td {
+    color: #0f172a !important;
+    border-color: rgba(0,0,0,0.06) !important;
+}
+html[data-theme="light"] .data-table tbody tr:hover td {
+    background: rgba(0,120,212,0.04) !important;
+}
+
+/* ── Code Windows ── */
+html[data-theme="light"] .code-window,
+html[data-theme="light"] .window-header {
+    background: #1e293b !important;
+}
+html[data-theme="light"] .window-title,
+html[data-theme="light"] .copy-btn {
+    color: #94a3b8 !important;
+}
+html[data-theme="light"] .terminal-body {
+    background: #1e293b !important;
+    color: #34d399 !important;
+}
+html[data-theme="light"] .terminal-header {
+    background: #1e293b !important;
+    color: #94a3b8 !important;
+}
+
+/* ── Step Wizard ── */
+html[data-theme="light"] .step-label {
+    color: #475569 !important;
+}
+html[data-theme="light"] .step-p.active .step-label {
+    color: var(--accent-primary) !important;
+}
+html[data-theme="light"] .step-icon {
+    background: #f1f5f9 !important;
+    border-color: rgba(0,0,0,0.12) !important;
+    color: #0f172a !important;
+}
+
+/* ── Option Cards (TCG) ── */
+html[data-theme="light"] .option-card {
+    background: rgba(255,255,255,0.8) !important;
+    border-color: rgba(0,0,0,0.1) !important;
+}
+html[data-theme="light"] .option-card h4,
+html[data-theme="light"] .option-card p {
+    color: #0f172a !important;
+}
+html[data-theme="light"] .option-card.selected {
+    background: rgba(0,120,212,0.06) !important;
+    border-color: var(--accent-primary) !important;
+}
+
+/* ── Alerts & Toasts ── */
+html[data-theme="light"] .alert {
+    color: #0f172a !important;
+}
+
+/* ── User Greeting ── */
+html[data-theme="light"] .user-greeting span {
+    color: #334155 !important;
+}
+
+/* ── Dropdown Arrow ── */
+html[data-theme="light"] select,
+html[data-theme="light"] select.form-control {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%230f172a' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") !important;
+    background-repeat: no-repeat !important;
+    background-position: right 12px center !important;
+    background-size: 18px !important;
+    padding-right: 40px !important;
+}
+
+/* ── Mode Buttons (Script Runner) ── */
+html[data-theme="light"] #btnModeCmd {
+    color: #334155 !important;
+    background: rgba(0,0,0,0.06) !important;
     border-color: rgba(0,0,0,0.15) !important;
 }
-[data-theme="light"] .glassmorphism {
-    background: rgba(255, 255, 255, 0.85);
-    border-color: rgba(0, 0, 0, 0.08);
+
+/* ── Session Timer / Footer text ── */
+html[data-theme="light"] #sessionTimer,
+html[data-theme="light"] .sidebar-footer small {
+    color: #475569 !important;
 }
-[data-theme="light"] .top-header {
-    background: rgba(255, 255, 255, 0.9);
+
+/* ── Login Card ── */
+html[data-theme="light"] .login-card {
+    background: rgba(255,255,255,0.95) !important;
 }
-[data-theme="light"] .terminal-body {
-    background: #1e293b;
+html[data-theme="light"] .login-header h1,
+html[data-theme="light"] .login-header p {
+    color: #0f172a !important;
+}
+
+/* ── Jira inline section ── */
+html[data-theme="light"] .jira-inline-section {
+    background: rgba(0,0,0,0.03) !important;
+}
+html[data-theme="light"] .jira-item {
+    background: rgba(255,255,255,0.8) !important;
+    color: #0f172a !important;
+}
+html[data-theme="light"] .jira-item .item-name {
+    color: #0f172a !important;
+}
+html[data-theme="light"] .jira-item .item-key {
+    color: #475569 !important;
+    background: rgba(0,0,0,0.05) !important;
 }
 
 /* ========================================
