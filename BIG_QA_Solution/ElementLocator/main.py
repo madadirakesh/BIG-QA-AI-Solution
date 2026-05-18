@@ -467,9 +467,9 @@ class MainWindow(QMainWindow):
         self.prefs_list.clear()
         prefs = []
         if tool == "Selenium":
-            prefs = ["ID", "Test ID", "Name", "CSS", "XPath", "Link Text", "Partial Link", "Tag Name"]
+            prefs = ["ID", "Name", "CSS", "XPath", "Link Text", "Partial Link", "Tag Name"]
         else:
-            prefs = ["getByTestId", "Test ID", "getByRole", "getByText", "getByLabel", "getByPlaceholder", "getByAltText", "getByTitle", "CSS", "XPath", "ID", "Name", "Semantic"]
+            prefs = ["getByTestId", "getByRole", "getByText", "getByLabel", "getByPlaceholder", "getByAltText", "getByTitle", "CSS", "XPath", "ID", "Name", "Semantic"]
         
         for p in prefs:
             item = QListWidgetItem(p)
@@ -509,24 +509,7 @@ class MainWindow(QMainWindow):
         if p_title:
             self.last_known_page_title = p_title
 
-        # Check if local JS found any strong/robust unique locators
-        strong_types = {"ID", "Test ID", "Name", "getByTestId", "getByRole", "getByLabel", "CSS", "Link Text", "getByPlaceholder"}
-        has_strong_locator = any(item.get("type") in strong_types for item in data)
-        # Also consider robust relative XPaths (not starting with /html)
-        has_robust_xpath = any(item.get("type") == "XPath" and not item.get("value", "").startswith("/html") for item in data)
-
-        if (has_strong_locator or has_robust_xpath):
-            # Bypass AI call and render local unique locators instantly
-            self.current_hover_locators = self._filter_locators(data)
-            self._render_current_locators()
-            return
-
         if self.ai_api_key and outer_html:
-            # Fallback to AI if local locators are weak
-            # Render weak local locators immediately while waiting for AI
-            self.current_hover_locators = self._filter_locators(data)
-            self._render_current_locators()
-
             def runner():
                 ai_locators = self.ai_service.generate_locators(name_hint, outer_html, self.tool_combo.currentText())
                 if ai_locators:
@@ -549,21 +532,11 @@ class MainWindow(QMainWindow):
                 active_prefs.append(item.text())
 
         # Give Categories depending on rank
-        total_prefs = len(active_prefs)
         for i, pref_name in enumerate(active_prefs):
             for item in data:
                 t = item.get("type", "")
                 if t == pref_name:
-                    if total_prefs > 0:
-                        ratio = i / total_prefs
-                        cat = "Best" if ratio <= 0.25 else "Good" if ratio <= 0.50 else "Ok" if ratio <= 0.75 else "Un-Reliable"
-                    else:
-                        cat = "Ok"
-                    
-                    # Strict downgrade for brittle locators
-                    if t == "XPath" and item.get("value", "").startswith("/html"):
-                        cat = "Un-Reliable"
-                    
+                    cat = "Best" if i == 0 else "Good" if i <= 2 else "Ok" if i <= 4 else "Un-Reliable"
                     res.append({
                         "name": item.get("nameHint", "elem"),
                         "type": t,

@@ -1,0 +1,8 @@
+*.log
+patch.py
+extract_color.py
+test_transport.py
+test_ui.py
+qwebchannel.js
+ui/qwebchannel.js
+ui/test_dump.html

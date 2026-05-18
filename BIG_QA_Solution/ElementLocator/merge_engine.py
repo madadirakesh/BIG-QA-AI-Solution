@@ -11,13 +11,14 @@ class MergeEngine:
         if not target_content.strip():
             return target_content
         
-        if lang == "Java":
+        lang_lower = lang.lower()
+        if lang_lower == "java":
             return MergeEngine._merge_java(target_content, new_locators, tool)
-        elif lang == "Python":
+        elif lang_lower == "python":
             return MergeEngine._merge_python(target_content, new_locators, tool)
-        elif lang in ["JavaScript", "TypeScript"]:
+        elif lang_lower in ["javascript", "typescript"]:
             return MergeEngine._merge_js_ts(target_content, new_locators, tool)
-        elif lang == "C#":
+        elif lang_lower == "c#":
             return MergeEngine._merge_csharp(target_content, new_locators, tool)
         
         return target_content
@@ -147,7 +148,7 @@ class MergeEngine:
         for i, line in enumerate(lines):
             if "class " in line and "{" in line: class_start = i
             if "constructor" in line: constructor_start = i
-            if "readonly " in line and ": Locator" in line: last_prop = i
+            if "readonly " in line: last_prop = i
             if line.strip() == "}": last_class_brace = i
 
         prop_lines = []
@@ -158,10 +159,19 @@ class MergeEngine:
             val = CodeGenerator.escape_quotes(loc.get('value', ''))
             action = loc.get('action', 'Click')
             category = loc.get('category', 'Ok')
+            l_type = loc.get('type', 'XPath')
             
             prop_lines.append(f"    // Priority: {category}")
-            prop_lines.append(f"    readonly {name}: Locator;")
-            init_lines.append(f"        this.{name} = page.locator('{val}');")
+            if tool.lower() == "playwright":
+                prop_lines.append(f"    readonly {name}: Locator;")
+                if l_type.startswith("getBy"):
+                    native_call = CodeGenerator._get_playwright_native_call(l_type, val)
+                    init_lines.append(f"        this.{name} = {native_call};")
+                else:
+                    init_lines.append(f"        this.{name} = page.locator('{val}');")
+            else:
+                prop_lines.append(f"    readonly {name}: string;")
+                init_lines.append(f"        this.{name} = '{val}';")
             
             method_lines.append(CodeGenerator._js_action(tool, name, action))
 
