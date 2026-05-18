@@ -412,7 +412,7 @@ def test_case_generator():
 @login_required()
 def launch_element_locator():
     try:
-        locator_path = os.path.join(os.path.dirname(__file__), '..', 'ElementLocator', 'main.py')
+        locator_path = os.path.join(os.path.dirname(__file__), '..', 'ElementLocator', 'launcher.py')
         subprocess.Popen([sys.executable, locator_path], shell=(sys.platform == 'win32'))
         return jsonify({'status': 'success', 'message': 'Element Locator Studio launched.'})
     except Exception as e:
