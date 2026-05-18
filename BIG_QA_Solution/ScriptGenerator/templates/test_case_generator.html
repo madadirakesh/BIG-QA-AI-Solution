@@ -359,7 +359,7 @@
                 
                 let headers = sheetJson.find(row => row && row.length > 0);
                 if (headers) {
-                    templateHeaders = headers.map(h => h ? h.toString().trim() : "").filter(h => h);
+                    templateHeaders = headers.map(h => h ? h.toString().replace(/\n|\r|\|/g, ' ').trim() : "").filter(h => h);
                     templateText = "Match these exact columns: " + JSON.stringify(templateHeaders);
                 }
             }
@@ -386,7 +386,14 @@
         let markdown = "| " + templateHeaders.join(" | ") + " |\n";
         markdown += "| " + templateHeaders.map(() => "---").join(" | ") + " |\n";
         testCases.forEach(tc => {
-            let row = templateHeaders.map(h => tc[h] || "");
+            let row = templateHeaders.map(h => {
+                let val = tc[h] || "";
+                if (typeof val === 'string') {
+                    // Use <br> to represent newlines inside the markdown table cell
+                    val = val.replace(/\|/g, '-').replace(/\n|\r/g, '<br>');
+                }
+                return val;
+            });
             markdown += "| " + row.join(" | ") + " |\n";
         });
 
@@ -473,18 +480,25 @@
         const lines = content.trim().split('\n');
         if (lines.length < 2) throw new Error("Invalid table format");
         
-        const headers = lines[0].split('|').map(h => h.trim()).filter(h => h);
+        let headerLine = lines[0].trim();
+        headerLine = headerLine.replace(/^\||\|$/g, '');
+        const headers = headerLine.split('|').map(h => h.trim()).filter(h => h);
+        
         const data = [];
         
         for (let i = 2; i < lines.length; i++) {
-            const cells = lines[i].split('|').map(c => c.trim()).filter((c, idx, arr) => {
-                return idx > 0 && idx < arr.length - 1;
-            });
+            let rowStr = lines[i].trim();
+            if (!rowStr) continue;
+            
+            rowStr = rowStr.replace(/^\||\|$/g, '');
+            const cells = rowStr.split('|').map(c => c.trim());
             
             if (cells.length > 0) {
                 let obj = {};
                 headers.forEach((h, idx) => {
-                    obj[h] = cells[idx] || "";
+                    let cellVal = cells[idx] || "";
+                    // Convert <br> back to real newlines for the downloaded file
+                    obj[h] = cellVal.replace(/<br\s*\/?>/gi, '\n');
                 });
                 data.push(obj);
             }
