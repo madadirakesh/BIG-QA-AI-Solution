@@ -41,7 +41,7 @@ def get_test_case_generation_prompt(requirements: str, template: str) -> str:
     """
     return f"""
     You are an expert QA Automation Engineer.
-    Your task is to map the provided requirements into the provided test case template format.
+    Your task is to generate and map the provided requirements into the provided test case template format.
     
     Requirements:
     {requirements}
@@ -62,5 +62,7 @@ def get_test_case_generation_prompt(requirements: str, template: str) -> str:
        - NEVER use standard keys like 'Step No', 'Pre-requisite', 'Test Data', 'Action' unless they are explicitly in the template.
        - You MUST map the test cases exactly to whatever keys the user provided in the Template string.
        - Example: if the template provided is ["A", "B", "C"], your JSON must be {{ "test_cases": [ {{ "A": "...", "B": "...", "C": "..." }} ] }}
+       - Always provide steps to be executed with serial number
+       - Always generate steps from the beginning of the functional flow  
     7. Include NO other information. Your entire response must be standard, parseable JSON.
     """

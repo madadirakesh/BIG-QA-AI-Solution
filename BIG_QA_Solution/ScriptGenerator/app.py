@@ -791,6 +791,98 @@ def configure_ai_endpoint():
         
     return jsonify({"status": "success", "system_status": status_data})
 
+import ast
+
+def _get_prompt_functions(filepath):
+    try:
+        with open(filepath, 'r', encoding='utf-8') as f:
+            source = f.read()
+        tree = ast.parse(source)
+        functions = []
+        for node in tree.body:
+            if isinstance(node, ast.FunctionDef):
+                functions.append({
+                    "name": node.name,
+                    "start": node.lineno,
+                    "end": node.end_lineno
+                })
+        return functions
+    except Exception as e:
+        print(f"Error parsing {filepath}: {e}")
+        return []
+
+@app.route('/qa/configure-prompts', methods=['GET'])
+@login_required()
+def configure_prompts():
+    if session.get('user_role', '').lower() not in ['qa', 'admin']:
+        flash('Not authorized', 'error')
+        return redirect(url_for('home'))
+    return render_template('configure_prompts.html')
+
+@app.route('/api/prompts', methods=['GET'])
+@login_required()
+def list_prompts():
+    prompts_dir = ROOT_DIR / "prompts"
+    if not prompts_dir.exists():
+        return jsonify({"status": "error", "message": "Prompts directory not found"}), 404
+        
+    prompt_list = []
+    for py_file in prompts_dir.glob("*.py"):
+        if py_file.name == "__init__.py":
+            continue
+        functions = _get_prompt_functions(py_file)
+        for fn in functions:
+            prompt_list.append({
+                "file": py_file.name,
+                "function": fn["name"]
+            })
+            
+    return jsonify({"status": "success", "data": prompt_list})
+
+@app.route('/api/prompts/<filename>/<function_name>', methods=['GET', 'POST'])
+@login_required()
+def handle_prompt_function(filename, function_name):
+    prompts_dir = ROOT_DIR / "prompts"
+    file_path = prompts_dir / filename
+    
+    if not file_path.exists():
+        return jsonify({"status": "error", "message": "File not found"}), 404
+        
+    functions = _get_prompt_functions(file_path)
+    target_fn = next((f for f in functions if f["name"] == function_name), None)
+    
+    if not target_fn:
+        return jsonify({"status": "error", "message": "Function not found in file"}), 404
+        
+    with open(file_path, 'r', encoding='utf-8') as f:
+        lines = f.readlines()
+        
+    if request.method == 'GET':
+        # node.lineno is 1-indexed, meaning line 1 is at index 0.
+        fn_source = "".join(lines[target_fn["start"] - 1 : target_fn["end"]])
+        return jsonify({"status": "success", "content": fn_source})
+        
+    if request.method == 'POST':
+        data = request.json
+        new_content = data.get('content', '')
+        if not new_content:
+            return jsonify({"status": "error", "message": "Content cannot be empty"}), 400
+            
+        # Replace the lines
+        # Ensure new_content ends with a newline
+        if not new_content.endswith('\n'):
+            new_content += '\n'
+            
+        prefix = lines[:target_fn["start"] - 1]
+        suffix = lines[target_fn["end"]:]
+        
+        new_lines = prefix + [new_content] + suffix
+        
+        with open(file_path, 'w', encoding='utf-8') as f:
+            f.writelines(new_lines)
+            
+        return jsonify({"status": "success", "message": "Prompt updated successfully"})
+
 def open_browser():
     webbrowser.open_new('http://127.0.0.1:5000/')
 
