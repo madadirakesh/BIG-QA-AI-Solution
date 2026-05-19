@@ -9,6 +9,56 @@ class AIService:
         self.api_key = api_key
         self.api_url = api_url
 
+    def generate_unique_xpath(self, name_hint: str, outer_html: str, tool: str) -> list:
+        """Precision-mode: ask AI to produce ONE unique relative XPath."""
+        if not self.api_key or not outer_html:
+            return []
+        try:
+            prompt = (
+                f"You are an expert test automation engineer. Analyze this HTML element and generate the MOST STABLE, "
+                f"UNIQUE relative XPath that will match EXACTLY ONE element on the page for a {tool} automation script.\n"
+                "Rules:\n"
+                "- MUST start with // (relative XPath only, never /html/body/...)\n"
+                "- Prefer attributes in order: @data-testid, @data-automation-id, @aria-label, @id, @name, @placeholder, @title, @type\n"
+                "- Use normalize-space() for text matching to handle whitespace\n"
+                "- When combining with 'and', child paths MUST use .// (dot-slash), NEVER // (absolute) inside predicates\n"
+                "  WRONG: //a[@id='x' and //span[.='y']]   RIGHT: //a[@id='x' and .//span[.='y']]\n"
+                "- Do NOT use positional predicates like [1],[2] unless absolutely necessary\n"
+                "- Return exactly 3 candidates ranked Best→Good→Ok as a JSON array with fields: name, type, value, rating\n"
+                "  Example: [{\"name\": \"searchBox\", \"type\": \"XPath\", \"value\": \"//input[@name='q']\", \"rating\": \"Best\"}]\n"
+                "- NEVER return markdown, text, or explanations. ONLY the raw JSON array.\n"
+                f"HTML:\n{outer_html}"
+            )
+
+            headers = {"Content-Type": "application/json"}
+            url = self.api_url
+            payload = {}
+
+            if self.ai_tool in ["GEMINI", "GOOGLE"]:
+                url = f"{self.api_url}{self.api_key}"
+                payload = {
+                    "contents": [{"parts": [{"text": prompt}]}],
+                    "generationConfig": {"temperature": 0.0, "response_mime_type": "application/json"}
+                }
+            elif self.ai_tool in ["OPENAI", "COPILOT"]:
+                headers["Authorization"] = f"Bearer {self.api_key}"
+                payload = {"model": self.ai_model, "messages": [{"role": "user", "content": prompt}], "temperature": 0.0}
+            elif self.ai_tool in ["CLAUDE", "ANTHROPIC"]:
+                headers["x-api-key"] = self.api_key
+                headers["anthropic-version"] = "2023-06-01"
+                payload = {"model": self.ai_model, "max_tokens": 1024, "messages": [{"role": "user", "content": prompt}]}
+
+            response = requests.post(url, json=payload, headers=headers, timeout=20)
+            if response.status_code == 200:
+                return self._parse_response(name_hint, response.text)
+            else:
+                error_msg = f"API Error {response.status_code}: {response.text[:150]}"
+                print(f"AI unique XPath error: {error_msg}")
+                raise Exception(error_msg)
+        except Exception as e:
+            print(f"AI unique XPath exception: {e}")
+            raise Exception(f"AI Service Error: {str(e)}")
+
     def generate_locators(self, name_hint: str, outer_html: str, tool: str) -> list:
         if not self.api_key or not self.api_key.strip() or not outer_html:
             return []
@@ -18,14 +68,21 @@ class AIService:
             if tool.lower() == "playwright":
                 extra_tooling = ", getByTestId, getByText, getByRole, getByLabel"
 
-            import sys
-            import os
-            # Ensure the parent directory is in sys.path to import prompts
-            parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-            if parent_dir not in sys.path:
-                sys.path.insert(0, parent_dir)
-            from prompts.element_locator_prompts import get_locator_generation_prompt
-            prompt = get_locator_generation_prompt(tool, extra_tooling, outer_html)
+            prompt = (
+                f"Analyze this HTML snippet and suggest the best element locators for a '{tool}' automation script.\n"
+                "Return ONLY a JSON array of objects, where each object has 'name', 'type', 'value', and 'rating' fields.\n"
+                "The 'name' should be a descriptive, camelCase element name based on the HTML attributes (e.g., loginButton, emailInput).\n"
+                f"The 'type' should be one of (CSS, XPath, ID, Name, Link Text, Partial Link, Tag Name{extra_tooling}).\n"
+                "XPath rules:\n"
+                "  - Use relative XPath (starts with //).\n"
+                "  - When using 'and' with child element paths inside a predicate, ALWAYS use .// (dot-slash), never // (absolute).\n"
+                "  - WRONG: //a[@id='x' and //span[.='y']]   CORRECT: //a[@id='x' and .//span[.='y']]\n"
+                "  - Use normalize-space() for text matching, contains() only when exact match impossible.\n"
+                "The 'rating' MUST be exactly one of: 'Best', 'Good', 'Ok', 'Un-Reliable'.\n"
+                "Example: [{\"name\": \"submitBtn\", \"type\": \"XPath\", \"value\": \"//button[@type='submit']\", \"rating\": \"Best\"}]\n"
+                "NEVER return markdown, text, or explanations. ONLY the raw JSON array.\n"
+                f"HTML: \n{outer_html}"
+            )
 
             headers = {"Content-Type": "application/json"}
             payload = {}
@@ -60,9 +117,6 @@ class AIService:
                 }
 
             response = requests.post(url, json=payload, headers=headers, timeout=60)
-            print("STATUS:", response.status_code)
-            print("RAW RESPONSE:", response.text)
-
             if response.status_code == 200:
                 return self._parse_response(name_hint, response.text)
 
@@ -73,11 +127,23 @@ class AIService:
             print(f"Error calling {self.ai_tool}: {e}")
             return []
 
-    text_content = ""
+    @staticmethod
+    def _sanitise_xpath(value: str) -> str:
+        """
+        Auto-fix common AI XPath mistakes:
+        - 'and //tag' → 'and .//tag'  (absolute path inside predicate)
+        - '[ //tag'   → '[.//tag'
+        """
+        import re as _re
+        # Fix: 'and //x' → 'and .//x'
+        value = _re.sub(r'\band (//)\b', r'and .\1', value)
+        # Fix: '[ //x' → '[.//x'
+        value = _re.sub(r'\[ (//)\b', r'[.\1', value)
+        return value
 
-    text_content = ""
     def _parse_response(self, name_hint: str, response_text: str) -> list:
         result = []
+        text_content = ""
         try:
             data = json.loads(response_text)
 
@@ -102,36 +168,45 @@ class AIService:
             if not text_content:
                 return []
 
-            text_content = re.sub(r'(?s)^```json\s*', '', text_content)
-            text_content = re.sub(r'(?s)\s*```$', '', text_content)
-            text_content = text_content.strip()
+            # Extract the first JSON array or object using regex
+            match = re.search(r'(\[.*\]|\{.*\})', text_content, re.DOTALL)
+            if match:
+                text_content = match.group(1)
+            else:
+                text_content = text_content.strip()
 
             locs = json.loads(text_content)
 
             if isinstance(locs, dict):
-                locs = [locs]
-            elif isinstance(locs, list):
-                pass
-            else:
-                return []
-
-            for obj in locs:
-                if not isinstance(obj, dict):
-                    continue
-                result.append({
-                    "name": obj.get("name", name_hint),
-                    "type": obj.get("type", "XPath"),
-                    "value": obj.get("value", ""),
-                    "category": obj.get("rating", obj.get("category", "Ok"))
-                })
-
+                # Try to find common keys like 'locators' or 'elements'
+                for key in ["locators", "elements", "results"]:
+                    if key in locs and isinstance(locs[key], list):
+                        locs = locs[key]
+                        break
+                # If it's a single locator object
+                if isinstance(locs, dict):
+                    if "value" in locs or "xpath" in locs.get("type", "").lower() or "xpath" in locs:
+                        locs = [locs]
+                    elif "selector" in locs:
+                        locs = [locs]
+            
+            if isinstance(locs, list):
+                for obj in locs:
+                    n = obj.get("name", name_hint)
+                    t = obj.get("type", "XPath")
+                    v = obj.get("value", obj.get("xpath", obj.get("selector", "")))
+                    r = obj.get("rating", obj.get("category", "Ok"))
+                    if v:
+                        # Auto-sanitise XPath absolute-path-in-predicate bug
+                        if t.lower() in ("xpath", "relative xpath"):
+                            v = AIService._sanitise_xpath(v)
+                        result.append({
+                            "name": n,
+                            "type": t,
+                            "value": v,
+                            "category": r
+                        })
         except Exception as e:
             print(f"Error parsing {self.ai_tool} response: {e}")
 
-        if result:
-            print(result[0])
-        else:
-            print("No data returned")
-
-        print("text_content:", repr(text_content))
         return result

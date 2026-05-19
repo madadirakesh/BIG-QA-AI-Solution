@@ -5,9 +5,25 @@ class CodeGenerator:
     @staticmethod
     def generate_class_content(tool: str, language: str, page_name: str, locators: list) -> str:
         """
-        locators: list of dicts, expected keys: name, value, type, action, category
+        locators: list of dicts, expected keys: name/nameHint, value, type, action, category
         """
         lines = []
+        
+        # Pre-process names to ensure uniqueness
+        used_names = set()
+        for loc in locators:
+            raw_name = loc.get("name") or loc.get("nameHint") or "element"
+            base_name = CodeGenerator.clean_name(raw_name, "element", snake_case=(language.lower() == "python"))
+            
+            # Ensure unique name
+            final_name = base_name
+            counter = 1
+            while final_name in used_names:
+                final_name = f"{base_name}_{counter}"
+                counter += 1
+                
+            used_names.add(final_name)
+            loc["_final_name"] = final_name
 
         if language.lower() == "java":
             if tool.lower() == "selenium":
@@ -28,14 +44,21 @@ class CodeGenerator:
                 lines.append("        this.page = page;")
                 if locators:
                     for loc in locators:
-                        name = CodeGenerator.clean_name(loc.get("name", ""), "element")
+                        name = loc.get("_final_name")
+                        val = CodeGenerator.escape_quotes(loc.get("value", ""))
+                        lines.append(f"        this.{name} = this.page.locator(\"{val}\");")
+                lines.append("    }\n")
+
+                if locators:
+                    for loc in locators:
+                        name = loc.get("_final_name")
                         val = CodeGenerator.escape_quotes(loc.get("value", ""))
                         lines.append(f"        this.{name} = this.page.locator(\"{val}\");")
                 lines.append("    }\n")
 
             if locators:
                 for loc in locators:
-                    name = CodeGenerator.clean_name(loc.get("name", ""), "element")
+                    name = loc.get("_final_name")
                     val = CodeGenerator.escape_quotes(loc.get("value", ""))
                     l_type = loc.get("type", "XPath")
                     category = loc.get("category", "Ok")
@@ -50,7 +73,7 @@ class CodeGenerator:
                         lines.append(f"    public final Locator {name};\n")
 
                 for loc in locators:
-                    name = CodeGenerator.clean_name(loc.get("name", ""), "element")
+                    name = loc.get("_final_name")
                     action = loc.get("action", "Click")
                     lines.append(CodeGenerator._java_action(tool, name, action))
 
@@ -62,7 +85,7 @@ class CodeGenerator:
                 lines.append("    pass\n")
             else:
                 for loc in locators:
-                    name = CodeGenerator.clean_name(loc.get("name", ""), "element", snake_case=True)
+                    name = loc.get("_final_name")
                     val = CodeGenerator.escape_quotes(loc.get("value", ""))
                     category = loc.get("category", "Ok")
 
@@ -70,7 +93,7 @@ class CodeGenerator:
                     lines.append(f"    {name} = \"{val}\"\n")
 
                 for loc in locators:
-                    name = CodeGenerator.clean_name(loc.get("name", ""), "element", snake_case=True)
+                    name = loc.get("_final_name")
                     action = loc.get("action", "Click")
                     lines.append(CodeGenerator._python_action(tool, name, action))
 
@@ -93,14 +116,14 @@ class CodeGenerator:
                 lines.append("        _page = page;")
                 if locators:
                     for loc in locators:
-                        name = CodeGenerator.clean_name(loc.get("name", ""), "element")
+                        name = loc.get("_final_name")
                         val = CodeGenerator.escape_quotes(loc.get("value", ""))
                         lines.append(f"        this._{name} = page.Locator(\"{val}\");")
                 lines.append("    }\n")
 
             if locators:
                 for loc in locators:
-                    name = CodeGenerator.clean_name(loc.get("name", ""), "element")
+                    name = loc.get("_final_name")
                     val = CodeGenerator.escape_quotes(loc.get("value", ""))
                     l_type = loc.get("type", "XPath")
                     category = loc.get("category", "Ok")
@@ -118,7 +141,7 @@ class CodeGenerator:
                         lines.append(f"    public string {name}Locator = \"{val}\";\n")
 
                 for loc in locators:
-                    name = CodeGenerator.clean_name(loc.get("name", ""), "element")
+                    name = loc.get("_final_name")
                     action = loc.get("action", "Click")
                     lines.append(CodeGenerator._csharp_action(tool, name, action))
 
@@ -144,7 +167,7 @@ class CodeGenerator:
                     lines.append("    readonly page: Page;")
                 if locators:
                     for loc in locators:
-                        name = CodeGenerator.clean_name(loc.get("name", ""), "element")
+                        name = loc.get("_final_name")
                         if is_pw:
                             lines.append(f"    readonly {name}: Locator;")
                         else:
@@ -162,32 +185,66 @@ class CodeGenerator:
 
             if locators:
                 for loc in locators:
-                    name = CodeGenerator.clean_name(loc.get("name", ""), "element")
+                    name = loc.get("_final_name")
                     val = CodeGenerator.escape_quotes(loc.get("value", ""))
+                    l_type = loc.get("type", "XPath")  # MUST read per-locator
                     category = loc.get("category", "Ok")
 
                     lines.append(f"        // Priority: {category}")
                     if is_pw:
-                        lines.append(f"        this.{name} = page.locator(\"{val}\");\n")
+                        if l_type.startswith("getBy"):
+                            native_call = CodeGenerator._get_playwright_native_call(l_type, val)
+                            lines.append(f"        this.{name} = {native_call};")
+                        else:
+                            lines.append(f"        this.{name} = page.locator(\"{val}\");")
                     else:
-                        lines.append(f"        this.{name} = \"{val}\";\n")
+                        lines.append(f"        this.{name} = \"{val}\";")
 
-            lines.append("    }\n")
+            lines.append("    }")
+            lines.append("")
 
             if locators:
                 for loc in locators:
-                    name = CodeGenerator.clean_name(loc.get("name", ""), "element")
+                    name = loc.get("_final_name")
                     action = loc.get("action", "Click")
                     lines.append(CodeGenerator._js_action(tool, name, action))
             
-            lines.append("}\n")
-            if not is_ts:
+            lines.append("}")
+            lines.append("")
+            if is_ts:
+                lines.append(f"export {{ {page_name} }};")
+            else:
                 if is_pw:
-                    lines.append(f"module.exports = {page_name};\n")
+                    lines.append(f"module.exports = {{ {page_name} }};")
                 else:
-                    lines.append(f"export default {page_name}();\n")
+                    lines.append(f"module.exports = {page_name};")
 
         return "\n".join(lines)
+
+    @staticmethod
+    def _get_playwright_native_call(l_type: str, val: str) -> str:
+        """Converts internal type to Playwright native call string."""
+        import json
+        safe_val = json.dumps(val)
+        if l_type == "getByRole":
+            # Heuristic: if value looks like 'button:Login', split it
+            if ":" in val:
+                role, name = val.split(":", 1)
+                return f"page.getByRole('{role}', {{ name: {json.dumps(name)} }})"
+            return f"page.getByRole('{val}')"
+        elif l_type == "getByText":
+            return f"page.getByText({safe_val})"
+        elif l_type == "getByLabel":
+            return f"page.getByLabel({safe_val})"
+        elif l_type == "getByPlaceholder":
+            return f"page.getByPlaceholder({safe_val})"
+        elif l_type == "getByAltText":
+            return f"page.getByAltText({safe_val})"
+        elif l_type == "getByTitle":
+            return f"page.getByTitle({safe_val})"
+        elif l_type == "getByTestId":
+            return f"page.getByTestId({safe_val})"
+        return f"page.locator({safe_val})"
 
 
     @staticmethod

@@ -20,7 +20,7 @@ class ExcelExporter:
             # Data
             for loc in locators:
                 row = [
-                    loc.get("name", ""),
+                    loc.get("name") or loc.get("nameHint", ""),
                     loc.get("type", ""),
                     loc.get("action", ""),
                     loc.get("value", "")
