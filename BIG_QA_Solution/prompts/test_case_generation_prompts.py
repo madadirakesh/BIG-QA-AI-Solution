@@ -11,7 +11,8 @@ def get_bdd_scenario_generation_prompt(requirements: str) -> str:
     Returns:
         The formatted prompt string.
     """
-    return f"""
+    return (
+f"""
     You are an expert QA Automation Engineer.
     Given the following requirements, generate a complete and professional BDD Gherkin .feature file.
     
@@ -22,8 +23,10 @@ def get_bdd_scenario_generation_prompt(requirements: str) -> str:
     1. Use standard Gherkin syntax (Feature, Scenario, Given, When, Then, And).
     2. Ensure scenarios cover positive and negative cases if applicable.
     3. Return ONLY the raw content of the .feature file. 
-    4. Do NOT include markdown code fences (```gherkin) or any other conversational text.
+    4. Generate Scenario outlines as applicable
+    5. Do NOT include markdown code fences (```gherkin) or any other conversational text.
     """
+    )
 
 def get_test_case_generation_prompt(requirements: str, template: str) -> str:
     """

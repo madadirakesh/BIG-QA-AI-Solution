@@ -801,11 +801,17 @@ def _get_prompt_functions(filepath):
         functions = []
         for node in tree.body:
             if isinstance(node, ast.FunctionDef):
-                functions.append({
+                func_info = {
                     "name": node.name,
                     "start": node.lineno,
                     "end": node.end_lineno
-                })
+                }
+                for child in ast.walk(node):
+                    if isinstance(child, ast.Return):
+                        func_info["return_start"] = child.lineno
+                        func_info["return_end"] = child.end_lineno
+                        break
+                functions.append(func_info)
         return functions
     except Exception as e:
         print(f"Error parsing {filepath}: {e}")
@@ -858,9 +864,24 @@ def handle_prompt_function(filename, function_name):
         lines = f.readlines()
         
     if request.method == 'GET':
-        # node.lineno is 1-indexed, meaning line 1 is at index 0.
-        fn_source = "".join(lines[target_fn["start"] - 1 : target_fn["end"]])
-        return jsonify({"status": "success", "content": fn_source})
+        if "return_start" in target_fn and "return_end" in target_fn:
+            start_idx = target_fn["return_start"] - 1
+            end_idx = target_fn["return_end"]
+        else:
+            start_idx = target_fn["start"] - 1
+            end_idx = target_fn["end"]
+            
+        fn_source = "".join(lines[start_idx : end_idx])
+        
+        text = fn_source.strip()
+        if text.startswith('return'):
+            text = text[6:].strip()
+        if text.startswith('(') and text.endswith(')'):
+            text = text[1:-1]
+            if text.startswith('\n'): text = text[1:]
+            if text.endswith('\n'): text = text[:-1]
+            
+        return jsonify({"status": "success", "content": text})
         
     if request.method == 'POST':
         data = request.json
@@ -868,15 +889,25 @@ def handle_prompt_function(filename, function_name):
         if not new_content:
             return jsonify({"status": "error", "message": "Content cannot be empty"}), 400
             
-        # Replace the lines
-        # Ensure new_content ends with a newline
+        if "return_start" in target_fn and "return_end" in target_fn:
+            start_idx = target_fn["return_start"] - 1
+            end_idx = target_fn["return_end"]
+        else:
+            start_idx = target_fn["start"] - 1
+            end_idx = target_fn["end"]
+            
+        return_first_line = lines[start_idx]
+        indent = return_first_line[:len(return_first_line) - len(return_first_line.lstrip())]
+        
         if not new_content.endswith('\n'):
             new_content += '\n'
             
-        prefix = lines[:target_fn["start"] - 1]
-        suffix = lines[target_fn["end"]:]
+        wrapped_content = f"{indent}return (\n{new_content}{indent})\n"
         
-        new_lines = prefix + [new_content] + suffix
+        prefix = lines[:start_idx]
+        suffix = lines[end_idx:]
+        
+        new_lines = prefix + [wrapped_content] + suffix
         
         with open(file_path, 'w', encoding='utf-8') as f:
             f.writelines(new_lines)
