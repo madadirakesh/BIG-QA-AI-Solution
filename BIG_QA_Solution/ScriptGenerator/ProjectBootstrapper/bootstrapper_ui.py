@@ -178,7 +178,7 @@ class BootstrapperUI(QWidget):
             
         self.log("=========================================")
         self.log("Running Sanity Check (Smoke Test)...")
-        smoke_ok, smoke_msg = BootstrapperEngine.execute_smoke_test(target_dir, lang, pm)
+        smoke_ok, smoke_msg = BootstrapperEngine.execute_smoke_test(target_dir, tool, lang, fw, pm)
         if smoke_ok:
             self.log("[SUCCESS] Smoke Test Passed.")
             self.log(f"Test Output: {smoke_msg[:200]}...")

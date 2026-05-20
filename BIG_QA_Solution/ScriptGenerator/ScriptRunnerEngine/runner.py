@@ -44,6 +44,7 @@ class ScriptRunnerService:
             yield f"event: progress\ndata: {json.dumps({'msg': f'[Sequential Mode] Starting {len(commands)} commands...', 'type': 'system'})}\n\n"
             
             success = True
+            import os
             for i, cmd in enumerate(commands):
                 print(f"DEBUG: Running step {i+1}: {cmd}")
                 yield f"event: progress\ndata: {json.dumps({'msg': f'[Step {i+1}/{len(commands)}]: {cmd}', 'type': 'step_start', 'step': i+1})}\n\n"
