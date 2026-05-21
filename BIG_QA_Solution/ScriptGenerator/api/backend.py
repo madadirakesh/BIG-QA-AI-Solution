@@ -1346,25 +1346,77 @@ async def get_jira_projects():
         logger.error(f"Jira Projects Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.get("/jira/projects/{project_key}/tasks")
-async def get_jira_tasks(project_key: str):
+
+@app.get("/jira/projects/{project_key}/epics")
+async def get_jira_epics(project_key: str):
+    """Fetch all Epics for a given project."""
     try:
         jira = _get_jira_client()
-        # Fetch up to 50 issues for the project
-        issues = jira.search_issues(f'project="{project_key}"', maxResults=50)
-        return [{"key": i.key, "summary": i.fields.summary} for i in issues]
+        jql = f'project="{project_key}" AND issuetype=Epic ORDER BY created DESC'
+        issues = jira.search_issues(jql, maxResults=50)
+        return [{"key": i.key, "summary": i.fields.summary, "status": str(i.fields.status)} for i in issues]
     except Exception as e:
-        logger.error(f"Jira Tasks Error: {e}")
+        logger.error(f"Jira Epics Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/jira/epics/{epic_key}/stories")
+async def get_jira_stories(epic_key: str):
+    """Fetch all Stories linked to a given Epic."""
+    try:
+        jira = _get_jira_client()
+        # Works for both classic ("Epic Link") and next-gen (parent) projects
+        jql = f'"Epic Link"="{epic_key}" OR parent="{epic_key}" ORDER BY created DESC'
+        issues = jira.search_issues(jql, maxResults=100)
+        return [
+            {
+                "key": i.key,
+                "summary": i.fields.summary,
+                "type": str(i.fields.issuetype),
+                "status": str(i.fields.status),
+            }
+            for i in issues
+        ]
+    except Exception as e:
+        logger.error(f"Jira Stories Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/jira/stories/{story_key}/children")
+async def get_jira_story_children(story_key: str):
+    """Fetch Tasks and Sub-tasks that belong to a Story."""
+    try:
+        jira = _get_jira_client()
+        jql = f'parent="{story_key}" ORDER BY issuetype ASC, created DESC'
+        issues = jira.search_issues(jql, maxResults=100)
+        return [
+            {
+                "key": i.key,
+                "summary": i.fields.summary,
+                "type": str(i.fields.issuetype),
+                "status": str(i.fields.status),
+            }
+            for i in issues
+        ]
+    except Exception as e:
+        logger.error(f"Jira Story Children Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.get("/jira/tasks/{issue_key}")
 async def get_jira_task_detail(issue_key: str):
+    """Fetch full detail (description) for any Jira issue."""
     try:
-
         jira = _get_jira_client()
         issue = jira.issue(issue_key)
         description = issue.fields.description or "No description provided."
-        return {"key": issue.key, "summary": issue.fields.summary, "description": description}
+        return {
+            "key": issue.key,
+            "summary": issue.fields.summary,
+            "description": description,
+            "type": str(issue.fields.issuetype),
+            "status": str(issue.fields.status),
+        }
     except Exception as e:
         logger.error(f"Jira Task Detail Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))

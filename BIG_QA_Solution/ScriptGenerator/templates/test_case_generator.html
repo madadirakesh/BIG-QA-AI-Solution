@@ -56,7 +56,7 @@
                             <button type="button" class="close-jira" style="font-size: 1rem;" onclick="toggleJiraSection()">&times;</button>
                         </div>
                         
-                        <!-- Projects View -->
+                        <!-- 1. Projects View -->
                         <div id="jiraProjectsView">
                             <div class="jira-view-header">
                                 <span class="text-secondary small">Select a Jira Project:</span>
@@ -66,25 +66,48 @@
                             </div>
                         </div>
 
-                        <!-- Tasks View -->
-                        <div id="jiraTasksView" style="display: none;">
+                        <!-- 2. Epics View -->
+                        <div id="jiraEpicsView" style="display: none;">
                             <div class="jira-view-header">
                                 <button type="button" class="btn btn-link btn-sm p-0 me-2 text-decoration-none" onclick="showJiraProjects()"><i class="fas fa-arrow-left"></i> Projects</button>
                                 <span id="selectedProjectName" class="badge bg-primary"></span>
                             </div>
-                            <div id="jiraTaskList" class="jira-list">
+                            <div id="jiraEpicList" class="jira-list">
+                                <div class="text-center py-3"><i class="fas fa-spinner fa-spin"></i> Loading epics...</div>
+                            </div>
+                        </div>
+
+                        <!-- 3. Stories View -->
+                        <div id="jiraStoriesView" style="display: none;">
+                            <div class="jira-view-header">
+                                <button type="button" class="btn btn-link btn-sm p-0 me-2 text-decoration-none" onclick="showJiraEpics()"><i class="fas fa-arrow-left"></i> Epics</button>
+                                <span id="selectedEpicKey" class="badge bg-purple"></span>
+                            </div>
+                            <div id="jiraStoryList" class="jira-list">
+                                <div class="text-center py-3"><i class="fas fa-spinner fa-spin"></i> Loading stories...</div>
+                            </div>
+                        </div>
+
+                        <!-- 4. Children (Tasks + Sub-tasks) View -->
+                        <div id="jiraChildrenView" style="display: none;">
+                            <div class="jira-view-header">
+                                <button type="button" class="btn btn-link btn-sm p-0 me-2 text-decoration-none" onclick="showJiraStories()"><i class="fas fa-arrow-left"></i> Stories</button>
+                                <span id="selectedStoryKey" class="badge bg-success"></span>
+                            </div>
+                            <div id="jiraChildList" class="jira-list">
                                 <div class="text-center py-3"><i class="fas fa-spinner fa-spin"></i> Loading tasks...</div>
                             </div>
                         </div>
 
-                        <!-- Task Detail View -->
-                        <div id="jiraTaskDetailView" style="display: none;">
+                        <!-- 5. Issue Detail View -->
+                        <div id="jiraDetailView" style="display: none;">
                             <div class="jira-view-header">
-                                <button type="button" class="btn btn-link btn-sm p-0 me-2 text-decoration-none" onclick="showJiraTasks()"><i class="fas fa-arrow-left"></i> Tasks</button>
-                                <span id="selectedTaskKey" class="badge bg-success"></span>
+                                <button type="button" class="btn btn-link btn-sm p-0 me-2 text-decoration-none" id="detailBackBtn"><i class="fas fa-arrow-left"></i> Back</button>
+                                <span id="selectedIssueKey" class="badge bg-info"></span>
+                                <span id="selectedIssueType" class="jira-type-badge" style="margin-left:8px;"></span>
                             </div>
                             <div class="jira-description-container">
-                                <div id="jiraTaskDescription" class="jira-description-box"></div>
+                                <div id="jiraIssueDescription" class="jira-description-box"></div>
                             </div>
                             <div class="text-end">
                                 <button type="button" class="btn btn-primary btn-sm" onclick="copyJiraDescription()">
@@ -249,6 +272,16 @@
     .jira-description-box { background: rgba(0,0,0,0.3); border: 1px solid var(--glass-border); border-radius: 8px; padding: 15px; font-size: 0.9rem; line-height: 1.6; color: #cbd5e1; max-height: 250px; overflow-y: auto; white-space: pre-wrap; margin-bottom: 15px; }
     .btn-outline-primary { border: 1px solid var(--accent-primary); color: var(--accent-primary); background: transparent; transition: all 0.3s; }
     .btn-outline-primary:hover { background: var(--accent-primary); color: white; box-shadow: 0 0 10px var(--accent-glow); }
+
+    /* Jira Type Badges */
+    .jira-type-badge { font-size: 0.65rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; padding: 2px 8px; border-radius: 4px; }
+    .jira-type-badge.epic { background: rgba(128,90,213,0.2); color: #a78bfa; border: 1px solid rgba(128,90,213,0.3); }
+    .jira-type-badge.story { background: rgba(16,185,129,0.2); color: #6ee7b7; border: 1px solid rgba(16,185,129,0.3); }
+    .jira-type-badge.task { background: rgba(59,130,246,0.2); color: #93c5fd; border: 1px solid rgba(59,130,246,0.3); }
+    .jira-type-badge.sub-task { background: rgba(156,163,175,0.2); color: #d1d5db; border: 1px solid rgba(156,163,175,0.3); }
+    .badge.bg-purple { background: rgba(128,90,213,0.8) !important; }
+    .jira-item .item-meta { display: flex; align-items: center; gap: 8px; }
+    .jira-item .item-status { font-size: 0.65rem; padding: 1px 6px; border-radius: 3px; background: rgba(255,255,255,0.08); color: var(--text-secondary); }
 </style>
 {% endblock %}
 
@@ -517,7 +550,23 @@
     // Jira Integration Logic
     const BACKEND_URL = 'http://127.0.0.1:8000';
     let currentJiraProject = null;
-    let currentJiraTask = null;
+    let currentJiraEpic = null;
+    let currentJiraStory = null;
+    let detailBackTarget = null; // tracks which view to return to from detail
+
+    function hideAllJiraViews() {
+        ['jiraProjectsView','jiraEpicsView','jiraStoriesView','jiraChildrenView','jiraDetailView']
+            .forEach(id => document.getElementById(id).style.display = 'none');
+    }
+
+    function getTypeBadgeClass(type) {
+        const t = (type || '').toLowerCase();
+        if (t.includes('epic')) return 'epic';
+        if (t.includes('story')) return 'story';
+        if (t.includes('sub')) return 'sub-task';
+        if (t.includes('task') || t.includes('bug')) return 'task';
+        return 'task';
+    }
 
     function toggleJiraSection() {
         const section = document.getElementById('jiraInlineSection');
@@ -533,10 +582,8 @@
     }
 
     async function showJiraProjects() {
+        hideAllJiraViews();
         document.getElementById('jiraProjectsView').style.display = 'block';
-        document.getElementById('jiraTasksView').style.display = 'none';
-        document.getElementById('jiraTaskDetailView').style.display = 'none';
-        
         const listEl = document.getElementById('jiraProjectList');
         listEl.innerHTML = '<div class="text-center py-3"><i class="fas fa-spinner fa-spin"></i> Loading projects...</div>';
 
@@ -544,21 +591,13 @@
             const response = await fetch(`${BACKEND_URL}/jira/projects`);
             if (!response.ok) throw new Error('Failed to fetch projects');
             const projects = await response.json();
-            
-            if (projects.length === 0) {
-                listEl.innerHTML = '<div class="text-center py-3 text-secondary">No projects found.</div>';
-                return;
-            }
-
+            if (projects.length === 0) { listEl.innerHTML = '<div class="text-center py-3 text-secondary">No projects found.</div>'; return; }
             listEl.innerHTML = '';
             projects.forEach(p => {
                 const item = document.createElement('div');
                 item.className = 'jira-item';
                 item.onclick = () => selectJiraProject(p);
-                item.innerHTML = `
-                    <span class="item-name">${p.name}</span>
-                    <span class="item-key">${p.key}</span>
-                `;
+                item.innerHTML = `<span class="item-name">${p.name}</span><span class="item-key">${p.key}</span>`;
                 listEl.appendChild(item);
             });
         } catch (error) {
@@ -569,36 +608,32 @@
     async function selectJiraProject(project) {
         currentJiraProject = project;
         document.getElementById('selectedProjectName').innerText = project.name;
-        showJiraTasks();
+        showJiraEpics();
     }
 
-    async function showJiraTasks() {
-        document.getElementById('jiraProjectsView').style.display = 'none';
-        document.getElementById('jiraTasksView').style.display = 'block';
-        document.getElementById('jiraTaskDetailView').style.display = 'none';
-
-        const listEl = document.getElementById('jiraTaskList');
-        listEl.innerHTML = '<div class="text-center py-3"><i class="fas fa-spinner fa-spin"></i> Loading tasks...</div>';
+    async function showJiraEpics() {
+        hideAllJiraViews();
+        document.getElementById('jiraEpicsView').style.display = 'block';
+        const listEl = document.getElementById('jiraEpicList');
+        listEl.innerHTML = '<div class="text-center py-3"><i class="fas fa-spinner fa-spin"></i> Loading epics...</div>';
 
         try {
-            const response = await fetch(`${BACKEND_URL}/jira/projects/${currentJiraProject.key}/tasks`);
-            if (!response.ok) throw new Error('Failed to fetch tasks');
-            const tasks = await response.json();
-
-            if (tasks.length === 0) {
-                listEl.innerHTML = '<div class="text-center py-3 text-secondary">No tasks found.</div>';
-                return;
-            }
-
+            const response = await fetch(`${BACKEND_URL}/jira/projects/${currentJiraProject.key}/epics`);
+            if (!response.ok) throw new Error('Failed to fetch epics');
+            const epics = await response.json();
+            if (epics.length === 0) { listEl.innerHTML = '<div class="text-center py-3 text-secondary">No epics found in this project.</div>'; return; }
             listEl.innerHTML = '';
-            tasks.forEach(t => {
+            epics.forEach(e => {
                 const item = document.createElement('div');
                 item.className = 'jira-item';
-                item.onclick = () => selectJiraTask(t);
+                item.onclick = () => selectJiraEpic(e);
                 item.innerHTML = `
-                    <span class="item-name">${t.summary}</span>
-                    <span class="item-key">${t.key}</span>
-                `;
+                    <span class="item-name">${e.summary}</span>
+                    <div class="item-meta">
+                        <span class="jira-type-badge epic">Epic</span>
+                        <span class="item-status">${e.status}</span>
+                        <span class="item-key">${e.key}</span>
+                    </div>`;
                 listEl.appendChild(item);
             });
         } catch (error) {
@@ -606,21 +641,106 @@
         }
     }
 
-    async function selectJiraTask(task) {
-        currentJiraTask = task;
-        document.getElementById('selectedTaskKey').innerText = task.key;
-        
-        document.getElementById('jiraTasksView').style.display = 'none';
-        document.getElementById('jiraTaskDetailView').style.display = 'block';
-        
-        const descEl = document.getElementById('jiraTaskDescription');
+    async function selectJiraEpic(epic) {
+        currentJiraEpic = epic;
+        document.getElementById('selectedEpicKey').innerText = epic.key + ' — ' + epic.summary;
+        showJiraStories();
+    }
+
+    async function showJiraStories() {
+        hideAllJiraViews();
+        document.getElementById('jiraStoriesView').style.display = 'block';
+        const listEl = document.getElementById('jiraStoryList');
+        listEl.innerHTML = '<div class="text-center py-3"><i class="fas fa-spinner fa-spin"></i> Loading stories...</div>';
+
+        try {
+            const response = await fetch(`${BACKEND_URL}/jira/epics/${currentJiraEpic.key}/stories`);
+            if (!response.ok) throw new Error('Failed to fetch stories');
+            const stories = await response.json();
+            if (stories.length === 0) { listEl.innerHTML = '<div class="text-center py-3 text-secondary">No stories found under this epic.</div>'; return; }
+            listEl.innerHTML = '';
+            stories.forEach(s => {
+                const badgeClass = getTypeBadgeClass(s.type);
+                const item = document.createElement('div');
+                item.className = 'jira-item';
+                item.onclick = () => selectJiraStory(s);
+                item.innerHTML = `
+                    <span class="item-name">${s.summary}</span>
+                    <div class="item-meta">
+                        <span class="jira-type-badge ${badgeClass}">${s.type}</span>
+                        <span class="item-status">${s.status}</span>
+                        <span class="item-key">${s.key}</span>
+                    </div>`;
+                listEl.appendChild(item);
+            });
+        } catch (error) {
+            listEl.innerHTML = `<div class="text-center py-3 text-danger">Error: ${error.message}</div>`;
+        }
+    }
+
+    async function selectJiraStory(story) {
+        currentJiraStory = story;
+        document.getElementById('selectedStoryKey').innerText = story.key + ' — ' + story.summary;
+        showJiraChildren();
+    }
+
+    async function showJiraChildren() {
+        hideAllJiraViews();
+        document.getElementById('jiraChildrenView').style.display = 'block';
+        const listEl = document.getElementById('jiraChildList');
+        listEl.innerHTML = '<div class="text-center py-3"><i class="fas fa-spinner fa-spin"></i> Loading tasks & sub-tasks...</div>';
+
+        try {
+            const response = await fetch(`${BACKEND_URL}/jira/stories/${currentJiraStory.key}/children`);
+            if (!response.ok) throw new Error('Failed to fetch children');
+            const children = await response.json();
+            if (children.length === 0) { listEl.innerHTML = '<div class="text-center py-3 text-secondary">No tasks or sub-tasks found under this story.</div>'; return; }
+            listEl.innerHTML = '';
+            children.forEach(c => {
+                const badgeClass = getTypeBadgeClass(c.type);
+                const item = document.createElement('div');
+                item.className = 'jira-item';
+                item.onclick = () => showIssueDetail(c, 'children');
+                item.innerHTML = `
+                    <span class="item-name">${c.summary}</span>
+                    <div class="item-meta">
+                        <span class="jira-type-badge ${badgeClass}">${c.type}</span>
+                        <span class="item-status">${c.status}</span>
+                        <span class="item-key">${c.key}</span>
+                    </div>`;
+                listEl.appendChild(item);
+            });
+        } catch (error) {
+            listEl.innerHTML = `<div class="text-center py-3 text-danger">Error: ${error.message}</div>`;
+        }
+    }
+
+    async function showIssueDetail(issue, backTo) {
+        hideAllJiraViews();
+        document.getElementById('jiraDetailView').style.display = 'block';
+        document.getElementById('selectedIssueKey').innerText = issue.key;
+
+        const typeEl = document.getElementById('selectedIssueType');
+        const badgeClass = getTypeBadgeClass(issue.type || '');
+        typeEl.className = 'jira-type-badge ' + badgeClass;
+        typeEl.innerText = issue.type || 'Issue';
+
+        // Wire back button
+        const backBtn = document.getElementById('detailBackBtn');
+        backBtn.onclick = () => {
+            if (backTo === 'children') showJiraChildren();
+            else if (backTo === 'stories') showJiraStories();
+            else if (backTo === 'epics') showJiraEpics();
+            else showJiraProjects();
+        };
+
+        const descEl = document.getElementById('jiraIssueDescription');
         descEl.innerHTML = '<div class="text-center py-3"><i class="fas fa-spinner fa-spin"></i> Loading description...</div>';
 
         try {
-            const response = await fetch(`${BACKEND_URL}/jira/tasks/${task.key}`);
-            if (!response.ok) throw new Error('Failed to fetch task details');
+            const response = await fetch(`${BACKEND_URL}/jira/tasks/${issue.key}`);
+            if (!response.ok) throw new Error('Failed to fetch details');
             const detail = await response.json();
-            
             descEl.innerText = detail.description;
         } catch (error) {
             descEl.innerHTML = `<div class="text-center py-3 text-danger">Error: ${error.message}</div>`;
@@ -628,19 +748,18 @@
     }
 
     function copyJiraDescription() {
-        const text = document.getElementById('jiraTaskDescription').innerText;
+        const text = document.getElementById('jiraIssueDescription').innerText;
         document.getElementById('requirementInput').value = text;
-        
-        // Visual feedback
-        const btn = document.querySelector('#jiraTaskDetailView .btn-primary');
+
+        const btn = document.querySelector('#jiraDetailView .btn-primary');
         const originalText = btn.innerHTML;
         btn.innerHTML = '<i class="fas fa-check"></i> Copied to Input!';
         btn.classList.replace('btn-primary', 'btn-success');
-        
+
         setTimeout(() => {
             btn.innerHTML = originalText;
             btn.classList.replace('btn-success', 'btn-primary');
-            toggleJiraSection(); // Automatically close section after copying
+            toggleJiraSection();
         }, 1500);
     }
 </script>

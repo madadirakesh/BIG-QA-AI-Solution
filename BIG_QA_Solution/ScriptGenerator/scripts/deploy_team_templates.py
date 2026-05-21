@@ -113,6 +113,70 @@ TEMPLATES_DATA = [
         "is_binary": 0
       }
     ]
+  },
+  # ─────────────────────────────────────────────────────────────────
+  # NEW TEMPLATE: Selenium - Python - Behave
+  # ─────────────────────────────────────────────────────────────────
+  {
+    "metadata": {
+      "tool": "Selenium",
+      "language": "Python",
+      "framework": "Behave",
+      "description": "Enterprise Selenium Python Behave BDD Template",
+      "default_run_commands": "behave\nbehave --tags=@smoke"
+    },
+    "files": [
+      {
+        "file_path": "requirements.txt",
+        "file_content": "behave\nbehave-html-formatter\nselenium\nwebdriver-manager\npython-dotenv\nAllure-Behave\n",
+        "is_binary": 0
+      },
+      {
+        "file_path": "behave.ini",
+        "file_content": "[behave]\npaths = features\nshow_skipped = false\nformat = pretty\noutfiles = Results/behave_report.txt\nstdout_capture = false\nstderr_capture = false\nlog_capture = false\n\n[behave.formatters]\nhtml = behave_html_formatter:HTMLFormatter\n",
+        "is_binary": 0
+      },
+      {
+        "file_path": ".env",
+        "file_content": "APP_URL={{BASE_URL}}\nBROWSER=chrome\nHEADLESS=false\nUSER={{USERNAME}}\nPASSWORD={{PASSWORD}}\n",
+        "is_binary": 0
+      },
+      {
+        "file_path": "features/environment.py",
+        "file_content": "import os\nimport base64\nfrom datetime import datetime\nfrom dotenv import load_dotenv\nfrom selenium import webdriver\nfrom selenium.webdriver.chrome.service import Service as ChromeService\nfrom selenium.webdriver.firefox.service import Service as FirefoxService\nfrom selenium.webdriver.edge.service import Service as EdgeService\nfrom webdriver_manager.chrome import ChromeDriverManager\nfrom webdriver_manager.firefox import GeckoDriverManager\nfrom webdriver_manager.microsoft import EdgeChromiumDriverManager\n\nload_dotenv()\n\n\ndef before_all(context):\n    \"\"\"Global setup: runs once before the entire test suite.\"\"\"\n    os.makedirs(\"Results/screenshots\", exist_ok=True)\n    context.base_url = os.getenv(\"APP_URL\", \"https://www.saucedemo.com\")\n    context.headless = os.getenv(\"HEADLESS\", \"false\").lower() == \"true\"\n    context.browser_name = os.getenv(\"BROWSER\", \"chrome\").lower()\n\n\ndef before_scenario(context, scenario):\n    \"\"\"Spin up a fresh browser instance before each scenario.\"\"\"\n    context.driver = _create_driver(context.browser_name, context.headless)\n    context.driver.implicitly_wait(10)\n    context.driver.maximize_window()\n\n\ndef after_scenario(context, scenario):\n    \"\"\"Capture screenshot on failure, then tear down the driver.\"\"\"\n    if scenario.status == \"failed\":\n        timestamp = datetime.now().strftime(\"%Y%m%d_%H%M%S\")\n        safe_name = scenario.name.replace(\" \", \"_\").replace(\"/\", \"-\")\n        screenshot_path = f\"Results/screenshots/{safe_name}_{timestamp}.png\"\n        context.driver.save_screenshot(screenshot_path)\n        # Embed screenshot in Behave HTML report\n        with open(screenshot_path, \"rb\") as img_file:\n            context.embed(\n                mime_type=\"image/png\",\n                data=base64.b64encode(img_file.read()).decode(\"utf-8\"),\n                caption=f\"Failure screenshot: {scenario.name}\",\n            )\n    context.driver.quit()\n\n\ndef after_all(context):\n    \"\"\"Global teardown: runs once after the entire test suite.\"\"\"\n    pass\n\n\ndef _create_driver(browser_name: str, headless: bool):\n    \"\"\"Factory function to create the appropriate WebDriver instance.\"\"\"\n    if browser_name == \"firefox\":\n        options = webdriver.FirefoxOptions()\n        if headless:\n            options.add_argument(\"--headless\")\n        return webdriver.Firefox(\n            service=FirefoxService(GeckoDriverManager().install()),\n            options=options,\n        )\n    elif browser_name == \"edge\":\n        options = webdriver.EdgeOptions()\n        if headless:\n            options.add_argument(\"--headless\")\n        return webdriver.Edge(\n            service=EdgeService(EdgeChromiumDriverManager().install()),\n            options=options,\n        )\n    else:  # Default: Chrome\n        options = webdriver.ChromeOptions()\n        if headless:\n            options.add_argument(\"--headless=new\")\n        options.add_argument(\"--no-sandbox\")\n        options.add_argument(\"--disable-dev-shm-usage\")\n        options.add_argument(\"--ignore-certificate-errors\")\n        return webdriver.Chrome(\n            service=ChromeService(ChromeDriverManager().install()),\n            options=options,\n        )\n",
+        "is_binary": 0
+      },
+      {
+        "file_path": "features/login.feature",
+        "file_content": "Feature: Login Functionality\n\n  @smoke\n  Scenario: Verify Successful Login\n    Given I launch the application\n    When I enter valid Username and Password\n    And I click the login button\n    Then I should be redirected to the homepage\n",
+        "is_binary": 0
+      },
+      {
+        "file_path": "features/steps/login_steps.py",
+        "file_content": "import os\nfrom behave import given, when, then\nfrom pages.login_page import LoginPage\nfrom pages.home_page import HomePage\n\n\n@given(\"I launch the application\")\ndef step_launch_application(context):\n    context.driver.get(context.base_url)\n    context.login_page = LoginPage(context.driver)\n\n\n@when(\"I enter valid Username and Password\")\ndef step_enter_credentials(context):\n    username = os.getenv(\"USER\", \"standard_user\")\n    password = os.getenv(\"PASSWORD\", \"secret_sauce\")\n    context.login_page.enter_username(username)\n    context.login_page.enter_password(password)\n\n\n@when(\"I click the login button\")\ndef step_click_login(context):\n    context.login_page.click_login()\n    context.home_page = HomePage(context.driver)\n\n\n@then(\"I should be redirected to the homepage\")\ndef step_verify_homepage(context):\n    assert context.home_page.is_loaded(), (\n        f\"Expected homepage to load, but title was: {context.driver.title}\"\n    )\n",
+        "is_binary": 0
+      },
+      {
+        "file_path": "pages/base_page.py",
+        "file_content": "from selenium.webdriver.support.ui import WebDriverWait\nfrom selenium.webdriver.support import expected_conditions as EC\nfrom selenium.webdriver.remote.webdriver import WebDriver\nfrom selenium.webdriver.common.by import By\n\n\nclass BasePage:\n    \"\"\"Base Page Object — shared helpers for all page classes.\"\"\"\n\n    DEFAULT_TIMEOUT = 15\n\n    def __init__(self, driver: WebDriver):\n        self.driver = driver\n        self.wait = WebDriverWait(driver, self.DEFAULT_TIMEOUT)\n\n    def find(self, by: By, locator: str):\n        return self.wait.until(EC.presence_of_element_located((by, locator)))\n\n    def click(self, by: By, locator: str):\n        element = self.wait.until(EC.element_to_be_clickable((by, locator)))\n        element.click()\n\n    def type_text(self, by: By, locator: str, text: str):\n        element = self.find(by, locator)\n        element.clear()\n        element.send_keys(text)\n\n    def is_visible(self, by: By, locator: str) -> bool:\n        try:\n            self.wait.until(EC.visibility_of_element_located((by, locator)))\n            return True\n        except Exception:\n            return False\n",
+        "is_binary": 0
+      },
+      {
+        "file_path": "pages/login_page.py",
+        "file_content": "from selenium.webdriver.common.by import By\nfrom pages.base_page import BasePage\n\n\nclass LoginPage(BasePage):\n    \"\"\"Page Object for the Login page.\"\"\"\n\n    # Locators\n    USERNAME_INPUT = (By.ID, \"txtUserID\")\n    PASSWORD_INPUT = (By.ID, \"txtPassword\")\n    LOGIN_BUTTON   = (By.ID, \"sub\")\n    ERROR_MESSAGE  = (By.CSS_SELECTOR, \"[data-test='error']\")\n\n    def enter_username(self, username: str):\n        self.type_text(*self.USERNAME_INPUT, username)\n\n    def enter_password(self, password: str):\n        self.type_text(*self.PASSWORD_INPUT, password)\n\n    def click_login(self):\n        self.click(*self.LOGIN_BUTTON)\n\n    def get_error_message(self) -> str:\n        return self.find(*self.ERROR_MESSAGE).text\n",
+        "is_binary": 0
+      },
+      {
+        "file_path": "pages/home_page.py",
+        "file_content": "from selenium.webdriver.common.by import By\nfrom pages.base_page import BasePage\n\n\nclass HomePage(BasePage):\n    \"\"\"Page Object for the Home / Products page.\"\"\"\n\n    # Locators\n    PAGE_TITLE = (By.CSS_SELECTOR, \"div.app-logo-title\")\n\n    def is_loaded(self) -> bool:\n        return self.is_visible(*self.PAGE_TITLE)\n\n    def get_title_text(self) -> str:\n        return self.find(*self.PAGE_TITLE).text\n",
+        "is_binary": 0
+      },
+      {
+        "file_path": "utils/config_reader.py",
+        "file_content": "import os\nfrom dotenv import load_dotenv\n\nload_dotenv()\n\n\nclass ConfigReader:\n    \"\"\"Centralised helper to read configuration from the .env file.\"\"\"\n\n    @staticmethod\n    def get(key: str, default: str = None) -> str:\n        value = os.getenv(key, default)\n        if value is None:\n            raise EnvironmentError(\n                f\"Required environment variable '{key}' is not set in .env\"\n            )\n        return value\n\n    @staticmethod\n    def get_app_url() -> str:\n        return ConfigReader.get(\"APP_URL\")\n\n    @staticmethod\n    def get_browser() -> str:\n        return ConfigReader.get(\"BROWSER\", \"chrome\")\n\n    @staticmethod\n    def is_headless() -> bool:\n        return ConfigReader.get(\"HEADLESS\", \"false\").lower() == \"true\"\n",
+        "is_binary": 0
+      }
+    ]
   }
 ]
 

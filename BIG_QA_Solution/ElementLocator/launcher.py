@@ -23,10 +23,15 @@ def main():
     current_os = platform.system()
     print(f"🖥️ System detected: {current_os}")
 
-    # Launch the studio
+    # Launch the studio directly in this process to save memory and launch time
     print("✨ Launching Studio UI...")
     try:
-        subprocess.Popen([sys.executable, str(studio_path)])
+        import locator_studio
+        # Create the QApplication instance
+        app = locator_studio.QApplication(sys.argv)
+        studio = locator_studio.LocatorStudio()
+        studio.show()
+        sys.exit(app.exec())
     except Exception as e:
         print(f"❌ Failed to launch: {e}")
 
