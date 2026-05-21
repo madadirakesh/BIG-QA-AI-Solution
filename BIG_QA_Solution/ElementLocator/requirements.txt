@@ -3,3 +3,4 @@ PyQt6-WebEngine
 requests
 openpyxl
 python-dotenv
+

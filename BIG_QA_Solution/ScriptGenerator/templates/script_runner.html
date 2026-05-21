@@ -2,7 +2,8 @@
 
 {% block title %}Script Runner — BIG AI QA Solution{% endblock %}
 {% block page_title %}Script Runner{% endblock %}
-{% block header_breadcrumb %}<a href="/home">Home</a> <span class="sep">/</span> <span class="current">Script Runner</span>{% endblock %}
+{% block header_breadcrumb %}<a href="/home">Home</a> <span class="sep">/</span> <span class="current">Script
+    Runner</span>{% endblock %}
 
 {% block content %}
 <div class="breadcrumb animate-fade-in">
@@ -20,66 +21,96 @@
 <div class="script-runner-layout">
     <div class="form-panel glassmorphism">
         <div class="step-inner-align">
-    <style>
-        .terminal-panel {
-            box-shadow: 0 0 20px rgba(0, 120, 212, 0.1);
-            transition: box-shadow 0.3s ease;
-        }
-        .terminal-panel.running {
-            box-shadow: 0 0 30px rgba(0, 188, 242, 0.2);
-        }
-        .log-line {
-            margin-bottom: 2px;
-            font-family: 'JetBrains Mono', 'Fira Code', 'Courier New', monospace;
-            font-size: 0.9rem;
-        }
-        .log-system { color: #94a3b8; font-style: italic; }
-        .log-cmd { color: #60a5fa; font-weight: bold; }
-        .log-success { color: #34d399; }
-        .log-error { color: #ef4444; }
-        .log-warn { color: #fbbf24; }
-        
-        .status-dot.pulsing {
-            animation: pulse-glow 1.5s infinite;
-        }
-        
-        @keyframes pulse-glow {
-            0% { box-shadow: 0 0 0 0 rgba(52, 211, 153, 0.7); }
-            70% { box-shadow: 0 0 0 10px rgba(52, 211, 153, 0); }
-            100% { box-shadow: 0 0 0 0 rgba(52, 211, 153, 0); }
-        }
-        
-        .progress-stepper {
-            display: flex;
-            gap: 10px;
-            margin-bottom: 20px;
-            padding: 15px;
-            background: rgba(255,255,255,0.03);
-            border-radius: 8px;
-            border: 1px solid var(--glass-border);
-        }
-        .step-pill {
-            padding: 4px 12px;
-            border-radius: 20px;
-            font-size: 0.75rem;
-            background: rgba(255,255,255,0.05);
-            color: #94a3b8;
-            border: 1px solid transparent;
-            transition: all 0.3s ease;
-        }
-        .step-pill.active {
-            background: rgba(0, 120, 212, 0.1);
-            color: #818cf8;
-            border-color: rgba(0, 188, 242, 0.3);
-            font-weight: bold;
-        }
-        .step-pill.completed {
-            background: rgba(52, 211, 153, 0.1);
-            color: #34d399;
-            border-color: rgba(52, 211, 153, 0.3);
-        }
-    </style>
-    <h3 class="premium-header">Test Execution Setup</h3>
+            <style>
+                .terminal-panel {
+                    box-shadow: 0 0 20px rgba(0, 120, 212, 0.1);
+                    transition: box-shadow 0.3s ease;
+                }
+
+                .terminal-panel.running {
+                    box-shadow: 0 0 30px rgba(0, 188, 242, 0.2);
+                }
+
+                .log-line {
+                    margin-bottom: 2px;
+                    font-family: 'JetBrains Mono', 'Fira Code', 'Courier New', monospace;
+                    font-size: 0.9rem;
+                }
+
+                .log-system {
+                    color: #94a3b8;
+                    font-style: italic;
+                }
+
+                .log-cmd {
+                    color: #60a5fa;
+                    font-weight: bold;
+                }
+
+                .log-success {
+                    color: #34d399;
+                }
+
+                .log-error {
+                    color: #ef4444;
+                }
+
+                .log-warn {
+                    color: #fbbf24;
+                }
+
+                .status-dot.pulsing {
+                    animation: pulse-glow 1.5s infinite;
+                }
+
+                @keyframes pulse-glow {
+                    0% {
+                        box-shadow: 0 0 0 0 rgba(52, 211, 153, 0.7);
+                    }
+
+                    70% {
+                        box-shadow: 0 0 0 10px rgba(52, 211, 153, 0);
+                    }
+
+                    100% {
+                        box-shadow: 0 0 0 0 rgba(52, 211, 153, 0);
+                    }
+                }
+
+                .progress-stepper {
+                    display: flex;
+                    gap: 10px;
+                    margin-bottom: 20px;
+                    padding: 15px;
+                    background: rgba(255, 255, 255, 0.03);
+                    border-radius: 8px;
+                    border: 1px solid var(--glass-border);
+                }
+
+                .step-pill {
+                    padding: 4px 12px;
+                    border-radius: 20px;
+                    font-size: 0.75rem;
+                    background: rgba(255, 255, 255, 0.05);
+                    color: #94a3b8;
+                    border: 1px solid transparent;
+                    transition: all 0.3s ease;
+                }
+
+                .step-pill.active {
+                    background: rgba(0, 120, 212, 0.1);
+                    color: #818cf8;
+                    border-color: rgba(0, 188, 242, 0.3);
+                    font-weight: bold;
+                }
+
+                .step-pill.completed {
+                    background: rgba(52, 211, 153, 0.1);
+                    color: #34d399;
+                    border-color: rgba(52, 211, 153, 0.3);
+                }
+            </style>
+            <h3 class="premium-header">Test Execution Setup</h3>
 
             <div class="form-group">
                 <label>Select Project</label>
@@ -95,10 +126,19 @@
                 </select>
             </div>
 
-            <div id="modeSelection" style="display: none; margin-top: 25px; text-align: center; gap: 15px; justify-content: center; display: flex;">
-                <button type="button" class="btn btn-primary" id="btnModeRun" onclick="setMode('run')" style="width: 150px;"><i class="fas fa-play"></i> Run Test</button>
-                <button type="button" class="btn btn-primary" id="btnModeSeq" onclick="setMode('seq')" style="width: 180px; background: #6366f1; border-color: #4f46e5;"><i class="fas fa-list-ol"></i> Sequential Run</button>
-                <button type="button" class="btn btn-secondary" id="btnModeCmd" onclick="setMode('cmd')" style="width: 180px; background: rgba(255,255,255,0.1); border-color: rgba(255,255,255,0.2);"><i class="fas fa-terminal"></i> Open command prompt</button>
+            <div id="modeSelection"
+                style="display: none; margin-top: 25px; text-align: center; gap: 15px; justify-content: center; display: flex; flex-wrap: wrap;">
+                <button type="button" class="btn btn-primary" id="btnModeRun" onclick="setMode('run')"
+                    style="width: 150px;"><i class="fas fa-play"></i> Run Test</button>
+                <button type="button" class="btn btn-primary" id="btnModeSeq" onclick="setMode('seq')"
+                    style="width: 180px; background: #6366f1; border-color: #4f46e5;"><i class="fas fa-list-ol"></i>
+                    Sequential Run</button>
+                <button type="button" class="btn btn-secondary" id="btnModeCmd" onclick="setMode('cmd')"
+                    style="width: 180px; background: rgba(255,255,255,0.1); border-color: rgba(255,255,255,0.2);"><i
+                        class="fas fa-terminal"></i> Command Prompt</button>
+                <button type="button" class="btn btn-secondary" id="btnModeGit" onclick="setMode('git')"
+                    style="width: 180px; background: #f97316; border-color: #ea580c; color: white;"><i
+                        class="fab fa-git-alt"></i> Version Control</button>
             </div>
 
             <div id="runTestConfig" style="display: none;">
@@ -125,74 +165,204 @@
 
                 <div class="form-group mt-3">
                     <label>Tags / Specific Tests (Optional)</label>
-                    <input type="text" id="runTags" class="form-control" placeholder="e.g. @smoke, @regression, tests/login.feature">
+                    <input type="text" id="runTags" class="form-control"
+                        placeholder="e.g. @smoke, @regression, tests/login.feature">
                 </div>
 
-                </div>
-            </div> <!-- End runTestConfig -->
+            </div>
+        </div> <!-- End runTestConfig -->
 
-            <div id="seqConfig" style="display: none;">
-                <div class="form-group mt-3">
-                    <label>Sequential Commands (One per line)</label>
-                    <textarea id="seqCommands" class="form-control" style="height: 120px; font-family: 'Courier New'; font-size: 0.9rem;" placeholder="npm test -- --tags '@smoke'&#10;npm run report"></textarea>
-                    <p style="font-size: 0.8rem; color: #94a3b8; margin-top: 5px;">Commands will be executed in order. The process will stop if any command fails.</p>
+        <div id="seqConfig" style="display: none;">
+            <div class="form-group mt-3">
+                <label>Sequential Commands (One per line)</label>
+                <textarea id="seqCommands" class="form-control"
+                    style="height: 120px; font-family: 'Courier New'; font-size: 0.9rem;"
+                    placeholder="npm test -- --tags '@smoke'&#10;npm run report"></textarea>
+                <p style="font-size: 0.8rem; color: #94a3b8; margin-top: 5px;">Commands will be executed in order. The
+                    process will stop if any command fails.</p>
+            </div>
+        </div>
+
+        <div id="gitConfig" style="display: none;">
+            <div class="form-row mt-3">
+                <div class="form-col">
+                    <label>Repository URL</label>
+                    <input type="text" id="gitRepoUrl" class="form-control"
+                        placeholder="https://github.com/user/repo.git">
+                </div>
+            </div>
+            <div class="form-row mt-3">
+                <div class="form-col">
+                    <label>Git Username</label>
+                    <input type="text" id="gitUsername" class="form-control" placeholder="username">
+                </div>
+                <div class="form-col">
+                    <label>Personal Access Token (PAT)</label>
+                    <input type="password" id="gitToken" class="form-control" placeholder="ghp_xxxxxxxxxxxx">
+                </div>
+            </div>
+            <div style="text-align: right; margin-bottom: 20px;">
+                <button type="button" class="btn btn-primary" onclick="saveGitConfig()"
+                    style="background: #ea580c; border: none;"><i class="fas fa-save"></i> Save Git Config</button>
+            </div>
+
+            <hr style="border-top: 1px solid rgba(255,255,255,0.1); margin: 25px 0;">
+
+            <!-- Widget 1: Native Git Actions -->
+            <div class="git-widget" id="nativeGitWidget">
+                <div class="git-widget-header" onclick="toggleGitWidget(this)">
+                    <h4 class="git-widget-title" style="color: #cbd5e1;"><i class="fas fa-code-branch"></i> Native Git Actions</h4>
+                    <span class="git-widget-toggle"><i class="fas fa-chevron-down"></i></span>
+                </div>
+                <div class="git-widget-body">
+                    <div style="display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 20px;">
+                        <button type="button" class="btn btn-secondary" onclick="runGitAction('status')"
+                            style="background: rgba(255,255,255,0.1);"><i class="fas fa-info-circle"></i> Status</button>
+                        <button type="button" class="btn btn-secondary" onclick="runGitAction('pull')"
+                            style="background: rgba(255,255,255,0.1);"><i class="fas fa-arrow-down"></i> Pull</button>
+                        <button type="button" class="btn btn-secondary" onclick="runGitAction('commit')"
+                            style="background: rgba(255,255,255,0.1);"><i class="fas fa-check"></i> Commit All</button>
+                        <button type="button" class="btn btn-secondary" onclick="runGitAction('push')"
+                            style="background: rgba(255,255,255,0.1);"><i class="fas fa-arrow-up"></i> Push</button>
+                    </div>
+                    
+                    <!-- Embedded Git Terminal -->
+                    <div class="git-terminal-embedded" style="background: rgba(0,0,0,0.25); border: 1px solid var(--glass-border); border-radius: 6px; padding: 12px;">
+                        <label style="font-size: 0.85rem; color: #cbd5e1; margin-bottom: 8px;"><i class="fas fa-terminal"></i> Git Terminal (Execute custom git commands)</label>
+                        <div style="display: flex; gap: 10px;">
+                            <span style="color: #34d399; font-family: 'Courier New'; align-self: center;">$ git</span>
+                            <input type="text" id="gitCmdInput" class="form-control"
+                                style="background: transparent !important; font-family: 'Courier New'; height: 36px; flex: 1;"
+                                placeholder="status, diff, branch, checkout -b main..." onkeypress="handleGitTerminalKey(event)">
+                            <button type="button" class="btn btn-primary" onclick="runCustomGitCommand()"
+                                style="background: var(--accent-primary); border: none; height: 36px; padding: 0 15px;"><i class="fas fa-paper-plane"></i> Run</button>
+                        </div>
+                    </div>
                 </div>
             </div>
 
-            <div id="executionProgress" style="display: none;">
-                <div class="progress-stepper" id="stepperContainer">
-                    <!-- Steps will be injected here -->
+            <!-- Widget 2: AI Git Assistant (MCP) -->
+            <div class="git-widget" id="aiGitWidget">
+                <div class="git-widget-header" onclick="toggleGitWidget(this)">
+                    <h4 class="git-widget-title" style="color: #818cf8;"><i class="fas fa-robot"></i> AI Git Assistant (MCP)</h4>
+                    <span class="git-widget-toggle"><i class="fas fa-chevron-down"></i></span>
                 </div>
-            </div>
-
-            <div id="executionAction" style="display: none; margin-top: 30px;">
-                <div style="display: flex; gap: 15px;">
-                    <button type="button" id="launchBtn" class="btn btn-primary btn-block"
-                        style="height: 46px; font-weight: bold; flex: 1;" onclick="runScript()">
-                        <i class="fas fa-rocket"></i> Launch Execution
-                        <span class="kbd-hint"><span class="kbd">Ctrl</span>+<span class="kbd">Enter</span></span>
-                    </button>
-                    <button type="button" id="abortBtn" class="btn btn-danger"
-                        style="height: 46px; width: 60px; display: none; background: #ef4444; border: none;" onclick="abortExecution()" title="Abort Execution">
-                        <i class="fas fa-stop"></i>
-                    </button>
+                <div class="git-widget-body">
+                    <div style="display: flex; gap: 10px;">
+                        <input type="text" id="gitMcpInput" class="form-control"
+                            placeholder="e.g., 'Analyze my uncommitted changes and write a semantic commit message...'"
+                            style="flex: 1;">
+                        <button type="button" class="btn btn-primary" onclick="runMcpGitAction()"
+                            style="background: #4f46e5; border: none; width: 120px;"><i class="fas fa-magic"></i> Ask
+                            AI</button>
+                    </div>
+                    <p style="font-size: 0.8rem; color: #94a3b8; margin-top: 10px; margin-bottom: 0;">The AI will use MCP tools to manage your
+                        repository based on your prompt.</p>
                 </div>
             </div>
         </div>
-    </div>
 
-    <!-- Execution Terminal / Logs -->
-    <div class="terminal-panel glassmorphism mt-4 mx-auto" style="max-width: 98%;">
-        <div class="terminal-header">
-            <span><i class="fas fa-terminal"></i> Execution Logs</span>
-            <div class="terminal-actions" style="display:flex;align-items:center;gap:12px;">
-                <!-- M6: Clear Console Button -->
-                <button class="terminal-clear-btn" onclick="clearConsole()" title="Clear logs (Ctrl+L)">
-                    <i class="fas fa-eraser"></i> Clear
+        <div id="executionProgress" style="display: none;">
+            <div class="progress-stepper" id="stepperContainer">
+                <!-- Steps will be injected here -->
+            </div>
+        </div>
+
+        <div id="executionAction" style="display: none; margin-top: 30px;">
+            <div style="display: flex; gap: 15px;">
+                <button type="button" id="launchBtn" class="btn btn-primary btn-block"
+                    style="height: 46px; font-weight: bold; flex: 1;" onclick="runScript()">
+                    <i class="fas fa-rocket"></i> Launch Execution
+                    <span class="kbd-hint"><span class="kbd">Ctrl</span>+<span class="kbd">Enter</span></span>
                 </button>
-                <span class="status-dot offline" id="execStatus"></span><span id="execStatusText"> Status: Ready</span>
+                <button type="button" id="abortBtn" class="btn btn-danger"
+                    style="height: 46px; width: 60px; display: none; background: #ef4444; border: none;"
+                    onclick="abortExecution()" title="Abort Execution">
+                    <i class="fas fa-stop"></i>
+                </button>
             </div>
         </div>
     </div>
-    <div class="terminal-body" id="logOutput">
-        Welcome to BIG AI QA Solution - Script Runner.
-        Select a project and a mode to begin.
-    </div>
-    <div class="terminal-footer" id="cmdFooter"
-        style="display: none; padding: 10px; background: rgba(0,0,0,0.3); border-top: 1px solid var(--glass-border);">
-        <div style="display: flex; gap: 10px;">
-            <span style="color: #34d399; font-family: 'Courier New'; align-self: center;">&gt;</span>
-            <input type="text" id="cmdInput" class="form-control"
-                style="background: transparent !important; border: none !important; box-shadow: none !important; font-family: 'Courier New'; height: 30px;"
-                placeholder="Type command and press Enter..." onkeypress="handleCmdKey(event)">
+</div>
+
+<!-- Execution Terminal / Logs -->
+<div class="terminal-panel glassmorphism mt-4 mx-auto" style="max-width: 98%;">
+    <div class="terminal-header">
+        <span><i class="fas fa-terminal"></i> Execution Logs</span>
+        <div class="terminal-actions" style="display:flex;align-items:center;gap:12px;">
+            <!-- M6: Clear Console Button -->
+            <button class="terminal-clear-btn" onclick="clearConsole()" title="Clear logs (Ctrl+L)">
+                <i class="fas fa-eraser"></i> Clear
+            </button>
+            <span class="status-dot offline" id="execStatus"></span><span id="execStatusText"> Status: Ready</span>
         </div>
     </div>
+</div>
+<div class="terminal-body" id="logOutput">
+    Welcome to BIG AI QA Solution - Script Runner.
+    Select a project and a mode to begin.
+</div>
+<div class="terminal-footer" id="cmdFooter"
+    style="display: none; padding: 10px; background: rgba(0,0,0,0.3); border-top: 1px solid var(--glass-border);">
+    <div style="display: flex; gap: 10px;">
+        <span style="color: #34d399; font-family: 'Courier New'; align-self: center;">&gt;</span>
+        <input type="text" id="cmdInput" class="form-control"
+            style="background: transparent !important; border: none !important; box-shadow: none !important; font-family: 'Courier New'; height: 30px;"
+            placeholder="Type command and press Enter..." onkeypress="handleCmdKey(event)">
+    </div>
+</div>
 </div>
 </div>
 {% endblock %}
 
 {% block extra_css %}
 <style>
+    /* Git Widget Styles */
+    .git-widget {
+        background: rgba(255, 255, 255, 0.02);
+        border: 1px solid var(--glass-border);
+        border-radius: 8px;
+        margin-bottom: 20px;
+        overflow: hidden;
+        transition: all 0.3s ease;
+    }
+    .git-widget-header {
+        background: rgba(255, 255, 255, 0.05);
+        padding: 12px 15px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        cursor: pointer;
+        user-select: none;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    }
+    .git-widget-header:hover {
+        background: rgba(255, 255, 255, 0.08);
+    }
+    .git-widget-title {
+        font-size: 1rem;
+        font-weight: 600;
+        margin: 0 !important;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+    .git-widget-toggle {
+        font-size: 0.85rem;
+        color: #94a3b8;
+        transition: transform 0.3s ease;
+    }
+    .git-widget-body {
+        padding: 15px;
+        transition: max-height 0.3s ease;
+    }
+    .git-widget.collapsed .git-widget-body {
+        display: none;
+    }
+    .git-widget.collapsed .git-widget-toggle {
+        transform: rotate(-90deg);
+    }
+
     .terminal-panel {
         background: #0f172a;
         border: 1px solid var(--glass-border);
@@ -384,6 +554,21 @@
         if (sel.value) {
             modeDiv.style.display = 'flex';
             if (document.getElementById('executionAction')) document.getElementById('executionAction').style.display = 'block';
+
+            // Load Git config if any
+            const pPath = opt.getAttribute('data-path');
+            const pName = sel.value;
+            let fullPath = pPath;
+            if (pPath && pName) {
+                const pathNormalized = pPath.replace(/\\/g, '/');
+                const nameNormalized = pName.replace(/\\/g, '/');
+                if (!pathNormalized.endsWith('/' + nameNormalized) && !pathNormalized.endsWith(nameNormalized)) {
+                    const sep = pPath.includes('\\') ? '\\' : '/';
+                    fullPath = pPath.endsWith(sep) ? pPath + pName : pPath + sep + pName;
+                }
+            }
+            loadGitConfig(fullPath);
+
             const cmds = opt.getAttribute('data-cmds');
             if (cmds && document.getElementById('seqCommands')) {
                 document.getElementById('seqCommands').value = cmds;
@@ -395,6 +580,7 @@
             modeDiv.style.display = 'none';
             runConfigDiv.style.display = 'none';
             if (document.getElementById('seqConfig')) document.getElementById('seqConfig').style.display = 'none';
+            if (document.getElementById('gitConfig')) document.getElementById('gitConfig').style.display = 'none';
             if (document.getElementById('executionAction')) document.getElementById('executionAction').style.display = 'none';
             cmdFooter.style.display = 'none';
             currentMode = null;
@@ -405,40 +591,246 @@
         currentMode = mode;
         const runConfigDiv = document.getElementById('runTestConfig');
         const seqConfigDiv = document.getElementById('seqConfig');
+        const gitConfigDiv = document.getElementById('gitConfig');
         const cmdFooter = document.getElementById('cmdFooter');
+
         const btnRun = document.getElementById('btnModeRun');
         const btnSeq = document.getElementById('btnModeSeq');
         const btnCmd = document.getElementById('btnModeCmd');
+        const btnGit = document.getElementById('btnModeGit');
         const log = document.getElementById('logOutput');
+
+        // Reset all buttons
+        btnRun.style.background = 'rgba(255,255,255,0.1)';
+        if (btnSeq) btnSeq.style.background = 'rgba(255,255,255,0.1)';
+        btnCmd.style.background = 'rgba(255,255,255,0.1)';
+        if (btnGit) btnGit.style.background = 'rgba(255,255,255,0.1)';
+
+        // Hide all divs
+        runConfigDiv.style.display = 'none';
+        if (seqConfigDiv) seqConfigDiv.style.display = 'none';
+        if (gitConfigDiv) gitConfigDiv.style.display = 'none';
+        cmdFooter.style.display = 'none';
+        if (document.getElementById('executionAction')) document.getElementById('executionAction').style.display = 'none';
 
         if (mode === 'run') {
             runConfigDiv.style.display = 'block';
-            if (seqConfigDiv) seqConfigDiv.style.display = 'none';
             if (document.getElementById('executionAction')) document.getElementById('executionAction').style.display = 'block';
-            cmdFooter.style.display = 'none';
             btnRun.style.background = 'var(--accent-primary)';
-            if (btnSeq) btnSeq.style.background = 'rgba(255,255,255,0.1)';
-            btnCmd.style.background = 'rgba(255,255,255,0.1)';
             log.innerHTML = `<div style="color: #94a3b8;">[System] Mode: Run Test Executions. Selected project will be executed using AI generation rules.</div>`;
         } else if (mode === 'seq') {
-            runConfigDiv.style.display = 'none';
             if (seqConfigDiv) seqConfigDiv.style.display = 'block';
             if (document.getElementById('executionAction')) document.getElementById('executionAction').style.display = 'block';
-            cmdFooter.style.display = 'none';
             if (btnSeq) btnSeq.style.background = '#6366f1';
-            btnRun.style.background = 'rgba(255,255,255,0.1)';
-            btnCmd.style.background = 'rgba(255,255,255,0.1)';
             log.innerHTML = `<div style="color: #94a3b8;">[System] Mode: Sequential Run. Enter the commands you want to run in sequence.</div>`;
+        } else if (mode === 'git') {
+            if (gitConfigDiv) gitConfigDiv.style.display = 'block';
+            if (btnGit) btnGit.style.background = '#ea580c';
+            log.innerHTML = `<div style="color: #cbd5e1;">[System] Version Control Mode activated. You can use Native Git buttons or Ask AI for assistance.</div>`;
         } else {
-            runConfigDiv.style.display = 'none';
-            if (seqConfigDiv) seqConfigDiv.style.display = 'none';
-            if (document.getElementById('executionAction')) document.getElementById('executionAction').style.display = 'none';
             cmdFooter.style.display = 'block';
             btnCmd.style.background = 'var(--accent-primary)';
-            btnRun.style.background = 'rgba(255,255,255,0.1)';
-            if (btnSeq) btnSeq.style.background = 'rgba(255,255,255,0.1)';
             log.innerHTML = `<div style="color: #60a5fa;">[System] Embedded Command Prompt active. Type a command below.</div>`;
             document.getElementById('cmdInput').focus();
+        }
+    }
+
+    async function loadGitConfig(projectPath) {
+        try {
+            const res = await fetch(`/api/get-git-config?project_path=${encodeURIComponent(projectPath)}`);
+            const json = await res.json();
+            if (json.status === 'success' && json.data) {
+                document.getElementById('gitRepoUrl').value = json.data.repo_url || '';
+                document.getElementById('gitUsername').value = json.data.username || '';
+                document.getElementById('gitToken').value = json.data.access_token || '';
+            }
+        } catch (e) {
+            console.error('Failed to load git config', e);
+        }
+    }
+
+    async function saveGitConfig() {
+        const sel = document.getElementById('runProject');
+        const opt = sel.options[sel.selectedIndex];
+        if (!opt.value) return showToast('Please select a project first', 'error');
+
+        const pPath = opt.getAttribute('data-path');
+        const pName = sel.value;
+        let projectPath = pPath;
+        if (pPath && pName) {
+            const pathNormalized = pPath.replace(/\\/g, '/');
+            const nameNormalized = pName.replace(/\\/g, '/');
+            if (!pathNormalized.endsWith('/' + nameNormalized) && !pathNormalized.endsWith(nameNormalized)) {
+                const sep = pPath.includes('\\') ? '\\' : '/';
+                projectPath = pPath.endsWith(sep) ? pPath + pName : pPath + sep + pName;
+            }
+        }
+        const repoUrl = document.getElementById('gitRepoUrl').value;
+        const username = document.getElementById('gitUsername').value;
+        const token = document.getElementById('gitToken').value;
+
+        addLog("[System] Saving Git configuration...", "log-system");
+        try {
+            const res = await fetch('/api/save-git-config', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ project_path: projectPath, repo_url: repoUrl, username: username, access_token: token })
+            });
+            const json = await res.json();
+            if (json.status === 'success') {
+                addLog(`[Success] ${json.message}`, "log-success");
+                showToast(json.message, 'success');
+            } else {
+                addLog(`[Error] ${json.message}`, "log-error");
+            }
+        } catch (e) {
+            addLog(`[Error] Failed to save config: ${e.message}`, "log-error");
+        }
+    }
+
+    function toggleGitWidget(headerEl) {
+        const widget = headerEl.parentElement;
+        widget.classList.toggle('collapsed');
+    }
+
+    async function handleGitTerminalKey(e) {
+        if (e.key === 'Enter') {
+            runCustomGitCommand();
+        }
+    }
+
+    async function runCustomGitCommand() {
+        const sel = document.getElementById('runProject');
+        const opt = sel.options[sel.selectedIndex];
+        if (!opt.value) return showToast('Please select a project first', 'error');
+
+        const input = document.getElementById('gitCmdInput');
+        let cmd = input.value.trim();
+        if (!cmd) return;
+
+        // Automatically prepend 'git ' if the user didn't type it
+        if (!cmd.toLowerCase().startsWith('git ')) {
+            cmd = 'git ' + cmd;
+        }
+
+        const log = document.getElementById('logOutput');
+        log.innerHTML += `<div><span style="color: #34d399; font-weight: bold;">$</span> ${cmd}</div>`;
+        input.value = 'Executing...';
+        input.disabled = true;
+
+        const pPath = opt.getAttribute('data-path');
+        const pName = sel.value;
+        let projectPath = pPath;
+        if (pPath && pName) {
+            const pathNormalized = pPath.replace(/\\/g, '/');
+            const nameNormalized = pName.replace(/\\/g, '/');
+            if (!pathNormalized.endsWith('/' + nameNormalized) && !pathNormalized.endsWith(nameNormalized)) {
+                const sep = pPath.includes('\\') ? '\\' : '/';
+                projectPath = pPath.endsWith(sep) ? pPath + pName : pPath + sep + pName;
+            }
+        }
+
+        try {
+            const response = await fetch('/api/script-runner/execute-cmd', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    command: cmd,
+                    project_path: projectPath
+                })
+            });
+            const data = await response.json();
+            log.innerHTML += `<div style="color: #cbd5e1; white-space: pre-wrap; margin-bottom: 10px;">${data.output || '(No output)'}</div>`;
+        } catch (err) {
+            log.innerHTML += `<div style="color: #ef4444; margin-bottom: 10px;">Error: ${err.message}</div>`;
+        } finally {
+            input.disabled = false;
+            input.value = '';
+            input.focus();
+            log.scrollTop = log.scrollHeight;
+        }
+    }
+
+    async function runGitAction(action) {
+        const sel = document.getElementById('runProject');
+        const opt = sel.options[sel.selectedIndex];
+        if (!opt.value) return;
+
+        const pPath = opt.getAttribute('data-path');
+        const pName = sel.value;
+        let projectPath = pPath;
+        if (pPath && pName) {
+            const pathNormalized = pPath.replace(/\\/g, '/');
+            const nameNormalized = pName.replace(/\\/g, '/');
+            if (!pathNormalized.endsWith('/' + nameNormalized) && !pathNormalized.endsWith(nameNormalized)) {
+                const sep = pPath.includes('\\') ? '\\' : '/';
+                projectPath = pPath.endsWith(sep) ? pPath + pName : pPath + sep + pName;
+            }
+        }
+        addLog(`[Git] Executing native action: ${action.toUpperCase()}...`, "log-cmd");
+
+        try {
+            const res = await fetch('/api/git/native-action', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: action, project_path: projectPath })
+            });
+            const json = await res.json();
+            if (json.success) {
+                addLog(`[Success] ${json.message}`, "log-success");
+                addLog(json.output || "Done.", "log-default");
+            } else {
+                addLog(`[Error] ${json.message}`, "log-error");
+            }
+        } catch (e) {
+            addLog(`[Error] ${e.message}`, "log-error");
+        }
+    }
+
+    async function runMcpGitAction() {
+        const sel = document.getElementById('runProject');
+        const opt = sel.options[sel.selectedIndex];
+        if (!opt.value) return showToast('Select project first', 'error');
+
+        const input = document.getElementById('gitMcpInput');
+        const prompt = input.value.trim();
+        if (!prompt) return showToast('Please enter a prompt for the AI', 'warning');
+
+        const pPath = opt.getAttribute('data-path');
+        const pName = sel.value;
+        let projectPath = pPath;
+        if (pPath && pName) {
+            const pathNormalized = pPath.replace(/\\/g, '/');
+            const nameNormalized = pName.replace(/\\/g, '/');
+            if (!pathNormalized.endsWith('/' + nameNormalized) && !pathNormalized.endsWith(nameNormalized)) {
+                const sep = pPath.includes('\\') ? '\\' : '/';
+                projectPath = pPath.endsWith(sep) ? pPath + pName : pPath + sep + pName;
+            }
+        }
+        input.value = '';
+        input.disabled = true;
+
+        addLog(`[MCP Assistant] Analyzing prompt: "${prompt}"...`, "log-cmd");
+
+        try {
+            const res = await fetch('/api/git/mcp-action', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ prompt: prompt, project_path: projectPath })
+            });
+            const json = await res.json();
+            if (json.success) {
+                addLog(`[MCP Success] ${json.message}`, "log-success");
+                if (json.output) {
+                    addLog(json.output, "log-default");
+                }
+            } else {
+                addLog(`[MCP Error] ${json.message}`, "log-error");
+            }
+        } catch (e) {
+            addLog(`[MCP Error] ${e.message}`, "log-error");
+        } finally {
+            input.disabled = false;
         }
     }
 
@@ -448,13 +840,13 @@
         const log = document.getElementById('logOutput');
         const line = document.createElement('div');
         line.className = 'log-line';
-        
+
         let colorClass = 'log-default';
         if (msg.includes('[Step')) colorClass = 'log-cmd';
         else if (msg.includes('[Error]') || msg.includes('Failed') || msg.includes('Critical')) colorClass = 'log-error';
         else if (msg.includes('[Success]') || msg.includes('Completed Successfully')) colorClass = 'log-success';
         else if (msg.includes('[System]') || msg.includes('[Sequential Mode]')) colorClass = 'log-system';
-        
+
         line.classList.add(colorClass);
         line.textContent = msg;
         log.appendChild(line);
@@ -473,7 +865,7 @@
                 container.appendChild(pill);
             }
         }
-        
+
         const pill = document.getElementById(`step-pill-${step}`);
         if (pill) {
             if (status === 'start') pill.className = 'step-pill active';
@@ -498,7 +890,7 @@
     }
 
     // M7: Ctrl+L shortcut for clear
-    document.addEventListener('keydown', function(e) {
+    document.addEventListener('keydown', function (e) {
         if ((e.ctrlKey || e.metaKey) && e.key === 'l') {
             e.preventDefault();
             clearConsole();
@@ -528,7 +920,7 @@
         status.nextSibling.textContent = ' Status: Running...';
         log.innerHTML = '';
         document.querySelector('.terminal-panel').classList.add('running');
-        
+
         if (currentMode === 'seq') {
             document.getElementById('executionProgress').style.display = 'block';
             const totalSteps = customCmds.split('\n').filter(l => l.trim()).length;
@@ -570,12 +962,12 @@
         eventSource.addEventListener('result', (e) => {
             const data = JSON.parse(e.data);
             eventSource.close();
-            
+
             btn.disabled = false;
             btn.innerHTML = '<i class="fas fa-rocket"></i> Launch Execution';
             abortBtn.style.display = 'none';
             document.querySelector('.terminal-panel').classList.remove('running');
-            
+
             if (data.status === 'success') {
                 addLog("[System] Execution Completed Successfully!", "log-success");
                 status.className = 'status-dot done';
@@ -616,12 +1008,23 @@
             input.disabled = true;
 
             try {
+                const pPath = opt.getAttribute('data-path');
+                const pName = opt.value;
+                let projectPath = pPath;
+                if (pPath && pName) {
+                    const pathNormalized = pPath.replace(/\\/g, '/');
+                    const nameNormalized = pName.replace(/\\/g, '/');
+                    if (!pathNormalized.endsWith('/' + nameNormalized) && !pathNormalized.endsWith(nameNormalized)) {
+                        const sep = pPath.includes('\\') ? '\\' : '/';
+                        projectPath = pPath.endsWith(sep) ? pPath + pName : pPath + sep + pName;
+                    }
+                }
                 const response = await fetch('/api/script-runner/execute-cmd', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         command: cmd,
-                        project_path: opt.getAttribute('data-path') + '/' + opt.value
+                        project_path: projectPath
                     })
                 });
                 const data = await response.json();

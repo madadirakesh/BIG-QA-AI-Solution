@@ -146,17 +146,21 @@ import os
 parent_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
-from prompts.script_generation_prompts import (
-    SELENIUM_STANDARDS_PYTHON,
-    SELENIUM_STANDARDS_JAVA,
-    PLAYWRIGHT_STANDARDS_TS,
-    LOCATOR_USAGE_STANDARDS,
-    get_pytest_new_suite_prompt,
-    get_pytest_new_file_in_existing_suite_prompt,
-    get_pytest_extend_existing_file_prompt,
-    get_python_behave_prompt,
-    get_universal_script_generation_prompt
-)
+import importlib
+import prompts.script_generation_prompts as sg_prompts
+
+def reload_prompts():
+    """Reloads prompt modules from disk so that user edits in the UI take effect immediately."""
+    import sys
+    for mod_name in ["prompts.script_generation_prompts", "prompts.test_case_generation_prompts"]:
+        try:
+            if mod_name in sys.modules:
+                importlib.reload(sys.modules[mod_name])
+            else:
+                __import__(mod_name)
+            logger.info(f"Reloaded {mod_name} successfully.")
+        except Exception as e:
+            logger.error(f"Failed to reload {mod_name}: {e}")
 
 @app.get("/health")
 async def health_check():
@@ -457,9 +461,11 @@ class CodeGenerator:
 class PythonPytestGenerator(CodeGenerator):
     def __init__(self, provider: str):
         super().__init__(provider)
-        self.standards = SELENIUM_STANDARDS_PYTHON
+        self.standards = None
 
     async def generate(self, bdd_content: str, support_content: str, file_content: str) -> dict:
+        reload_prompts()
+        self.standards = sg_prompts.SELENIUM_STANDARDS_PYTHON
         is_existing_file = "File Mode: Existing" in support_content
         is_new_file      = "File Mode: New"      in support_content
         file_mode        = "Existing" if is_existing_file else "New" if is_new_file else "Unknown"
@@ -478,7 +484,7 @@ class PythonPytestGenerator(CodeGenerator):
                 "steps": f"from pytest_bdd import given, when, then\nfrom {project_dir}.pages.login_page import LoginPage\n\n\n@given('I have navigated to the login page of the application')\ndef navigate_to_login_page(browser):\n    LoginPage(browser).open_login_page()"
             }
 
-            prompt = get_pytest_new_suite_prompt(file_templates, support_content, bdd_content)
+            prompt = sg_prompts.get_pytest_new_suite_prompt(file_templates, support_content, bdd_content)
             parsed = await self._call_ai_and_parse(prompt, "tests/generated_test.py")
             return sanitize_step_quoting(parsed)
 
@@ -530,10 +536,12 @@ class PythonPytestGenerator(CodeGenerator):
 class PythonBehaveGenerator(CodeGenerator):
     def __init__(self, provider: str):
         super().__init__(provider)
-        self.standards = SELENIUM_STANDARDS_PYTHON
+        self.standards = None
 
     async def generate(self, bdd_content, support_content, file_content) -> dict:
-        prompt = get_python_behave_prompt(support_content, bdd_content)
+        reload_prompts()
+        self.standards = sg_prompts.SELENIUM_STANDARDS_PYTHON
+        prompt = sg_prompts.get_python_behave_prompt(support_content, bdd_content)
         return await self._call_ai_and_parse(prompt, "features/generated.feature")
 
 
@@ -625,6 +633,7 @@ def merge_into_existing(file_type: str, existing_code: str, parsed: dict) -> dic
 async def generate_python_pytest(
     bdd_content: str, support_content: str, file_content: str, provider: str
 ) -> dict:
+    reload_prompts()
     is_existing_file = "File Mode: Existing" in support_content
     is_new_file      = "File Mode: New"      in support_content
     file_mode        = "Existing" if is_existing_file else "New" if is_new_file else "Unknown"
@@ -757,9 +766,9 @@ def navigate_to_login_page(browser):
         - If a locator is missing for a step, add # TODO comment in page method.
         - conftest.py is assumed to exist with a 'browser' fixture — do NOT regenerate it.
 
-        {SELENIUM_STANDARDS_PYTHON}
+        {sg_prompts.SELENIUM_STANDARDS_PYTHON}
 
-        {LOCATOR_USAGE_STANDARDS}
+        {sg_prompts.LOCATOR_USAGE_STANDARDS}
 
         Supporting Information:
         {support_content}
@@ -978,7 +987,7 @@ def navigate_to_login_page(browser):
             ]
             bdd_steps_text = "\n".join(f"  - {s}" for s in bdd_lines) if bdd_lines else "(see BDD Content below)"
 
-            prompt = get_pytest_new_file_in_existing_suite_prompt(
+            prompt = sg_prompts.get_pytest_new_file_in_existing_suite_prompt(
                 file_type=file_type,
                 new_file_name=new_file_name,
                 bdd_steps_text=bdd_steps_text,
@@ -1086,7 +1095,7 @@ def navigate_to_login_page(browser):
             ]
             bdd_steps_text = "\n".join(f"  - {s}" for s in bdd_lines) if bdd_lines else "(see BDD Content below)"
 
-            prompt = get_pytest_extend_existing_file_prompt(
+            prompt = sg_prompts.get_pytest_extend_existing_file_prompt(
                 file_type=file_type,
                 bdd_steps_text=bdd_steps_text,
                 file_type_instructions=file_type_instructions,
@@ -1141,17 +1150,19 @@ class UniversalScriptGenerator(CodeGenerator):
         t = self.tool.lower()
         l = self.language.lower()
         if t == "selenium":
-            if l == "python": return SELENIUM_STANDARDS_PYTHON
-            if l == "java": return SELENIUM_STANDARDS_JAVA
+            if l == "python": return sg_prompts.SELENIUM_STANDARDS_PYTHON
+            if l == "java": return sg_prompts.SELENIUM_STANDARDS_JAVA
             if "c#" in l: return "Follow Selenium 4 C# standards strictly."
         elif t == "playwright":
-            if "ts" in l or "js" in l or "typescript" in l or "javascript" in l: return PLAYWRIGHT_STANDARDS_TS
+            if "ts" in l or "js" in l or "typescript" in l or "javascript" in l: return sg_prompts.PLAYWRIGHT_STANDARDS_TS
             if l == "python": return "Follow Playwright Python async standards strictly."
             if l == "java": return "Follow Playwright Java standards strictly."
         return f"Follow best practices for {self.tool} with {self.language} using {self.framework}."
 
     async def generate(self, bdd_content, support_content, file_content) -> dict:
-        prompt = get_universal_script_generation_prompt(
+        reload_prompts()
+        self.standards = self._get_standards()
+        prompt = sg_prompts.get_universal_script_generation_prompt(
             self.framework, self.tool, self.language, self.standards, support_content, bdd_content
         )
         
@@ -1283,11 +1294,13 @@ async def generate_bdd_scenarios(req: GenerateBDDScenariosRequest):
     parent_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     if parent_dir not in sys.path:
         sys.path.insert(0, parent_dir)
-    from prompts.test_case_generation_prompts import get_bdd_scenario_generation_prompt
+    
+    reload_prompts()
+    import prompts.test_case_generation_prompts as tcg_prompts
 
     provider = req.ai_provider.strip().lower() if req.ai_provider.strip() else DEFAULT_AI_PROVIDER
     
-    prompt = get_bdd_scenario_generation_prompt(req.requirements)
+    prompt = tcg_prompts.get_bdd_scenario_generation_prompt(req.requirements)
     
     try:
         # expect_json must be False here to get raw Gherkin text
@@ -1306,11 +1319,13 @@ async def generate_formatted_test_cases(req: GenerateTestCasesRequest):
     parent_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     if parent_dir not in sys.path:
         sys.path.insert(0, parent_dir)
-    from prompts.test_case_generation_prompts import get_test_case_generation_prompt
+    
+    reload_prompts()
+    import prompts.test_case_generation_prompts as tcg_prompts
 
     provider = req.ai_provider.strip().lower() if req.ai_provider.strip() else DEFAULT_AI_PROVIDER
     
-    prompt = get_test_case_generation_prompt(req.requirements, req.template)
+    prompt = tcg_prompts.get_test_case_generation_prompt(req.requirements, req.template)
     
     try:
         content = await call_ai(prompt, provider, expect_json=True)

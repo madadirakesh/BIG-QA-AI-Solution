@@ -602,6 +602,124 @@ def get_project_config(project_id):
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
+@app.route('/api/save-git-config', methods=['POST'])
+@login_required()
+def save_git_config():
+    try:
+        create_git_config_table = """
+        CREATE TABLE IF NOT EXISTS ProjectGitConfig (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            repo_url TEXT,
+            username TEXT,
+            access_token TEXT,
+            project_details_id INTEGER,
+            FOREIGN KEY(project_details_id) REFERENCES ProjectDetails(id)
+        );
+        """
+        update_data(create_git_config_table)
+        
+        data = request.json
+        p_path = data.get('project_path', '').strip()
+        repo_url = data.get('repo_url', '')
+        username = data.get('username', '')
+        access_token = data.get('access_token', '')
+        
+        if not p_path:
+            return jsonify({"status": "error", "message": "Project path is required."}), 400
+            
+        existing = fetch_data("SELECT id FROM ProjectDetails WHERE project_path = ?", (p_path,))
+        p_details_id = None
+        
+        if existing:
+            p_details_id = existing[0]['id']
+        else:
+            return jsonify({"status": "error", "message": "Project not found in DB. Please select it properly."}), 404
+                
+        if p_details_id:
+            gc_existing = fetch_data("SELECT id FROM ProjectGitConfig WHERE project_details_id = ?", (p_details_id,))
+            if gc_existing:
+                update_data("UPDATE ProjectGitConfig SET repo_url=?, username=?, access_token=? WHERE project_details_id=?", 
+                            (repo_url, username, access_token, p_details_id))
+            else:
+                insert_data("INSERT INTO ProjectGitConfig (repo_url, username, access_token, project_details_id) VALUES (?, ?, ?, ?)",
+                            (repo_url, username, access_token, p_details_id))
+                                
+        return jsonify({"status": "success", "message": "Git configuration saved successfully."})
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+@app.route('/api/get-git-config', methods=['GET'])
+@login_required()
+def get_git_config():
+    try:
+        p_path = request.args.get('project_path', '').strip()
+        if not p_path:
+            return jsonify({"status": "error", "message": "Project path required"}), 400
+            
+        existing = fetch_data("SELECT id FROM ProjectDetails WHERE project_path = ?", (p_path,))
+        if existing:
+            p_id = existing[0]['id']
+            data = fetch_data("SELECT repo_url, username, access_token FROM ProjectGitConfig WHERE project_details_id = ?", (p_id,))
+            if data:
+                return jsonify({"status": "success", "data": data[0]})
+        
+        return jsonify({"status": "success", "data": {"repo_url": "", "username": "", "access_token": ""}})
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+from api.git_service import GitService
+
+@app.route('/api/git/native-action', methods=['POST'])
+@login_required()
+def git_native_action():
+    try:
+        data = request.json
+        action = data.get('action')
+        project_path = data.get('project_path')
+        
+        if not action or not project_path:
+            return jsonify({"status": "error", "message": "Action and project_path are required"}), 400
+            
+        existing = fetch_data("SELECT id FROM ProjectDetails WHERE project_path = ?", (project_path,))
+        if not existing:
+            return jsonify({"status": "error", "message": "Project not found"}), 404
+            
+        p_id = existing[0]['id']
+        git_config = fetch_data("SELECT repo_url, username, access_token FROM ProjectGitConfig WHERE project_details_id = ?", (p_id,))
+        auth_config = git_config[0] if git_config else {}
+        
+        result = GitService.execute_native_action(action, project_path, auth_config)
+        return jsonify(result)
+        
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+from api.mcp_client import run_mcp_git_prompt
+
+@app.route('/api/git/mcp-action', methods=['POST'])
+@login_required()
+def git_mcp_action():
+    try:
+        data = request.json
+        prompt = data.get('prompt')
+        project_path = data.get('project_path')
+        
+        if not prompt or not project_path:
+            return jsonify({"status": "error", "message": "Prompt and project_path are required"}), 400
+            
+        import asyncio
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            result = loop.run_until_complete(run_mcp_git_prompt(prompt, project_path))
+        finally:
+            loop.close()
+            
+        return jsonify(result)
+        
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
 @app.route('/api/project-locators/<int:project_id>', methods=['GET'])
 @login_required()
 def project_locators(project_id):
