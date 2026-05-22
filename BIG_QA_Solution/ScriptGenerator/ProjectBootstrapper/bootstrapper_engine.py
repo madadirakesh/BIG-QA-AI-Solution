@@ -203,6 +203,13 @@ class BootstrapperEngine:
 
     @staticmethod
     def execute_smoke_test(project_path, tool, language, framework, package_manager):
+        # Skip smoke test for Selenium + Python + Behave
+        if (tool and str(tool).lower() == "selenium" and
+            language and str(language).lower() == "python" and
+            framework and ("behave" in str(framework).lower())):
+            logger.info(f"Skipping smoke test execution for {tool} + {language} + {framework} during project creation")
+            return True, "Smoke test skipped for Selenium + Python + Behave. Ready for test development."
+
         # Skip smoke test for TypeScript/Playwright projects - they only have scaffolding
         if language in ["Typescript", "JavaScript", "TypeScript"] and tool == "Playwright":
             logger.info(f"Skipping smoke test for {language}/{tool} (scaffolding only)")

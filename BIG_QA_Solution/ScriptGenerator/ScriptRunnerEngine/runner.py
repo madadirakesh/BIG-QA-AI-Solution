@@ -1,4 +1,5 @@
 import os
+import sys
 import json
 import glob
 import shutil
@@ -44,6 +45,7 @@ class ScriptRunnerService:
             yield f"event: progress\ndata: {json.dumps({'msg': f'[Sequential Mode] Starting {len(commands)} commands...', 'type': 'system'})}\n\n"
             
             success = True
+            import os
             for i, cmd in enumerate(commands):
                 print(f"DEBUG: Running step {i+1}: {cmd}")
                 yield f"event: progress\ndata: {json.dumps({'msg': f'[Step {i+1}/{len(commands)}]: {cmd}', 'type': 'step_start', 'step': i+1})}\n\n"
@@ -83,8 +85,6 @@ class ScriptRunnerService:
 
         # Mode B: AI Generation with Self-Healing (Existing logic)
         # Step 1: AI generates command
-        import sys
-        import os
         parent_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
         if parent_dir not in sys.path:
             sys.path.insert(0, parent_dir)

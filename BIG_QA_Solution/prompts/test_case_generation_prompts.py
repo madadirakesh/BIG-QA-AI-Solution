@@ -24,8 +24,11 @@ f"""
     2. Ensure scenarios cover positive and negative cases if applicable.
     3. Return ONLY the raw content of the .feature file. 
     4. Generate Scenario outlines as applicable
-    5. Do NOT include markdown code fences (```gherkin) or any other conversational text.
+    5. Parameterise the steps for reuse with different data
+    6. Do NOT include markdown code fences (```gherkin) or any other conversational text.
     """
+    
+    
     )
 
 def get_test_case_generation_prompt(requirements: str, template: str) -> str:
