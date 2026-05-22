@@ -774,18 +774,19 @@
             <div class="form-group" style="display: flex; gap: 10px; align-items: flex-end;">
                 <div style="flex: 1;">
                     <label>Target File</label>
-                    <input type="text" id="mergeFilePath" readonly placeholder="Select file via browser dialog...">
+                    <input type="text" id="mergeFilePath" readonly placeholder="Click 'Browse...' to select file to merge with ->">
                 </div>
+                <button class="btn btn-outline" style="height: 38px;" onclick="browseMergeFile()">Browse...</button>
             </div>
 
             <div class="split-pane">
                 <div class="pane">
                     <label>New Generated Locators</label>
-                    <div id="mergeNewCode" class="code-area"></div>
+                    <textarea id="mergeNewCode" class="code-area" spellcheck="false" readonly></textarea>
                 </div>
                 <div class="pane">
                     <label>Existing File Content (Will be updated)</label>
-                    <div id="mergeExistingCode" class="code-area"></div>
+                    <textarea id="mergeExistingCode" class="code-area" spellcheck="false"></textarea>
                 </div>
             </div>
 
@@ -889,8 +890,8 @@
                         pyBridge.mergePreviewReady.connect(function (dataJson) {
                             const data = JSON.parse(dataJson);
                             document.getElementById('mergeFilePath').value = data.target_file;
-                            document.getElementById('mergeNewCode').innerText = data.new_code;
-                            document.getElementById('mergeExistingCode').innerText = data.merged_code;
+                            document.getElementById('mergeNewCode').value = data.new_code;
+                            document.getElementById('mergeExistingCode').value = data.merged_code;
                             showMergeModal();
                         });
                     }
@@ -900,6 +901,14 @@
             }
         }
         initBridge();
+
+        function showAlert(msg) {
+            if (pyBridge) {
+                pyBridge.callPython("show_message", JSON.stringify({ message: msg }));
+            } else {
+                console.warn(msg);
+            }
+        }
 
         function launchUrl() {
             const url = document.getElementById('targetUrl').value;
@@ -926,6 +935,12 @@
             }
             if (pyBridge) {
                 pyBridge.callPython("toggle_capture", JSON.stringify({ active: isCapturing }));
+            }
+        }
+
+        function freezePage() {
+            if (pyBridge) {
+                pyBridge.callPython("freeze_browser", JSON.stringify({ duration: 5000 }));
             }
         }
 
@@ -1369,7 +1384,7 @@
 
         function generateCode() {
             if (capturedElements.length === 0) {
-                alert("Queue is empty! Capture some elements first.");
+                showAlert("Queue is empty! Capture some elements first.");
                 return;
             }
             if (pyBridge) {
@@ -1414,7 +1429,7 @@
 
         function exportToExcel() {
             if (capturedElements.length === 0) {
-                alert("Queue is empty! Capture some elements first.");
+                showAlert("Queue is empty! Capture some elements first.");
                 return;
             }
             if (pyBridge) {
@@ -1425,7 +1440,7 @@
         // DB Modal Logic
         function showDbModal() {
             if (capturedElements.length === 0) {
-                alert("Queue is empty! Capture some elements first.");
+                showAlert("Queue is empty! Capture some elements first.");
                 return;
             }
             document.getElementById('dbModal').style.display = 'flex';
@@ -1437,7 +1452,7 @@
             const project = document.getElementById('dbProjectName').value;
             const page = document.getElementById('dbPageName').value;
             if(!project || !page) {
-                alert("Please provide both Project Name and Page Name.");
+                showAlert("Please provide both Project Name and Page Name.");
                 return;
             }
             if(pyBridge) {
@@ -1455,16 +1470,32 @@
         // Smart Merge Logic
         function smartMerge() {
             if (capturedElements.length === 0) {
-                alert("Queue is empty! Capture some elements first.");
+                showAlert("Queue is empty! Capture some elements first.");
                 return;
             }
+            if (pyBridge) {
+                document.getElementById('mergeFilePath').value = '';
+                document.getElementById('mergeExistingCode').value = '';
+                document.getElementById('mergeNewCode').value = 'Generating code...';
+                showMergeModal();
+                
+                const payload = {
+                    locators: capturedElements,
+                    tool: document.getElementById('toolSelect').value,
+                    lang: document.getElementById('langSelect').value
+                };
+                pyBridge.callPython("init_merge_modal", JSON.stringify(payload));
+            }
+        }
+
+        function browseMergeFile() {
             if (pyBridge) {
                 const payload = {
                     locators: capturedElements,
                     tool: document.getElementById('toolSelect').value,
                     lang: document.getElementById('langSelect').value
                 };
-                pyBridge.callPython("smart_merge_request", JSON.stringify(payload));
+                pyBridge.callPython("browse_merge_file", JSON.stringify(payload));
             }
         }
         
@@ -1474,7 +1505,7 @@
         function confirmMerge() {
             if (pyBridge) {
                 const targetFile = document.getElementById('mergeFilePath').value;
-                const mergedCode = document.getElementById('mergeExistingCode').innerText;
+                const mergedCode = document.getElementById('mergeExistingCode').value;
                 pyBridge.callPython("smart_merge_confirm", JSON.stringify({
                     file_path: targetFile,
                     merged_code: mergedCode
