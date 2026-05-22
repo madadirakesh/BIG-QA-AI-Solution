@@ -159,6 +159,10 @@ class LocatorStudio(QMainWindow):
                 elif direction == "reload":
                     self.browser_ctrl.view.reload()
 
+            elif action == "show_message":
+                msg = payload.get("message", "")
+                QMessageBox.warning(self, "Locator Studio", msg)
+
             elif action == "verify_locator":
                 l_type = payload.get("type")
                 l_val = payload.get("value")
@@ -298,7 +302,22 @@ class LocatorStudio(QMainWindow):
                 except Exception as e:
                     QMessageBox.critical(self, "DB Error", str(e))
 
-            elif action == "smart_merge_request":
+            elif action == "init_merge_modal":
+                locators = payload.get("locators", [])
+                tool = payload.get("tool", "Playwright")
+                lang = payload.get("lang", "TypeScript")
+                
+                title_cl = "".join(c for c in self.browser_ctrl.view.page().title() if c.isalnum())
+                if not title_cl: title_cl = "MyPage"
+                new_code = CodeGenerator.generate_class_content(tool, lang, title_cl, locators)
+                
+                self.bridge.mergePreviewReady.emit(json.dumps({
+                    "target_file": "",
+                    "new_code": new_code,
+                    "merged_code": ""
+                }))
+
+            elif action == "browse_merge_file":
                 locators = payload.get("locators", [])
                 tool = payload.get("tool", "Playwright")
                 lang = payload.get("lang", "TypeScript")
@@ -309,7 +328,6 @@ class LocatorStudio(QMainWindow):
                         with open(fname, 'r', encoding='utf-8') as f:
                             current_code = f.read()
                             
-                        # Generate the new chunk just to show
                         title_cl = "".join(c for c in self.browser_ctrl.view.page().title() if c.isalnum())
                         if not title_cl: title_cl = "MyPage"
                         new_code = CodeGenerator.generate_class_content(tool, lang, title_cl, locators)
