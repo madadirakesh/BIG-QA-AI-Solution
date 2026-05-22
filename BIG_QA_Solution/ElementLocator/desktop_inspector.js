@@ -53,7 +53,8 @@
         if (window.desktopInspectorActive) {
             document.removeEventListener('mouseover', handleMouseOver, true);
             document.removeEventListener('mouseout', handleMouseOut, true);
-            document.removeEventListener('click', handleClick, true);
+            const EVENTS = ['click', 'mousedown', 'mouseup'];
+            EVENTS.forEach(evt => document.removeEventListener(evt, handleMouseCapture, true));
             highlightBox.style.setProperty('display', 'none', 'important');
             window.desktopInspectorActive = false;
         }
