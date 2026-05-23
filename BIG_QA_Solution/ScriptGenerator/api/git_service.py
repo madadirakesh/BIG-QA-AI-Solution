@@ -5,11 +5,14 @@ import json
 class GitService:
     @staticmethod
     def _run_cmd(cmd, cwd, env=None):
+        import shlex
+        if isinstance(cmd, str):
+            cmd = shlex.split(cmd)
         try:
             result = subprocess.run(
                 cmd,
                 cwd=cwd,
-                shell=True,
+                shell=False,
                 capture_output=True,
                 text=True,
                 env=env or os.environ

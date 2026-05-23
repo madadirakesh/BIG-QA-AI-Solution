@@ -44,7 +44,15 @@ bootstrapper_jobs = {}
 
 app = Flask(__name__)
 # In production, use os.environ.get('SECRET_KEY')
-app.secret_key = 'your_super_secret_flask_key_here'
+app.secret_key = os.environ.get('FLASK_SECRET_KEY', os.urandom(24))
+app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 31536000  # Cache static files for 1 year
+
+@app.teardown_appcontext
+def close_connection(exception):
+    from flask import g
+    db = getattr(g, 'db', None)
+    if db is not None:
+        db.close()
 
 @app.context_processor
 def inject_user():

@@ -12,6 +12,11 @@ class BootstrapperEngine:
     Dynamically generates the scaffolding for a new QA Automation project.
     """
     @staticmethod
+    def _sec_str(val):
+        import json
+        return json.dumps(val or "")[1:-1].replace("'", "\\'")
+
+    @staticmethod
     def generate_project(project_name, base_path, tool, language, framework, package_manager, url, username, password):
         target_dir = os.path.join(base_path, project_name)
         
@@ -74,9 +79,9 @@ class BootstrapperEngine:
                 else:
                     if content:
                         content = content.replace("{{PROJECT_NAME}}", project_name)
-                        content = content.replace("{{BASE_URL}}", url or "https://example.com")
-                        content = content.replace("{{USERNAME}}", username or "admin")
-                        content = content.replace("{{PASSWORD}}", password or "password123")
+                        content = content.replace("{{BASE_URL}}", BootstrapperEngine._sec_str(url or "https://example.com"))
+                        content = content.replace("{{USERNAME}}", BootstrapperEngine._sec_str(username or "admin"))
+                        content = content.replace("{{PASSWORD}}", BootstrapperEngine._sec_str(password or "password123"))
                     
                     with open(full_path, 'w', encoding='utf-8') as f:
                         f.write(content or "")
@@ -350,8 +355,9 @@ class BootstrapperEngine:
                 # 1. Feature file
                 feature_path = os.path.join(target_dir, "features", "sample_login.feature")
                 os.makedirs(os.path.dirname(feature_path), exist_ok=True)
+                safe_url, safe_user, safe_pwd = BootstrapperEngine._sec_str(target_url), BootstrapperEngine._sec_str(username), BootstrapperEngine._sec_str(password)
                 with open(feature_path, 'w', encoding='utf-8') as f:
-                    f.write(f'''Feature: Sample App Login\n\n  Scenario: User can login to the sample application\n    Given I navigate to the sample login page "{target_url}"\n    When I login with username "{username}" and password "{password}"\n    Then I should see the welcome message\n''')
+                    f.write(f'''Feature: Sample App Login\n\n  Scenario: User can login to the sample application\n    Given I navigate to the sample login page "{safe_url}"\n    When I login with username "{safe_user}" and password "{safe_pwd}"\n    Then I should see the welcome message\n''')
                 
                 # 2. Page Object
                 po_path = os.path.join(target_dir, "pages", "sample_login_page.py")
@@ -394,6 +400,7 @@ class BootstrapperEngine:
                 f.write(req_content)
 
             # conftest.py or Base Setup
+            safe_url, safe_user, safe_pwd = BootstrapperEngine._sec_str(url), BootstrapperEngine._sec_str(username), BootstrapperEngine._sec_str(password)
             if tool == "Playwright":
                 base_page_content = f'''\
 class BasePage:
@@ -401,7 +408,7 @@ class BasePage:
         self.page = page
 
     def navigate(self):
-        self.page.goto("{url}")
+        self.page.goto("{safe_url}")
 '''
                 test_content = f'''\
 import pytest
@@ -410,7 +417,7 @@ from pages.login_page import LoginPage
 def test_login(page):
     login_page = LoginPage(page)
     login_page.navigate()
-    login_page.login("{username}", "{password}")
+    login_page.login("{safe_user}", "{safe_pwd}")
     assert True # Replace with actual assertion
 '''
             else: # Selenium
@@ -420,7 +427,7 @@ class BasePage:
         self.driver = driver
 
     def navigate(self):
-        self.driver.get("{url}")
+        self.driver.get("{safe_url}")
 '''
                 test_content = f'''\
 import pytest
@@ -438,7 +445,7 @@ def driver():
 def test_login(driver):
     login_page = LoginPage(driver)
     login_page.navigate()
-    login_page.login("{username}", "{password}")
+    login_page.login("{safe_user}", "{safe_pwd}")
     assert True # Replace with actual assertion
 '''
 
@@ -639,6 +646,7 @@ public class ExtentManager {{
             with open(os.path.join(target_dir, "features", "step_definitions", f"smoke_steps.{ext}"), "w") as f:
                 f.write("const { Given } = require('@cucumber/cucumber');\n\nGiven('The application is running', async function () {\n  console.log('App running');\n});\n" if not is_ts else "import { Given } from '@cucumber/cucumber';\n\nGiven('The application is running', async function () {\n  console.log('App running');\n});\n")
         else:
+            safe_url = BootstrapperEngine._sec_str(url)
             if tool == "Playwright":
                 os.makedirs(os.path.join(target_dir, "Results"), exist_ok=True)
                 config_content = f'''import {{ defineConfig }} from '@playwright/test';
@@ -647,7 +655,7 @@ export default defineConfig({{
   reporter: [['html', {{ outputFolder: 'Results' }}]],
   use: {{
     headless: false,
-    baseURL: '{url}',
+    baseURL: '{safe_url}',
   }},
 }});
 ''' if is_ts else f'''const {{ defineConfig }} = require('@playwright/test');
@@ -656,7 +664,7 @@ module.exports = defineConfig({{
   reporter: [['html', {{ outputFolder: 'Results' }}]],
   use: {{
     headless: false,
-    baseURL: '{url}',
+    baseURL: '{safe_url}',
   }},
 }});
 '''

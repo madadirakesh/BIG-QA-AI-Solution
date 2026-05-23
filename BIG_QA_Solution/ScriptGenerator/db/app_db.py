@@ -4,13 +4,24 @@ import os
 DB_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "local_database.db")
 
 def get_db():
+    try:
+        from flask import g, has_app_context
+        if has_app_context():
+            if 'db' not in g:
+                g.db = sqlite3.connect(DB_PATH)
+                g.db.row_factory = sqlite3.Row
+            return g.db
+    except ImportError:
+        pass
+    
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     return conn
 
 def execute_query(query, params=None):
+    conn = get_db()
     try:
-        with get_db() as conn:
+        with conn:
             cursor = conn.cursor()
             cursor.execute(query, params or [])
             rows = cursor.fetchall()
@@ -18,17 +29,31 @@ def execute_query(query, params=None):
     except Exception as e:
         print(f"Error executing query: {e}")
         return []
+    finally:
+        try:
+            from flask import g, has_app_context
+            if not (has_app_context() and hasattr(g, 'db') and g.db is conn):
+                conn.close()
+        except ImportError:
+            conn.close()
 
 def execute_update(query, params=None):
+    conn = get_db()
     try:
-        with get_db() as conn:
+        with conn:
             cursor = conn.cursor()
             cursor.execute(query, params or [])
-            conn.commit()
             return cursor.rowcount
     except Exception as e:
         print(f"Error executing update: {e}")
         return None
+    finally:
+        try:
+            from flask import g, has_app_context
+            if not (has_app_context() and hasattr(g, 'db') and g.db is conn):
+                conn.close()
+        except ImportError:
+            conn.close()
 
 def fetch_data(query, params=None):
     return execute_query(query, params)
@@ -146,6 +171,12 @@ def init_db():
             cursor.execute(create_project_templates_table)
             cursor.execute(create_template_files_table)
             cursor.execute(create_backupfiles_table)
+            
+            # Indexes
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_locators_project_id ON Locators(project_id)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_projectdata_project_details_id ON ProjectData(project_details_id)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_templatefiles_template_id ON TemplateFiles(template_id)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_backupfiles_project_id ON Backupfiles(Project_ID)")
 
             # Migrations
             try:
