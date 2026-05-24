@@ -337,10 +337,37 @@ class LocatorStudio(QMainWindow):
                         self.bridge.mergePreviewReady.emit(json.dumps({
                             "target_file": fname,
                             "new_code": new_code,
-                            "merged_code": merged_code
+                            "merged_code": merged_code,
+                            "original_code": current_code
                         }))
                     except Exception as e:
                         QMessageBox.critical(self, "Merge Error", f"Failed to read file: {e}")
+
+            elif action == "refresh_merge_preview":
+                locators = payload.get("locators", [])
+                tool = payload.get("tool", "Playwright")
+                lang = payload.get("lang", "TypeScript")
+                file_path = payload.get("file_path", "")
+                
+                try:
+                    title_cl = "".join(c for c in self.browser_ctrl.view.page().title() if c.isalnum())
+                    if not title_cl: title_cl = "MyPage"
+                    new_code = CodeGenerator.generate_class_content(tool, lang, title_cl, locators)
+                    
+                    merged_code = ""
+                    if file_path and os.path.exists(file_path):
+                        with open(file_path, 'r', encoding='utf-8') as f:
+                            current_code = f.read()
+                        merged_code = MergeEngine.merge_locators(current_code, locators, tool, lang)
+                    
+                    self.bridge.mergePreviewReady.emit(json.dumps({
+                        "target_file": file_path,
+                        "new_code": new_code,
+                        "merged_code": merged_code,
+                        "original_code": current_code
+                    }))
+                except Exception as e:
+                    logging.error(f"Error in refresh_merge_preview: {e}")
 
             elif action == "smart_merge_confirm":
                 file_path = payload.get("file_path")

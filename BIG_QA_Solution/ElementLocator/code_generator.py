@@ -49,13 +49,6 @@ class CodeGenerator:
                         lines.append(f"        this.{name} = this.page.locator(\"{val}\");")
                 lines.append("    }\n")
 
-                if locators:
-                    for loc in locators:
-                        name = loc.get("_final_name")
-                        val = CodeGenerator.escape_quotes(loc.get("value", ""))
-                        lines.append(f"        this.{name} = this.page.locator(\"{val}\");")
-                lines.append("    }\n")
-
             if locators:
                 for loc in locators:
                     name = loc.get("_final_name")
@@ -295,6 +288,14 @@ class CodeGenerator:
                 res.append(f"    public boolean {m_name}() {{\n        return {el_name}.isDisplayed();\n    }}\n")
             elif action == "SelectByVisibleText":
                 res.append(f"    public void {m_name}(String text) {{\n         Select dropDown = new Select({el_name});\n         dropDown.SelectByVisibleText(text);\n    }}\n")
+            elif action == "Hover":
+                res.append(f"    public void {m_name}(WebDriver driver) {{\n        new org.openqa.selenium.interactions.Actions(driver).moveToElement({el_name}).perform();\n    }}\n")
+            elif action == "DoubleClick":
+                res.append(f"    public void {m_name}(WebDriver driver) {{\n        new org.openqa.selenium.interactions.Actions(driver).doubleClick({el_name}).perform();\n    }}\n")
+            elif action in ("RightClick", "ContextClick"):
+                res.append(f"    public void {m_name}(WebDriver driver) {{\n        new org.openqa.selenium.interactions.Actions(driver).contextClick({el_name}).perform();\n    }}\n")
+            elif action == "WaitForVisible":
+                res.append(f"    public void {m_name}(WebDriver driver, int timeoutSeconds) {{\n        new org.openqa.selenium.support.ui.WebDriverWait(driver, java.time.Duration.ofSeconds(timeoutSeconds)).until(org.openqa.selenium.support.ui.ExpectedConditions.visibilityOf({el_name}));\n    }}\n")
         elif tool.lower() == "playwright":
             if action == "Click":
                 res.append(f"    public void {m_name}() {{\n        {el_name}.click();\n    }}\n")
@@ -308,6 +309,14 @@ class CodeGenerator:
                 res.append(f"    public boolean {m_name}() {{\n        return {el_name}.isVisible();\n    }}\n")
             elif action == "SelectByVisibleText":
                 res.append(f"    public void {m_name}(String text) {{\n        {el_name}.selectOption(new SelectOption().withLabel(text));\n    }}\n")
+            elif action == "Hover":
+                res.append(f"    public void {m_name}() {{\n        {el_name}.hover();\n    }}\n")
+            elif action == "DoubleClick":
+                res.append(f"    public void {m_name}() {{\n        {el_name}.doubleClick();\n    }}\n")
+            elif action in ("RightClick", "ContextClick"):
+                res.append(f"    public void {m_name}() {{\n        {el_name}.click(new Locator.ClickOptions().setButton(com.microsoft.playwright.options.MouseButton.RIGHT));\n    }}\n")
+            elif action == "WaitForVisible":
+                res.append(f"    public void {m_name}() {{\n        {el_name}.waitFor(new Locator.WaitForOptions().setState(com.microsoft.playwright.options.WaitForSelectorState.VISIBLE));\n    }}\n")
         return "".join(res)
 
     @staticmethod
@@ -327,6 +336,14 @@ class CodeGenerator:
                 res.append(f"    def {m_name}(self):\n        return self.page.locator(self.{el_name}).is_visible()\n\n")
             elif action == "SelectByVisibleText":
                 res.append(f"    def {m_name}(self, text):\n        self.page.locator(self.{el_name}).select_option(label=text)\n\n")
+            elif action == "Hover":
+                res.append(f"    def {m_name}(self):\n        self.page.locator(self.{el_name}).hover()\n\n")
+            elif action == "DoubleClick":
+                res.append(f"    def {m_name}(self):\n        self.page.locator(self.{el_name}).double_click()\n\n")
+            elif action in ("RightClick", "ContextClick"):
+                res.append(f"    def {m_name}(self):\n        self.page.locator(self.{el_name}).click(button='right')\n\n")
+            elif action == "WaitForVisible":
+                res.append(f"    def {m_name}(self):\n        self.page.locator(self.{el_name}).wait_for(state='visible')\n\n")
         else:
             if action == "Click":
                 res.append(f"    def {m_name}(self, driver):\n        driver.find_element('xpath', self.{el_name}).click()\n\n")
@@ -339,7 +356,15 @@ class CodeGenerator:
             elif action == "IsDisplayed":
                 res.append(f"    def {m_name}(self, driver):\n        return driver.find_element('xpath', self.{el_name}).is_displayed()\n\n")
             elif action == "SelectByVisibleText":
-                res.append(f"    def {m_name}(self, driver, text):\n        Select(driver.find_element('xpath', self.{el_name})).select_by_visible_text(text)\n\n")
+                res.append(f"    def {m_name}(self, driver, text):\n        from selenium.webdriver.support.ui import Select\n        Select(driver.find_element('xpath', self.{el_name})).select_by_visible_text(text)\n\n")
+            elif action == "Hover":
+                res.append(f"    def {m_name}(self, driver):\n        from selenium.webdriver.common.action_chains import ActionChains\n        el = driver.find_element('xpath', self.{el_name})\n        ActionChains(driver).move_to_element(el).perform()\n\n")
+            elif action == "DoubleClick":
+                res.append(f"    def {m_name}(self, driver):\n        from selenium.webdriver.common.action_chains import ActionChains\n        el = driver.find_element('xpath', self.{el_name})\n        ActionChains(driver).double_click(el).perform()\n\n")
+            elif action in ("RightClick", "ContextClick"):
+                res.append(f"    def {m_name}(self, driver):\n        from selenium.webdriver.common.action_chains import ActionChains\n        el = driver.find_element('xpath', self.{el_name})\n        ActionChains(driver).context_click(el).perform()\n\n")
+            elif action == "WaitForVisible":
+                res.append(f"    def {m_name}(self, driver, timeout=10):\n        from selenium.webdriver.support.ui import WebDriverWait\n        from selenium.webdriver.support import expected_conditions as EC\n        WebDriverWait(driver, timeout).until(EC.visibility_of_element_located(('xpath', self.{el_name})))\n\n")
         return "".join(res)
 
     @staticmethod
@@ -359,6 +384,14 @@ class CodeGenerator:
                 res.append(f"    public bool {m_name}() {{\n        return {el_name}.Displayed;\n    }}\n\n")
             elif action == "SelectByVisibleText":
                 res.append(f"    public void {m_name}(string text) {{\n        var select = new SelectElement({el_name});\n        select.SelectByText(text);\n    }}\n\n")
+            elif action == "Hover":
+                res.append(f"    public void {m_name}(IWebDriver driver) {{\n        new OpenQA.Selenium.Interactions.Actions(driver).MoveToElement({el_name}).Perform();\n    }}\n\n")
+            elif action == "DoubleClick":
+                res.append(f"    public void {m_name}(IWebDriver driver) {{\n        new OpenQA.Selenium.Interactions.Actions(driver).DoubleClick({el_name}).Perform();\n    }}\n\n")
+            elif action in ("RightClick", "ContextClick"):
+                res.append(f"    public void {m_name}(IWebDriver driver) {{\n        new OpenQA.Selenium.Interactions.Actions(driver).ContextClick({el_name}).Perform();\n    }}\n\n")
+            elif action == "WaitForVisible":
+                res.append(f"    public void {m_name}(IWebDriver driver, int timeoutSeconds) {{\n        new OpenQA.Selenium.Support.UI.WebDriverWait(driver, System.TimeSpan.FromSeconds(timeoutSeconds)).Until(d => {el_name}.Displayed);\n    }}\n\n")
         elif tool.lower() == "playwright":
             m_name += "Async"
             el_ref = f"_{el_name}"
@@ -374,6 +407,14 @@ class CodeGenerator:
                 res.append(f"    public async Task<bool> {m_name}() {{\n        return await {el_ref}.IsVisibleAsync();\n    }}\n\n")
             elif action == "SelectByVisibleText":
                 res.append(f"    public async Task {m_name}(string text) {{\n        await {el_ref}.SelectOptionAsync(new[] {{ new SelectOptionValue {{ Label = text }} }});\n    }}\n\n")
+            elif action == "Hover":
+                res.append(f"    public async Task {m_name}() {{\n        await {el_ref}.HoverAsync();\n    }}\n\n")
+            elif action == "DoubleClick":
+                res.append(f"    public async Task {m_name}() {{\n        await {el_ref}.DoubleClickAsync();\n    }}\n\n")
+            elif action in ("RightClick", "ContextClick"):
+                res.append(f"    public async Task {m_name}() {{\n        await {el_ref}.ClickAsync(new LocatorClickOptions {{ Button = MouseButton.Right }});\n    }}\n\n")
+            elif action == "WaitForVisible":
+                res.append(f"    public async Task {m_name}() {{\n        await {el_ref}.WaitForAsync(new LocatorWaitForOptions {{ State = WaitForSelectorState.Visible }});\n    }}\n\n")
         return "".join(res)
 
     @staticmethod
@@ -393,6 +434,14 @@ class CodeGenerator:
                 res.append(f"    async {m_name}() {{\n        return await this.{el_name}.isVisible();\n    }}\n\n")
             elif action == "SelectByVisibleText":
                 res.append(f"    async {m_name}(text) {{\n        await this.{el_name}.selectOption({{ label: text }});\n    }}\n\n")
+            elif action == "Hover":
+                res.append(f"    async {m_name}() {{\n        await this.{el_name}.hover();\n    }}\n\n")
+            elif action == "DoubleClick":
+                res.append(f"    async {m_name}() {{\n        await this.{el_name}.doubleClick();\n    }}\n\n")
+            elif action in ("RightClick", "ContextClick"):
+                res.append(f"    async {m_name}() {{\n        await this.{el_name}.click({{ button: 'right' }});\n    }}\n\n")
+            elif action == "WaitForVisible":
+                res.append(f"    async {m_name}() {{\n        await this.{el_name}.waitFor({{ state: 'visible' }});\n    }}\n\n")
         else:
             if action == "Click":
                 res.append(f"    async {m_name}(driver) {{\n        await driver.findElement(By.xpath(this.{el_name})).click();\n    }}\n\n")
@@ -406,4 +455,12 @@ class CodeGenerator:
                 res.append(f"    async {m_name}(driver) {{\n        return await driver.findElement(By.xpath(this.{el_name})).isDisplayed();\n    }}\n\n")
             elif action == "SelectByVisibleText":
                 res.append(f"    async {m_name}(driver, text) {{\n        const select = await driver.findElement(By.xpath(this.{el_name}));\n        await select.sendKeys(text);\n    }}\n\n")
+            elif action == "Hover":
+                res.append(f"    async {m_name}(driver) {{\n        const el = await driver.findElement(By.xpath(this.{el_name}));\n        await driver.actions().move({{origin: el}}).perform();\n    }}\n\n")
+            elif action == "DoubleClick":
+                res.append(f"    async {m_name}(driver) {{\n        const el = await driver.findElement(By.xpath(this.{el_name}));\n        await driver.actions().doubleClick(el).perform();\n    }}\n\n")
+            elif action in ("RightClick", "ContextClick"):
+                res.append(f"    async {m_name}(driver) {{\n        const el = await driver.findElement(By.xpath(this.{el_name}));\n        await driver.actions().click(el, 2).perform();\n    }}\n\n")
+            elif action == "WaitForVisible":
+                res.append(f"    async {m_name}(driver, timeoutMs = 10000) {{\n        const el = await driver.findElement(By.xpath(this.{el_name}));\n        await driver.wait(until.elementIsVisible(el), timeoutMs);\n    }}\n\n")
         return "".join(res)

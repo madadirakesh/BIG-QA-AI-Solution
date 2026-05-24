@@ -5,19 +5,58 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Locator Studio Dashboard</title>
     <link rel="icon" type="image/png" href="favicon.png">
+    
+    <!-- Resource Preconnects for Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    
+    <!-- Font Awesome -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
     <style>
         :root {
-            --bg-dark: #0f172a;
-            --card-bg: rgba(30, 41, 59, 0.7);
-            --accent: #0078d4;
-            --accent-hover: #005a9e;
+            /* Color Palette - Premium Dark Mode */
+            --bg-primary: #0f172a;
+            --bg-secondary: #1e293b;
+            --bg-overlay: rgba(30, 41, 59, 0.7);
+            --bg-card: rgba(30, 41, 59, 0.4);
+
             --text-primary: #f8fafc;
             --text-secondary: #94a3b8;
+
+            --accent-primary: #0078d4;
+            --accent-secondary: #00bcf2;
+            --accent-glow: rgba(0, 188, 242, 0.35);
+
             --success: #10b981;
             --warning: #f59e0b;
             --danger: #ef4444;
-            --glass-border: rgba(255, 255, 255, 0.1);
+            --info: #3b82f6;
+
+            --glass-border: rgba(255, 255, 255, 0.08);
+            --glass-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.35);
+
+            --transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            --border-radius: 12px;
+
+            /* Compatibility variables for legacy dashboard selectors */
+            --bg-dark: var(--bg-primary);
+            --card-bg: var(--bg-card);
+            --accent: var(--accent-primary);
+            --accent-hover: #005a9e;
+        }
+
+        [data-theme="light"] {
+            --bg-primary: #f1f5f9;
+            --bg-secondary: #ffffff;
+            --bg-overlay: rgba(241, 245, 249, 0.9);
+            --bg-card: rgba(255, 255, 255, 0.85);
+            --text-primary: #0f172a;
+            --text-secondary: #475569;
+            --glass-border: rgba(0, 0, 0, 0.08);
+            --glass-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.08);
+            --accent-glow: rgba(0, 120, 212, 0.15);
         }
 
         * {
@@ -27,13 +66,23 @@
             font-family: 'Inter', -apple-system, sans-serif;
         }
 
+        h1, h2, h3, h4, h5, h6, .logo {
+            font-family: 'Outfit', 'Inter', -apple-system, sans-serif;
+            font-weight: 600;
+        }
+
         body {
-            background: var(--bg-dark);
+            background: linear-gradient(135deg, var(--bg-primary) 0%, #020617 100%);
             color: var(--text-primary);
             height: 100vh;
             display: flex;
             flex-direction: column;
             overflow: hidden;
+        }
+
+        [data-theme="light"] body {
+            background: linear-gradient(135deg, #e2e8f0 0%, #f1f5f9 100%);
+            color: var(--text-primary);
         }
 
         /* Glassmorphism Scrollbar */
@@ -51,6 +100,12 @@
         }
         ::-webkit-scrollbar-thumb:hover {
             background: rgba(255, 255, 255, 0.2);
+        }
+        [data-theme="light"] ::-webkit-scrollbar-thumb {
+            background: rgba(0, 0, 0, 0.1);
+        }
+        [data-theme="light"] ::-webkit-scrollbar-thumb:hover {
+            background: rgba(0, 0, 0, 0.2);
         }
 
         /* Pulse Animation for Recording */
@@ -76,17 +131,23 @@
         }
 
         .header {
-            padding: 20px;
+            padding: 14px 20px;
             background: rgba(15, 23, 42, 0.8);
-            backdrop-filter: blur(10px);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
             border-bottom: 1px solid var(--glass-border);
             display: flex;
             justify-content: space-between;
             align-items: center;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+        }
+        [data-theme="light"] .header {
+            background: rgba(255, 255, 255, 0.8);
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.04);
         }
 
         .logo {
-            font-size: 1.2rem;
+            font-size: 1.15rem;
             font-weight: 700;
             letter-spacing: -0.5px;
             display: flex;
@@ -95,7 +156,7 @@
         }
 
         .logo i {
-            color: var(--accent);
+            color: var(--accent-secondary);
         }
 
         .container {
@@ -109,14 +170,28 @@
         }
 
         .card {
-            background: var(--card-bg);
-            backdrop-filter: blur(12px);
+            background: var(--bg-card);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
             border: 1px solid var(--glass-border);
-            border-radius: 12px;
-            padding: 15px;
-            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3);
+            border-radius: var(--border-radius);
+            padding: 18px;
+            box-shadow: var(--glass-shadow);
             display: flex;
             flex-direction: column;
+            transition: var(--transition);
+        }
+        .card:hover {
+            border-color: rgba(255, 255, 255, 0.15);
+            box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4), 0 0 15px rgba(0, 188, 242, 0.05);
+        }
+        [data-theme="light"] .card {
+            background: var(--bg-card);
+            border-color: var(--glass-border);
+        }
+        [data-theme="light"] .card:hover {
+            border-color: rgba(0, 0, 0, 0.12);
+            box-shadow: 0 12px 32px rgba(0, 0, 0, 0.08);
         }
 
         .form-group {
@@ -125,135 +200,157 @@
 
         label {
             display: block;
-            font-size: 0.8rem;
+            font-size: 0.72rem;
             color: var(--text-secondary);
             margin-bottom: 8px;
             text-transform: uppercase;
             letter-spacing: 0.5px;
+            font-weight: 600;
         }
 
         input, select {
             width: 100%;
-            background: rgba(0, 0, 0, 0.2);
+            background: rgba(15, 23, 42, 0.5) !important;
             border: 1px solid var(--glass-border);
             border-radius: 8px;
-            padding: 10px 12px;
-            color: white;
+            padding: 9px 12px;
+            color: var(--text-primary);
             outline: none;
-            transition: all 0.3s ease;
+            font-size: 0.85rem;
+            transition: var(--transition);
+        }
+        [data-theme="light"] input, [data-theme="light"] select {
+            background: rgba(255, 255, 255, 0.9) !important;
+            color: #0f172a;
         }
 
-        input:focus {
-            border-color: var(--accent);
-            box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.2);
+        input:focus, select:focus {
+            outline: none;
+            border-color: var(--accent-secondary) !important;
+            box-shadow: 0 0 0 3px var(--accent-glow) !important;
+            background: rgba(15, 23, 42, 0.85) !important;
+        }
+        [data-theme="light"] input:focus, [data-theme="light"] select:focus {
+            background: #ffffff !important;
         }
 
         .btn {
             cursor: pointer;
             border: none;
-            border-radius: 6px;
-            padding: 6px 12px;
+            border-radius: 8px;
+            padding: 8px 16px;
+            font-family: 'Outfit', sans-serif;
             font-weight: 600;
-            font-size: 0.8rem;
-            display: flex;
+            font-size: 0.82rem;
+            display: inline-flex;
             align-items: center;
             justify-content: center;
-            gap: 6px;
-            transition: all 0.2s ease;
+            gap: 8px;
+            transition: var(--transition);
+            transform: translateY(0);
+        }
+        .btn:hover {
+            transform: translateY(-1.5px);
+        }
+        .btn:active {
+            transform: translateY(0.5px);
         }
 
         .btn-primary {
-            background: var(--accent);
-            color: white;
+            background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary)) !important;
+            color: white !important;
+            box-shadow: 0 4px 14px var(--accent-glow);
+        }
+        .btn-primary:hover {
+            box-shadow: 0 6px 20px var(--accent-glow);
+            filter: brightness(1.05);
+        }
+        .btn-primary:active {
+            box-shadow: 0 2px 8px var(--accent-glow);
         }
 
         .nav-btn {
             background: transparent;
             border: none;
             color: var(--text-secondary);
-            width: 32px;
-            height: 32px;
+            width: 30px;
+            height: 30px;
             display: flex;
             align-items: center;
             justify-content: center;
             border-radius: 50%;
             cursor: pointer;
-            transition: all 0.2s ease;
+            transition: var(--transition);
         }
         .nav-btn:hover {
-            background: rgba(255, 255, 255, 0.1);
-            color: white;
+            background: rgba(255, 255, 255, 0.08);
+            color: var(--text-primary);
             transform: translateY(-1px);
+        }
+        [data-theme="light"] .nav-btn:hover {
+            background: rgba(0, 0, 0, 0.05);
         }
         .nav-btn:active {
             transform: scale(0.95);
-            background: rgba(255, 255, 255, 0.2);
-        }
-        .nav-btn svg {
-            transition: transform 0.2s ease;
-        }
-        .nav-btn:hover svg {
-            filter: drop-shadow(0 0 2px rgba(255,255,255,0.5));
-        }
-
-        .btn-primary:hover {
-            background: var(--accent-hover);
-            transform: translateY(-1px);
         }
 
         .btn-outline {
             background: transparent;
-            border: 1px solid var(--accent);
-            color: var(--accent);
+            border: 1px solid var(--accent-primary);
+            color: var(--accent-primary);
         }
-
         .btn-outline:hover {
-            background: rgba(99, 102, 241, 0.1);
+            background: rgba(0, 120, 212, 0.08);
+            border-color: var(--accent-secondary);
+            color: var(--accent-secondary);
         }
 
         .action-icon-btn {
-            background: rgba(255, 255, 255, 0.05);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            border-radius: 6px;
-            padding: 6px 12px;
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            border-radius: 8px;
+            padding: 6px 10px;
             color: var(--text-secondary);
             cursor: pointer;
-            transition: all 0.2s ease;
-            display: flex;
+            transition: var(--transition);
+            display: inline-flex;
             align-items: center;
             justify-content: center;
-            font-size: 0.85rem;
         }
-
+        [data-theme="light"] .action-icon-btn {
+            background: rgba(0, 0, 0, 0.03);
+            border-color: rgba(0, 0, 0, 0.06);
+        }
         .action-icon-btn:hover {
-            transform: translateY(-1px);
+            transform: translateY(-1.5px);
+        }
+        .feed-item .action-icon-btn {
+            padding: 5px 6px;
         }
 
         .action-icon-btn.btn-highlight:hover { color: #60a5fa; border-color: rgba(96, 165, 250, 0.5); background: rgba(96, 165, 250, 0.15); box-shadow: 0 0 10px rgba(96, 165, 250, 0.2); }
         .action-icon-btn.btn-copy:hover { color: #10b981; border-color: rgba(16, 185, 129, 0.5); background: rgba(16, 185, 129, 0.15); box-shadow: 0 0 10px rgba(16, 185, 129, 0.2); }
         .action-icon-btn.btn-ai:hover { color: #c084fc; border-color: rgba(192, 132, 252, 0.6); background: rgba(192, 132, 252, 0.15); box-shadow: 0 0 12px rgba(192, 132, 252, 0.4); }
         .action-icon-btn.btn-alts:hover { color: #e2e8f0; border-color: rgba(226, 232, 240, 0.5); background: rgba(226, 232, 240, 0.15); box-shadow: 0 0 10px rgba(226, 232, 240, 0.1); }
+        [data-theme="light"] .action-icon-btn.btn-alts:hover { color: #1e293b; border-color: rgba(30, 41, 59, 0.3); }
         .action-icon-btn.btn-delete:hover { color: #f87171; border-color: rgba(248, 113, 113, 0.5); background: rgba(248, 113, 113, 0.15); box-shadow: 0 0 10px rgba(248, 113, 113, 0.2); }
 
-        .action-icon-btn svg {
-            transition: color 0.2s, stroke 0.2s;
-        }
-
-        /* Playwright Toggle */
         .toggle-container {
             display: flex;
             align-items: center;
             justify-content: space-between;
             padding: 10px;
-            background: rgba(0,0,0,0.1);
+            background: rgba(0,0,0,0.15);
             border-radius: 8px;
         }
+        [data-theme="light"] .toggle-container {
+            background: rgba(0,0,0,0.03);
+        }
 
-        /* Drag and Drop Styles */
         .feed-item.dragging {
             opacity: 0.5;
-            border: 2px dashed var(--accent) !important;
-            background: rgba(99, 102, 241, 0.1);
+            border: 2px dashed var(--accent-primary) !important;
+            background: rgba(0, 120, 212, 0.08);
         }
 
         .drag-handle {
@@ -266,11 +363,9 @@
             margin-right: 8px;
             transition: color 0.2s;
         }
-
         .drag-handle:hover {
             color: var(--text-primary);
         }
-
         .drag-handle:active {
             cursor: grabbing;
         }
@@ -282,25 +377,22 @@
             height: 18px;
             flex-shrink: 0;
         }
-
         .switch input {
             opacity: 0;
             width: 0;
             height: 0;
         }
-
         .slider {
             position: absolute;
             cursor: pointer;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
+            top: 0; left: 0; right: 0; bottom: 0;
             background-color: #334155;
             transition: .4s;
             border-radius: 34px;
         }
-
+        [data-theme="light"] .slider {
+            background-color: #cbd5e1;
+        }
         .slider:before {
             position: absolute;
             content: "";
@@ -312,16 +404,13 @@
             transition: .4s;
             border-radius: 50%;
         }
-
         input:checked + .slider {
-            background-color: var(--accent);
+            background-color: var(--accent-primary);
         }
-
         input:checked + .slider:before {
             transform: translateX(14px);
         }
 
-        /* Activity Feed */
         .feed-container {
             flex: 1;
             display: flex;
@@ -330,18 +419,32 @@
         }
 
         .feed-item {
-            background: rgba(255, 255, 255, 0.03);
-            border-radius: 8px;
-            padding: 12px;
-            border-left: 3px solid var(--accent);
-            animation: slideIn 0.3s ease-out;
+            background: rgba(255, 255, 255, 0.02);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            border-left: 4px solid var(--accent-primary);
+            border-radius: 10px;
+            padding: 14px;
             display: flex;
-            justify-content: space-between;
-            align-items: center;
+            transition: var(--transition);
+        }
+        [data-theme="light"] .feed-item {
+            background: rgba(0, 0, 0, 0.02);
+            border-color: rgba(0, 0, 0, 0.05);
+        }
+        .feed-item:hover {
+            background: rgba(255, 255, 255, 0.04);
+            border-color: rgba(255, 255, 255, 0.1);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+            transform: translateY(-1px);
+        }
+        [data-theme="light"] .feed-item:hover {
+            background: rgba(0, 0, 0, 0.04);
+            border-color: rgba(0, 0, 0, 0.08);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.03);
         }
 
         @keyframes slideIn {
-            from { transform: translateX(-10px); opacity: 0; }
+            from { transform: translateX(-15px); opacity: 0; }
             to { transform: translateX(0); opacity: 1; }
         }
 
@@ -350,15 +453,16 @@
         }
 
         .feed-item-title {
+            font-family: 'Outfit', sans-serif;
             font-weight: 600;
-            font-size: 0.9rem;
+            font-size: 0.92rem;
             margin-bottom: 4px;
         }
 
         .feed-item-sub {
             font-size: 0.75rem;
             color: var(--text-secondary);
-            font-family: 'Courier New', monospace;
+            font-family: 'Fira Code', 'Courier New', monospace;
         }
 
         .badge {
@@ -368,17 +472,18 @@
             font-weight: 700;
             text-transform: uppercase;
         }
-
         .badge-best   { background: rgba(16, 185, 129, 0.2); color: var(--success); }
         .badge-ok     { background: rgba(245, 158, 11, 0.2);  color: var(--warning); }
         .badge-danger { background: rgba(239, 68, 68, 0.2);   color: var(--danger);  }
 
-        /* Status Bar */
         .status-bar {
             display: flex; align-items: center; gap: 14px;
-            padding: 6px 14px; background: rgba(0,0,0,0.4);
+            padding: 8px 14px; background: rgba(0,0,0,0.3);
             border-top: 1px solid var(--glass-border);
-            font-size: 0.68rem; color: var(--text-secondary); flex-shrink: 0;
+            font-size: 0.7rem; color: var(--text-secondary); flex-shrink: 0;
+        }
+        [data-theme="light"] .status-bar {
+            background: rgba(255, 255, 255, 0.5);
         }
         .status-dot {
             width: 7px; height: 7px; border-radius: 50%;
@@ -390,56 +495,62 @@
         .status-dot.idle   { background: #475569; }
         @keyframes pulse-dot { 0%,100%{opacity:1} 50%{opacity:0.4} }
 
-        /* Search/Filter */
         .search-bar { display: flex; gap: 6px; margin-bottom: 10px; align-items: center; }
-        .search-bar input  { flex:1; padding:6px 10px; font-size:0.78rem; border-radius:6px; }
-        .search-bar select { width:auto; padding:6px 8px; font-size:0.75rem; border-radius:6px; }
+        .search-bar input  { flex:1; padding:7px 10px; font-size:0.78rem; border-radius:6px; }
+        .search-bar select { width:auto; padding:7px 8px; font-size:0.75rem; border-radius:6px; }
         .filter-toggle {
-            font-size:0.7rem; padding:5px 8px; border-radius:6px;
+            font-size:0.7rem; padding:6px 9px; border-radius:6px;
             border:1px solid var(--glass-border); background:transparent;
-            color:var(--text-secondary); cursor:pointer; white-space:nowrap; transition:all 0.2s;
+            color:var(--text-secondary); cursor:pointer; white-space:nowrap; transition:var(--transition);
         }
         .filter-toggle.active { border-color:var(--success); color:var(--success); background:rgba(16,185,129,0.1); }
 
-        /* Copy flash */
-        @keyframes copy-flash { 0%{background:rgba(16,185,129,0.4)} 100%{background:transparent} }
+        @keyframes copy-flash { 0%{background:rgba(16,185,129,0.35)} 100%{background:transparent} }
         .copy-flash { animation: copy-flash 0.6s ease-out; border-radius:4px; }
 
-        /* Bulk toolbar */
         .bulk-toolbar { display:none; gap:6px; padding:6px 0; font-size:0.75rem; animation:slideIn 0.2s ease-out; }
         .bulk-toolbar.visible { display:flex; }
-        .elem-checkbox { width:14px; height:14px; accent-color:var(--accent); cursor:pointer; flex-shrink:0; margin-right:4px; }
+        .elem-checkbox { width:14px; height:14px; accent-color:var(--accent-primary); cursor:pointer; flex-shrink:0; margin-right:4px; }
 
         .actions {
             display: grid;
             grid-template-columns: 1fr 1fr 1fr;
             gap: 10px;
             padding: 15px;
-            background: rgba(15, 23, 42, 0.9);
+            background: rgba(15, 23, 42, 0.85);
             border-top: 1px solid var(--glass-border);
         }
+        [data-theme="light"] .actions {
+            background: rgba(255, 255, 255, 0.9);
+        }
 
-        /* Modal Styles */
         .modal {
             display: none;
             position: fixed;
             top: 0; left: 0; right: 0; bottom: 0;
-            background: rgba(0,0,0,0.7);
-            backdrop-filter: blur(5px);
+            background: rgba(2, 6, 17, 0.7);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
             z-index: 1000;
             align-items: center;
             justify-content: center;
         }
 
         .modal-content {
-            background: var(--card-bg);
+            background: var(--bg-secondary);
             border: 1px solid var(--glass-border);
-            border-radius: 12px;
-            padding: 25px;
-            width: 90%;
-            max-width: 500px;
-            box-shadow: 0 10px 40px rgba(0,0,0,0.5);
-            animation: modalFadeIn 0.3s ease;
+            border-radius: 16px;
+            padding: 28px;
+            width: 92%;
+            max-width: 520px;
+            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.6);
+            animation: modalScaleIn 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+            display: flex;
+            flex-direction: column;
+        }
+        [data-theme="light"] .modal-content {
+            background: #ffffff;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.12);
         }
 
         .modal-large {
@@ -449,23 +560,30 @@
             flex-direction: column;
         }
 
-        .po-editor {
+        .po-editor, .code-area {
             flex: 1;
             width: 100%;
-            background: #1e1e1e;
-            color: #d4d4d4;
-            font-family: 'Consolas', 'Courier New', monospace;
-            padding: 15px;
+            background: #090d16 !important;
+            color: #e2e8f0;
+            font-family: 'Fira Code', 'Cascadia Code', 'Consolas', monospace;
+            padding: 16px;
             border-radius: 8px;
-            border: 1px solid #333;
+            border: 1px solid rgba(255, 255, 255, 0.05);
             font-size: 0.85rem;
             resize: none;
             outline: none;
             white-space: pre;
             overflow: auto;
+            transition: var(--transition);
         }
-        .po-editor:focus {
-            border-color: var(--accent);
+        .po-editor:focus, .code-area:focus {
+            border-color: var(--accent-secondary);
+            box-shadow: 0 0 0 2px var(--accent-glow);
+        }
+        [data-theme="light"] .po-editor, [data-theme="light"] .code-area {
+            background: #f8fafc !important;
+            color: #0f172a;
+            border-color: rgba(0, 0, 0, 0.1);
         }
 
         .modal-header {
@@ -483,6 +601,11 @@
             color: var(--text-secondary);
             font-size: 1.2rem;
             cursor: pointer;
+            transition: var(--transition);
+        }
+        .modal-close:hover {
+            color: var(--text-primary);
+            transform: scale(1.1);
         }
 
         .split-pane {
@@ -499,23 +622,468 @@
             gap: 10px;
         }
 
-        .code-area {
-            flex: 1;
-            background: #1e1e1e;
-            color: #d4d4d4;
-            font-family: 'Consolas', 'Courier New', monospace;
-            padding: 15px;
-            border-radius: 8px;
-            border: 1px solid #333;
-            overflow-y: auto;
-            white-space: pre;
-            font-size: 0.85rem;
+        @keyframes modalScaleIn {
+            from { transform: scale(0.92); opacity: 0; }
+            to { transform: scale(1); opacity: 1; }
         }
 
-        @keyframes modalFadeIn {
-            from { opacity: 0; transform: translateY(-20px); }
-            to { opacity: 1; transform: translateY(0); }
+        /* Smart Merge Premium Tabbed Layout & Checklist */
+        .merge-tabs {
+            display: flex;
+            background: rgba(0, 0, 0, 0.25);
+            border-radius: 8px;
+            padding: 3px;
+            margin-bottom: 12px;
+            border: 1px solid var(--glass-border);
+            flex-shrink: 0;
         }
+        [data-theme="light"] .merge-tabs {
+            background: rgba(0, 0, 0, 0.05);
+        }
+        .merge-tab {
+            flex: 1;
+            text-align: center;
+            padding: 8px 12px;
+            font-size: 0.78rem;
+            font-family: 'Outfit', sans-serif;
+            font-weight: 600;
+            color: var(--text-secondary);
+            cursor: pointer;
+            border-radius: 6px;
+            transition: var(--transition);
+        }
+        .merge-tab:hover {
+            color: var(--text-primary);
+        }
+        .merge-tab.active {
+            background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
+            color: white;
+            box-shadow: 0 2px 8px var(--accent-glow);
+        }
+        
+        .checklist-title {
+            font-size: 0.72rem;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            font-weight: 600;
+            margin-bottom: 6px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .checklist-container {
+            background: rgba(0, 0, 0, 0.15);
+            border-radius: 8px;
+            padding: 8px 12px;
+            border: 1px solid var(--glass-border);
+            margin-bottom: 12px;
+            max-height: 105px;
+            overflow-y: auto;
+            flex-shrink: 0;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+        [data-theme="light"] .checklist-container {
+            background: rgba(0, 0, 0, 0.02);
+        }
+        .checklist-item {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 0.75rem;
+            color: var(--text-primary);
+            background: rgba(255,255,255,0.03);
+            border: 1px solid var(--glass-border);
+            padding: 4px 10px;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: var(--transition);
+            user-select: none;
+        }
+        [data-theme="light"] .checklist-item {
+            background: rgba(0,0,0,0.02);
+        }
+        .checklist-item:hover {
+            background: rgba(255, 255, 255, 0.08);
+            border-color: rgba(255, 255, 255, 0.15);
+        }
+        [data-theme="light"] .checklist-item:hover {
+            background: rgba(0,0,0,0.05);
+        }
+        .checklist-item input {
+            width: 13px;
+            height: 13px;
+            margin: 0;
+            accent-color: var(--accent-primary);
+            cursor: pointer;
+        }
+        
+        .merge-stats {
+            display: flex;
+            gap: 12px;
+            align-items: center;
+            font-size: 0.72rem;
+            color: var(--text-secondary);
+            margin-bottom: 10px;
+            flex-shrink: 0;
+            background: rgba(0, 188, 242, 0.05);
+            border: 1px solid rgba(0, 188, 242, 0.12);
+            padding: 6px 12px;
+            border-radius: 6px;
+        }
+        [data-theme="light"] .merge-stats {
+            background: rgba(0, 120, 212, 0.03);
+            border-color: rgba(0, 120, 212, 0.08);
+        }
+        .merge-stat-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            font-weight: 500;
+        }
+        .merge-stat-pill i {
+            color: var(--accent-secondary);
+        }
+
+        /* ── GitHub-Style Side-by-Side Diff Viewer ─────────────────────── */
+
+        /* Outer wrapper — holds nav bar + twin panes */
+        .diff-viewer-wrap {
+            display: flex;
+            flex-direction: column;
+            flex: 1;
+            min-height: 0;
+            margin-bottom: 12px;
+            border-radius: 10px;
+            border: 1px solid var(--glass-border);
+            overflow: hidden;
+        }
+
+        /* Navigation toolbar (arrow buttons + change counter) */
+        .diff-nav-bar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 6px 12px;
+            background: rgba(15, 23, 42, 0.9);
+            border-bottom: 1px solid var(--glass-border);
+            flex-shrink: 0;
+        }
+        [data-theme="light"] .diff-nav-bar {
+            background: rgba(248, 250, 252, 0.95);
+        }
+        .diff-nav-group {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .diff-nav-btn {
+            background: rgba(255,255,255,0.06);
+            border: 1px solid var(--glass-border);
+            border-radius: 6px;
+            color: var(--text-secondary);
+            cursor: pointer;
+            font-size: 0.75rem;
+            padding: 4px 10px;
+            transition: var(--transition);
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            font-family: 'Outfit', sans-serif;
+            font-weight: 600;
+        }
+        .diff-nav-btn:hover {
+            background: rgba(255,255,255,0.12);
+            color: var(--text-primary);
+            border-color: var(--accent-secondary);
+        }
+        .diff-nav-btn:disabled {
+            opacity: 0.35;
+            cursor: not-allowed;
+            pointer-events: none;
+        }
+        [data-theme="light"] .diff-nav-btn {
+            background: rgba(0,0,0,0.04);
+            border-color: rgba(0,0,0,0.1);
+        }
+        .diff-change-badge {
+            font-size: 0.72rem;
+            font-family: 'Outfit', sans-serif;
+            font-weight: 600;
+            color: var(--text-secondary);
+            background: rgba(255,255,255,0.05);
+            border: 1px solid var(--glass-border);
+            border-radius: 20px;
+            padding: 3px 10px;
+            white-space: nowrap;
+        }
+        .diff-change-badge .badge-num {
+            color: var(--accent-secondary);
+            font-weight: 700;
+        }
+        .diff-legend {
+            display: flex;
+            gap: 12px;
+            align-items: center;
+            font-size: 0.68rem;
+            color: var(--text-secondary);
+        }
+        .diff-legend-dot {
+            width: 8px; height: 8px;
+            border-radius: 2px;
+            display: inline-block;
+            margin-right: 3px;
+        }
+
+        /* Column header row */
+        .diff-col-headers {
+            display: flex;
+            background: rgba(0,0,0,0.25);
+            border-bottom: 1px solid var(--glass-border);
+            flex-shrink: 0;
+        }
+        [data-theme="light"] .diff-col-headers {
+            background: rgba(0,0,0,0.04);
+        }
+        .diff-col-header {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 7px 12px;
+            font-size: 0.72rem;
+            font-family: 'Outfit', sans-serif;
+            font-weight: 600;
+            color: var(--text-secondary);
+            letter-spacing: 0.3px;
+            text-transform: uppercase;
+        }
+        .diff-col-header.left-header {
+            border-right: 1px solid var(--glass-border);
+        }
+        .diff-col-header i {
+            color: var(--text-secondary);
+            opacity: 0.7;
+        }
+        .diff-col-header .file-badge {
+            font-size: 0.65rem;
+            font-family: 'Fira Code', monospace;
+            background: rgba(255,255,255,0.06);
+            border: 1px solid var(--glass-border);
+            border-radius: 4px;
+            padding: 1px 6px;
+            color: var(--text-secondary);
+            opacity: 0.8;
+            max-width: 120px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            text-transform: none;
+            font-weight: 400;
+        }
+
+        /* Twin pane scroll container */
+        .diff-container {
+            display: flex;
+            flex: 1;
+            min-height: 0;
+            background: rgba(255, 255, 255, 0.04);
+            overflow: hidden;
+        }
+        [data-theme="light"] .diff-container {
+            background: rgba(0, 0, 0, 0.04);
+        }
+        .diff-pane {
+            flex: 1;
+            overflow: auto;
+            background: #090d18;
+            padding: 6px 0;
+            scroll-behavior: auto;
+            position: relative;
+        }
+        .diff-pane.left-pane {
+            border-right: 1px solid rgba(255,255,255,0.06);
+        }
+        [data-theme="light"] .diff-pane {
+            background: #f8fafc;
+        }
+        [data-theme="light"] .diff-pane.left-pane {
+            border-right: 1px solid rgba(0,0,0,0.06);
+        }
+
+        /* Scrollbars */
+        .diff-pane::-webkit-scrollbar { width: 6px; height: 6px; }
+        .diff-pane::-webkit-scrollbar-track { background: transparent; }
+        .diff-pane::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.08);
+            border-radius: 10px;
+        }
+        .diff-pane::-webkit-scrollbar-thumb:hover {
+            background: rgba(255, 255, 255, 0.15);
+        }
+        [data-theme="light"] .diff-pane::-webkit-scrollbar-thumb {
+            background: rgba(0, 0, 0, 0.08);
+        }
+
+        /* Line containers */
+        .diff-lines { display: flex; flex-direction: column; width: 100%; min-width: 0; }
+
+        .diff-line {
+            display: flex;
+            align-items: stretch;
+            width: 100%;
+            min-height: 20px;
+            font-family: 'Fira Code', 'Cascadia Code', 'Consolas', monospace;
+            font-size: 0.8rem;
+            line-height: 1.6;
+            white-space: pre;
+            transition: background 0.15s ease;
+        }
+
+        /* Line number gutter */
+        .diff-gutter {
+            display: flex;
+            align-items: center;
+            gap: 0;
+            flex-shrink: 0;
+        }
+        .diff-ln {
+            width: 42px;
+            text-align: right;
+            padding: 0 8px;
+            color: rgba(255, 255, 255, 0.18);
+            font-size: 0.68rem;
+            user-select: none;
+            flex-shrink: 0;
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+        }
+        .diff-sign {
+            width: 18px;
+            text-align: center;
+            padding: 0 2px;
+            color: rgba(255,255,255,0.15);
+            font-size: 0.8rem;
+            font-weight: 700;
+            flex-shrink: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-right: 2px solid transparent;
+        }
+        [data-theme="light"] .diff-ln { color: rgba(0, 0, 0, 0.25); }
+        [data-theme="light"] .diff-sign { color: rgba(0, 0, 0, 0.15); }
+
+        /* Code content area */
+        .diff-code {
+            flex: 1;
+            overflow: hidden;
+            padding: 0 10px;
+            display: flex;
+            align-items: center;
+            min-width: 0;
+        }
+        .diff-code-inner {
+            white-space: pre;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            width: 100%;
+        }
+
+        /* ── Line Type Highlights ─────────────────────────────────────── */
+        .diff-line.added {
+            background: rgba(16, 185, 129, 0.08);
+        }
+        .diff-line.added .diff-ln { color: rgba(52, 211, 153, 0.5); }
+        .diff-line.added .diff-sign {
+            color: #10b981;
+            border-right-color: #10b981;
+            background: rgba(16, 185, 129, 0.18);
+        }
+        .diff-line.added .diff-code { color: #d1fae5; }
+
+        .diff-line.removed {
+            background: rgba(239, 68, 68, 0.08);
+        }
+        .diff-line.removed .diff-ln { color: rgba(248, 113, 113, 0.5); }
+        .diff-line.removed .diff-sign {
+            color: #ef4444;
+            border-right-color: #ef4444;
+            background: rgba(239, 68, 68, 0.18);
+        }
+        .diff-line.removed .diff-code { color: #fee2e2; }
+
+        .diff-line.empty {
+            background: repeating-linear-gradient(
+                45deg,
+                transparent,
+                transparent 4px,
+                rgba(255,255,255,0.012) 4px,
+                rgba(255,255,255,0.012) 8px
+            );
+            opacity: 0.4;
+        }
+        [data-theme="light"] .diff-line.empty {
+            background: repeating-linear-gradient(
+                45deg,
+                transparent,
+                transparent 4px,
+                rgba(0,0,0,0.015) 4px,
+                rgba(0,0,0,0.015) 8px
+            );
+        }
+
+        /* Hunk separator */
+        .diff-hunk-sep {
+            display: flex;
+            align-items: center;
+            background: rgba(0, 120, 212, 0.06);
+            border-top: 1px solid rgba(0, 120, 212, 0.12);
+            border-bottom: 1px solid rgba(0, 120, 212, 0.12);
+            padding: 3px 10px;
+            font-size: 0.68rem;
+            font-family: 'Fira Code', monospace;
+            color: rgba(0, 188, 242, 0.7);
+            user-select: none;
+        }
+        [data-theme="light"] .diff-hunk-sep {
+            background: rgba(0, 120, 212, 0.04);
+        }
+
+        /* Currently navigated hunk highlight ring */
+        .diff-line.hunk-active-highlight {
+            outline: 1px solid rgba(0, 188, 242, 0.4);
+            outline-offset: -1px;
+        }
+
+        /* Inline char-level diff tokens */
+        .diff-char-added {
+            background: rgba(16, 185, 129, 0.35);
+            border-radius: 2px;
+            color: #bbf7d0;
+        }
+        .diff-char-removed {
+            background: rgba(239, 68, 68, 0.35);
+            border-radius: 2px;
+            color: #fecaca;
+        }
+        [data-theme="light"] .diff-char-added {
+            background: rgba(16, 185, 129, 0.22);
+            color: #166534;
+        }
+        [data-theme="light"] .diff-char-removed {
+            background: rgba(239, 68, 68, 0.2);
+            color: #991b1b;
+        }
+
+        /* Normal lines in light theme */
+        [data-theme="light"] .diff-line.normal .diff-code { color: #1e293b; }
+        [data-theme="light"] .diff-line.added .diff-code { color: #14532d; }
+        [data-theme="light"] .diff-line.removed .diff-code { color: #7f1d1d; }
     </style>
 </head>
 <body>
@@ -765,34 +1333,105 @@
 
     <!-- Smart Merge Preview Modal -->
     <div id="mergeModal" class="modal">
-        <div class="modal-content modal-large">
-            <div class="modal-header">
-                <h3><i class="fas fa-code-branch"></i> Smart Merge Preview</h3>
+        <div class="modal-content modal-large" style="padding: 20px; gap: 0; max-height: 92%; overflow: hidden;">
+            <div class="modal-header" style="margin-bottom: 12px; padding-bottom: 8px;">
+                <h3 style="margin: 0;"><i class="fas fa-code-branch"></i> Smart Merge Preview</h3>
                 <button class="modal-close" onclick="hideMergeModal()"><i class="fas fa-times"></i></button>
             </div>
             
-            <div class="form-group" style="display: flex; gap: 10px; align-items: flex-end;">
+            <!-- Target File Selection -->
+            <div class="form-group" style="display: flex; gap: 10px; align-items: flex-end; margin-bottom: 10px; flex-shrink: 0;">
                 <div style="flex: 1;">
-                    <label>Target File</label>
-                    <input type="text" id="mergeFilePath" readonly placeholder="Click 'Browse...' to select file to merge with ->">
+                    <label style="margin-bottom: 4px;">Target File</label>
+                    <input type="text" id="mergeFilePath" readonly placeholder="Click 'Browse...' to select file to merge with ->" style="padding: 7px 10px; font-size: 0.78rem;">
                 </div>
-                <button class="btn btn-outline" style="height: 38px;" onclick="browseMergeFile()">Browse...</button>
+                <button class="btn btn-outline" style="height: 33px; padding: 0 14px; font-size: 0.75rem;" onclick="browseMergeFile()">Browse...</button>
             </div>
 
-            <div class="split-pane">
-                <div class="pane">
-                    <label>New Generated Locators</label>
-                    <textarea id="mergeNewCode" class="code-area" spellcheck="false" readonly></textarea>
-                </div>
-                <div class="pane">
-                    <label>Existing File Content (Will be updated)</label>
-                    <textarea id="mergeExistingCode" class="code-area" spellcheck="false"></textarea>
+            <!-- Interactive Element Inclusion Checklist -->
+            <div class="checklist-title">
+                <span>Select Locators to Merge</span>
+                <span id="checklistCountBadge" style="font-size: 0.65rem; color: var(--accent-secondary); text-transform: none;">0 of 0 selected</span>
+            </div>
+            <div id="mergeChecklist" class="checklist-container">
+                <!-- Checklist items loaded dynamically via JS -->
+            </div>
+
+            <!-- Dynamic File Merge Stats Bar -->
+            <div id="mergeStatsBar" class="merge-stats">
+                <span class="merge-stat-pill"><i class="fas fa-chart-bar"></i> <strong>Delta Stats:</strong></span>
+                <span id="statLocators" class="merge-stat-pill"><i class="fas fa-fingerprint"></i> +0 locators</span>
+                <span id="statActions" class="merge-stat-pill"><i class="fas fa-running"></i> +0 action methods</span>
+            </div>
+
+            <!-- Sliding Tab Navigation for Previews -->
+            <div class="merge-tabs">
+                <div id="tabNewCode" class="merge-tab active" onclick="switchMergeTab('new')">New Locators</div>
+                <div id="tabMergedCode" class="merge-tab" onclick="switchMergeTab('merged')">Merged Output</div>
+            </div>
+
+            <!-- Unified Single Preview Frame (100% width) -->
+            <div style="flex: 1; min-height: 0; display: flex; flex-direction: column; position: relative; margin-bottom: 12px;">
+                <!-- New Locators Area -->
+                <textarea id="mergeNewCode" class="code-area" spellcheck="false" readonly style="display: block; width: 100%; height: 100%; margin: 0; padding: 12px; font-size: 0.82rem; line-height: 1.5;"></textarea>
+                
+                <!-- Merged Code Area (Hidden, used as raw string store) -->
+                <textarea id="mergeExistingCode" class="code-area" spellcheck="false" style="display: none; width: 100%; height: 100%; margin: 0; padding: 12px; font-size: 0.82rem; line-height: 1.5;"></textarea>
+
+                <!-- GitHub-Style Side-by-Side Diff Viewer -->
+                <div id="diffViewContainer" class="diff-viewer-wrap" style="display: none;">
+
+                    <!-- Diff Navigation Toolbar -->
+                    <div class="diff-nav-bar">
+                        <div class="diff-nav-group">
+                            <button class="diff-nav-btn" id="diffNavPrev" onclick="navigateDiff(-1)" title="Previous change">
+                                <i class="fas fa-chevron-up"></i> Prev
+                            </button>
+                            <button class="diff-nav-btn" id="diffNavNext" onclick="navigateDiff(1)" title="Next change">
+                                Next <i class="fas fa-chevron-down"></i>
+                            </button>
+                            <span class="diff-change-badge" id="diffChangeBadge">
+                                <span class="badge-num" id="diffChangeIndex">—</span>
+                                <span id="diffChangeTotal"> changes</span>
+                            </span>
+                        </div>
+                        <div class="diff-legend">
+                            <span><span class="diff-legend-dot" style="background:rgba(16,185,129,0.5);"></span>Added</span>
+                            <span><span class="diff-legend-dot" style="background:rgba(239,68,68,0.5);"></span>Removed</span>
+                            <span><span class="diff-legend-dot" style="background:rgba(255,255,255,0.12); border:1px dashed rgba(255,255,255,0.15);"></span>Empty</span>
+                        </div>
+                    </div>
+
+                    <!-- Column Headers -->
+                    <div class="diff-col-headers">
+                        <div class="diff-col-header left-header">
+                            <i class="fas fa-file-code"></i>
+                            Original File
+                            <span class="file-badge" id="diffLeftFileBadge">—</span>
+                        </div>
+                        <div class="diff-col-header">
+                            <i class="fas fa-code-branch"></i>
+                            Merged Output
+                            <span class="file-badge" style="background: rgba(16,185,129,0.1); border-color: rgba(16,185,129,0.2); color: #34d399;">+ new locators</span>
+                        </div>
+                    </div>
+
+                    <!-- Twin Panes -->
+                    <div class="diff-container">
+                        <div class="diff-pane left-pane" id="diffPaneLeft" onscroll="syncScroll('left')">
+                            <div class="diff-lines" id="diffLinesLeft"></div>
+                        </div>
+                        <div class="diff-pane" id="diffPaneRight" onscroll="syncScroll('right')">
+                            <div class="diff-lines" id="diffLinesRight"></div>
+                        </div>
+                    </div>
                 </div>
             </div>
 
-            <div style="display: flex; gap: 10px; margin-top: 20px; justify-content: flex-end;">
-                <button class="btn btn-outline" onclick="hideMergeModal()">Cancel</button>
-                <button class="btn btn-primary" style="background: #27ae60;" id="mergeConfirmBtn" onclick="confirmMerge()">
+            <!-- Action Bar -->
+            <div style="display: flex; gap: 10px; justify-content: flex-end; flex-shrink: 0; border-top: 1px solid var(--glass-border); padding-top: 12px;">
+                <button class="btn btn-outline" style="padding: 7px 16px; font-size: 0.78rem;" onclick="hideMergeModal()">Cancel</button>
+                <button class="btn btn-primary" style="padding: 7px 22px; font-size: 0.78rem;" id="mergeConfirmBtn" onclick="confirmMerge()">
                     <i class="fas fa-save"></i> Commit Merge to File
                 </button>
             </div>
@@ -889,9 +1528,13 @@
                     if(pyBridge.mergePreviewReady) {
                         pyBridge.mergePreviewReady.connect(function (dataJson) {
                             const data = JSON.parse(dataJson);
-                            document.getElementById('mergeFilePath').value = data.target_file;
-                            document.getElementById('mergeNewCode').value = data.new_code;
-                            document.getElementById('mergeExistingCode').value = data.merged_code;
+                            document.getElementById('mergeFilePath').value = data.target_file || '';
+                            document.getElementById('mergeNewCode').value = data.new_code || '';
+                            document.getElementById('mergeExistingCode').value = data.merged_code || '';
+                            
+                            // Dynamically render the side-by-side diff
+                            renderDiff(data.original_code || '', data.merged_code || '', data.target_file || '');
+                            
                             showMergeModal();
                         });
                     }
@@ -1021,7 +1664,7 @@
                             <div id="locator-val-${idx}" style="font-size:0.75rem;font-family:monospace;color:${badgeColor};word-break:break-all;margin-bottom:8px;" title="${el.value}">${el.value}</div>
                             
                             <div style="display:flex;align-items:center;justify-content:space-between;width:100%;margin-top:8px;">
-                                <select onchange="updateAction(${idx}, this.value)" style="padding:4px 8px;font-size:0.75rem;background:rgba(0,0,0,0.4);border-radius:6px;color:white;border:1px solid rgba(255,255,255,0.1);cursor:pointer;outline:none;">
+                                <select onchange="updateAction(${idx}, this.value)" style="flex: 1; min-width: 95px; max-width: 120px; padding: 4px 6px; font-size: 0.75rem; background: rgba(0,0,0,0.45); border-radius: 6px; color: white; border: 1px solid rgba(255,255,255,0.1); cursor: pointer; outline: none; text-overflow: ellipsis; white-space: nowrap; overflow: hidden;">
                                     <optgroup label="Basic">
                                         <option value="Click" ${el.action === 'Click' ? 'selected' : ''}>🖱️ Click</option>
                                         <option value="Type" ${el.action === 'Type' ? 'selected' : ''}>⌨️ Type</option>
@@ -1045,7 +1688,7 @@
                                     </optgroup>
                                 </select>
 
-                                <div style="display:flex;gap:8px;">
+                                <div style="display:flex;gap:4px;flex-shrink:0;">
                                     <button class="action-icon-btn btn-highlight" onclick="highlightItem(${idx})" title="Highlight in Browser">
                                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
                                     </button>
@@ -1467,31 +2110,402 @@
             hideDbModal();
         }
 
-        // Smart Merge Logic
+        // Smart Merge Logic & Responsive Tabs
+        let activeMergeTab = 'new';
+        let mergeSelections = [];
+
+        function switchMergeTab(tab) {
+            activeMergeTab = tab;
+            const newTabEl = document.getElementById('tabNewCode');
+            const mergedTabEl = document.getElementById('tabMergedCode');
+            const newCodeEl = document.getElementById('mergeNewCode');
+            const mergedCodeEl = document.getElementById('mergeExistingCode');
+            const diffViewEl = document.getElementById('diffViewContainer');
+            
+            if (tab === 'new') {
+                newTabEl.classList.add('active');
+                mergedTabEl.classList.remove('active');
+                newCodeEl.style.display = 'block';
+                mergedCodeEl.style.display = 'none';
+                if (diffViewEl) diffViewEl.style.display = 'none';
+            } else {
+                newTabEl.classList.remove('active');
+                mergedTabEl.classList.add('active');
+                newCodeEl.style.display = 'none';
+                mergedCodeEl.style.display = 'none';
+                if (diffViewEl) diffViewEl.style.display = 'flex';
+            }
+        }
+
+        // High-Performance Myers LCS Diff Comparison Algorithm
+        function diffLines(oldText, newText) {
+            const X = oldText ? oldText.split(/\r?\n/) : [];
+            const Y = newText ? newText.split(/\r?\n/) : [];
+            const m = X.length;
+            const n = Y.length;
+            
+            const C = Array.from({ length: m + 1 }, () => new Int32Array(n + 1));
+            
+            for (let i = 1; i <= m; i++) {
+                const lineX = X[i - 1];
+                for (let j = 1; j <= n; j++) {
+                    if (lineX === Y[j - 1]) {
+                        C[i][j] = C[i - 1][j - 1] + 1;
+                    } else {
+                        C[i][j] = Math.max(C[i - 1][j], C[i][j - 1]);
+                    }
+                }
+            }
+            
+            const leftResult = [];
+            const rightResult = [];
+            let i = m;
+            let j = n;
+            
+            while (i > 0 || j > 0) {
+                if (i > 0 && j > 0 && X[i - 1] === Y[j - 1]) {
+                    leftResult.push({ type: 'normal', lineNum: i, text: X[i - 1] });
+                    rightResult.push({ type: 'normal', lineNum: j, text: Y[j - 1] });
+                    i--;
+                    j--;
+                } else if (j > 0 && (i === 0 || C[i][j - 1] >= C[i - 1][j])) {
+                    leftResult.push({ type: 'empty', lineNum: '', text: '' });
+                    rightResult.push({ type: 'added', lineNum: j, text: Y[j - 1] });
+                    j--;
+                } else {
+                    leftResult.push({ type: 'removed', lineNum: i, text: X[i - 1] });
+                    rightResult.push({ type: 'empty', lineNum: '', text: '' });
+                    i--;
+                }
+            }
+            
+            return {
+                left: leftResult.reverse(),
+                right: rightResult.reverse()
+            };
+        }
+
+        // Scroll Synchronization Triggers
+        let isSyncingLeftScroll = false;
+        let isSyncingRightScroll = false;
+
+        function syncScroll(pane) {
+            const leftPane = document.getElementById('diffPaneLeft');
+            const rightPane = document.getElementById('diffPaneRight');
+            if (!leftPane || !rightPane) return;
+            
+            if (pane === 'left') {
+                if (isSyncingLeftScroll) {
+                    isSyncingLeftScroll = false;
+                    return;
+                }
+                isSyncingRightScroll = true;
+                rightPane.scrollTop = leftPane.scrollTop;
+                rightPane.scrollLeft = leftPane.scrollLeft;
+            } else if (pane === 'right') {
+                if (isSyncingRightScroll) {
+                    isSyncingRightScroll = false;
+                    return;
+                }
+                isSyncingLeftScroll = true;
+                leftPane.scrollTop = rightPane.scrollTop;
+                leftPane.scrollLeft = rightPane.scrollLeft;
+            }
+        }
+
+        // ─── Inline Character-Level LCS for single-line diffs ────────────────
+        function charDiff(oldStr, newStr) {
+            // Returns arrays of token objects [{text, type}] for each string
+            const A = [...oldStr];
+            const B = [...newStr];
+            const m = A.length, n = B.length;
+            const C = Array.from({ length: m + 1 }, () => new Int32Array(n + 1));
+            for (let i = 1; i <= m; i++)
+                for (let j = 1; j <= n; j++)
+                    C[i][j] = A[i-1] === B[j-1] ? C[i-1][j-1] + 1 : Math.max(C[i-1][j], C[i][j-1]);
+
+            const oldToks = [], newToks = [];
+            let i = m, j = n;
+            while (i > 0 || j > 0) {
+                if (i > 0 && j > 0 && A[i-1] === B[j-1]) {
+                    oldToks.push({ text: A[i-1], type: 'normal' });
+                    newToks.push({ text: B[j-1], type: 'normal' });
+                    i--; j--;
+                } else if (j > 0 && (i === 0 || C[i][j-1] >= C[i-1][j])) {
+                    oldToks.push({ text: '', type: 'empty_char' });
+                    newToks.push({ text: B[j-1], type: 'added' });
+                    j--;
+                } else {
+                    oldToks.push({ text: A[i-1], type: 'removed' });
+                    newToks.push({ text: '', type: 'empty_char' });
+                    i--;
+                }
+            }
+            return { old: oldToks.reverse(), new: newToks.reverse() };
+        }
+
+        function buildInlineSpans(tokens, container) {
+            let run = null;
+            tokens.forEach(tok => {
+                if (tok.type === 'empty_char' || tok.text === '') return;
+                if (run && run.type === tok.type) {
+                    run.span.textContent += tok.text;
+                } else {
+                    run = { type: tok.type, span: document.createElement('span') };
+                    run.span.textContent = tok.text;
+                    if (tok.type === 'added')   run.span.className = 'diff-char-added';
+                    if (tok.type === 'removed') run.span.className = 'diff-char-removed';
+                    container.appendChild(run.span);
+                }
+            });
+        }
+
+        // ─── Hunk navigation state ───────────────────────────────────────────
+        let diffHunks = [];       // [{leftEls, rightEls}]  — per changed hunk
+        let diffHunkIndex = -1;   // currently focused hunk (0-based)
+
+        function navigateDiff(delta) {
+            if (diffHunks.length === 0) return;
+            // Remove previous highlight
+            if (diffHunkIndex >= 0) {
+                const prev = diffHunks[diffHunkIndex];
+                [...prev.leftEls, ...prev.rightEls].forEach(el => el.classList.remove('hunk-active-highlight'));
+            }
+            diffHunkIndex = Math.max(0, Math.min(diffHunks.length - 1, diffHunkIndex + delta));
+            const hunk = diffHunks[diffHunkIndex];
+            [...hunk.leftEls, ...hunk.rightEls].forEach(el => el.classList.add('hunk-active-highlight'));
+
+            // Scroll both panes so the first line of the hunk is visible
+            const scrollTarget = hunk.leftEls[0] || hunk.rightEls[0];
+            if (scrollTarget) {
+                const leftPane  = document.getElementById('diffPaneLeft');
+                const rightPane = document.getElementById('diffPaneRight');
+                const pane      = scrollTarget.closest('.diff-pane') || leftPane;
+                const offset    = scrollTarget.offsetTop - pane.clientHeight / 3;
+                isSyncingRightScroll = true; isSyncingLeftScroll = true;
+                leftPane.scrollTop  = offset;
+                rightPane.scrollTop = offset;
+            }
+            updateDiffNavBadge();
+        }
+
+        function updateDiffNavBadge() {
+            const idxEl   = document.getElementById('diffChangeIndex');
+            const totEl   = document.getElementById('diffChangeTotal');
+            const prevBtn = document.getElementById('diffNavPrev');
+            const nextBtn = document.getElementById('diffNavNext');
+            if (idxEl) idxEl.textContent = diffHunks.length ? `${diffHunkIndex + 1} / ${diffHunks.length}` : '—';
+            if (totEl) totEl.textContent = diffHunks.length ? ` change${diffHunks.length !== 1 ? 's' : ''}` : ' changes';
+            if (prevBtn) prevBtn.disabled = diffHunkIndex <= 0;
+            if (nextBtn) nextBtn.disabled = diffHunkIndex >= diffHunks.length - 1;
+        }
+
+        // ─── Main GitHub-style Diff Renderer ─────────────────────────────────
+        function renderDiff(oldText, newText, targetFilePath) {
+            const diff = diffLines(oldText, newText);
+            diffHunks = [];
+            diffHunkIndex = -1;
+
+            const leftContainer  = document.getElementById('diffLinesLeft');
+            const rightContainer = document.getElementById('diffLinesRight');
+            if (!leftContainer || !rightContainer) return;
+            leftContainer.innerHTML  = '';
+            rightContainer.innerHTML = '';
+
+            // Update left column header badge with filename
+            const leftBadge = document.getElementById('diffLeftFileBadge');
+            if (leftBadge) {
+                if (targetFilePath) {
+                    const fname = targetFilePath.split('/').pop() || targetFilePath;
+                    leftBadge.textContent = fname;
+                    leftBadge.title = targetFilePath;
+                } else {
+                    leftBadge.textContent = '(no file)';
+                }
+            }
+
+            const leftItems  = diff.left;
+            const rightItems = diff.right;
+            const len = Math.max(leftItems.length, rightItems.length);
+
+            let currentHunkLeft  = null;
+            let currentHunkRight = null;
+
+            function makeLineEl(item, sign) {
+                const lineDiv = document.createElement('div');
+                lineDiv.className = `diff-line ${item.type}`;
+
+                const gutter = document.createElement('div');
+                gutter.className = 'diff-gutter';
+
+                const lnSpan = document.createElement('span');
+                lnSpan.className = 'diff-ln';
+                lnSpan.textContent = item.lineNum !== '' ? item.lineNum : '';
+
+                const signSpan = document.createElement('span');
+                signSpan.className = 'diff-sign';
+                signSpan.textContent = sign;
+
+                gutter.appendChild(lnSpan);
+                gutter.appendChild(signSpan);
+
+                const codeDiv = document.createElement('div');
+                codeDiv.className = 'diff-code';
+                const codeInner = document.createElement('span');
+                codeInner.className = 'diff-code-inner';
+                codeInner.textContent = item.text;
+                codeDiv.appendChild(codeInner);
+
+                lineDiv.appendChild(gutter);
+                lineDiv.appendChild(codeDiv);
+                return { lineDiv, codeInner };
+            }
+
+            for (let idx = 0; idx < len; idx++) {
+                const L = leftItems[idx]  || { type: 'empty', lineNum: '', text: '' };
+                const R = rightItems[idx] || { type: 'empty', lineNum: '', text: '' };
+
+                const lSign = L.type === 'removed' ? '−' : ' ';
+                const rSign = R.type === 'added'   ? '+' : ' ';
+
+                const { lineDiv: lDiv, codeInner: lCode } = makeLineEl(L, lSign);
+                const { lineDiv: rDiv, codeInner: rCode } = makeLineEl(R, rSign);
+
+                // Inline char-level diff for adjacent removed/added pairs
+                if (L.type === 'removed' && R.type === 'added') {
+                    const chars = charDiff(L.text, R.text);
+                    lCode.textContent = '';
+                    rCode.textContent = '';
+                    buildInlineSpans(chars.old, lCode);
+                    buildInlineSpans(chars.new, rCode);
+                }
+
+                // Hunk grouping
+                const isChanged = L.type !== 'normal' || R.type !== 'normal';
+                if (isChanged) {
+                    if (!currentHunkLeft)  { currentHunkLeft  = []; currentHunkRight = []; }
+                    currentHunkLeft.push(lDiv);
+                    currentHunkRight.push(rDiv);
+                } else {
+                    if (currentHunkLeft && currentHunkLeft.length) {
+                        diffHunks.push({ leftEls: currentHunkLeft, rightEls: currentHunkRight });
+                        currentHunkLeft = null; currentHunkRight = null;
+                    }
+                }
+
+                leftContainer.appendChild(lDiv);
+                rightContainer.appendChild(rDiv);
+            }
+
+            // Flush last open hunk
+            if (currentHunkLeft && currentHunkLeft.length) {
+                diffHunks.push({ leftEls: currentHunkLeft, rightEls: currentHunkRight });
+            }
+
+            // Focus first hunk automatically
+            if (diffHunks.length > 0) {
+                diffHunkIndex = 0;
+                [...diffHunks[0].leftEls, ...diffHunks[0].rightEls].forEach(el => el.classList.add('hunk-active-highlight'));
+            }
+            updateDiffNavBadge();
+        }
+
+
+
         function smartMerge() {
             if (capturedElements.length === 0) {
                 showAlert("Queue is empty! Capture some elements first.");
                 return;
             }
             if (pyBridge) {
+                // Reset select states to all active by default
+                mergeSelections = capturedElements.map((el, idx) => idx);
+                
                 document.getElementById('mergeFilePath').value = '';
                 document.getElementById('mergeExistingCode').value = '';
                 document.getElementById('mergeNewCode').value = 'Generating code...';
-                showMergeModal();
                 
-                const payload = {
-                    locators: capturedElements,
-                    tool: document.getElementById('toolSelect').value,
-                    lang: document.getElementById('langSelect').value
-                };
-                pyBridge.callPython("init_merge_modal", JSON.stringify(payload));
+                // Show modal first
+                showMergeModal();
+                switchMergeTab('new');
+                
+                // Render elements checklist
+                renderMergeChecklist();
+                
+                // Fetch preview
+                triggerSmartMergePreview();
             }
+        }
+
+        function renderMergeChecklist() {
+            const container = document.getElementById('mergeChecklist');
+            container.innerHTML = '';
+            
+            capturedElements.forEach((el, idx) => {
+                const isChecked = mergeSelections.includes(idx);
+                const item = document.createElement('div');
+                item.className = 'checklist-item';
+                item.style.display = 'flex';
+                item.style.alignItems = 'center';
+                item.style.gap = '6px';
+                
+                item.innerHTML = `
+                    <input type="checkbox" id="chk-merge-${idx}" ${isChecked ? 'checked' : ''} onchange="toggleMergeSelection(${idx}, this.checked)">
+                    <label for="chk-merge-${idx}" style="text-transform:none; font-size:0.75rem; color:var(--text-primary); cursor:pointer; font-weight:bold; margin:0;">${el.nameHint || el.name || 'element'}</label>
+                `;
+                container.appendChild(item);
+            });
+            updateChecklistCountBadge();
+        }
+
+        function updateChecklistCountBadge() {
+            const total = capturedElements.length;
+            const selected = mergeSelections.length;
+            document.getElementById('checklistCountBadge').innerText = `${selected} of ${total} selected`;
+            
+            // Calculate and display Delta stats
+            const statLocs = document.getElementById('statLocators');
+            const statActs = document.getElementById('statActions');
+            statLocs.innerHTML = `<i class="fas fa-fingerprint"></i> +${selected} locator${selected === 1 ? '' : 's'}`;
+            statActs.innerHTML = `<i class="fas fa-running"></i> +${selected} action method${selected === 1 ? '' : 's'}`;
+        }
+
+        function toggleMergeSelection(idx, isChecked) {
+            if (isChecked) {
+                if (!mergeSelections.includes(idx)) mergeSelections.push(idx);
+            } else {
+                mergeSelections = mergeSelections.filter(i => i !== idx);
+            }
+            updateChecklistCountBadge();
+            triggerSmartMergePreview();
+        }
+
+        function triggerSmartMergePreview() {
+            if (!pyBridge) return;
+            
+            const selectedLocators = capturedElements.filter((el, idx) => mergeSelections.includes(idx));
+            const file_path = document.getElementById('mergeFilePath').value;
+            
+            const payload = {
+                locators: selectedLocators,
+                tool: document.getElementById('toolSelect').value,
+                lang: document.getElementById('langSelect').value,
+                file_path: file_path
+            };
+            
+            document.getElementById('mergeNewCode').value = 'Generating preview...';
+            if (file_path) {
+                document.getElementById('mergeExistingCode').value = 'Merging preview...';
+            }
+            
+            pyBridge.callPython("refresh_merge_preview", JSON.stringify(payload));
         }
 
         function browseMergeFile() {
             if (pyBridge) {
+                const selectedLocators = capturedElements.filter((el, idx) => mergeSelections.includes(idx));
                 const payload = {
-                    locators: capturedElements,
+                    locators: selectedLocators,
                     tool: document.getElementById('toolSelect').value,
                     lang: document.getElementById('langSelect').value
                 };
