@@ -14,6 +14,10 @@
     <!-- Font Awesome -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     
+    <!-- CodeMirror Stylesheets -->
+    <link rel="stylesheet" href="libs/codemirror.min.css">
+    <link rel="stylesheet" href="libs/material-darker.min.css">
+    
     <style>
         :root {
             /* Color Palette - Premium Dark Mode */
@@ -893,8 +897,68 @@
             background: rgba(255, 255, 255, 0.04);
             overflow: hidden;
         }
+        .diff-pane-textarea {
+            flex: 1;
+            overflow: auto;
+            background: #090d18;
+            padding: 12px;
+            color: #d1fae5;
+            font-family: 'Fira Code', 'Cascadia Code', 'Consolas', monospace;
+            font-size: 0.8rem;
+            line-height: 1.6;
+            border: none;
+            outline: none;
+            resize: none;
+            box-sizing: border-box;
+            height: 100%;
+        }
+        .diff-pane-textarea.left-pane {
+            border-right: 1px solid rgba(255,255,255,0.06);
+        }
+        [data-theme="light"] .diff-pane-textarea {
+            background: #f8fafc;
+            color: #1e293b;
+        }
+        [data-theme="light"] .diff-pane-textarea.left-pane {
+            border-right: 1px solid rgba(0,0,0,0.06);
+        }
         [data-theme="light"] .diff-container {
             background: rgba(0, 0, 0, 0.04);
+        }
+
+        /* CodeMirror Custom Styling to match Studio Theme */
+        .CodeMirror {
+            flex: 1;
+            height: 100% !important;
+            font-family: 'Fira Code', 'Cascadia Code', 'Consolas', monospace;
+            font-size: 0.8rem !important;
+            background: #090d18 !important;
+            color: #d1fae5 !important;
+        }
+        .CodeMirror-gutters {
+            background: #060911 !important;
+            border-right: 1px solid rgba(255, 255, 255, 0.05) !important;
+        }
+        .CodeMirror-linenumber {
+            color: #475569 !important;
+        }
+        .CodeMirror-cursor {
+            border-left: 2px solid #34d399 !important;
+        }
+        
+        [data-theme="light"] .CodeMirror {
+            background: #f8fafc !important;
+            color: #1e293b !important;
+        }
+        [data-theme="light"] .CodeMirror-gutters {
+            background: #f1f5f9 !important;
+            border-right: 1px solid rgba(0, 0, 0, 0.05) !important;
+        }
+        [data-theme="light"] .CodeMirror-linenumber {
+            color: #94a3b8 !important;
+        }
+        [data-theme="light"] .CodeMirror-cursor {
+            border-left: 2px solid #2563eb !important;
         }
         .diff-pane {
             flex: 1;
@@ -1084,6 +1148,121 @@
         [data-theme="light"] .diff-line.normal .diff-code { color: #1e293b; }
         [data-theme="light"] .diff-line.added .diff-code { color: #14532d; }
         [data-theme="light"] .diff-line.removed .diff-code { color: #7f1d1d; }
+
+        /* ── Center Accept-Gutter ──────────────────────────────────────── */
+        .diff-center-gutter {
+            width: 42px;
+            flex-shrink: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            background: rgba(0, 0, 0, 0.25);
+            border-left: 1px solid rgba(255,255,255,0.05);
+            border-right: 1px solid rgba(255,255,255,0.05);
+            position: relative;
+            overflow: visible;
+            z-index: 2;
+        }
+        [data-theme="light"] .diff-center-gutter {
+            background: rgba(0, 0, 0, 0.04);
+        }
+        .diff-gutter-row {
+            width: 100%;
+            min-height: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+        }
+        .diff-accept-btn {
+            width: 26px;
+            height: 26px;
+            border-radius: 50%;
+            border: 1.5px solid rgba(0, 188, 242, 0.5);
+            background: rgba(0, 120, 212, 0.15);
+            color: var(--accent-secondary);
+            font-size: 0.7rem;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: var(--transition);
+            flex-shrink: 0;
+        }
+        .diff-accept-btn:hover {
+            background: rgba(0, 120, 212, 0.4);
+            border-color: var(--accent-secondary);
+            color: white;
+            transform: scale(1.15);
+            box-shadow: 0 0 12px rgba(0, 188, 242, 0.4);
+        }
+        .diff-accept-btn.accepted {
+            border-color: rgba(16, 185, 129, 0.6);
+            background: rgba(16, 185, 129, 0.15);
+            color: #10b981;
+            cursor: default;
+        }
+        .diff-accept-btn.accepted:hover {
+            transform: none;
+            box-shadow: none;
+        }
+
+        /* Right pane placeholder when no file selected */
+        .diff-right-placeholder {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            gap: 12px;
+            color: var(--text-secondary);
+            padding: 30px;
+            text-align: center;
+            user-select: none;
+        }
+        .diff-right-placeholder i {
+            font-size: 2.5rem;
+            opacity: 0.25;
+            margin-bottom: 6px;
+        }
+        .diff-right-placeholder p {
+            font-size: 0.78rem;
+            opacity: 0.5;
+            max-width: 200px;
+            line-height: 1.6;
+        }
+        .diff-right-placeholder .browse-hint {
+            font-size: 0.72rem;
+            color: var(--accent-secondary);
+            opacity: 0.8;
+            cursor: pointer;
+            text-decoration: underline;
+            text-decoration-color: rgba(0,188,242,0.3);
+        }
+        .diff-right-placeholder .browse-hint:hover { opacity: 1; }
+
+        /* Accepted hunk glow on right */
+        .diff-line.accepted {
+            background: rgba(16, 185, 129, 0.06);
+            border-left: 2px solid rgba(16, 185, 129, 0.5);
+        }
+
+        /* Col header center spacer */
+        .diff-col-header-gutter {
+            width: 42px;
+            flex-shrink: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: rgba(0, 0, 0, 0.25);
+            border-left: 1px solid rgba(255,255,255,0.05);
+            border-right: 1px solid rgba(255,255,255,0.05);
+            font-size: 0.6rem;
+            color: rgba(255,255,255,0.15);
+        }
+        [data-theme="light"] .diff-col-header-gutter {
+            background: rgba(0, 0, 0, 0.04);
+        }
     </style>
 </head>
 <body>
@@ -1333,116 +1512,118 @@
 
     <!-- Smart Merge Preview Modal -->
     <div id="mergeModal" class="modal">
-        <div class="modal-content modal-large" style="padding: 20px; gap: 0; max-height: 92%; overflow: hidden;">
-            <div class="modal-header" style="margin-bottom: 12px; padding-bottom: 8px;">
-                <h3 style="margin: 0;"><i class="fas fa-code-branch"></i> Smart Merge Preview</h3>
+        <div class="modal-content modal-large" style="padding: 20px; gap: 0; max-height: 94%; overflow: hidden; display: flex; flex-direction: column;">
+            <div class="modal-header" style="margin-bottom: 10px; padding-bottom: 8px;">
+                <h3 style="margin: 0; display: flex; align-items: center; gap: 10px;">
+                    <i class="fas fa-code-merge" style="color: var(--accent-secondary);"></i>
+                    Smart Merge
+                    <span style="font-size: 0.7rem; font-weight: 400; color: var(--text-secondary); background: rgba(255,255,255,0.05); border: 1px solid var(--glass-border); border-radius: 20px; padding: 2px 10px;">Interactive Diff Editor</span>
+                </h3>
                 <button class="modal-close" onclick="hideMergeModal()"><i class="fas fa-times"></i></button>
             </div>
-            
-            <!-- Target File Selection -->
-            <div class="form-group" style="display: flex; gap: 10px; align-items: flex-end; margin-bottom: 10px; flex-shrink: 0;">
-                <div style="flex: 1;">
-                    <label style="margin-bottom: 4px;">Target File</label>
-                    <input type="text" id="mergeFilePath" readonly placeholder="Click 'Browse...' to select file to merge with ->" style="padding: 7px 10px; font-size: 0.78rem;">
+
+            <!-- Checklist + Stats row -->
+            <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px; flex-shrink: 0; flex-wrap: wrap;">
+                <div class="checklist-title" style="margin-bottom: 0; flex-shrink: 0;">
+                    <span>Locators</span>
+                    <span id="checklistCountBadge" style="font-size: 0.65rem; color: var(--accent-secondary); text-transform: none;">0 of 0</span>
                 </div>
-                <button class="btn btn-outline" style="height: 33px; padding: 0 14px; font-size: 0.75rem;" onclick="browseMergeFile()">Browse...</button>
+                <div id="mergeChecklist" class="checklist-container" style="flex: 1; margin-bottom: 0; min-width: 0;"></div>
+                <div id="mergeStatsBar" class="merge-stats" style="margin-bottom: 0; flex-shrink: 0;">
+                    <span id="statLocators" class="merge-stat-pill"><i class="fas fa-fingerprint"></i> +0 locators</span>
+                    <span id="statActions" class="merge-stat-pill"><i class="fas fa-running"></i> +0 actions</span>
+                </div>
             </div>
 
-            <!-- Interactive Element Inclusion Checklist -->
-            <div class="checklist-title">
-                <span>Select Locators to Merge</span>
-                <span id="checklistCountBadge" style="font-size: 0.65rem; color: var(--accent-secondary); text-transform: none;">0 of 0 selected</span>
-            </div>
-            <div id="mergeChecklist" class="checklist-container">
-                <!-- Checklist items loaded dynamically via JS -->
-            </div>
+            <!-- Split Editable Code Areas -->
+            <div id="diffViewContainer" class="diff-viewer-wrap" style="flex: 1; min-height: 0; display: flex; flex-direction: column;">
 
-            <!-- Dynamic File Merge Stats Bar -->
-            <div id="mergeStatsBar" class="merge-stats">
-                <span class="merge-stat-pill"><i class="fas fa-chart-bar"></i> <strong>Delta Stats:</strong></span>
-                <span id="statLocators" class="merge-stat-pill"><i class="fas fa-fingerprint"></i> +0 locators</span>
-                <span id="statActions" class="merge-stat-pill"><i class="fas fa-running"></i> +0 action methods</span>
-            </div>
+                <!-- Navigation toolbar -->
+                <div class="diff-nav-bar" style="flex-shrink: 0;">
+                    <div class="diff-nav-group">
+                        <span class="diff-change-badge" id="diffChangeBadge" style="background: rgba(0, 188, 242, 0.1); border-color: rgba(0, 188, 242, 0.2); color: #00bcf2;">
+                            <span class="badge-num" id="diffChangeIndex">—</span><span id="diffChangeTotal"> changes</span>
+                        </span>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <!-- Target file browse row (compact, inside nav) -->
+                        <input type="text" id="mergeFilePath" readonly placeholder="Browse target file →"
+                            style="font-size: 0.72rem; padding: 4px 8px; background: rgba(255,255,255,0.04); border: 1px solid var(--glass-border); border-radius: 6px; color: var(--text-secondary); width: 230px; font-family: 'Fira Code', monospace; outline: none;">
+                        <button class="diff-nav-btn" onclick="browseMergeFile()" style="white-space: nowrap;">
+                            <i class="fas fa-folder-open"></i> Browse…
+                        </button>
+                    </div>
+                </div>
 
-            <!-- Sliding Tab Navigation for Previews -->
-            <div class="merge-tabs">
-                <div id="tabNewCode" class="merge-tab active" onclick="switchMergeTab('new')">New Locators</div>
-                <div id="tabMergedCode" class="merge-tab" onclick="switchMergeTab('merged')">Merged Output</div>
-            </div>
+                <!-- Column headers (3 columns: left | gutter | right) -->
+                <div class="diff-col-headers" style="flex-shrink: 0;">
+                    <div class="diff-col-header left-header">
+                        <i class="fas fa-code" style="color: #34d399;"></i>
+                        New Locators
+                        <span class="file-badge" style="background: rgba(16,185,129,0.1); border-color: rgba(16,185,129,0.2); color: #34d399;">generated</span>
+                    </div>
+                    <div class="diff-col-header-gutter" title="Separator">·</div>
+                    <div class="diff-col-header">
+                        <i class="fas fa-file-code"></i>
+                        Target File
+                        <span class="file-badge" id="diffRightFileBadge">—</span>
+                    </div>
+                </div>
 
-            <!-- Unified Single Preview Frame (100% width) -->
-            <div style="flex: 1; min-height: 0; display: flex; flex-direction: column; position: relative; margin-bottom: 12px;">
-                <!-- New Locators Area -->
-                <textarea id="mergeNewCode" class="code-area" spellcheck="false" readonly style="display: block; width: 100%; height: 100%; margin: 0; padding: 12px; font-size: 0.82rem; line-height: 1.5;"></textarea>
-                
-                <!-- Merged Code Area (Hidden, used as raw string store) -->
-                <textarea id="mergeExistingCode" class="code-area" spellcheck="false" style="display: none; width: 100%; height: 100%; margin: 0; padding: 12px; font-size: 0.82rem; line-height: 1.5;"></textarea>
-
-                <!-- GitHub-Style Side-by-Side Diff Viewer -->
-                <div id="diffViewContainer" class="diff-viewer-wrap" style="display: none;">
-
-                    <!-- Diff Navigation Toolbar -->
-                    <div class="diff-nav-bar">
-                        <div class="diff-nav-group">
-                            <button class="diff-nav-btn" id="diffNavPrev" onclick="navigateDiff(-1)" title="Previous change">
-                                <i class="fas fa-chevron-up"></i> Prev
-                            </button>
-                            <button class="diff-nav-btn" id="diffNavNext" onclick="navigateDiff(1)" title="Next change">
-                                Next <i class="fas fa-chevron-down"></i>
-                            </button>
-                            <span class="diff-change-badge" id="diffChangeBadge">
-                                <span class="badge-num" id="diffChangeIndex">—</span>
-                                <span id="diffChangeTotal"> changes</span>
-                            </span>
-                        </div>
-                        <div class="diff-legend">
-                            <span><span class="diff-legend-dot" style="background:rgba(16,185,129,0.5);"></span>Added</span>
-                            <span><span class="diff-legend-dot" style="background:rgba(239,68,68,0.5);"></span>Removed</span>
-                            <span><span class="diff-legend-dot" style="background:rgba(255,255,255,0.12); border:1px dashed rgba(255,255,255,0.15);"></span>Empty</span>
-                        </div>
+                <!-- Twin editable textareas -->
+                <div class="diff-container" style="display: flex; flex: 1; min-height: 0; position: relative; user-select: none;">
+                    <!-- Left pane: Editable generated new locators -->
+                    <div class="diff-pane" id="diffPaneLeft" style="display: flex; flex: 1; flex-direction: column; padding: 0; background: transparent; overflow: hidden; border: none; min-width: 100px;">
+                        <textarea class="diff-pane-textarea" id="mergeNewCodeTextarea" spellcheck="false" placeholder="New generated code will show here..." style="height: 100%; width: 100%;"></textarea>
                     </div>
 
-                    <!-- Column Headers -->
-                    <div class="diff-col-headers">
-                        <div class="diff-col-header left-header">
-                            <i class="fas fa-file-code"></i>
-                            Original File
-                            <span class="file-badge" id="diffLeftFileBadge">—</span>
-                        </div>
-                        <div class="diff-col-header">
-                            <i class="fas fa-code-branch"></i>
-                            Merged Output
-                            <span class="file-badge" style="background: rgba(16,185,129,0.1); border-color: rgba(16,185,129,0.2); color: #34d399;">+ new locators</span>
-                        </div>
-                    </div>
+                    <!-- Center separator -->
+                    <div id="diffResizer" class="diff-col-header-gutter" style="width: 8px; flex-shrink: 0; background: rgba(255, 255, 255, 0.03); border-left: 1px solid rgba(255,255,255,0.05); border-right: 1px solid rgba(255,255,255,0.05); cursor: col-resize; display: flex; align-items: center; justify-content: center; font-size: 0.6rem; color: rgba(255,255,255,0.25); transition: background 0.2s;" title="Drag to resize columns">·</div>
 
-                    <!-- Twin Panes -->
-                    <div class="diff-container">
-                        <div class="diff-pane left-pane" id="diffPaneLeft" onscroll="syncScroll('left')">
-                            <div class="diff-lines" id="diffLinesLeft"></div>
+                    <!-- Right pane: Editable target file content -->
+                    <div class="diff-pane" id="diffPaneRight" style="display: flex; flex: 1; flex-direction: column; padding: 0; background: transparent; overflow: hidden; border: none; min-width: 100px;">
+                        <!-- Placeholder shown until file is browsed -->
+                        <div class="diff-right-placeholder" id="diffRightPlaceholder" style="flex: 1; display: flex; flex-direction: column; justify-content: center; align-items: center;">
+                            <i class="fas fa-folder-open"></i>
+                            <p>No target file selected</p>
+                            <span class="browse-hint" onclick="browseMergeFile()">Click Browse… to select a file</span>
                         </div>
-                        <div class="diff-pane" id="diffPaneRight" onscroll="syncScroll('right')">
-                            <div class="diff-lines" id="diffLinesRight"></div>
-                        </div>
+                        <textarea class="diff-pane-textarea" id="mergeExistingCodeTextarea" spellcheck="false" style="display: none; height: 100%; width: 100%;" placeholder="Select target file to load merged content..."></textarea>
                     </div>
                 </div>
             </div>
+
+            <!-- Hidden textarea used only as string store for confirmMerge -->
+            <textarea id="mergeExistingCode" style="display: none;"></textarea>
 
             <!-- Action Bar -->
-            <div style="display: flex; gap: 10px; justify-content: flex-end; flex-shrink: 0; border-top: 1px solid var(--glass-border); padding-top: 12px;">
-                <button class="btn btn-outline" style="padding: 7px 16px; font-size: 0.78rem;" onclick="hideMergeModal()">Cancel</button>
-                <button class="btn btn-primary" style="padding: 7px 22px; font-size: 0.78rem;" id="mergeConfirmBtn" onclick="confirmMerge()">
-                    <i class="fas fa-save"></i> Commit Merge to File
-                </button>
+            <div style="display: flex; gap: 10px; justify-content: space-between; align-items: center; flex-shrink: 0; border-top: 1px solid var(--glass-border); padding-top: 10px; margin-top: 8px;">
+                <div style="font-size: 0.72rem; color: var(--text-secondary);">
+                    <span id="mergeAcceptStatus" style="color: var(--text-secondary);">Click <strong style="color: var(--accent-secondary);">→</strong> on a hunk to move it to the target file</span>
+                </div>
+                <div style="display: flex; gap: 10px;">
+                    <button class="btn btn-outline" style="padding: 7px 16px; font-size: 0.78rem;" onclick="hideMergeModal()">Cancel</button>
+                    <button class="btn btn-primary" style="padding: 7px 22px; font-size: 0.78rem;" id="mergeConfirmBtn" onclick="confirmMerge()">
+                        <i class="fas fa-save"></i> Commit Merge to File
+                    </button>
+                </div>
             </div>
         </div>
     </div>
+
+    <!-- CodeMirror Core and Language Modes -->
+    <script src="libs/codemirror.min.js"></script>
+    <script src="libs/javascript.min.js"></script>
+    <script src="libs/python.min.js"></script>
+    <script src="libs/clike.min.js"></script>
 
     <script src="qrc:///qtwebchannel/qwebchannel.js"></script>
     <script>
         let pyBridge = null;
         let isCapturing = false;
         let capturedElements = [];
+        let cmLeft = null;
+        let cmRight = null;
 
         // Initialize WebChannel with polling (qt is injected asynchronously)
         function initBridge() {
@@ -1527,15 +1708,27 @@
                     // Listen for Smart Merge preview
                     if(pyBridge.mergePreviewReady) {
                         pyBridge.mergePreviewReady.connect(function (dataJson) {
-                            const data = JSON.parse(dataJson);
-                            document.getElementById('mergeFilePath').value = data.target_file || '';
-                            document.getElementById('mergeNewCode').value = data.new_code || '';
-                            document.getElementById('mergeExistingCode').value = data.merged_code || '';
-                            
-                            // Dynamically render the side-by-side diff
-                            renderDiff(data.original_code || '', data.merged_code || '', data.target_file || '');
-                            
-                            showMergeModal();
+                            try {
+                                const data = JSON.parse(dataJson);
+
+                                _targetFilePath = data.target_file || '';
+                                document.getElementById('mergeFilePath').value = _targetFilePath;
+
+                                // Left code is ALWAYS the newly generated locator code (fully editable)
+                                _leftCode  = data.new_code || '';
+                                // Right code is the merged target file code if a file is loaded
+                                _rightCode = _targetFilePath ? (data.merged_code || '') : '';
+
+                                // Store in hidden textarea for confirmMerge backup
+                                document.getElementById('mergeExistingCode').value = _rightCode || _leftCode;
+
+                                // Render the appropriate side-by-side diff
+                                renderDiff(_leftCode, _rightCode, _targetFilePath);
+
+                                showMergeModal();
+                            } catch (e) {
+                                console.error('[Studio] mergePreviewReady error:', e);
+                            }
                         });
                     }
                 });
@@ -1544,6 +1737,11 @@
             }
         }
         initBridge();
+
+        window.addEventListener('DOMContentLoaded', () => {
+            initSplitResizer();
+            setTimeout(initCodeMirrorEditors, 400);
+        });
 
         function showAlert(msg) {
             if (pyBridge) {
@@ -1664,7 +1862,7 @@
                             <div id="locator-val-${idx}" style="font-size:0.75rem;font-family:monospace;color:${badgeColor};word-break:break-all;margin-bottom:8px;" title="${el.value}">${el.value}</div>
                             
                             <div style="display:flex;align-items:center;justify-content:space-between;width:100%;margin-top:8px;">
-                                <select onchange="updateAction(${idx}, this.value)" style="flex: 1; min-width: 95px; max-width: 120px; padding: 4px 6px; font-size: 0.75rem; background: rgba(0,0,0,0.45); border-radius: 6px; color: white; border: 1px solid rgba(255,255,255,0.1); cursor: pointer; outline: none; text-overflow: ellipsis; white-space: nowrap; overflow: hidden;">
+                                <select onchange="updateAction(${idx}, this.value)" style="flex: 1; min-width: 120px; padding: 5px 8px; font-size: 0.78rem; font-weight: 500; background: rgba(0,0,0,0.6); border-radius: 6px; color: #60a5fa; border: 1px solid rgba(96, 165, 250, 0.4); cursor: pointer; outline: none; text-overflow: ellipsis; white-space: nowrap; overflow: hidden; box-shadow: 0 0 8px rgba(0,0,0,0.2);">
                                     <optgroup label="Basic">
                                         <option value="Click" ${el.action === 'Click' ? 'selected' : ''}>🖱️ Click</option>
                                         <option value="Type" ${el.action === 'Type' ? 'selected' : ''}>⌨️ Type</option>
@@ -2110,329 +2308,308 @@
             hideDbModal();
         }
 
-        // Smart Merge Logic & Responsive Tabs
-        let activeMergeTab = 'new';
+        // ═══ Smart Merge — State ═════════════════════════════════════════════
         let mergeSelections = [];
+        let _leftCode        = '';   // generated new locators (left pane)
+        let _rightCode       = '';   // current target file content (right pane)
+        let _targetFilePath  = '';
+        let _diffResult      = null; // last computed diffLines result
 
-        function switchMergeTab(tab) {
-            activeMergeTab = tab;
-            const newTabEl = document.getElementById('tabNewCode');
-            const mergedTabEl = document.getElementById('tabMergedCode');
-            const newCodeEl = document.getElementById('mergeNewCode');
-            const mergedCodeEl = document.getElementById('mergeExistingCode');
-            const diffViewEl = document.getElementById('diffViewContainer');
-            
-            if (tab === 'new') {
-                newTabEl.classList.add('active');
-                mergedTabEl.classList.remove('active');
-                newCodeEl.style.display = 'block';
-                mergedCodeEl.style.display = 'none';
-                if (diffViewEl) diffViewEl.style.display = 'none';
-            } else {
-                newTabEl.classList.remove('active');
-                mergedTabEl.classList.add('active');
-                newCodeEl.style.display = 'none';
-                mergedCodeEl.style.display = 'none';
-                if (diffViewEl) diffViewEl.style.display = 'flex';
-            }
-        }
-
-        // High-Performance Myers LCS Diff Comparison Algorithm
+        // ═══ LCS Line Diff Algorithm ══════════════════════════════════════════
         function diffLines(oldText, newText) {
             const X = oldText ? oldText.split(/\r?\n/) : [];
             const Y = newText ? newText.split(/\r?\n/) : [];
-            const m = X.length;
-            const n = Y.length;
-            
+            const m = X.length, n = Y.length;
             const C = Array.from({ length: m + 1 }, () => new Int32Array(n + 1));
-            
             for (let i = 1; i <= m; i++) {
                 const lineX = X[i - 1];
-                for (let j = 1; j <= n; j++) {
-                    if (lineX === Y[j - 1]) {
-                        C[i][j] = C[i - 1][j - 1] + 1;
-                    } else {
-                        C[i][j] = Math.max(C[i - 1][j], C[i][j - 1]);
-                    }
-                }
-            }
-            
-            const leftResult = [];
-            const rightResult = [];
-            let i = m;
-            let j = n;
-            
-            while (i > 0 || j > 0) {
-                if (i > 0 && j > 0 && X[i - 1] === Y[j - 1]) {
-                    leftResult.push({ type: 'normal', lineNum: i, text: X[i - 1] });
-                    rightResult.push({ type: 'normal', lineNum: j, text: Y[j - 1] });
-                    i--;
-                    j--;
-                } else if (j > 0 && (i === 0 || C[i][j - 1] >= C[i - 1][j])) {
-                    leftResult.push({ type: 'empty', lineNum: '', text: '' });
-                    rightResult.push({ type: 'added', lineNum: j, text: Y[j - 1] });
-                    j--;
-                } else {
-                    leftResult.push({ type: 'removed', lineNum: i, text: X[i - 1] });
-                    rightResult.push({ type: 'empty', lineNum: '', text: '' });
-                    i--;
-                }
-            }
-            
-            return {
-                left: leftResult.reverse(),
-                right: rightResult.reverse()
-            };
-        }
-
-        // Scroll Synchronization Triggers
-        let isSyncingLeftScroll = false;
-        let isSyncingRightScroll = false;
-
-        function syncScroll(pane) {
-            const leftPane = document.getElementById('diffPaneLeft');
-            const rightPane = document.getElementById('diffPaneRight');
-            if (!leftPane || !rightPane) return;
-            
-            if (pane === 'left') {
-                if (isSyncingLeftScroll) {
-                    isSyncingLeftScroll = false;
-                    return;
-                }
-                isSyncingRightScroll = true;
-                rightPane.scrollTop = leftPane.scrollTop;
-                rightPane.scrollLeft = leftPane.scrollLeft;
-            } else if (pane === 'right') {
-                if (isSyncingRightScroll) {
-                    isSyncingRightScroll = false;
-                    return;
-                }
-                isSyncingLeftScroll = true;
-                leftPane.scrollTop = rightPane.scrollTop;
-                leftPane.scrollLeft = rightPane.scrollLeft;
-            }
-        }
-
-        // ─── Inline Character-Level LCS for single-line diffs ────────────────
-        function charDiff(oldStr, newStr) {
-            // Returns arrays of token objects [{text, type}] for each string
-            const A = [...oldStr];
-            const B = [...newStr];
-            const m = A.length, n = B.length;
-            const C = Array.from({ length: m + 1 }, () => new Int32Array(n + 1));
-            for (let i = 1; i <= m; i++)
                 for (let j = 1; j <= n; j++)
-                    C[i][j] = A[i-1] === B[j-1] ? C[i-1][j-1] + 1 : Math.max(C[i-1][j], C[i][j-1]);
-
-            const oldToks = [], newToks = [];
+                    C[i][j] = lineX === Y[j - 1] ? C[i-1][j-1]+1 : Math.max(C[i-1][j], C[i][j-1]);
+            }
+            const left = [], right = [];
             let i = m, j = n;
             while (i > 0 || j > 0) {
-                if (i > 0 && j > 0 && A[i-1] === B[j-1]) {
-                    oldToks.push({ text: A[i-1], type: 'normal' });
-                    newToks.push({ text: B[j-1], type: 'normal' });
+                if (i > 0 && j > 0 && X[i-1] === Y[j-1]) {
+                    left.push({ type: 'normal', lineNum: i, text: X[i-1], srcIdx: i-1 });
+                    right.push({ type: 'normal', lineNum: j, text: Y[j-1], srcIdx: j-1 });
                     i--; j--;
                 } else if (j > 0 && (i === 0 || C[i][j-1] >= C[i-1][j])) {
-                    oldToks.push({ text: '', type: 'empty_char' });
-                    newToks.push({ text: B[j-1], type: 'added' });
+                    left.push({ type: 'empty', lineNum: '', text: '', srcIdx: -1 });
+                    right.push({ type: 'added', lineNum: j, text: Y[j-1], srcIdx: j-1 });
                     j--;
                 } else {
-                    oldToks.push({ text: A[i-1], type: 'removed' });
-                    newToks.push({ text: '', type: 'empty_char' });
+                    left.push({ type: 'removed', lineNum: i, text: X[i-1], srcIdx: i-1 });
+                    right.push({ type: 'empty', lineNum: '', text: '', srcIdx: -1 });
                     i--;
                 }
             }
-            return { old: oldToks.reverse(), new: newToks.reverse() };
+            return { left: left.reverse(), right: right.reverse() };
         }
 
-        function buildInlineSpans(tokens, container) {
+        // ═══ Char-Level Inline Diff ═══════════════════════════════════════════
+        function charDiff(a, b) {
+            const A = [...a], B = [...b];
+            const m = A.length, n = B.length;
+            const C = Array.from({ length: m+1 }, () => new Int32Array(n+1));
+            for (let i = 1; i <= m; i++)
+                for (let j = 1; j <= n; j++)
+                    C[i][j] = A[i-1]===B[j-1] ? C[i-1][j-1]+1 : Math.max(C[i-1][j], C[i][j-1]);
+            const oldT = [], newT = [];
+            let i = m, j = n;
+            while (i > 0 || j > 0) {
+                if (i>0 && j>0 && A[i-1]===B[j-1]) { oldT.push({text:A[i-1],type:'n'}); newT.push({text:B[j-1],type:'n'}); i--;j--; }
+                else if (j>0 && (i===0||C[i][j-1]>=C[i-1][j])) { oldT.push({text:'',type:'e'}); newT.push({text:B[j-1],type:'a'}); j--; }
+                else { oldT.push({text:A[i-1],type:'r'}); newT.push({text:'',type:'e'}); i--; }
+            }
+            return { old: oldT.reverse(), new: newT.reverse() };
+        }
+        function buildSpans(toks, el) {
             let run = null;
-            tokens.forEach(tok => {
-                if (tok.type === 'empty_char' || tok.text === '') return;
-                if (run && run.type === tok.type) {
-                    run.span.textContent += tok.text;
-                } else {
-                    run = { type: tok.type, span: document.createElement('span') };
-                    run.span.textContent = tok.text;
-                    if (tok.type === 'added')   run.span.className = 'diff-char-added';
-                    if (tok.type === 'removed') run.span.className = 'diff-char-removed';
-                    container.appendChild(run.span);
+            toks.forEach(t => {
+                if (!t.text) return;
+                if (run && run.type === t.type) { run.span.textContent += t.text; return; }
+                run = { type: t.type, span: document.createElement('span') };
+                run.span.textContent = t.text;
+                if (t.type==='a') run.span.className='diff-char-added';
+                if (t.type==='r') run.span.className='diff-char-removed';
+                el.appendChild(run.span);
+            });
+        }
+
+        // ═══ Scroll Sync ══════════════════════════════════════════════════════
+        let isSyncingLeftScroll = false, isSyncingRightScroll = false;
+        function syncScroll(pane) {
+            const L = document.getElementById('diffPaneLeft');
+            const R = document.getElementById('diffPaneRight');
+            if (!L || !R) return;
+            if (pane === 'left') {
+                if (isSyncingLeftScroll) { isSyncingLeftScroll=false; return; }
+                isSyncingRightScroll = true;
+                R.scrollTop = L.scrollTop; R.scrollLeft = L.scrollLeft;
+            } else {
+                if (isSyncingRightScroll) { isSyncingRightScroll=false; return; }
+                isSyncingLeftScroll = true;
+                L.scrollTop = R.scrollTop; L.scrollLeft = R.scrollLeft;
+            }
+        }
+
+        // ═══ Diff State & Placeholders ════════════════════════════════════════
+        let diffHunks = [];
+        let diffHunkIndex = -1;
+
+        function jumpToHunk() {}
+        function navigateDiff() {}
+        function acceptHunk() {}
+        function acceptAllHunks() {}
+        function updateDiffNavBadge() {}
+
+        function initCodeMirrorEditors() {
+            if (typeof CodeMirror === 'undefined') {
+                console.warn('[Studio] CodeMirror not loaded. Falling back to plain textareas.');
+                return;
+            }
+
+            const leftTxt = document.getElementById('mergeNewCodeTextarea');
+            if (leftTxt && !cmLeft) {
+                cmLeft = CodeMirror.fromTextArea(leftTxt, {
+                    lineNumbers: true,
+                    mode: "text/typescript",
+                    theme: "material-darker",
+                    lineWrapping: true,
+                    viewportMargin: Infinity
+                });
+            }
+
+            const rightTxt = document.getElementById('mergeExistingCodeTextarea');
+            if (rightTxt && !cmRight) {
+                cmRight = CodeMirror.fromTextArea(rightTxt, {
+                    lineNumbers: true,
+                    mode: "text/typescript",
+                    theme: "material-darker",
+                    lineWrapping: true,
+                    viewportMargin: Infinity
+                });
+            }
+        }
+
+        function getCodeMirrorMode(filePath, lang) {
+            if (filePath) {
+                const ext = filePath.split('.').pop().toLowerCase();
+                if (ext === 'py') return 'text/x-python';
+                if (ext === 'java') return 'text/x-java';
+                if (ext === 'cs') return 'text/x-csharp';
+                if (ext === 'js' || ext === 'ts') return 'text/typescript';
+            }
+            if (lang) {
+                const l = lang.toLowerCase();
+                if (l === 'python') return 'text/x-python';
+                if (l === 'java') return 'text/x-java';
+                if (l === 'c#') return 'text/x-csharp';
+                if (l === 'javascript' || l === 'typescript') return 'text/typescript';
+            }
+            return 'text/typescript';
+        }
+
+        function initSplitResizer() {
+            const container = document.querySelector('.diff-container');
+            const leftPane = document.getElementById('diffPaneLeft');
+            const rightPane = document.getElementById('diffPaneRight');
+            const resizer = document.getElementById('diffResizer');
+
+            if (!container || !leftPane || !rightPane || !resizer) return;
+
+            let isDragging = false;
+
+            resizer.addEventListener('mousedown', function (e) {
+                isDragging = true;
+                document.body.style.cursor = 'col-resize';
+                resizer.style.background = 'rgba(99, 102, 241, 0.25)';
+                leftPane.style.pointerEvents = 'none';
+                rightPane.style.pointerEvents = 'none';
+                e.preventDefault();
+            });
+
+            document.addEventListener('mousemove', function (e) {
+                if (!isDragging) return;
+
+                const containerRect = container.getBoundingClientRect();
+                const offsetX = e.clientX - containerRect.left;
+                
+                const percentage = (offsetX / containerRect.width) * 100;
+                if (percentage > 15 && percentage < 85) {
+                    leftPane.style.flex = `0 0 ${percentage}%`;
+                    rightPane.style.flex = `0 0 ${100 - percentage - (8 / containerRect.width * 100)}%`;
+                    
+                    if (cmLeft) cmLeft.refresh();
+                    if (cmRight) cmRight.refresh();
+                }
+            });
+
+            document.addEventListener('mouseup', function () {
+                if (isDragging) {
+                    isDragging = false;
+                    document.body.style.cursor = '';
+                    resizer.style.background = 'rgba(255, 255, 255, 0.03)';
+                    leftPane.style.pointerEvents = 'auto';
+                    rightPane.style.pointerEvents = 'auto';
+                    if (cmLeft) cmLeft.refresh();
+                    if (cmRight) cmRight.refresh();
                 }
             });
         }
 
-        // ─── Hunk navigation state ───────────────────────────────────────────
-        let diffHunks = [];       // [{leftEls, rightEls}]  — per changed hunk
-        let diffHunkIndex = -1;   // currently focused hunk (0-based)
-
-        function navigateDiff(delta) {
-            if (diffHunks.length === 0) return;
-            // Remove previous highlight
-            if (diffHunkIndex >= 0) {
-                const prev = diffHunks[diffHunkIndex];
-                [...prev.leftEls, ...prev.rightEls].forEach(el => el.classList.remove('hunk-active-highlight'));
+        // ═══ Main Diff Renderer ═══════════════════════════════════════════════
+        function renderDiff(leftText, rightText, filePath) {
+            // Populate left pane with newly generated code
+            if (cmLeft) {
+                cmLeft.setValue(leftText || '');
+            } else {
+                const leftTextarea = document.getElementById('mergeNewCodeTextarea');
+                if (leftTextarea) {
+                    leftTextarea.value = leftText || '';
+                }
             }
-            diffHunkIndex = Math.max(0, Math.min(diffHunks.length - 1, diffHunkIndex + delta));
-            const hunk = diffHunks[diffHunkIndex];
-            [...hunk.leftEls, ...hunk.rightEls].forEach(el => el.classList.add('hunk-active-highlight'));
 
-            // Scroll both panes so the first line of the hunk is visible
-            const scrollTarget = hunk.leftEls[0] || hunk.rightEls[0];
-            if (scrollTarget) {
-                const leftPane  = document.getElementById('diffPaneLeft');
-                const rightPane = document.getElementById('diffPaneRight');
-                const pane      = scrollTarget.closest('.diff-pane') || leftPane;
-                const offset    = scrollTarget.offsetTop - pane.clientHeight / 3;
-                isSyncingRightScroll = true; isSyncingLeftScroll = true;
-                leftPane.scrollTop  = offset;
-                rightPane.scrollTop = offset;
+            // Populate right pane or show placeholder
+            const rightTextarea = document.getElementById('mergeExistingCodeTextarea');
+            const placeholder = document.getElementById('diffRightPlaceholder');
+
+            if (filePath) {
+                if (cmRight) {
+                    cmRight.setValue(rightText || '');
+                    cmRight.getWrapperElement().style.display = 'block';
+                } else if (rightTextarea) {
+                    rightTextarea.value = rightText || '';
+                    rightTextarea.style.display = 'block';
+                }
+                if (placeholder) {
+                    placeholder.style.display = 'none';
+                }
+            } else {
+                if (cmRight) {
+                    cmRight.setValue('');
+                    cmRight.getWrapperElement().style.display = 'none';
+                } else if (rightTextarea) {
+                    rightTextarea.value = '';
+                    rightTextarea.style.display = 'none';
+                }
+                if (placeholder) {
+                    placeholder.style.display = 'flex';
+                }
             }
-            updateDiffNavBadge();
-        }
 
-        function updateDiffNavBadge() {
-            const idxEl   = document.getElementById('diffChangeIndex');
-            const totEl   = document.getElementById('diffChangeTotal');
-            const prevBtn = document.getElementById('diffNavPrev');
-            const nextBtn = document.getElementById('diffNavNext');
-            if (idxEl) idxEl.textContent = diffHunks.length ? `${diffHunkIndex + 1} / ${diffHunks.length}` : '—';
-            if (totEl) totEl.textContent = diffHunks.length ? ` change${diffHunks.length !== 1 ? 's' : ''}` : ' changes';
-            if (prevBtn) prevBtn.disabled = diffHunkIndex <= 0;
-            if (nextBtn) nextBtn.disabled = diffHunkIndex >= diffHunks.length - 1;
-        }
+            // Update language mode dynamically
+            if (cmLeft || cmRight) {
+                const mode = getCodeMirrorMode(filePath, document.getElementById('langSelect').value);
+                if (cmLeft) cmLeft.setOption("mode", mode);
+                if (cmRight) cmRight.setOption("mode", mode);
+            }
 
-        // ─── Main GitHub-style Diff Renderer ─────────────────────────────────
-        function renderDiff(oldText, newText, targetFilePath) {
-            const diff = diffLines(oldText, newText);
-            diffHunks = [];
-            diffHunkIndex = -1;
+            // Update column header titles and badges dynamically
+            const leftHeader = document.querySelector('.diff-col-header.left-header');
+            const rightHeader = document.querySelector('.diff-col-header:not(.left-header)');
+            const gutterHeader = document.querySelector('.diff-col-header-gutter');
 
-            const leftContainer  = document.getElementById('diffLinesLeft');
-            const rightContainer = document.getElementById('diffLinesRight');
-            if (!leftContainer || !rightContainer) return;
-            leftContainer.innerHTML  = '';
-            rightContainer.innerHTML = '';
-
-            // Update left column header badge with filename
-            const leftBadge = document.getElementById('diffLeftFileBadge');
-            if (leftBadge) {
-                if (targetFilePath) {
-                    const fname = targetFilePath.split('/').pop() || targetFilePath;
-                    leftBadge.textContent = fname;
-                    leftBadge.title = targetFilePath;
+            if (leftHeader) {
+                leftHeader.innerHTML = `<i class="fas fa-code" style="color: #34d399;"></i> New Locators <span class="file-badge" style="background: rgba(16,185,129,0.1); border-color: rgba(16,185,129,0.2); color: #34d399;">generated</span>`;
+            }
+            if (rightHeader) {
+                if (filePath) {
+                    const filename = filePath.split('/').pop();
+                    rightHeader.innerHTML = `<i class="fas fa-check-circle" style="color: #34d399;"></i> Merged Preview <span class="file-badge" id="diffRightFileBadge" style="background: rgba(16,185,129,0.1); border-color: rgba(16,185,129,0.2); color: #34d399;" title="${filePath}">${filename}</span>`;
                 } else {
-                    leftBadge.textContent = '(no file)';
+                    rightHeader.innerHTML = `<i class="fas fa-file-code"></i> Target File <span class="file-badge" id="diffRightFileBadge">—</span>`;
                 }
             }
-
-            const leftItems  = diff.left;
-            const rightItems = diff.right;
-            const len = Math.max(leftItems.length, rightItems.length);
-
-            let currentHunkLeft  = null;
-            let currentHunkRight = null;
-
-            function makeLineEl(item, sign) {
-                const lineDiv = document.createElement('div');
-                lineDiv.className = `diff-line ${item.type}`;
-
-                const gutter = document.createElement('div');
-                gutter.className = 'diff-gutter';
-
-                const lnSpan = document.createElement('span');
-                lnSpan.className = 'diff-ln';
-                lnSpan.textContent = item.lineNum !== '' ? item.lineNum : '';
-
-                const signSpan = document.createElement('span');
-                signSpan.className = 'diff-sign';
-                signSpan.textContent = sign;
-
-                gutter.appendChild(lnSpan);
-                gutter.appendChild(signSpan);
-
-                const codeDiv = document.createElement('div');
-                codeDiv.className = 'diff-code';
-                const codeInner = document.createElement('span');
-                codeInner.className = 'diff-code-inner';
-                codeInner.textContent = item.text;
-                codeDiv.appendChild(codeInner);
-
-                lineDiv.appendChild(gutter);
-                lineDiv.appendChild(codeDiv);
-                return { lineDiv, codeInner };
+            if (gutterHeader) {
+                gutterHeader.textContent = '·';
+                gutterHeader.title = 'Separator';
             }
 
-            for (let idx = 0; idx < len; idx++) {
-                const L = leftItems[idx]  || { type: 'empty', lineNum: '', text: '' };
-                const R = rightItems[idx] || { type: 'empty', lineNum: '', text: '' };
+            const el = document.getElementById('diffChangeIndex');
+            const tt = document.getElementById('diffChangeTotal');
+            const st = document.getElementById('mergeAcceptStatus');
 
-                const lSign = L.type === 'removed' ? '−' : ' ';
-                const rSign = R.type === 'added'   ? '+' : ' ';
+            if (el) el.textContent = filePath ? `${mergeSelections.length}` : '—';
+            if (tt) tt.textContent = filePath ? ` locators merged` : ' changes';
 
-                const { lineDiv: lDiv, codeInner: lCode } = makeLineEl(L, lSign);
-                const { lineDiv: rDiv, codeInner: rCode } = makeLineEl(R, rSign);
-
-                // Inline char-level diff for adjacent removed/added pairs
-                if (L.type === 'removed' && R.type === 'added') {
-                    const chars = charDiff(L.text, R.text);
-                    lCode.textContent = '';
-                    rCode.textContent = '';
-                    buildInlineSpans(chars.old, lCode);
-                    buildInlineSpans(chars.new, rCode);
-                }
-
-                // Hunk grouping
-                const isChanged = L.type !== 'normal' || R.type !== 'normal';
-                if (isChanged) {
-                    if (!currentHunkLeft)  { currentHunkLeft  = []; currentHunkRight = []; }
-                    currentHunkLeft.push(lDiv);
-                    currentHunkRight.push(rDiv);
+            if (st) {
+                if (!filePath) {
+                    st.innerHTML = `<span style="color:var(--text-secondary);"><i class="fas fa-folder-open"></i> Click <strong>Browse...</strong> to select a target Page Object or Test file to merge with</span>`;
                 } else {
-                    if (currentHunkLeft && currentHunkLeft.length) {
-                        diffHunks.push({ leftEls: currentHunkLeft, rightEls: currentHunkRight });
-                        currentHunkLeft = null; currentHunkRight = null;
-                    }
+                    st.innerHTML = `<span style="color:var(--accent-secondary);"><i class="fas fa-edit"></i> Both windows are editable! Make any adjustments on the right and click Commit.</span>`;
                 }
-
-                leftContainer.appendChild(lDiv);
-                rightContainer.appendChild(rDiv);
             }
-
-            // Flush last open hunk
-            if (currentHunkLeft && currentHunkLeft.length) {
-                diffHunks.push({ leftEls: currentHunkLeft, rightEls: currentHunkRight });
-            }
-
-            // Focus first hunk automatically
-            if (diffHunks.length > 0) {
-                diffHunkIndex = 0;
-                [...diffHunks[0].leftEls, ...diffHunks[0].rightEls].forEach(el => el.classList.add('hunk-active-highlight'));
-            }
-            updateDiffNavBadge();
         }
 
-
-
+        // ═══ Smart Merge Launch ════════════════════════════════════════════════
         function smartMerge() {
             if (capturedElements.length === 0) {
-                showAlert("Queue is empty! Capture some elements first.");
+                showAlert('Queue is empty! Capture some elements first.');
                 return;
             }
             if (pyBridge) {
-                // Reset select states to all active by default
                 mergeSelections = capturedElements.map((el, idx) => idx);
-                
+                _leftCode = ''; _rightCode = ''; _targetFilePath = '';
                 document.getElementById('mergeFilePath').value = '';
                 document.getElementById('mergeExistingCode').value = '';
-                document.getElementById('mergeNewCode').value = 'Generating code...';
-                
-                // Show modal first
+                // Reset right placeholder and textarea
+                const ph = document.getElementById('diffRightPlaceholder');
+                if (ph) ph.style.display = '';
+                if (cmRight) {
+                    cmRight.setValue('');
+                    cmRight.getWrapperElement().style.display = 'none';
+                } else {
+                    const txtRight = document.getElementById('mergeExistingCodeTextarea');
+                    if (txtRight) {
+                        txtRight.value = '';
+                        txtRight.style.display = 'none';
+                    }
+                }
+                const rBadge = document.getElementById('diffRightFileBadge');
+                if (rBadge) rBadge.textContent = '—';
                 showMergeModal();
-                switchMergeTab('new');
-                
-                // Render elements checklist
                 renderMergeChecklist();
-                
-                // Fetch preview
                 triggerSmartMergePreview();
             }
         }
@@ -2440,18 +2617,13 @@
         function renderMergeChecklist() {
             const container = document.getElementById('mergeChecklist');
             container.innerHTML = '';
-            
             capturedElements.forEach((el, idx) => {
                 const isChecked = mergeSelections.includes(idx);
                 const item = document.createElement('div');
                 item.className = 'checklist-item';
-                item.style.display = 'flex';
-                item.style.alignItems = 'center';
-                item.style.gap = '6px';
-                
                 item.innerHTML = `
-                    <input type="checkbox" id="chk-merge-${idx}" ${isChecked ? 'checked' : ''} onchange="toggleMergeSelection(${idx}, this.checked)">
-                    <label for="chk-merge-${idx}" style="text-transform:none; font-size:0.75rem; color:var(--text-primary); cursor:pointer; font-weight:bold; margin:0;">${el.nameHint || el.name || 'element'}</label>
+                    <input type="checkbox" id="chk-merge-${idx}" ${isChecked?'checked':''} onchange="toggleMergeSelection(${idx}, this.checked)">
+                    <label for="chk-merge-${idx}" style="text-transform:none; font-size:0.75rem; color:var(--text-primary); cursor:pointer; font-weight:bold; margin:0;">${el.nameHint||el.name||'element'}</label>
                 `;
                 container.appendChild(item);
             });
@@ -2461,72 +2633,73 @@
         function updateChecklistCountBadge() {
             const total = capturedElements.length;
             const selected = mergeSelections.length;
-            document.getElementById('checklistCountBadge').innerText = `${selected} of ${total} selected`;
-            
-            // Calculate and display Delta stats
+            const el = document.getElementById('checklistCountBadge');
+            if (el) el.innerText = `${selected} of ${total}`;
             const statLocs = document.getElementById('statLocators');
             const statActs = document.getElementById('statActions');
-            statLocs.innerHTML = `<i class="fas fa-fingerprint"></i> +${selected} locator${selected === 1 ? '' : 's'}`;
-            statActs.innerHTML = `<i class="fas fa-running"></i> +${selected} action method${selected === 1 ? '' : 's'}`;
+            if (statLocs) statLocs.innerHTML = `<i class="fas fa-fingerprint"></i> +${selected} locator${selected===1?'':'s'}`;
+            if (statActs) statActs.innerHTML = `<i class="fas fa-running"></i> +${selected} action${selected===1?'':'s'}`;
         }
 
         function toggleMergeSelection(idx, isChecked) {
-            if (isChecked) {
-                if (!mergeSelections.includes(idx)) mergeSelections.push(idx);
-            } else {
-                mergeSelections = mergeSelections.filter(i => i !== idx);
-            }
+            if (isChecked) { if (!mergeSelections.includes(idx)) mergeSelections.push(idx); }
+            else { mergeSelections = mergeSelections.filter(i => i !== idx); }
             updateChecklistCountBadge();
             triggerSmartMergePreview();
         }
 
         function triggerSmartMergePreview() {
             if (!pyBridge) return;
-            
-            const selectedLocators = capturedElements.filter((el, idx) => mergeSelections.includes(idx));
+            const selectedLocators = capturedElements.filter((el,idx) => mergeSelections.includes(idx));
             const file_path = document.getElementById('mergeFilePath').value;
-            
-            const payload = {
+            pyBridge.callPython('refresh_merge_preview', JSON.stringify({
                 locators: selectedLocators,
                 tool: document.getElementById('toolSelect').value,
                 lang: document.getElementById('langSelect').value,
                 file_path: file_path
-            };
-            
-            document.getElementById('mergeNewCode').value = 'Generating preview...';
-            if (file_path) {
-                document.getElementById('mergeExistingCode').value = 'Merging preview...';
-            }
-            
-            pyBridge.callPython("refresh_merge_preview", JSON.stringify(payload));
+            }));
         }
 
         function browseMergeFile() {
             if (pyBridge) {
-                const selectedLocators = capturedElements.filter((el, idx) => mergeSelections.includes(idx));
-                const payload = {
+                const selectedLocators = capturedElements.filter((el,idx) => mergeSelections.includes(idx));
+                pyBridge.callPython('browse_merge_file', JSON.stringify({
                     locators: selectedLocators,
                     tool: document.getElementById('toolSelect').value,
                     lang: document.getElementById('langSelect').value
-                };
-                pyBridge.callPython("browse_merge_file", JSON.stringify(payload));
+                }));
             }
         }
-        
-        function showMergeModal() { document.getElementById('mergeModal').style.display = 'flex'; }
+
+        function showMergeModal() {
+            document.getElementById('mergeModal').style.display = 'flex';
+            setTimeout(() => {
+                if (cmLeft) cmLeft.refresh();
+                if (cmRight) cmRight.refresh();
+            }, 100);
+        }
         function hideMergeModal() { document.getElementById('mergeModal').style.display = 'none'; }
-        
+
         function confirmMerge() {
             if (pyBridge) {
                 const targetFile = document.getElementById('mergeFilePath').value;
-                const mergedCode = document.getElementById('mergeExistingCode').value;
-                pyBridge.callPython("smart_merge_confirm", JSON.stringify({
+                if (!targetFile) { showAlert('Please browse and select a target file first.'); return; }
+                
+                const mergedCode = cmRight ? cmRight.getValue() : document.getElementById('mergeExistingCodeTextarea').value;
+                if (!mergedCode || !mergedCode.trim()) { 
+                    showAlert('Merged code is empty!'); 
+                    return; 
+                }
+                
+                pyBridge.callPython('smart_merge_confirm', JSON.stringify({
                     file_path: targetFile,
                     merged_code: mergedCode
                 }));
             }
             hideMergeModal();
         }
+
+
         // ─── Live Locator Verification ───────────────────────────────────────────
         let liveVerifyTimeout = null;
         function triggerVerifyLiveLocator() {

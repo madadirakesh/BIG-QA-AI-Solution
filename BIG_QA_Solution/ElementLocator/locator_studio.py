@@ -355,6 +355,7 @@ class LocatorStudio(QMainWindow):
                     new_code = CodeGenerator.generate_class_content(tool, lang, title_cl, locators)
                     
                     merged_code = ""
+                    current_code = ""
                     if file_path and os.path.exists(file_path):
                         with open(file_path, 'r', encoding='utf-8') as f:
                             current_code = f.read()
