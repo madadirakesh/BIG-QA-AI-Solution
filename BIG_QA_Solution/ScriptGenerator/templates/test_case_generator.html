@@ -91,23 +91,6 @@
                                 <div class="text-center py-3"><i class="fas fa-spinner fa-spin"></i> Loading tasks...</div>
                             </div>
 
-                            <div id="jiraSelectedDetailsPanel" style="display:none; margin-top: 18px;">
-                                <div style="border-top: 1px solid var(--glass-border); padding-top: 14px; margin-bottom: 10px; display: flex; align-items: center; justify-content: space-between;">
-                                    <span style="font-size: 0.8rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.8px; color: var(--accent-primary);">
-                                        <i class="fas fa-layer-group"></i> Selected Items
-                                        <span id="selectedCountBadge" style="margin-left:6px; background: rgba(0,120,212,0.15); border: 1px solid rgba(0,120,212,0.3); color: var(--accent-primary); font-size: 0.65rem; padding: 1px 7px; border-radius: 10px;"></span>
-                                    </span>
-                                    <button type="button" class="btn btn-link btn-sm p-0 text-secondary text-decoration-none" onclick="clearChildSelections()" style="font-size: 0.75rem;">
-                                        <i class="fas fa-times"></i> Clear all
-                                    </button>
-                                </div>
-                                <div id="jiraDetailCardsContainer" style="display: flex; flex-direction: column; gap: 12px;"></div>
-                                <div class="text-end mt-3">
-                                    <button type="button" class="btn btn-primary btn-sm" onclick="copyAllSelectedDescriptions()">
-                                        <i class="fas fa-copy"></i> Copy All to Input
-                                    </button>
-                                </div>
-                            </div>
                         </div>
 
                         <div id="jiraDetailView" style="display: none;">
@@ -122,6 +105,24 @@
                             <div class="text-end">
                                 <button type="button" class="btn btn-primary btn-sm" onclick="copyJiraDescription()">
                                     <i class="fas fa-copy"></i> Copy Description
+                                </button>
+                            </div>
+                        </div>
+
+                        <div id="jiraSelectedDetailsPanel" style="display:none; margin-top: 18px;">
+                            <div style="border-top: 1px solid var(--glass-border); padding-top: 14px; margin-bottom: 10px; display: flex; align-items: center; justify-content: space-between;">
+                                <span style="font-size: 0.8rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.8px; color: var(--accent-primary);">
+                                    <i class="fas fa-layer-group"></i> Selected Items
+                                    <span id="selectedCountBadge" style="margin-left:6px; background: rgba(0,120,212,0.15); border: 1px solid rgba(0,120,212,0.3); color: var(--accent-primary); font-size: 0.65rem; padding: 1px 7px; border-radius: 10px;"></span>
+                                </span>
+                                <button type="button" class="btn btn-link btn-sm p-0 text-secondary text-decoration-none" onclick="clearChildSelections()" style="font-size: 0.75rem;">
+                                    <i class="fas fa-times"></i> Clear all
+                                </button>
+                            </div>
+                            <div id="jiraDetailCardsContainer" style="display: flex; flex-direction: column; gap: 12px;"></div>
+                            <div class="text-end mt-3">
+                                <button type="button" class="btn btn-primary btn-sm" onclick="copyAllSelectedDescriptions()">
+                                    <i class="fas fa-copy"></i> Copy All to Input
                                 </button>
                             </div>
                         </div>
@@ -666,15 +667,29 @@
             stories.forEach(s => {
                 const badgeClass = getTypeBadgeClass(s.type);
                 const item = document.createElement('div');
-                item.className = 'jira-item';
-                item.onclick = () => selectJiraStory(s);
-                item.innerHTML = `
+                item.className = 'jira-item has-checkbox';
+                item.dataset.key = s.key;
+
+                const cb = document.createElement('input');
+                cb.type = 'checkbox';
+                cb.className = 'jira-child-checkbox';
+                cb.id = 'cb_' + s.key;
+                if (checkedChildren[s.key]) cb.checked = true;
+                cb.addEventListener('change', () => onChildCheckChange(s, cb.checked));
+
+                const info = document.createElement('div');
+                info.style.cssText = 'display:flex; align-items:center; justify-content:space-between; flex:1; cursor:pointer;';
+                info.innerHTML = `
                     <span class="item-name">${s.summary}</span>
                     <div class="item-meta">
                         <span class="jira-type-badge ${badgeClass}">${s.type}</span>
                         <span class="item-status">${s.status}</span>
                         <span class="item-key">${s.key}</span>
                     </div>`;
+                info.onclick = () => selectJiraStory(s);
+
+                item.appendChild(cb);
+                item.appendChild(info);
                 listEl.appendChild(item);
             });
         } catch (error) {
@@ -694,9 +709,7 @@
         const listEl = document.getElementById('jiraChildList');
         listEl.innerHTML = '<div class="text-center py-3"><i class="fas fa-spinner fa-spin"></i> Loading tasks & sub-tasks...</div>';
 
-        checkedChildren = {};
-        document.getElementById('jiraSelectedDetailsPanel').style.display = 'none';
-        document.getElementById('jiraDetailCardsContainer').innerHTML = '';
+        // Preserving checkedChildren across navigation
 
         try {
             const response = await fetch(`${BACKEND_URL}/jira/stories/${currentJiraStory.key}/children`);
@@ -717,6 +730,7 @@
                 cb.type = 'checkbox';
                 cb.className = 'jira-child-checkbox';
                 cb.id = 'cb_' + c.key;
+                if (checkedChildren[c.key]) cb.checked = true;
                 cb.addEventListener('change', () => onChildCheckChange(c, cb.checked));
 
                 const info = document.createElement('div');
