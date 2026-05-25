@@ -70,6 +70,11 @@
             font-family: 'Inter', -apple-system, sans-serif;
         }
 
+        html, body {
+            -webkit-text-size-adjust: 100%;
+            text-size-adjust: 100%;
+        }
+
         h1, h2, h3, h4, h5, h6, .logo {
             font-family: 'Outfit', 'Inter', -apple-system, sans-serif;
             font-weight: 600;
@@ -169,7 +174,7 @@
             flex-direction: column;
             padding: 15px;
             gap: 15px;
-            overflow-y: auto;
+            overflow: hidden;
             min-height: 0;
         }
 
@@ -420,6 +425,9 @@
             display: flex;
             flex-direction: column;
             gap: 10px;
+            overflow-y: auto;
+            min-height: 0;
+            padding-right: 4px;
         }
 
         .feed-item {
@@ -959,6 +967,44 @@
         }
         [data-theme="light"] .CodeMirror-cursor {
             border-left: 2px solid #2563eb !important;
+        }
+
+        /* Responsive Split Merge Stacking on narrow viewports (e.g. narrow panels, small screens) */
+        @media (max-width: 600px) {
+            .diff-container {
+                flex-direction: column !important;
+            }
+            #diffPaneLeft, #diffPaneRight {
+                flex: 1 !important;
+                width: 100% !important;
+            }
+            #diffResizer {
+                width: 100% !important;
+                height: 8px !important;
+                cursor: row-resize !important;
+                border-left: none !important;
+                border-right: none !important;
+                border-top: 1px solid rgba(255,255,255,0.05) !important;
+                border-bottom: 1px solid rgba(255,255,255,0.05) !important;
+            }
+            .diff-col-headers {
+                display: none !important;
+            }
+        }
+        
+        /* Low Resolution / Sizing Adaptations */
+        @media (max-width: 320px) {
+            .btn {
+                font-size: 0.7rem !important;
+                padding: 4px 8px !important;
+            }
+            .logo {
+                font-size: 1rem !important;
+            }
+            .container {
+                padding: 10px !important;
+                gap: 10px !important;
+            }
         }
         .diff-pane {
             flex: 1;
@@ -2462,7 +2508,8 @@
 
             resizer.addEventListener('mousedown', function (e) {
                 isDragging = true;
-                document.body.style.cursor = 'col-resize';
+                const isVertical = window.getComputedStyle(container).flexDirection === 'column';
+                document.body.style.cursor = isVertical ? 'row-resize' : 'col-resize';
                 resizer.style.background = 'rgba(99, 102, 241, 0.25)';
                 leftPane.style.pointerEvents = 'none';
                 rightPane.style.pointerEvents = 'none';
@@ -2473,15 +2520,26 @@
                 if (!isDragging) return;
 
                 const containerRect = container.getBoundingClientRect();
-                const offsetX = e.clientX - containerRect.left;
-                
-                const percentage = (offsetX / containerRect.width) * 100;
-                if (percentage > 15 && percentage < 85) {
-                    leftPane.style.flex = `0 0 ${percentage}%`;
-                    rightPane.style.flex = `0 0 ${100 - percentage - (8 / containerRect.width * 100)}%`;
-                    
-                    if (cmLeft) cmLeft.refresh();
-                    if (cmRight) cmRight.refresh();
+                const isVertical = window.getComputedStyle(container).flexDirection === 'column';
+
+                if (isVertical) {
+                    const offsetY = e.clientY - containerRect.top;
+                    const percentage = (offsetY / containerRect.height) * 100;
+                    if (percentage > 15 && percentage < 85) {
+                        leftPane.style.flex = `0 0 ${percentage}%`;
+                        rightPane.style.flex = `0 0 ${100 - percentage - (8 / containerRect.height * 100)}%`;
+                        if (cmLeft) cmLeft.refresh();
+                        if (cmRight) cmRight.refresh();
+                    }
+                } else {
+                    const offsetX = e.clientX - containerRect.left;
+                    const percentage = (offsetX / containerRect.width) * 100;
+                    if (percentage > 15 && percentage < 85) {
+                        leftPane.style.flex = `0 0 ${percentage}%`;
+                        rightPane.style.flex = `0 0 ${100 - percentage - (8 / containerRect.width * 100)}%`;
+                        if (cmLeft) cmLeft.refresh();
+                        if (cmRight) cmRight.refresh();
+                    }
                 }
             });
 
