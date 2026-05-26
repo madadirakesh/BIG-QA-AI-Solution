@@ -42,7 +42,8 @@ class MergeEngine:
         field_lines = []
         method_lines = []
         for loc in locs:
-            name = CodeGenerator.clean_name(loc.get('name', ''), 'element')
+            raw_name = loc.get("_final_name") or loc.get("name") or loc.get("nameHint") or "element"
+            name = CodeGenerator.clean_name(raw_name, 'element')
             l_type = loc.get('type', 'XPath').lower()
             val = CodeGenerator.escape_quotes(loc.get('value', ''))
             action = loc.get('action', 'Click')
@@ -104,7 +105,8 @@ class MergeEngine:
         loc_lines = []
         method_lines = []
         for loc in locs:
-            name = CodeGenerator.clean_name(loc.get('name', ''), 'element', snake_case=True)
+            raw_name = loc.get("_final_name") or loc.get("name") or loc.get("nameHint") or "element"
+            name = CodeGenerator.clean_name(raw_name, 'element', snake_case=True)
             val = CodeGenerator.escape_quotes(loc.get('value', ''))
             action = loc.get('action', 'Click')
             category = loc.get('category', 'Ok')
@@ -155,7 +157,8 @@ class MergeEngine:
         init_lines = []
         method_lines = []
         for loc in locs:
-            name = CodeGenerator.clean_name(loc.get('name', ''), 'element')
+            raw_name = loc.get("_final_name") or loc.get("name") or loc.get("nameHint") or "element"
+            name = CodeGenerator.clean_name(raw_name, 'element')
             val = CodeGenerator.escape_quotes(loc.get('value', ''))
             action = loc.get('action', 'Click')
             category = loc.get('category', 'Ok')
