@@ -5,7 +5,7 @@ import platform
 from pathlib import Path
 
 def main():
-    print("🚀 Initializing Antigravity Locator Studio...")
+    print("Initializing Antigravity Locator Studio...")
     
     # Path to the new Hybrid Studio entry point
     base_dir = Path(__file__).resolve().parent
@@ -16,15 +16,15 @@ def main():
         import PyQt6
         import PyQt6.QtWebEngineWidgets
     except ImportError:
-        print("❌ Missing dependencies! Installing requirements...")
+        print("Missing dependencies! Installing requirements...")
         subprocess.check_call([sys.executable, "-m", "pip", "install", "-r", str(base_dir / "requirements.txt")])
 
     # OS Detection for window specific handling (optional)
     current_os = platform.system()
-    print(f"🖥️ System detected: {current_os}")
+    print(f"System detected: {current_os}")
 
     # Launch the studio directly in this process to save memory and launch time
-    print("✨ Launching Studio UI...")
+    print("Launching Studio UI...")
     try:
         import locator_studio
         # Create the QApplication instance
@@ -33,7 +33,7 @@ def main():
         studio.show()
         sys.exit(app.exec())
     except Exception as e:
-        print(f"❌ Failed to launch: {e}")
+        print(f"Failed to launch: {e}")
 
 if __name__ == "__main__":
     main()

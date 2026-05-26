@@ -172,8 +172,8 @@
             flex: 1;
             display: flex;
             flex-direction: column;
-            padding: 15px;
-            gap: 15px;
+            padding: 10px 12px;
+            gap: 8px;
             overflow: hidden;
             min-height: 0;
         }
@@ -184,7 +184,7 @@
             -webkit-backdrop-filter: blur(16px);
             border: 1px solid var(--glass-border);
             border-radius: var(--border-radius);
-            padding: 18px;
+            padding: 12px 14px;
             box-shadow: var(--glass-shadow);
             display: flex;
             flex-direction: column;
@@ -424,10 +424,12 @@
             flex: 1;
             display: flex;
             flex-direction: column;
-            gap: 10px;
+            gap: 8px;
             overflow-y: auto;
-            min-height: 0;
+            overflow-x: hidden;
+            min-height: 80px;
             padding-right: 4px;
+            width: 100%;
         }
 
         .feed-item {
@@ -435,9 +437,16 @@
             border: 1px solid rgba(255, 255, 255, 0.05);
             border-left: 4px solid var(--accent-primary);
             border-radius: 10px;
-            padding: 14px;
+            padding: 10px 12px;
             display: flex;
+            flex-direction: row;
+            align-items: flex-start;
+            width: 100%;
+            min-width: 0;
+            box-sizing: border-box;
+            overflow-x: hidden;
             transition: var(--transition);
+            flex-shrink: 0;
         }
         [data-theme="light"] .feed-item {
             background: rgba(0, 0, 0, 0.02);
@@ -462,6 +471,8 @@
 
         .feed-item-info {
             flex: 1;
+            min-width: 0;
+            overflow-x: hidden;
         }
 
         .feed-item-title {
@@ -489,10 +500,10 @@
         .badge-danger { background: rgba(239, 68, 68, 0.2);   color: var(--danger);  }
 
         .status-bar {
-            display: flex; align-items: center; gap: 14px;
-            padding: 8px 14px; background: rgba(0,0,0,0.3);
+            display: flex; align-items: center; gap: 10px;
+            padding: 5px 12px; background: rgba(0,0,0,0.3);
             border-top: 1px solid var(--glass-border);
-            font-size: 0.7rem; color: var(--text-secondary); flex-shrink: 0;
+            font-size: 0.68rem; color: var(--text-secondary); flex-shrink: 0;
         }
         [data-theme="light"] .status-bar {
             background: rgba(255, 255, 255, 0.5);
@@ -527,10 +538,11 @@
         .actions {
             display: grid;
             grid-template-columns: 1fr 1fr 1fr;
-            gap: 10px;
-            padding: 15px;
+            gap: 6px;
+            padding: 8px 10px;
             background: rgba(15, 23, 42, 0.85);
             border-top: 1px solid var(--glass-border);
+            flex-shrink: 0;
         }
         [data-theme="light"] .actions {
             background: rgba(255, 255, 255, 0.9);
@@ -992,6 +1004,31 @@
             }
         }
         
+        /* Laptop / 13-14" screen adaptations (1280px wide) */
+        @media (max-width: 1400px) {
+            .container {
+                padding: 10px;
+                gap: 10px;
+            }
+            .card {
+                padding: 14px;
+            }
+            .header {
+                padding: 10px 16px;
+            }
+            .feed-item {
+                padding: 10px;
+            }
+            .actions {
+                padding: 8px;
+                gap: 6px;
+            }
+            .btn {
+                font-size: 0.78rem;
+                padding: 6px 12px;
+            }
+        }
+
         /* Low Resolution / Sizing Adaptations */
         @media (max-width: 320px) {
             .btn {
@@ -1312,48 +1349,48 @@
     </style>
 </head>
 <body>
-    <div class="header">
-        <div class="logo">
-            <img src="images/big_logo_horizontal.png" alt="BIG Logo" style="height: 30px; width: auto; margin-right: 12px;"> LOCATOR STUDIO
+    <div class="header" style="padding: 8px 16px;">
+        <div class="logo" style="font-size: 1rem;">
+            <img src="images/big_logo_horizontal.png" alt="BIG Logo" style="height: 24px; width: auto; margin-right: 8px;"> LOCATOR STUDIO
         </div>
-        <div id="connectionStatus" style="font-size: 0.75rem; color: var(--success);">
+        <div id="connectionStatus" style="font-size: 0.7rem; color: var(--success);">
             <i class="fas fa-circle"></i> Connected to Python
         </div>
     </div>
 
     <div class="container">
         <!-- Configuration Card -->
-        <div class="card">
-            <div class="form-group">
-                <label style="font-size: 0.75rem; margin-bottom: 4px; display: block; color: var(--text-secondary);">Target URL</label>
-                <div style="display: flex; gap: 8px; align-items: center;">
-                    <div style="display: flex; gap: 4px; background: rgba(0,0,0,0.2); padding: 2px; border-radius: 16px; border: 1px solid rgba(255,255,255,0.05);">
-                        <button onclick="navigateBrowser('back')" class="nav-btn" style="width: 28px; height: 28px;" title="Back">
-                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+        <div class="card" style="flex-shrink: 0;">
+            <div style="margin-bottom: 6px;">
+                <label style="font-size: 0.68rem; margin-bottom: 3px; display: block; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px;">Target URL</label>
+                <div style="display: flex; gap: 6px; align-items: center;">
+                    <div style="display: flex; gap: 2px; background: rgba(0,0,0,0.2); padding: 2px; border-radius: 14px; border: 1px solid rgba(255,255,255,0.05);">
+                        <button onclick="navigateBrowser('back')" class="nav-btn" style="width: 24px; height: 24px;" title="Back">
+                            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
                         </button>
-                        <button onclick="navigateBrowser('forward')" class="nav-btn" style="width: 28px; height: 28px;" title="Forward">
-                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+                        <button onclick="navigateBrowser('forward')" class="nav-btn" style="width: 24px; height: 24px;" title="Forward">
+                            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
                         </button>
-                        <button onclick="navigateBrowser('reload')" class="nav-btn" style="width: 28px; height: 28px;" title="Reload">
-                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg>
+                        <button onclick="navigateBrowser('reload')" class="nav-btn" style="width: 24px; height: 24px;" title="Reload">
+                            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg>
                         </button>
                     </div>
-                    <input type="text" id="targetUrl" placeholder="https://example.com" style="flex:1; padding: 6px 10px; font-size: 0.8rem;">
-                    <button class="btn btn-primary" onclick="launchUrl()" style="min-width: 70px;">Launch</button>
+                    <input type="text" id="targetUrl" placeholder="https://example.com" style="flex:1; padding: 5px 8px; font-size: 0.78rem;">
+                    <button class="btn btn-primary" onclick="launchUrl()" style="min-width: 60px; padding: 5px 10px; font-size: 0.75rem;">Launch</button>
                 </div>
             </div>
 
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px;">
-                <div class="form-group" style="margin-bottom: 0;">
-                    <label style="font-size: 0.75rem; margin-bottom: 2px; display: block; color: var(--text-secondary);">Automation Tool</label>
-                    <select id="toolSelect" style="padding: 4px 8px; font-size: 0.8rem; height: 32px;">
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 5px;">
+                <div>
+                    <label style="font-size: 0.68rem; margin-bottom: 2px; display: block; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px;">Automation Tool</label>
+                    <select id="toolSelect" style="padding: 3px 6px; font-size: 0.75rem; height: 28px;">
                         <option value="Playwright">Playwright</option>
                         <option value="Selenium">Selenium</option>
                     </select>
                 </div>
-                <div class="form-group" style="margin-bottom: 0;">
-                    <label style="font-size: 0.75rem; margin-bottom: 2px; display: block; color: var(--text-secondary);">Language</label>
-                    <select id="langSelect" style="padding: 4px 8px; font-size: 0.8rem; height: 32px;">
+                <div>
+                    <label style="font-size: 0.68rem; margin-bottom: 2px; display: block; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px;">Language</label>
+                    <select id="langSelect" style="padding: 3px 6px; font-size: 0.75rem; height: 28px;">
                         <option value="TypeScript">TypeScript</option>
                         <option value="Python">Python</option>
                         <option value="Java">Java</option>
@@ -1361,10 +1398,10 @@
                 </div>
             </div>
 
-            <div style="display: flex; align-items: center; justify-content: space-between; background: rgba(0,0,0,0.15); padding: 6px 10px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.05); margin-top: 8px;">
-                <div style="display: flex; flex-direction: column;">
-                    <span style="font-size: 0.7rem; font-weight: 600;">Playwright-Native Mode</span>
-                    <span style="font-size: 0.6rem; color: var(--text-secondary);">Prioritize getByRole, etc.</span>
+            <div style="display: flex; align-items: center; justify-content: space-between; background: rgba(0,0,0,0.15); padding: 4px 8px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.05); margin-top: 5px;">
+                <div>
+                    <span style="font-size: 0.68rem; font-weight: 600;">Playwright-Native Mode</span>
+                    <span style="font-size: 0.58rem; color: var(--text-secondary); margin-left: 4px;">getByRole, etc.</span>
                 </div>
                 <label class="switch">
                     <input type="checkbox" id="pwNativeToggle" checked>
@@ -1374,12 +1411,12 @@
         </div>
 
         <!-- Capture Controls -->
-        <div style="display: flex; gap: 6px; margin-top: 10px;">
-            <button id="captureBtn" class="btn btn-primary" style="flex: 1; height: 34px; background: var(--accent); font-size: 0.75rem;" onclick="toggleCapture()">
+        <div style="display: flex; gap: 6px; flex-shrink: 0;">
+            <button id="captureBtn" class="btn btn-primary" style="flex: 1; height: 32px; background: var(--accent); font-size: 0.75rem;" onclick="toggleCapture()">
                 <i class="fas fa-play"></i> Start Capturing
             </button>
-            <button class="btn btn-outline" style="width: 40px; height: 34px; padding: 0;" title="Freeze Page (Pause JS)" onclick="freezePage()">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-top:2px;">
+            <button class="btn btn-outline" style="width: 34px; height: 32px; padding: 0;" title="Freeze Page (Pause JS)" onclick="freezePage()">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <line x1="12" y1="2" x2="12" y2="22"></line>
                     <line x1="4.93" y1="4.93" x2="19.07" y2="19.07"></line>
                     <line x1="2" y1="12" x2="22" y2="12"></line>
@@ -1389,74 +1426,73 @@
         </div>
 
         <!-- Element Queue -->
-        <div class="card" style="flex: 1; display: flex; flex-direction: column; min-height: 0;">
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-                <label style="margin:0;">Captured Elements Queue</label>
-                <span id="elemCountBadge" style="font-size:0.7rem;color:var(--text-secondary);">0 elements</span>
+        <div class="card" style="flex: 1; display: flex; flex-direction: column; min-height: 0; padding: 10px 12px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:5px; flex-shrink:0;">
+                <label style="margin:0; font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.5px;">Captured Elements Queue</label>
+                <span id="elemCountBadge" style="font-size:0.68rem;color:var(--text-secondary);">0 elements</span>
             </div>
 
             <!-- Search & Filter -->
-            <div class="search-bar">
-                <input type="text" id="searchInput" placeholder="🔍  Search elements..." oninput="filterQueue()">
-                <select id="filterType" onchange="filterQueue()" style="width:90px;">
+            <div class="search-bar" style="margin-bottom:5px; flex-shrink:0;">
+                <input type="text" id="searchInput" placeholder="Search elements..." oninput="filterQueue()" style="padding:5px 8px;font-size:0.75rem;">
+                <select id="filterType" onchange="filterQueue()" style="width:80px;padding:5px 6px;font-size:0.72rem;">
                     <option value="">All Types</option>
                     <option value="XPath">XPath</option>
                     <option value="CSS">CSS</option>
                     <option value="ID">ID</option>
                     <option value="getBy">Playwright</option>
                 </select>
-                <button id="uniqueFilterBtn" class="filter-toggle" onclick="toggleUniqueFilter()" title="Show only unique locators">1/1 ✓</button>
+                <button id="uniqueFilterBtn" class="filter-toggle" onclick="toggleUniqueFilter()" title="Show only unique locators" style="font-size:0.65rem;padding:5px 7px;">1/1</button>
             </div>
 
             <!-- Bulk toolbar (visible when items selected) -->
-            <div class="bulk-toolbar" id="bulkToolbar">
+            <div class="bulk-toolbar" id="bulkToolbar" style="flex-shrink:0;">
                 <span id="selectedCount" style="color:var(--text-secondary);align-self:center;">0 selected</span>
-                <button class="btn btn-outline" style="padding:4px 10px;font-size:0.72rem;" onclick="bulkDelete()"><i class="fas fa-trash"></i> Delete</button>
-                <button class="btn btn-outline" style="padding:4px 10px;font-size:0.72rem;border-color:var(--warning);color:var(--warning);" onclick="bulkActionChange()"><i class="fas fa-exchange-alt"></i> Set Action</button>
-                <button class="btn btn-outline" style="padding:4px 10px;font-size:0.72rem;margin-left:auto;" onclick="clearSelection()">✕ Deselect</button>
+                <button class="btn btn-outline" style="padding:3px 8px;font-size:0.7rem;" onclick="bulkDelete()"><i class="fas fa-trash"></i> Delete</button>
+                <button class="btn btn-outline" style="padding:3px 8px;font-size:0.7rem;border-color:var(--warning);color:var(--warning);" onclick="bulkActionChange()"><i class="fas fa-exchange-alt"></i> Set Action</button>
+                <button class="btn btn-outline" style="padding:3px 8px;font-size:0.7rem;margin-left:auto;" onclick="clearSelection()">x Deselect</button>
             </div>
 
+            <!-- Scrollable element list - this MUST be flex:1 min-height:0 to scroll properly -->
             <div class="feed-container" id="elementQueue">
-                <div style="text-align: center; color: var(--text-secondary); margin-top: 40px; font-size: 0.85rem;">
-                    <i class="fas fa-mouse-pointer" style="display: block; font-size: 1.5rem; margin-bottom: 10px; opacity: 0.5;"></i>
+                <div style="text-align: center; color: var(--text-secondary); margin-top: 30px; font-size: 0.8rem;">
+                    <i class="fas fa-mouse-pointer" style="display: block; font-size: 1.2rem; margin-bottom: 8px; opacity: 0.5;"></i>
                     Click elements in the browser to start capturing.
                 </div>
             </div>
 
-            <!-- Live Locator Console -->
-            <div style="background:rgba(0,0,0,0.2); border-radius:8px; padding:10px; margin-top:10px; border:1px solid rgba(255,255,255,0.05); flex-shrink:0;">
-                <div style="display:flex; justify-content:space-between; font-size:0.75rem; color:var(--text-secondary); margin-bottom:8px;">
+            <!-- Live Locator Console (compact) -->
+            <div style="background:rgba(0,0,0,0.2); border-radius:6px; padding:6px 8px; margin-top:5px; border:1px solid rgba(255,255,255,0.05); flex-shrink:0;">
+                <div style="display:flex; justify-content:space-between; align-items:center; font-size:0.7rem; color:var(--text-secondary); margin-bottom:4px;">
                     <span><i class="fas fa-terminal"></i> Live Locator Console</span>
-                    <span id="liveConsoleCount" style="cursor:pointer;" title="Click to highlight matched elements" onclick="highlightFromConsole()">0 matches</span>
+                    <span id="liveConsoleCount" style="cursor:pointer;" title="Click to highlight" onclick="highlightFromConsole()">0 matches</span>
                 </div>
-                <div style="display:flex; gap:6px;">
+                <div style="display:flex; gap:5px;">
                     <input type="text" id="liveConsoleInput"
-                           placeholder="Type //xpath or .css to verify & highlight..."
-                           style="flex:1; background:rgba(0,0,0,0.4); border:1px solid rgba(255,255,255,0.1); color:white; padding:8px 10px; border-radius:6px; font-family:monospace; font-size:0.8rem;"
+                           placeholder="//xpath or .css ..."
+                           style="flex:1; background:rgba(0,0,0,0.4); border:1px solid rgba(255,255,255,0.1); color:white; padding:5px 8px; border-radius:5px; font-family:monospace; font-size:0.75rem;"
                            oninput="triggerVerifyLiveLocator()"
                            onkeydown="if(event.key==='Enter') highlightFromConsole()">
-                    <!-- Eye: Highlight in browser -->
                     <button class="btn" id="liveHighlightBtn"
-                            style="padding:6px 10px; background:rgba(0,120,212,0.3); border:1px solid #0078d4; color:#0078d4;"
+                            style="padding:5px 8px; background:rgba(0,120,212,0.3); border:1px solid #0078d4; color:#0078d4;"
                             onclick="highlightFromConsole()" title="Highlight element in browser">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-top:2px;">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                             <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
                             <circle cx="12" cy="12" r="3"></circle>
                         </svg>
                     </button>
-                    <!-- Plus: Add to queue -->
-                    <button class="btn btn-primary" style="padding:6px 10px;" onclick="addLiveLocator()" title="Add to Queue">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-top:2px;">
+                    <button class="btn btn-primary" style="padding:5px 8px;" onclick="addLiveLocator()" title="Add to Queue">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                             <line x1="12" y1="5" x2="12" y2="19"></line>
                             <line x1="5" y1="12" x2="19" y2="12"></line>
                         </svg>
                     </button>
                 </div>
-                <!-- Mini feedback bar -->
-                <div id="liveConsoleFeedback" style="margin-top:6px; font-size:0.7rem; color:var(--text-secondary); min-height:14px;"></div>
+                <div id="liveConsoleFeedback" style="margin-top:3px; font-size:0.65rem; color:var(--text-secondary); min-height:11px;"></div>
             </div>
         </div>
     </div>
+
 
     <!-- Status Bar -->
     <div class="status-bar">
@@ -1895,13 +1931,13 @@
                 });
 
                 item.innerHTML = `
-                    <div class="drag-handle" title="Drag to reorder">
+                    <div class="drag-handle" title="Drag to reorder" style="flex-shrink:0;">
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="5" r="1"></circle><circle cx="9" cy="12" r="1"></circle><circle cx="9" cy="19" r="1"></circle><circle cx="15" cy="5" r="1"></circle><circle cx="15" cy="12" r="1"></circle><circle cx="15" cy="19" r="1"></circle></svg>
                     </div>
-                    <div style="display:flex;flex-direction:column;width:100%;">
-                        <div class="feed-item-info" style="width:100%;">
-                            <div class="feed-item-title" style="display:flex;align-items:center;">
-                                <input type="text" class="element-name-input" value="${el.nameHint || 'element'}" onchange="updateNameHint(${idx}, this.value)" style="background:transparent;border:none;color:white;font-weight:bold;font-size:0.85rem;outline:none;border-bottom:1px dashed rgba(255,255,255,0.3);width:auto;flex-grow:1;max-width:180px;padding:2px 0;" title="Click to edit element name" />
+                    <div style="display:flex;flex-direction:column;flex:1;min-width:0;">
+                        <div class="feed-item-info" style="width:100%;min-width:0;">
+                            <div class="feed-item-title" style="display:flex;align-items:center;min-width:0;width:100%;">
+                                <input type="text" class="element-name-input" value="${el.nameHint || 'element'}" onchange="updateNameHint(${idx}, this.value)" style="background:transparent;border:none;color:white;font-weight:bold;font-size:0.85rem;outline:none;border-bottom:1px dashed rgba(255,255,255,0.3);width:auto;flex-grow:1;min-width:80px;max-width:180px;padding:2px 0;" title="Click to edit element name" />
                                 <span id="match-badge-${idx}" style="font-size:0.65rem;padding:2px 6px;border-radius:4px;background:rgba(0,0,0,0.3);color:${badgeColor};margin-left:6px;">${badgeText}</span>
                             </div>
                             <div id="locator-type-${idx}" style="font-size:0.7rem;color:var(--text-secondary);margin:3px 0 1px;">${el.type}</div>
@@ -1910,25 +1946,25 @@
                             <div style="display:flex;align-items:center;justify-content:space-between;width:100%;margin-top:8px;">
                                 <select onchange="updateAction(${idx}, this.value)" style="flex: 1; min-width: 120px; padding: 5px 8px; font-size: 0.78rem; font-weight: 500; background: rgba(0,0,0,0.6); border-radius: 6px; color: #60a5fa; border: 1px solid rgba(96, 165, 250, 0.4); cursor: pointer; outline: none; text-overflow: ellipsis; white-space: nowrap; overflow: hidden; box-shadow: 0 0 8px rgba(0,0,0,0.2);">
                                     <optgroup label="Basic">
-                                        <option value="Click" ${el.action === 'Click' ? 'selected' : ''}>🖱️ Click</option>
-                                        <option value="Type" ${el.action === 'Type' ? 'selected' : ''}>⌨️ Type</option>
-                                        <option value="Clear" ${el.action === 'Clear' ? 'selected' : ''}>🧹 Clear</option>
+                                        <option value="Click" ${el.action === 'Click' ? 'selected' : ''}>Click</option>
+                                        <option value="Type" ${el.action === 'Type' ? 'selected' : ''}>Type</option>
+                                        <option value="Clear" ${el.action === 'Clear' ? 'selected' : ''}>Clear</option>
                                     </optgroup>
                                     <optgroup label="Mouse">
-                                        <option value="Hover" ${el.action === 'Hover' ? 'selected' : ''}>🖐️ Hover</option>
-                                        <option value="DoubleClick" ${el.action === 'DoubleClick' ? 'selected' : ''}>🖱️🖱️ DoubleClick</option>
-                                        <option value="RightClick" ${el.action === 'RightClick' ? 'selected' : ''}>🖱️ ContextClick</option>
+                                        <option value="Hover" ${el.action === 'Hover' ? 'selected' : ''}>Hover</option>
+                                        <option value="DoubleClick" ${el.action === 'DoubleClick' ? 'selected' : ''}>DoubleClick</option>
+                                        <option value="RightClick" ${el.action === 'RightClick' ? 'selected' : ''}>ContextClick</option>
                                     </optgroup>
                                     <optgroup label="State / Data">
-                                        <option value="GetText" ${el.action === 'GetText' ? 'selected' : ''}>📝 GetText</option>
-                                        <option value="IsDisplayed" ${el.action === 'IsDisplayed' ? 'selected' : ''}>👁️ IsDisplayed</option>
-                                        <option value="WaitForVisible" ${el.action === 'WaitForVisible' ? 'selected' : ''}>⏳ WaitForVisible</option>
-                                        <option value="ScrollIntoView" ${el.action === 'ScrollIntoView' ? 'selected' : ''}>📜 ScrollIntoView</option>
+                                        <option value="GetText" ${el.action === 'GetText' ? 'selected' : ''}>GetText</option>
+                                        <option value="IsDisplayed" ${el.action === 'IsDisplayed' ? 'selected' : ''}>IsDisplayed</option>
+                                        <option value="WaitForVisible" ${el.action === 'WaitForVisible' ? 'selected' : ''}>WaitForVisible</option>
+                                        <option value="ScrollIntoView" ${el.action === 'ScrollIntoView' ? 'selected' : ''}>ScrollIntoView</option>
                                     </optgroup>
                                     <optgroup label="Specifics">
-                                        <option value="SelectByVisibleText" ${el.action === 'SelectByVisibleText' ? 'selected' : ''}>☑️ Select</option>
-                                        <option value="Check" ${el.action === 'Check' ? 'selected' : ''}>✅ Check</option>
-                                        <option value="Uncheck" ${el.action === 'Uncheck' ? 'selected' : ''}>⬜ Uncheck</option>
+                                        <option value="SelectByVisibleText" ${el.action === 'SelectByVisibleText' ? 'selected' : ''}>Select</option>
+                                        <option value="Check" ${el.action === 'Check' ? 'selected' : ''}>Check</option>
+                                        <option value="Uncheck" ${el.action === 'Uncheck' ? 'selected' : ''}>Uncheck</option>
                                     </optgroup>
                                 </select>
 

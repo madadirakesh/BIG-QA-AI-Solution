@@ -106,9 +106,16 @@ class LocatorStudio(QMainWindow):
         self.splitter.addWidget(self.dashboard_view)
         self.splitter.addWidget(self.browser_view)
         
-        # 30% Dashboard, 70% Browser
+        # 30% Dashboard, 70% Browser — set explicit ratio + minimum widths for laptop screens
         self.splitter.setStretchFactor(0, 3)
         self.splitter.setStretchFactor(1, 7)
+        
+        # Enforce minimum panel widths so neither collapses on small screens
+        self.dashboard_view.setMinimumWidth(380)
+        self.browser_view.setMinimumWidth(400)
+        
+        # Set initial proportional sizes based on 1600px window width
+        self.splitter.setSizes([480, 1120])
         
         layout.addWidget(self.splitter)
         self.setCentralWidget(central_widget)
