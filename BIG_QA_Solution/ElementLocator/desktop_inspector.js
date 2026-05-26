@@ -40,6 +40,7 @@
         if (!window.desktopInspectorActive) {
             document.addEventListener('mouseover', handleMouseOver, true);
             document.addEventListener('mouseout', handleMouseOut, true);
+            window.addEventListener('scroll', handleScroll, true);
             const EVENTS = ['click', 'mousedown', 'mouseup'];
             EVENTS.forEach(evt => document.addEventListener(evt, handleMouseCapture, true));
             window.desktopInspectorActive = true;
@@ -53,6 +54,7 @@
         if (window.desktopInspectorActive) {
             document.removeEventListener('mouseover', handleMouseOver, true);
             document.removeEventListener('mouseout', handleMouseOut, true);
+            window.removeEventListener('scroll', handleScroll, true);
             const EVENTS = ['click', 'mousedown', 'mouseup'];
             EVENTS.forEach(evt => document.removeEventListener(evt, handleMouseCapture, true));
             highlightBox.style.setProperty('display', 'none', 'important');
@@ -87,7 +89,7 @@
         if (!window.desktopInspectorActive) return;
         const target = e.target;
         if (target === highlightBox) return;
-        e.stopPropagation();
+        
         window.currentHighlightedElement = target;
         const rect = target.getBoundingClientRect();
         highlightBox.style.setProperty('display', 'block', 'important');
@@ -99,8 +101,18 @@
 
     function handleMouseOut(e) {
         if (!window.desktopInspectorActive) return;
-        highlightBox.style.setProperty('display', 'none', 'important');
-        window.currentHighlightedElement = null;
+        if (!e.relatedTarget) {
+            highlightBox.style.setProperty('display', 'none', 'important');
+        }
+    }
+
+    function handleScroll(e) {
+        if (!window.desktopInspectorActive || !window.currentHighlightedElement) return;
+        const rect = window.currentHighlightedElement.getBoundingClientRect();
+        highlightBox.style.setProperty('top', rect.top + 'px', 'important');
+        highlightBox.style.setProperty('left', rect.left + 'px', 'important');
+        highlightBox.style.setProperty('width', rect.width + 'px', 'important');
+        highlightBox.style.setProperty('height', rect.height + 'px', 'important');
     }
 
     // ─── Unbreakable Bridge Queue ─────────────────────────────────────────────
