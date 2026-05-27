@@ -215,15 +215,19 @@
                     <span class="git-widget-toggle"><i class="fas fa-chevron-down"></i></span>
                 </div>
                 <div class="git-widget-body">
-                    <div style="display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 20px;">
-                        <button type="button" class="btn btn-secondary" onclick="runGitAction('status')"
-                            style="background: rgba(255,255,255,0.1);"><i class="fas fa-info-circle"></i> Status</button>
-                        <button type="button" class="btn btn-secondary" onclick="runGitAction('pull')"
-                            style="background: rgba(255,255,255,0.1);"><i class="fas fa-arrow-down"></i> Pull</button>
-                        <button type="button" class="btn btn-secondary" onclick="runGitAction('commit')"
-                            style="background: rgba(255,255,255,0.1);"><i class="fas fa-check"></i> Commit All</button>
-                        <button type="button" class="btn btn-secondary" onclick="runGitAction('push')"
-                            style="background: rgba(255,255,255,0.1);"><i class="fas fa-arrow-up"></i> Push</button>
+                    <div style="display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 20px;">
+                        <button type="button" class="btn git-action-btn git-btn-status" onclick="runGitAction('status')">
+                            <i class="fas fa-info-circle"></i> Status
+                        </button>
+                        <button type="button" class="btn git-action-btn git-btn-pull" onclick="runGitAction('pull')">
+                            <i class="fas fa-arrow-down"></i> Pull
+                        </button>
+                        <button type="button" class="btn git-action-btn git-btn-commit" onclick="runGitAction('commit')">
+                            <i class="fas fa-check"></i> Commit All
+                        </button>
+                        <button type="button" class="btn git-action-btn git-btn-push" onclick="runGitAction('push')">
+                            <i class="fas fa-arrow-up"></i> Push
+                        </button>
                     </div>
                     
                     <!-- Embedded Git Terminal -->
@@ -312,11 +316,158 @@
     </div>
 </div>
 </div>
+
+<!-- Custom Commit Message Modal -->
+<div id="commitMessageModal" class="commit-modal-backdrop">
+    <div class="commit-modal-dialog glassmorphism">
+        <h4><i class="fas fa-edit" style="color: var(--success);"></i> Git Commit Message</h4>
+        <p style="color: var(--text-secondary); font-size: 0.9rem; margin-bottom: 15px; line-height: 1.4;">
+            Please enter a descriptive commit message for your uncommitted changes.
+        </p>
+        <div class="form-group" style="margin-bottom: 25px !important;">
+            <input type="text" id="commitMsgInput" class="form-control" 
+                   placeholder="e.g., feat: add login script tests" 
+                   value="chore: Update project scripts via BIG-QA"
+                   onkeydown="handleCommitModalKey(event)">
+        </div>
+        <div style="display: flex; justify-content: flex-end; gap: 10px;">
+            <button type="button" class="btn" style="background: rgba(255,255,255,0.08); color: var(--text-primary);" onclick="closeCommitModal()">Cancel</button>
+            <button type="button" class="btn" onclick="submitCommitWithMsg()" style="background: linear-gradient(135deg, #10b981, #059669); color: white; box-shadow: 0 4px 12px rgba(16, 185, 129, 0.25);">Commit All</button>
+        </div>
+    </div>
+</div>
+</div>
 </div>
 {% endblock %}
 
 {% block extra_css %}
 <style>
+    /* Premium Native Git Buttons */
+    .git-action-btn {
+        border: none !important;
+        color: white !important;
+        font-weight: 600 !important;
+        font-size: 0.9rem !important;
+        padding: 10px 18px !important;
+        border-radius: 6px !important;
+        display: inline-flex !important;
+        align-items: center !important;
+        gap: 8px !important;
+        cursor: pointer !important;
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+    }
+
+    .git-btn-status {
+        background: linear-gradient(135deg, #0284c7, #0369a1) !important;
+        box-shadow: 0 4px 12px rgba(2, 132, 199, 0.25) !important;
+    }
+    .git-btn-status:hover {
+        background: linear-gradient(135deg, #0ea5e9, #0284c7) !important;
+        box-shadow: 0 6px 18px rgba(2, 132, 199, 0.45) !important;
+        transform: translateY(-2px);
+    }
+    .git-btn-status:active {
+        transform: translateY(0);
+    }
+
+    .git-btn-pull {
+        background: linear-gradient(135deg, #6366f1, #4f46e5) !important;
+        box-shadow: 0 4px 12px rgba(99, 102, 241, 0.25) !important;
+    }
+    .git-btn-pull:hover {
+        background: linear-gradient(135deg, #818cf8, #6366f1) !important;
+        box-shadow: 0 6px 18px rgba(99, 102, 241, 0.45) !important;
+        transform: translateY(-2px);
+    }
+    .git-btn-pull:active {
+        transform: translateY(0);
+    }
+
+    .git-btn-commit {
+        background: linear-gradient(135deg, #10b981, #059669) !important;
+        box-shadow: 0 4px 12px rgba(16, 185, 129, 0.25) !important;
+    }
+    .git-btn-commit:hover {
+        background: linear-gradient(135deg, #34d399, #10b981) !important;
+        box-shadow: 0 6px 18px rgba(16, 185, 129, 0.45) !important;
+        transform: translateY(-2px);
+    }
+    .git-btn-commit:active {
+        transform: translateY(0);
+    }
+
+    .git-btn-push {
+        background: linear-gradient(135deg, #f97316, #ea580c) !important;
+        box-shadow: 0 4px 12px rgba(249, 115, 22, 0.25) !important;
+    }
+    .git-btn-push:hover {
+        background: linear-gradient(135deg, #fb923c, #f97316) !important;
+        box-shadow: 0 6px 18px rgba(249, 115, 22, 0.45) !important;
+        transform: translateY(-2px);
+    }
+    .git-btn-push:active {
+        transform: translateY(0);
+    }
+
+    /* Light Theme Specific overrides */
+    html[data-theme="light"] .git-btn-status {
+        box-shadow: 0 4px 12px rgba(2, 132, 199, 0.15) !important;
+    }
+    html[data-theme="light"] .git-btn-pull {
+        box-shadow: 0 4px 12px rgba(99, 102, 241, 0.15) !important;
+    }
+    html[data-theme="light"] .git-btn-commit {
+        box-shadow: 0 4px 12px rgba(16, 185, 129, 0.15) !important;
+    }
+    html[data-theme="light"] .git-btn-push {
+        box-shadow: 0 4px 12px rgba(249, 115, 22, 0.15) !important;
+    }
+
+    /* Custom Commit Modal styling */
+    .commit-modal-backdrop {
+        display: none;
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(15, 23, 42, 0.65);
+        backdrop-filter: blur(8px);
+        -webkit-backdrop-filter: blur(8px);
+        z-index: 1500;
+        align-items: center;
+        justify-content: center;
+        opacity: 0;
+        transition: opacity 0.25s ease;
+    }
+    .commit-modal-backdrop.active {
+        display: flex;
+        opacity: 1;
+    }
+    .commit-modal-dialog {
+        background: var(--bg-secondary) !important;
+        border: 1px solid var(--glass-border) !important;
+        border-radius: 12px !important;
+        padding: 30px !important;
+        box-shadow: var(--glass-shadow) !important;
+        max-width: 480px;
+        width: 90%;
+        transform: translateY(20px);
+        transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+        text-align: left;
+    }
+    .commit-modal-backdrop.active .commit-modal-dialog {
+        transform: translateY(0);
+    }
+    .commit-modal-dialog h4 {
+        margin-top: 0;
+        font-size: 1.25rem;
+        font-weight: 600;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+
     /* Git Widget Styles */
     .git-widget {
         background: rgba(255, 255, 255, 0.02);
@@ -751,10 +902,47 @@
         }
     }
 
+    // Modal controls for Custom Commit
+    function openCommitModal() {
+        const modal = document.getElementById('commitMessageModal');
+        modal.classList.add('active');
+        const input = document.getElementById('commitMsgInput');
+        input.focus();
+        input.select();
+    }
+
+    function closeCommitModal() {
+        const modal = document.getElementById('commitMessageModal');
+        modal.classList.remove('active');
+    }
+
+    function handleCommitModalKey(e) {
+        if (e.key === 'Enter') {
+            submitCommitWithMsg();
+        } else if (e.key === 'Escape') {
+            closeCommitModal();
+        }
+    }
+
+    async function submitCommitWithMsg() {
+        const input = document.getElementById('commitMsgInput');
+        const msg = input.value.trim();
+        closeCommitModal();
+        await runGitActionActual('commit', msg);
+    }
+
     async function runGitAction(action) {
+        if (action === 'commit') {
+            openCommitModal();
+        } else {
+            await runGitActionActual(action);
+        }
+    }
+
+    async function runGitActionActual(action, commitMessage = null) {
         const sel = document.getElementById('runProject');
         const opt = sel.options[sel.selectedIndex];
-        if (!opt.value) return;
+        if (!opt.value) return showToast('Please select a project first', 'error');
 
         const pPath = opt.getAttribute('data-path');
         const pName = sel.value;
@@ -770,10 +958,15 @@
         addLog(`[Git] Executing native action: ${action.toUpperCase()}...`, "log-cmd");
 
         try {
+            const payload = { action: action, project_path: projectPath };
+            if (action === 'commit' && commitMessage) {
+                payload.commit_message = commitMessage;
+            }
+
             const res = await fetch('/api/git/native-action', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ action: action, project_path: projectPath })
+                body: JSON.stringify(payload)
             });
             const json = await res.json();
             if (json.success) {

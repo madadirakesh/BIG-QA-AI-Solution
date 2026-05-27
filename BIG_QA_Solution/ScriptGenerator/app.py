@@ -44,7 +44,15 @@ bootstrapper_jobs = {}
 
 app = Flask(__name__)
 # In production, use os.environ.get('SECRET_KEY')
-app.secret_key = 'your_super_secret_flask_key_here'
+app.secret_key = os.environ.get('FLASK_SECRET_KEY', os.urandom(24))
+app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 31536000  # Cache static files for 1 year
+
+@app.teardown_appcontext
+def close_connection(exception):
+    from flask import g
+    db = getattr(g, 'db', None)
+    if db is not None:
+        db.close()
 
 @app.context_processor
 def inject_user():
@@ -841,6 +849,13 @@ def save_git_config():
             else:
                 insert_data("INSERT INTO ProjectGitConfig (repo_url, username, access_token, project_details_id) VALUES (?, ?, ?, ?)",
                             (repo_url, username, access_token, p_details_id))
+            
+            # Sync git config to the local repository dynamically!
+            try:
+                from api.git_service import GitService
+                GitService.sync_git_config(p_path, {"repo_url": repo_url, "username": username, "access_token": access_token})
+            except Exception as sync_err:
+                app.logger.warning(f"Git config sync error: {sync_err}")
                                 
         return jsonify({"status": "success", "message": "Git configuration saved successfully."})
     except Exception as e:
@@ -874,6 +889,7 @@ def git_native_action():
         data = request.json
         action = data.get('action')
         project_path = data.get('project_path')
+        commit_message = data.get('commit_message')
         
         if not action or not project_path:
             return jsonify({"status": "error", "message": "Action and project_path are required"}), 400
@@ -886,7 +902,7 @@ def git_native_action():
         git_config = fetch_data("SELECT repo_url, username, access_token FROM ProjectGitConfig WHERE project_details_id = ?", (p_id,))
         auth_config = git_config[0] if git_config else {}
         
-        result = GitService.execute_native_action(action, project_path, auth_config)
+        result = GitService.execute_native_action(action, project_path, auth_config, commit_message=commit_message)
         return jsonify(result)
         
     except Exception as e:
@@ -905,6 +921,18 @@ def git_mcp_action():
         if not prompt or not project_path:
             return jsonify({"status": "error", "message": "Prompt and project_path are required"}), 400
             
+        # Dynamically sync git config prior to MCP execution to make sure git credentials & user identity are utilized
+        existing = fetch_data("SELECT id FROM ProjectDetails WHERE project_path = ?", (project_path,))
+        if existing:
+            p_id = existing[0]['id']
+            git_config = fetch_data("SELECT repo_url, username, access_token FROM ProjectGitConfig WHERE project_details_id = ?", (p_id,))
+            if git_config:
+                try:
+                    from api.git_service import GitService
+                    GitService.sync_git_config(project_path, git_config[0])
+                except Exception as sync_err:
+                    app.logger.warning(f"Git config sync error prior to MCP action: {sync_err}")
+
         import asyncio
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)

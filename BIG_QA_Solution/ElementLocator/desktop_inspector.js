@@ -53,7 +53,8 @@
         if (window.desktopInspectorActive) {
             document.removeEventListener('mouseover', handleMouseOver, true);
             document.removeEventListener('mouseout', handleMouseOut, true);
-            document.removeEventListener('click', handleClick, true);
+            const EVENTS = ['click', 'mousedown', 'mouseup'];
+            EVENTS.forEach(evt => document.removeEventListener(evt, handleMouseCapture, true));
             highlightBox.style.setProperty('display', 'none', 'important');
             window.desktopInspectorActive = false;
         }
@@ -106,20 +107,12 @@
     window.messageQueue = [];
     window.isSending = false;
     window._captureBuffer = window._captureBuffer || [];
-    window._captureBuffer = window._captureBuffer || [];
 
     function sendPayload(payload) {
-        window._captureBuffer.push(payload);
         window._captureBuffer.push(payload);
         window.messageQueue.push(payload);
         processQueue();
     }
-
-    window._drainCaptureBuffer = function() {
-        const batch = window._captureBuffer.slice();
-        window._captureBuffer = [];
-        return JSON.stringify(batch);
-    };
 
     window._drainCaptureBuffer = function() {
         const batch = window._captureBuffer.slice();
@@ -139,9 +132,6 @@
                 console.error("Bridge send failed:", e);
                 window.isSending = false;
             }
-        } else if (window !== window.top) {
-            try { window.top.postMessage({ type: 'FORWARD_PAYLOAD', payload: payload }, '*'); } catch(e) {}
-            setTimeout(() => { window.isSending = false; processQueue(); }, 50);
         } else if (window !== window.top) {
             try { window.top.postMessage({ type: 'FORWARD_PAYLOAD', payload: payload }, '*'); } catch(e) {}
             setTimeout(() => { window.isSending = false; processQueue(); }, 50);
@@ -224,7 +214,7 @@
         const el = resolveInteractiveTarget(raw);
         if (!el) return;
 
-        showCaptureFeedback('✅ Captured: ' + (el.id || el.name || el.tagName), '#10b981');
+        showCaptureFeedback('[+] Captured: ' + (el.id || el.name || el.tagName), '#10b981');
         
         try {
             const locators = generateLocators(el);
@@ -399,7 +389,7 @@
             if (!expr || !expr.trim()) return;
             // XPath syntax validation: reject expressions that throw parse errors
             try {
-                document.evaluate(expr, root, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
+                document.evaluate(expr, document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
             } catch(syntaxErr) {
                 // Invalid XPath — skip silently
                 console.warn('[Inspector] Invalid XPath discarded:', expr, syntaxErr.message);

@@ -19,7 +19,6 @@
 
 <div class="bdd-layout">
     <div class="form-panel glassmorphism">
-        <!-- Wizard Steps Indicator -->
         <div class="wizard-container animate-fade-in">
             <div class="wizard-steps-premium">
                 <div class="step-p active" id="step1-indicator">
@@ -34,14 +33,13 @@
             </div>
         </div>
 
-        <!-- Step 1: Requirements & Options -->
         <div id="step-1" class="wizard-content active">
             <div class="step-inner-align">
                 <h3 class="premium-header">Project Inputs</h3>
-                
+
                 <div class="form-group mt-3">
                     <label>What are we testing? <small class="text-secondary">(Describe features or user stories)</small></label>
-                    <textarea id="requirementInput" rows="8" 
+                    <textarea id="requirementInput" rows="8"
                         placeholder="e.g., User should be able to search for products, filter by category, and add items to the shopping cart."></textarea>
                     <div class="mt-3">
                         <button type="button" id="jiraConnectBtn" class="btn btn-outline-primary btn-sm" onclick="toggleJiraSection()">
@@ -49,14 +47,12 @@
                         </button>
                     </div>
 
-                    <!-- Inline Jira Section -->
                     <div id="jiraInlineSection" class="jira-inline-section animate-slide-up" style="display: none;">
                         <div class="jira-header-inline">
                             <h4><i class="fab fa-jira"></i> Jira Integration</h4>
                             <button type="button" class="close-jira" style="font-size: 1rem;" onclick="toggleJiraSection()">&times;</button>
                         </div>
-                        
-                        <!-- 1. Projects View -->
+
                         <div id="jiraProjectsView">
                             <div class="jira-view-header">
                                 <span class="text-secondary small">Select a Jira Project:</span>
@@ -66,7 +62,6 @@
                             </div>
                         </div>
 
-                        <!-- 2. Epics View -->
                         <div id="jiraEpicsView" style="display: none;">
                             <div class="jira-view-header">
                                 <button type="button" class="btn btn-link btn-sm p-0 me-2 text-decoration-none" onclick="showJiraProjects()"><i class="fas fa-arrow-left"></i> Projects</button>
@@ -77,7 +72,6 @@
                             </div>
                         </div>
 
-                        <!-- 3. Stories View -->
                         <div id="jiraStoriesView" style="display: none;">
                             <div class="jira-view-header">
                                 <button type="button" class="btn btn-link btn-sm p-0 me-2 text-decoration-none" onclick="showJiraEpics()"><i class="fas fa-arrow-left"></i> Epics</button>
@@ -88,7 +82,6 @@
                             </div>
                         </div>
 
-                        <!-- 4. Children (Tasks + Sub-tasks) View -->
                         <div id="jiraChildrenView" style="display: none;">
                             <div class="jira-view-header">
                                 <button type="button" class="btn btn-link btn-sm p-0 me-2 text-decoration-none" onclick="showJiraStories()"><i class="fas fa-arrow-left"></i> Stories</button>
@@ -97,9 +90,9 @@
                             <div id="jiraChildList" class="jira-list">
                                 <div class="text-center py-3"><i class="fas fa-spinner fa-spin"></i> Loading tasks...</div>
                             </div>
+
                         </div>
 
-                        <!-- 5. Issue Detail View -->
                         <div id="jiraDetailView" style="display: none;">
                             <div class="jira-view-header">
                                 <button type="button" class="btn btn-link btn-sm p-0 me-2 text-decoration-none" id="detailBackBtn"><i class="fas fa-arrow-left"></i> Back</button>
@@ -112,6 +105,24 @@
                             <div class="text-end">
                                 <button type="button" class="btn btn-primary btn-sm" onclick="copyJiraDescription()">
                                     <i class="fas fa-copy"></i> Copy Description
+                                </button>
+                            </div>
+                        </div>
+
+                        <div id="jiraSelectedDetailsPanel" style="display:none; margin-top: 18px;">
+                            <div style="border-top: 1px solid var(--glass-border); padding-top: 14px; margin-bottom: 10px; display: flex; align-items: center; justify-content: space-between;">
+                                <span style="font-size: 0.8rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.8px; color: var(--accent-primary);">
+                                    <i class="fas fa-layer-group"></i> Selected Items
+                                    <span id="selectedCountBadge" style="margin-left:6px; background: rgba(0,120,212,0.15); border: 1px solid rgba(0,120,212,0.3); color: var(--accent-primary); font-size: 0.65rem; padding: 1px 7px; border-radius: 10px;"></span>
+                                </span>
+                                <button type="button" class="btn btn-link btn-sm p-0 text-secondary text-decoration-none" onclick="clearChildSelections()" style="font-size: 0.75rem;">
+                                    <i class="fas fa-times"></i> Clear all
+                                </button>
+                            </div>
+                            <div id="jiraDetailCardsContainer" style="display: flex; flex-direction: column; gap: 12px;"></div>
+                            <div class="text-end mt-3">
+                                <button type="button" class="btn btn-primary btn-sm" onclick="copyAllSelectedDescriptions()">
+                                    <i class="fas fa-copy"></i> Copy All to Input
                                 </button>
                             </div>
                         </div>
@@ -137,7 +148,6 @@
                     </div>
                 </div>
 
-                <!-- Template Upload Section -->
                 <div id="template-section" class="mt-4 animate-slide-up" style="display: none;">
                     <div class="form-group border-top pt-4">
                         <label><i class="fas fa-upload"></i> Upload Test Case Template (Optional)</label>
@@ -157,7 +167,6 @@
             </div>
         </div>
 
-        <!-- Step 2: Review & Finalize -->
         <div id="step-2" class="wizard-content">
             <div class="step-inner-align">
                 <h3 class="premium-header">Preview Results</h3>
@@ -195,9 +204,6 @@
     </div>
 </div>
 
-<!-- Jira Integration Section will be added inline -->
-
-<!-- Premium Loading Overlay -->
 <div id="loadingOverlay" class="loading-overlay" style="display: none;">
     <div class="loader-content">
         <div class="spinner"><i class="fas fa-circle-notch fa-spin fa-3x text-primary"></i></div>
@@ -220,7 +226,7 @@
     .step-label { font-size: 0.75rem; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; color: var(--text-secondary); }
     .step-p.active .step-label { color: var(--accent-primary); }
     .step-line { flex: 1; height: 2px; background: var(--glass-border); margin: 0 10px; margin-top: -22px; position: relative; max-width: 200px; }
-    
+
     .wizard-content { display: none; }
     .wizard-content.active { display: block; animation: slideUp 0.4s ease-out forwards; }
 
@@ -253,13 +259,12 @@
 
     .step-inner-align { padding: 10px 40px !important; }
     .loading-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.85); backdrop-filter: blur(10px); display: flex; justify-content: center; align-items: center; z-index: 9999; }
-    
+
     @media (max-width: 768px) {
         .options-grid { grid-template-columns: 1fr; }
         .step-inner-align { padding: 10px 10px !important; }
     }
 
-    /* Jira Inline Styles */
     .jira-inline-section { margin-top: 20px; border: 1px solid var(--glass-border); border-radius: 12px; padding: 18px; background: rgba(0,0,0,0.25); }
     .jira-header-inline { margin-bottom: 18px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--glass-border); padding-bottom: 12px; }
     .jira-header-inline h4 { margin: 0; font-size: 1.05rem; display: flex; align-items: center; gap: 8px; color: var(--accent-primary); }
@@ -273,7 +278,6 @@
     .btn-outline-primary { border: 1px solid var(--accent-primary); color: var(--accent-primary); background: transparent; transition: all 0.3s; }
     .btn-outline-primary:hover { background: var(--accent-primary); color: white; box-shadow: 0 0 10px var(--accent-glow); }
 
-    /* Jira Type Badges */
     .jira-type-badge { font-size: 0.65rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; padding: 2px 8px; border-radius: 4px; }
     .jira-type-badge.epic { background: rgba(128,90,213,0.2); color: #a78bfa; border: 1px solid rgba(128,90,213,0.3); }
     .jira-type-badge.story { background: rgba(16,185,129,0.2); color: #6ee7b7; border: 1px solid rgba(16,185,129,0.3); }
@@ -282,6 +286,15 @@
     .badge.bg-purple { background: rgba(128,90,213,0.8) !important; }
     .jira-item .item-meta { display: flex; align-items: center; gap: 8px; }
     .jira-item .item-status { font-size: 0.65rem; padding: 1px 6px; border-radius: 3px; background: rgba(255,255,255,0.08); color: var(--text-secondary); }
+
+    .jira-child-checkbox { appearance: none; -webkit-appearance: none; width: 17px; height: 17px; border: 1.5px solid var(--glass-border); border-radius: 4px; background: rgba(255,255,255,0.04); cursor: pointer; flex-shrink: 0; transition: all 0.2s ease; position: relative; }
+    .jira-child-checkbox:checked { background: var(--accent-primary); border-color: var(--accent-primary); box-shadow: 0 0 8px var(--accent-glow); }
+    .jira-child-checkbox:checked::after { content: ''; position: absolute; top: 2px; left: 4px; width: 5px; height: 9px; border: 2px solid white; border-top: none; border-left: none; transform: rotate(45deg); }
+    .jira-item.has-checkbox { gap: 10px; align-items: center; }
+    .jira-detail-card { background: rgba(0,0,0,0.25); border: 1px solid var(--glass-border); border-radius: 8px; overflow: hidden; animation: slideUp 0.25s ease-out; }
+    .jira-detail-card-header { display: flex; align-items: center; justify-content: space-between; padding: 9px 14px; background: rgba(255,255,255,0.03); border-bottom: 1px solid var(--glass-border); }
+    .jira-detail-card-body { padding: 12px 14px; font-size: 0.85rem; line-height: 1.6; color: #cbd5e1; white-space: pre-wrap; max-height: 180px; overflow-y: auto; }
+    .jira-detail-loading { display: flex; align-items: center; gap: 8px; color: var(--text-secondary); font-size: 0.82rem; padding: 8px 0; }
 </style>
 {% endblock %}
 
@@ -293,7 +306,6 @@
     let currentStep = 1;
 
     function nextStep(step) {
-        // Update Indicators
         document.querySelectorAll('.step-p').forEach((el, idx) => {
             if (idx + 1 < step) {
                 el.classList.add('completed');
@@ -306,7 +318,6 @@
             }
         });
 
-        // Update Content
         document.querySelectorAll('.wizard-content').forEach(el => el.classList.remove('active'));
         document.getElementById(`step-${step}`).classList.add('active');
         currentStep = step;
@@ -361,10 +372,9 @@
         const data = await response.json();
         if (response.ok) {
             let content = data.content;
-            // Rule: AI often returns literal '\n' strings or markdown blocks. Clean them.
             content = content.replace(/\\n/g, '\n');
             content = content.replace(/```gherkin/g, '').replace(/```/g, '').trim();
-            
+
             document.getElementById('resultEditor').value = content;
             generatedFileDownloadName = data.filename || 'scenarios.feature';
         } else {
@@ -383,13 +393,13 @@
             const file = fileInput.files[0];
             targetFileName = 'formatted_' + file.name;
             ext = '.' + file.name.split('.').pop().toLowerCase();
-            
+
             if (['.xlsx', '.xls', '.csv'].includes(ext)) {
                 const arrayBuffer = await file.arrayBuffer();
                 const workbook = XLSX.read(arrayBuffer, { type: 'array' });
                 const worksheet = workbook.Sheets[workbook.SheetNames[0]];
                 const sheetJson = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
-                
+
                 let headers = sheetJson.find(row => row && row.length > 0);
                 if (headers) {
                     templateHeaders = headers.map(h => h ? h.toString().replace(/\n|\r|\|/g, ' ').trim() : "").filter(h => h);
@@ -414,15 +424,13 @@
         window.lastTemplateHeaders = templateHeaders;
         window.lastExtension = ext;
         generatedFileDownloadName = targetFileName;
-        
-        // Convert JSON to Markdown Table for preview
+
         let markdown = "| " + templateHeaders.join(" | ") + " |\n";
         markdown += "| " + templateHeaders.map(() => "---").join(" | ") + " |\n";
         testCases.forEach(tc => {
             let row = templateHeaders.map(h => {
                 let val = tc[h] || "";
                 if (typeof val === 'string') {
-                    // Use <br> to represent newlines inside the markdown table cell
                     val = val.replace(/\|/g, '-').replace(/\n|\r/g, '<br>');
                 }
                 return val;
@@ -438,7 +446,7 @@
         const ws = XLSX.utils.json_to_sheet(data, { header: headers });
         const wb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb, ws, "Test Cases");
-        
+
         if (ext === '.csv') {
             return new Blob([XLSX.utils.sheet_to_csv(ws)], { type: 'text/csv' });
         }
@@ -450,21 +458,20 @@
         const content = document.getElementById('resultEditor').value;
         if (!content) return;
 
-        // Try modern File System Access API for native "Save As" experience
         if ('showSaveFilePicker' in window) {
             try {
                 const opts = {
                     suggestedName: generatedFileDownloadName,
                     types: [{
                         description: selectedOptValue === 2 ? 'Excel/CSV Spreadsheet' : 'Cucumber Feature File',
-                        accept: selectedOptValue === 2 ? 
-                            { 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx'], 'text/csv': ['.csv'] } : 
+                        accept: selectedOptValue === 2 ?
+                            { 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx'], 'text/csv': ['.csv'] } :
                             { 'text/plain': ['.feature', '.txt'] },
                     }],
                 };
                 const handle = await window.showSaveFilePicker(opts);
                 const writable = await handle.createWritable();
-                
+
                 let dataToSave;
                 if (selectedOptValue === 2) {
                     const parsedData = parseMarkdownTable(content);
@@ -473,17 +480,16 @@
                 } else {
                     dataToSave = new Blob([content], { type: 'text/plain' });
                 }
-                
+
                 await writable.write(dataToSave);
                 await writable.close();
-                return; // Success
+                return;
             } catch (err) {
                 if (err.name === 'AbortError') return;
                 console.error("Native Save failed, falling back:", err);
             }
         }
 
-        // Fallback: Original Prompt + Blob Download
         const suggestedName = prompt("Enter filename to save:", generatedFileDownloadName);
         if (!suggestedName) return;
 
@@ -512,25 +518,24 @@
     function parseMarkdownTable(content) {
         const lines = content.trim().split('\n');
         if (lines.length < 2) throw new Error("Invalid table format");
-        
+
         let headerLine = lines[0].trim();
         headerLine = headerLine.replace(/^\||\|$/g, '');
         const headers = headerLine.split('|').map(h => h.trim()).filter(h => h);
-        
+
         const data = [];
-        
+
         for (let i = 2; i < lines.length; i++) {
             let rowStr = lines[i].trim();
             if (!rowStr) continue;
-            
+
             rowStr = rowStr.replace(/^\||\|$/g, '');
             const cells = rowStr.split('|').map(c => c.trim());
-            
+
             if (cells.length > 0) {
                 let obj = {};
                 headers.forEach((h, idx) => {
                     let cellVal = cells[idx] || "";
-                    // Convert <br> back to real newlines for the downloaded file
                     obj[h] = cellVal.replace(/<br\s*\/?>/gi, '\n');
                 });
                 data.push(obj);
@@ -547,12 +552,12 @@
         setTimeout(() => btn.innerHTML = '<i class="fas fa-copy"></i> Copy', 2000);
     }
 
-    // Jira Integration Logic
     const BACKEND_URL = 'http://127.0.0.1:8000';
     let currentJiraProject = null;
     let currentJiraEpic = null;
     let currentJiraStory = null;
-    let detailBackTarget = null; // tracks which view to return to from detail
+    let detailBackTarget = null;
+    let checkedChildren = {};
 
     function hideAllJiraViews() {
         ['jiraProjectsView','jiraEpicsView','jiraStoriesView','jiraChildrenView','jiraDetailView']
@@ -662,15 +667,29 @@
             stories.forEach(s => {
                 const badgeClass = getTypeBadgeClass(s.type);
                 const item = document.createElement('div');
-                item.className = 'jira-item';
-                item.onclick = () => selectJiraStory(s);
-                item.innerHTML = `
+                item.className = 'jira-item has-checkbox';
+                item.dataset.key = s.key;
+
+                const cb = document.createElement('input');
+                cb.type = 'checkbox';
+                cb.className = 'jira-child-checkbox';
+                cb.id = 'cb_' + s.key;
+                if (checkedChildren[s.key]) cb.checked = true;
+                cb.addEventListener('change', () => onChildCheckChange(s, cb.checked));
+
+                const info = document.createElement('div');
+                info.style.cssText = 'display:flex; align-items:center; justify-content:space-between; flex:1; cursor:pointer;';
+                info.innerHTML = `
                     <span class="item-name">${s.summary}</span>
                     <div class="item-meta">
                         <span class="jira-type-badge ${badgeClass}">${s.type}</span>
                         <span class="item-status">${s.status}</span>
                         <span class="item-key">${s.key}</span>
                     </div>`;
+                info.onclick = () => selectJiraStory(s);
+
+                item.appendChild(cb);
+                item.appendChild(info);
                 listEl.appendChild(item);
             });
         } catch (error) {
@@ -690,29 +709,143 @@
         const listEl = document.getElementById('jiraChildList');
         listEl.innerHTML = '<div class="text-center py-3"><i class="fas fa-spinner fa-spin"></i> Loading tasks & sub-tasks...</div>';
 
+        // Preserving checkedChildren across navigation
+
         try {
             const response = await fetch(`${BACKEND_URL}/jira/stories/${currentJiraStory.key}/children`);
             if (!response.ok) throw new Error('Failed to fetch children');
             const children = await response.json();
-            if (children.length === 0) { listEl.innerHTML = '<div class="text-center py-3 text-secondary">No tasks or sub-tasks found under this story.</div>'; return; }
+            if (children.length === 0) {
+                listEl.innerHTML = '<div class="text-center py-3 text-secondary">No tasks or sub-tasks found under this story.</div>';
+                return;
+            }
             listEl.innerHTML = '';
             children.forEach(c => {
                 const badgeClass = getTypeBadgeClass(c.type);
                 const item = document.createElement('div');
-                item.className = 'jira-item';
-                item.onclick = () => showIssueDetail(c, 'children');
-                item.innerHTML = `
+                item.className = 'jira-item has-checkbox';
+                item.dataset.key = c.key;
+
+                const cb = document.createElement('input');
+                cb.type = 'checkbox';
+                cb.className = 'jira-child-checkbox';
+                cb.id = 'cb_' + c.key;
+                if (checkedChildren[c.key]) cb.checked = true;
+                cb.addEventListener('change', () => onChildCheckChange(c, cb.checked));
+
+                const info = document.createElement('div');
+                info.style.cssText = 'display:flex; align-items:center; justify-content:space-between; flex:1; cursor:pointer;';
+                info.innerHTML = `
                     <span class="item-name">${c.summary}</span>
                     <div class="item-meta">
                         <span class="jira-type-badge ${badgeClass}">${c.type}</span>
                         <span class="item-status">${c.status}</span>
                         <span class="item-key">${c.key}</span>
                     </div>`;
+                info.onclick = () => { cb.checked = !cb.checked; onChildCheckChange(c, cb.checked); };
+
+                item.appendChild(cb);
+                item.appendChild(info);
                 listEl.appendChild(item);
             });
         } catch (error) {
             listEl.innerHTML = `<div class="text-center py-3 text-danger">Error: ${error.message}</div>`;
         }
+    }
+
+    async function onChildCheckChange(issue, isChecked) {
+        const panel = document.getElementById('jiraSelectedDetailsPanel');
+        const container = document.getElementById('jiraDetailCardsContainer');
+
+        if (isChecked) {
+            checkedChildren[issue.key] = { issue, description: null };
+            const card = createDetailCard(issue, null);
+            card.id = 'detail-card-' + issue.key;
+            container.appendChild(card);
+            panel.style.display = 'block';
+            updateSelectedCount();
+
+            try {
+                const response = await fetch(`${BACKEND_URL}/jira/tasks/${issue.key}`);
+                if (!response.ok) throw new Error('Failed to fetch');
+                const detail = await response.json();
+                checkedChildren[issue.key].description = detail.description;
+
+                const bodyEl = document.querySelector(`#detail-card-${issue.key} .jira-detail-card-body`);
+                if (bodyEl) bodyEl.textContent = detail.description || '(No description)';
+            } catch (err) {
+                const bodyEl = document.querySelector(`#detail-card-${issue.key} .jira-detail-card-body`);
+                if (bodyEl) bodyEl.innerHTML = `<span style="color:#f87171;">Error loading description</span>`;
+            }
+        } else {
+            delete checkedChildren[issue.key];
+            const card = document.getElementById('detail-card-' + issue.key);
+            if (card) {
+                card.style.opacity = '0';
+                card.style.transform = 'translateX(-8px)';
+                card.style.transition = 'all 0.2s ease';
+                setTimeout(() => card.remove(), 200);
+            }
+            updateSelectedCount();
+            if (Object.keys(checkedChildren).length === 0) {
+                setTimeout(() => { panel.style.display = 'none'; }, 220);
+            }
+        }
+    }
+
+    function createDetailCard(issue, description) {
+        const badgeClass = getTypeBadgeClass(issue.type || '');
+        const card = document.createElement('div');
+        card.className = 'jira-detail-card';
+        card.style.transition = 'all 0.2s ease';
+        card.innerHTML = `
+            <div class="jira-detail-card-header">
+                <div style="display:flex; align-items:center; gap:8px;">
+                    <span class="item-key" style="font-size:0.8rem;">${issue.key}</span>
+                    <span class="jira-type-badge ${badgeClass}">${issue.type || 'Issue'}</span>
+                </div>
+                <span style="font-size:0.82rem; color:var(--text-secondary); max-width:55%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${issue.summary}</span>
+            </div>
+            <div class="jira-detail-card-body">
+                ${description !== null
+                    ? (description || '(No description)')
+                    : '<div class="jira-detail-loading"><i class="fas fa-spinner fa-spin"></i> Loading description...</div>'}
+            </div>`;
+        return card;
+    }
+
+    function updateSelectedCount() {
+        const count = Object.keys(checkedChildren).length;
+        document.getElementById('selectedCountBadge').textContent = count + ' selected';
+    }
+
+    function clearChildSelections() {
+        Object.keys(checkedChildren).forEach(key => {
+            const cb = document.getElementById('cb_' + key);
+            if (cb) cb.checked = false;
+        });
+        checkedChildren = {};
+        document.getElementById('jiraDetailCardsContainer').innerHTML = '';
+        document.getElementById('jiraSelectedDetailsPanel').style.display = 'none';
+    }
+
+    function copyAllSelectedDescriptions() {
+        const parts = Object.values(checkedChildren).map(({ issue, description }) => {
+            return `[${issue.key}] ${issue.summary}\n${description || '(No description)'}`;
+        });
+        if (parts.length === 0) return;
+        const combined = parts.join('\n\n---\n\n');
+        document.getElementById('requirementInput').value = combined;
+
+        const btn = document.querySelector('#jiraSelectedDetailsPanel .btn-primary');
+        const orig = btn.innerHTML;
+        btn.innerHTML = '<i class="fas fa-check"></i> Copied to Input!';
+        btn.classList.replace('btn-primary', 'btn-success');
+        setTimeout(() => {
+            btn.innerHTML = orig;
+            btn.classList.replace('btn-success', 'btn-primary');
+            toggleJiraSection();
+        }, 1500);
     }
 
     async function showIssueDetail(issue, backTo) {
@@ -725,7 +858,6 @@
         typeEl.className = 'jira-type-badge ' + badgeClass;
         typeEl.innerText = issue.type || 'Issue';
 
-        // Wire back button
         const backBtn = document.getElementById('detailBackBtn');
         backBtn.onclick = () => {
             if (backTo === 'children') showJiraChildren();

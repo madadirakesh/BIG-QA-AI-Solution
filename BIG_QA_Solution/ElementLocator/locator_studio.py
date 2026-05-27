@@ -106,9 +106,16 @@ class LocatorStudio(QMainWindow):
         self.splitter.addWidget(self.dashboard_view)
         self.splitter.addWidget(self.browser_view)
         
-        # 30% Dashboard, 70% Browser
+        # 30% Dashboard, 70% Browser — set explicit ratio + minimum widths for laptop screens
         self.splitter.setStretchFactor(0, 3)
         self.splitter.setStretchFactor(1, 7)
+        
+        # Enforce minimum panel widths so neither collapses on small screens
+        self.dashboard_view.setMinimumWidth(380)
+        self.browser_view.setMinimumWidth(400)
+        
+        # Set initial proportional sizes based on 1600px window width
+        self.splitter.setSizes([480, 1120])
         
         layout.addWidget(self.splitter)
         self.setCentralWidget(central_widget)
@@ -158,6 +165,10 @@ class LocatorStudio(QMainWindow):
                     self.browser_ctrl.view.forward()
                 elif direction == "reload":
                     self.browser_ctrl.view.reload()
+
+            elif action == "show_message":
+                msg = payload.get("message", "")
+                QMessageBox.warning(self, "Locator Studio", msg)
 
             elif action == "verify_locator":
                 l_type = payload.get("type")
@@ -298,7 +309,22 @@ class LocatorStudio(QMainWindow):
                 except Exception as e:
                     QMessageBox.critical(self, "DB Error", str(e))
 
-            elif action == "smart_merge_request":
+            elif action == "init_merge_modal":
+                locators = payload.get("locators", [])
+                tool = payload.get("tool", "Playwright")
+                lang = payload.get("lang", "TypeScript")
+                
+                title_cl = "".join(c for c in self.browser_ctrl.view.page().title() if c.isalnum())
+                if not title_cl: title_cl = "MyPage"
+                new_code = CodeGenerator.generate_class_content(tool, lang, title_cl, locators)
+                
+                self.bridge.mergePreviewReady.emit(json.dumps({
+                    "target_file": "",
+                    "new_code": new_code,
+                    "merged_code": ""
+                }))
+
+            elif action == "browse_merge_file":
                 locators = payload.get("locators", [])
                 tool = payload.get("tool", "Playwright")
                 lang = payload.get("lang", "TypeScript")
@@ -309,7 +335,6 @@ class LocatorStudio(QMainWindow):
                         with open(fname, 'r', encoding='utf-8') as f:
                             current_code = f.read()
                             
-                        # Generate the new chunk just to show
                         title_cl = "".join(c for c in self.browser_ctrl.view.page().title() if c.isalnum())
                         if not title_cl: title_cl = "MyPage"
                         new_code = CodeGenerator.generate_class_content(tool, lang, title_cl, locators)
@@ -319,10 +344,38 @@ class LocatorStudio(QMainWindow):
                         self.bridge.mergePreviewReady.emit(json.dumps({
                             "target_file": fname,
                             "new_code": new_code,
-                            "merged_code": merged_code
+                            "merged_code": merged_code,
+                            "original_code": current_code
                         }))
                     except Exception as e:
                         QMessageBox.critical(self, "Merge Error", f"Failed to read file: {e}")
+
+            elif action == "refresh_merge_preview":
+                locators = payload.get("locators", [])
+                tool = payload.get("tool", "Playwright")
+                lang = payload.get("lang", "TypeScript")
+                file_path = payload.get("file_path", "")
+                
+                try:
+                    title_cl = "".join(c for c in self.browser_ctrl.view.page().title() if c.isalnum())
+                    if not title_cl: title_cl = "MyPage"
+                    new_code = CodeGenerator.generate_class_content(tool, lang, title_cl, locators)
+                    
+                    merged_code = ""
+                    current_code = ""
+                    if file_path and os.path.exists(file_path):
+                        with open(file_path, 'r', encoding='utf-8') as f:
+                            current_code = f.read()
+                        merged_code = MergeEngine.merge_locators(current_code, locators, tool, lang)
+                    
+                    self.bridge.mergePreviewReady.emit(json.dumps({
+                        "target_file": file_path,
+                        "new_code": new_code,
+                        "merged_code": merged_code,
+                        "original_code": current_code
+                    }))
+                except Exception as e:
+                    logging.error(f"Error in refresh_merge_preview: {e}")
 
             elif action == "smart_merge_confirm":
                 file_path = payload.get("file_path")

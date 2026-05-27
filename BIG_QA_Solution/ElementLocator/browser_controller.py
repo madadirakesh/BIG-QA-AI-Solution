@@ -2,12 +2,12 @@ import os
 import json
 import time
 from PyQt6.QtCore import QObject, pyqtSlot, pyqtSignal, QUrl, QTimer, QFile, QIODevice, QTextStream
+from PyQt6.QtWidgets import QTabWidget, QVBoxLayout, QWidget
 from PyQt6.QtWebEngineWidgets import QWebEngineView
-from PyQt6.QtWebEngineCore import QWebEnginePage, QWebEngineScript, QWebEngineProfile
+from PyQt6.QtWebEngineCore import QWebEnginePage, QWebEngineScript, QWebEngineProfile, QWebEngineNewWindowRequest
 from PyQt6.QtWebChannel import QWebChannel
 
 class PyBridge(QObject):
-    # Signal emitted when locators are received from JS
     locatorsReceived = pyqtSignal(list)
 
     def __init__(self):
@@ -20,122 +20,213 @@ class PyBridge(QObject):
         try:
             data = json.loads(json_payload)
             if not data: return
-            
+
             cid = data[0].get("cid", "")
             if cid and cid in self.seen_cids:
                 return
             if cid: self.seen_cids.add(cid)
-            
-            # Catch ghost clicks from different iframes/listeners within 1 second
+
             now = time.time()
             if now - self.last_capture_time < 1.0:
                 return
             self.last_capture_time = now
 
-            with open("debug_poll.log", "a") as f: f.write(f"RECEIVED FROM NATIVE BRIDGE: {len(data)} locators\\n")
+            with open("debug_poll.log", "a") as f: f.write(f"RECEIVED FROM NATIVE BRIDGE: {len(data)} locators\n")
             self.locatorsReceived.emit(data)
         except Exception as e:
             print(f"Failed to parse payload from JS: {e}")
 
-class CustomWebEnginePage(QWebEnginePage):
+
+class SafeWebEnginePage(QWebEnginePage):
+    """A page that silently accepts SSL errors."""
     def certificateError(self, error):
-        # Ignore SSL errors which frequently block local staging sites in QA tools
         return True
+
 
 class BrowserController(QObject):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.view = QWebEngineView()
         
-        # Override the page with our custom page that ignores SSL errors
-        self.custom_page = CustomWebEnginePage(self.view)
-        self.view.setPage(self.custom_page)
-        self.view.setUrl(QUrl("about:blank"))
+        # The main UI container is now a Tab Widget
+        self.tabs = QTabWidget()
+        self.tabs.setTabsClosable(True)
+        self.tabs.tabCloseRequested.connect(self._close_tab)
         
-        # Setup channel
-        self.channel = QWebChannel()
+        # Styles for the tab bar to blend with the studio
+        self.tabs.setStyleSheet("""
+            QTabWidget::pane { border: 1px solid #1e293b; border-radius: 4px; }
+            QTabBar::tab { background: #0f172a; color: #94a3b8; padding: 8px 16px; border: 1px solid #1e293b; border-bottom: none; border-top-left-radius: 4px; border-top-right-radius: 4px; }
+            QTabBar::tab:selected { background: #1e293b; color: #ffffff; font-weight: bold; }
+            QTabBar::tab:hover:!selected { background: #1e293b; }
+            QTabBar::close-button { image: url(''); }
+        """)
+
+        # Shared Python bridge
         self.pybridge = PyBridge()
-        self.channel.registerObject("pybridge", self.pybridge)
-        self.view.page().setWebChannel(self.channel)
-        
+        self.browser_instances = []
         self.is_capturing = False
 
-        # Inject scripts into all frames
-        profile = self.view.page().profile()
+        self._inspector_js = self._get_inspector_js()
+        self._qwebchannel_js = self._get_qwebchannel_js()
+
+        # Create the initial default tab
+        self._create_new_tab("about:blank", "Main Page")
+
+        # Polling fallback to drain buffers and heal broken states
+        self.poll_timer = QTimer(self)
+        self.poll_timer.timeout.connect(self._poll_capture_buffer)
+        self.poll_timer.start(1000)
+
+    def _create_new_tab(self, url: str = "", title: str = "New Tab") -> QWebEngineView:
+        view = QWebEngineView()
+        page = SafeWebEnginePage(view)
+        view.setPage(page)
+
+        # Isolated channel per tab, but shared pybridge QObject
+        channel = QWebChannel(view)
+        channel.registerObject("pybridge", self.pybridge)
+        page.setWebChannel(channel)
+
+        # Inject scripts into this tab's profile
+        profile = page.profile()
         scripts = profile.scripts()
         script = QWebEngineScript()
-        code = self._get_qwebchannel_js() + "\n" + self._get_inspector_js()
+        code = self._qwebchannel_js + "\n" + self._inspector_js
         script.setSourceCode(code)
-        script.setName("inspector")
+        script.setName(f"inspector_{id(view)}")
         script.setWorldId(QWebEngineScript.ScriptWorldId.MainWorld)
         script.setInjectionPoint(QWebEngineScript.InjectionPoint.DocumentReady)
         script.setRunsOnSubFrames(True)
         scripts.insert(script)
 
-        self.view.loadFinished.connect(self._on_load_finished)
+        # Connect signals
+        view.loadFinished.connect(lambda ok, v=view: self._on_load_finished(ok, v))
+        page.newWindowRequested.connect(self._on_new_window_requested)
 
-        # Polling fallback to drain the unbreakable capture buffer
-        self.poll_timer = QTimer(self)
-        self.poll_timer.timeout.connect(self._poll_capture_buffer)
-        self.poll_timer.start(1000)
+        self.browser_instances.append({
+            'view': view,
+            'channel': channel,
+            'page': page
+        })
+
+        idx = self.tabs.addTab(view, title)
+        self.tabs.setCurrentIndex(idx)
+
+        if url and url != "about:blank":
+            view.setUrl(QUrl(url))
+
+        return view
+
+    def _close_tab(self, index):
+        if self.tabs.count() <= 1:
+            return  # Prevent closing the last tab
+
+        view = self.tabs.widget(index)
+        self.tabs.removeTab(index)
+
+        # Cleanup memory
+        for inst in self.browser_instances:
+            if inst['view'] == view:
+                self.browser_instances.remove(inst)
+                view.deleteLater()
+                break
+
+    def _on_new_window_requested(self, request: QWebEngineNewWindowRequest):
+        """Intercept target=_blank and open cleanly in a new tab inside our QTabWidget."""
+        url = request.requestedUrl().toString()
+        if not url or url == "about:blank":
+            return
+        
+        # Create a new tab immediately, but don't set its URL (Chromium will do it)
+        new_view = self._create_new_tab(url="", title="Loading...")
+        
+        # Tell Chromium to fulfill the popup request by routing it into our new tab's page
+        request.openIn(new_view.page())
+
+    def _on_load_finished(self, ok, view):
+        if not ok: return
+        
+        # Update tab title
+        idx = self.tabs.indexOf(view)
+        if idx >= 0:
+            title = view.title() or "New Tab"
+            self.tabs.setTabText(idx, title[:20])
+
+        # Force script injection on load to guarantee it didn't miss
+        js_force = f"""
+        if (typeof window.activateDesktopInspector === 'undefined') {{
+            {self._qwebchannel_js}
+            {self._inspector_js}
+        }}
+        """
+        view.page().runJavaScript(js_force)
+
+        # Re-activate inspector if we are in capturing mode
+        if self.is_capturing:
+            view.page().runJavaScript("if (typeof window.activateDesktopInspector === 'function') { window.activateDesktopInspector(); }")
 
     def _poll_capture_buffer(self):
-        # We periodically ask the main window to drain its _captureBuffer
-        self.view.page().runJavaScript("if (typeof window._drainCaptureBuffer === 'function') { window._drainCaptureBuffer(); }", self._on_drain_result)
+        for inst in self.browser_instances:
+            view = inst['view']
+            view.page().runJavaScript("if (typeof window._drainCaptureBuffer === 'function') { window._drainCaptureBuffer(); }", self._on_drain_result)
+            if self.is_capturing:
+                view.page().runJavaScript("if (typeof window.activateDesktopInspector === 'function' && !window.desktopInspectorActive) { window.activateDesktopInspector(); }")
 
     def _on_drain_result(self, result):
         if result and result != "[]":
             try:
                 batches = json.loads(result)
-                with open("debug_poll.log", "a") as f: f.write(f"RECEIVED FROM TIMER: {len(batches)} batches\\n")
                 for payload in batches:
                     if not payload: continue
                     cid = payload[0].get("cid", "")
-                    if cid and cid in self.pybridge.seen_cids:
-                        continue
+                    if cid and cid in self.pybridge.seen_cids: continue
                     if cid: self.pybridge.seen_cids.add(cid)
-                    
                     now = time.time()
-                    if now - self.pybridge.last_capture_time < 1.0:
-                        continue
+                    if now - self.pybridge.last_capture_time < 1.0: continue
                     self.pybridge.last_capture_time = now
-                    
                     self.pybridge.locatorsReceived.emit(payload)
             except Exception as e:
-                with open("debug_poll.log", "a") as f:
-                    f.write(f"Error parsing drained buffer: {e}\\nRaw result: {result}\\n")
+                pass
+
+    @property
+    def view(self):
+        """Proxy property to maintain backward compatibility with locator_studio.py."""
+        return self.tabs.currentWidget()
 
     def get_ui_component(self):
-        return self.view
+        return self.tabs
 
     def load_url(self, url_str: str):
-        url_str = url_str.strip()
-        if not url_str.startswith("http"):
-            url_str = "https://" + url_str
-        self.view.setUrl(QUrl(url_str))
-
-    def _on_load_finished(self, ok):
-        if not ok:
-            return
-
-        # If currently capturing, re-activate
-        if self.is_capturing:
-            self.view.page().runJavaScript("if (typeof window.activateDesktopInspector === 'function') { window.activateDesktopInspector(); }")
+        current_view = self.tabs.currentWidget()
+        if not current_view and self.browser_instances:
+            current_view = self.browser_instances[0]['view']
+            
+        if current_view:
+            url_str = url_str.strip()
+            if not url_str.startswith("http"):
+                url_str = "https://" + url_str
+            current_view.setUrl(QUrl(url_str))
 
     def start_capturing(self):
         self.is_capturing = True
-        self.view.page().runJavaScript("if (typeof window.activateDesktopInspector === 'function') { window.activateDesktopInspector(); }")
+        for inst in self.browser_instances:
+            inst['view'].page().runJavaScript("if (typeof window.activateDesktopInspector === 'function') { window.activateDesktopInspector(); }")
 
     def stop_capturing(self):
         self.is_capturing = False
-        self.view.page().runJavaScript("if (typeof window.deactivateDesktopInspector === 'function') { window.deactivateDesktopInspector(); }")
+        for inst in self.browser_instances:
+            inst['view'].page().runJavaScript("if (typeof window.deactivateDesktopInspector === 'function') { window.deactivateDesktopInspector(); }")
 
     def freeze_page(self, duration_ms: int):
-        self.view.page().runJavaScript(f"if (typeof window.freezePage === 'function') window.freezePage({duration_ms});")
+        current_view = self.tabs.currentWidget()
+        if current_view:
+            current_view.page().runJavaScript(f"if (typeof window.freezePage === 'function') window.freezePage({duration_ms});")
 
     def highlight_element(self, selector_type: str, selector_value: str):
         safe_val = json.dumps(selector_value)
-        self.view.page().runJavaScript(f"if (typeof window.highlightElementByLocator === 'function') window.highlightElementByLocator('{selector_type}', {safe_val});")
+        current_view = self.tabs.currentWidget()
+        if current_view:
+            current_view.page().runJavaScript(f"if (typeof window.highlightElementByLocator === 'function') window.highlightElementByLocator('{selector_type}', {safe_val});")
 
     def _get_inspector_js(self) -> str:
         script_path = os.path.join(os.path.dirname(__file__), "desktop_inspector.js")
@@ -153,3 +244,4 @@ class BrowserController(QObject):
             file.close()
             return content
         return ""
+
