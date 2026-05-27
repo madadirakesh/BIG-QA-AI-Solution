@@ -130,13 +130,13 @@
             color: white !important;
         }
 
-        /* Staggered Entry Animation */
+        /* Staggered Entry Animation — only for newly appended items, NOT on re-renders */
         @keyframes slideInUp {
-            from { opacity: 0; transform: translateY(15px); }
+            from { opacity: 0; transform: translateY(12px); }
             to { opacity: 1; transform: translateY(0); }
         }
-        .feed-item {
-            animation: slideInUp 0.35s ease-out forwards;
+        .feed-item--new {
+            animation: slideInUp 0.3s ease-out forwards;
         }
 
         .header {
@@ -180,8 +180,7 @@
 
         .card {
             background: var(--bg-card);
-            backdrop-filter: blur(16px);
-            -webkit-backdrop-filter: blur(16px);
+            /* backdrop-filter removed: causes severe lag in software-render mode (--disable-gpu) */
             border: 1px solid var(--glass-border);
             border-radius: var(--border-radius);
             padding: 12px 14px;
@@ -2001,6 +2000,88 @@
             updateStatusBar();
         }
 
+        // Lightweight in-place update — swaps only visible text/colors for one card, no DOM rebuild
+        function renderSingleItem(idx) {
+            if (idx < 0 || idx >= capturedElements.length) { renderQueue(); return; }
+            const el = capturedElements[idx];
+            const count = el.count;
+            const badgeColor = count === 1 ? 'var(--success)' : (count === 0 ? 'var(--danger)' : 'var(--warning)');
+            const badgeText  = count === 1 ? 'Unique [OK]' : (count != null ? `${count} matches` : '? matches');
+            const itemEl = document.getElementById(`locator-item-${idx}`);
+            if (!itemEl) { renderQueue(); return; }
+            itemEl.style.borderLeftColor = badgeColor;
+            const badge = document.getElementById(`match-badge-${idx}`);
+            if (badge) { badge.textContent = badgeText; badge.style.color = badgeColor; }
+            const typeEl = document.getElementById(`locator-type-${idx}`);
+            if (typeEl) typeEl.textContent = el.type;
+            const valEl = document.getElementById(`locator-val-${idx}`);
+            if (valEl) { valEl.textContent = el.value; valEl.style.color = badgeColor; valEl.title = el.value; }
+            const nameInput = itemEl.querySelector('.element-name-input');
+            if (nameInput && document.activeElement !== nameInput) nameInput.value = el.nameHint || 'element';
+        }
+
+        // Append a single new card without wiping the whole list
+        function appendNewItem(idx) {
+            const queue = document.getElementById('elementQueue');
+            if (!capturedElements[idx]) return;
+            const placeholder = queue.querySelector('[style*="text-align:center"]');
+            if (placeholder) placeholder.remove();
+            const el = capturedElements[idx];
+            const count = el.count;
+            const badgeColor = count === 1 ? 'var(--success)' : (count === 0 ? 'var(--danger)' : 'var(--warning)');
+            const badgeText  = count === 1 ? 'Unique [OK]' : (count != null ? `${count} matches` : '? matches');
+            const borderColor = badgeColor;
+            const alts = el.alternatives || [];
+            const altsHtml = alts.map((l, i) => {
+                const c = l.count ?? '?';
+                const col = c === 1 ? '#10b981' : c > 1 ? '#f59e0b' : '#ef4444';
+                return `<div style="display:flex;align-items:center;gap:6px;padding:4px 0;border-bottom:1px solid rgba(255,255,255,0.05);"><span style="font-size:0.65rem;padding:1px 5px;border-radius:3px;background:rgba(255,255,255,0.07);color:${col};min-width:18px;text-align:center;">${c}</span><span style="font-size:0.7rem;color:var(--text-secondary);min-width:80px;">${l.type}</span><span style="font-size:0.7rem;font-family:monospace;color:var(--text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;" title="${l.value}">${l.value}</span><button onclick="selectAlternativeByIndex(${idx}, ${i})" style="font-size:0.65rem;padding:2px 6px;border-radius:4px;background:rgba(99,102,241,0.2);border:1px solid var(--accent);color:var(--accent);cursor:pointer;">Use</button></div>`;
+            }).join('');
+            const item = document.createElement('div');
+            item.className = 'feed-item feed-item--new';
+            item.draggable = true;
+            item.id = `locator-item-${idx}`;
+            item.style.borderLeftColor = borderColor;
+            item.style.flexDirection = 'row';
+            item.style.alignItems = 'flex-start';
+            item.style.gap = '4px';
+            item.addEventListener('dragstart', (e) => { draggedItemIdx = idx; item.classList.add('dragging'); e.dataTransfer.effectAllowed = 'move'; });
+            item.addEventListener('dragover', (e) => { e.preventDefault(); item.style.borderTop = '2px solid var(--accent)'; });
+            item.addEventListener('dragleave', () => { item.style.borderTop = 'none'; });
+            item.addEventListener('drop', (e) => { e.preventDefault(); item.style.borderTop = 'none'; if (draggedItemIdx === null || draggedItemIdx === idx) return; const movedItem = capturedElements.splice(draggedItemIdx, 1)[0]; capturedElements.splice(idx, 0, movedItem); renderQueue(); });
+            item.addEventListener('dragend', () => { item.classList.remove('dragging'); draggedItemIdx = null; });
+            item.innerHTML = `
+                <div class="drag-handle" title="Drag to reorder" style="flex-shrink:0;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="5" r="1"></circle><circle cx="9" cy="12" r="1"></circle><circle cx="9" cy="19" r="1"></circle><circle cx="15" cy="5" r="1"></circle><circle cx="15" cy="12" r="1"></circle><circle cx="15" cy="19" r="1"></circle></svg></div>
+                <div style="display:flex;flex-direction:column;flex:1;min-width:0;">
+                    <div class="feed-item-info" style="width:100%;min-width:0;">
+                        <div class="feed-item-title" style="display:flex;align-items:center;min-width:0;width:100%;">
+                            <input type="text" class="element-name-input" value="${el.nameHint || 'element'}" onchange="updateNameHint(${idx}, this.value)" style="background:transparent;border:none;color:white;font-weight:bold;font-size:0.85rem;outline:none;border-bottom:1px dashed rgba(255,255,255,0.3);width:auto;flex-grow:1;min-width:80px;max-width:180px;padding:2px 0;" title="Click to edit element name" />
+                            <span id="match-badge-${idx}" style="font-size:0.65rem;padding:2px 6px;border-radius:4px;background:rgba(0,0,0,0.3);color:${badgeColor};margin-left:6px;">${badgeText}</span>
+                        </div>
+                        <div id="locator-type-${idx}" style="font-size:0.7rem;color:var(--text-secondary);margin:3px 0 1px;">${el.type}</div>
+                        <div id="locator-val-${idx}" style="font-size:0.75rem;font-family:monospace;color:${badgeColor};word-break:break-all;margin-bottom:8px;" title="${el.value}">${el.value}</div>
+                        <div style="display:flex;align-items:center;justify-content:space-between;width:100%;margin-top:8px;">
+                            <select onchange="updateAction(${idx}, this.value)" style="flex:1;min-width:120px;padding:5px 8px;font-size:0.78rem;font-weight:500;background:rgba(0,0,0,0.6);border-radius:6px;color:#60a5fa;border:1px solid rgba(96,165,250,0.4);cursor:pointer;outline:none;text-overflow:ellipsis;white-space:nowrap;overflow:hidden;box-shadow:0 0 8px rgba(0,0,0,0.2);">
+                                <optgroup label="Basic"><option value="Click" ${el.action==='Click'?'selected':''}>Click</option><option value="Type" ${el.action==='Type'?'selected':''}>Type</option><option value="Clear" ${el.action==='Clear'?'selected':''}>Clear</option></optgroup>
+                                <optgroup label="Mouse"><option value="Hover" ${el.action==='Hover'?'selected':''}>Hover</option><option value="DoubleClick" ${el.action==='DoubleClick'?'selected':''}>DoubleClick</option><option value="RightClick" ${el.action==='RightClick'?'selected':''}>ContextClick</option></optgroup>
+                                <optgroup label="State / Data"><option value="GetText" ${el.action==='GetText'?'selected':''}>GetText</option><option value="IsDisplayed" ${el.action==='IsDisplayed'?'selected':''}>IsDisplayed</option><option value="WaitForVisible" ${el.action==='WaitForVisible'?'selected':''}>WaitForVisible</option><option value="ScrollIntoView" ${el.action==='ScrollIntoView'?'selected':''}>ScrollIntoView</option></optgroup>
+                                <optgroup label="Specifics"><option value="SelectByVisibleText" ${el.action==='SelectByVisibleText'?'selected':''}>Select</option><option value="Check" ${el.action==='Check'?'selected':''}>Check</option><option value="Uncheck" ${el.action==='Uncheck'?'selected':''}>Uncheck</option></optgroup>
+                            </select>
+                            <div style="display:flex;gap:4px;flex-shrink:0;">
+                                <button class="action-icon-btn btn-highlight" onclick="highlightItem(${idx})" title="Highlight in Browser"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg></button>
+                                <button class="action-icon-btn btn-copy" onclick="copyLocator(${idx}, this)" title="Copy Locator"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg></button>
+                                <button class="action-icon-btn btn-ai" onclick="generateAILocators(${idx})" title="AI Suggest Unique Locator"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.64 3.64-1.28-1.28a1.21 1.21 0 0 0-1.72 0L2.36 18.64a1.21 1.21 0 0 0 0 1.72l1.28 1.28a1.2 1.2 0 0 0 1.72 0L21.64 5.36a1.2 1.2 0 0 0 0-1.72Z"></path><path d="m14 7 3 3"></path><path d="M5 6v4"></path><path d="M19 14v4"></path><path d="M10 2v2"></path><path d="M7 8H3"></path><path d="M21 16h-4"></path><path d="M11 3H9"></path></svg></button>
+                                <button class="action-icon-btn btn-alts" onclick="toggleAlts(${idx})" title="Show All Alternatives"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"></polygon><polyline points="2 12 12 17 22 12"></polyline><polyline points="2 17 12 22 22 17"></polyline></svg></button>
+                                <button class="action-icon-btn btn-delete" onclick="deleteItem(${idx})" title="Delete Element"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg></button>
+                            </div>
+                        </div>
+                    </div>
+                    ${alts.length > 0 ? `<div id="alts-${idx}" style="display:none;width:100%;margin-top:10px;padding-top:8px;border-top:1px solid rgba(255,255,255,0.08);"><div style="font-size:0.7rem;color:var(--text-secondary);margin-bottom:6px;"><i class="fas fa-layer-group"></i> All Locator Alternatives (${alts.length})</div>${altsHtml}</div>` : ''}
+                </div>`;
+            queue.appendChild(item);
+            updateStatusBar();
+        }
+
         function addCapturedElement(locators) {
             if (!locators || locators.length === 0) return;
             
@@ -2036,10 +2117,9 @@
             bestLoc.action = 'Click';
             bestLoc.alternatives = ranked.filter(l => l !== bestLoc).slice(0, 8);
             
-            // Push new element to the state
+            // Push new element to the state and append without wiping the list
             capturedElements.push(bestLoc);
-            
-            renderQueue();
+            appendNewItem(capturedElements.length - 1);
 
             // Auto-trigger AI if no unique locator was found by the engine
             const idx = capturedElements.length - 1;
@@ -2099,7 +2179,7 @@
             el.count = chosen.count;
             el.alternatives[altIdx] = current;
 
-            renderQueue();
+            renderSingleItem(elemIdx);
         }
 
         function selectAlternative(idx, type, value, count) {
@@ -2275,7 +2355,7 @@
 
         function applyAIResult(idx, aiLocators) {
             if (!capturedElements[idx] || !aiLocators || aiLocators.length === 0) {
-                renderQueue(); // Refresh to clear spinner
+                renderSingleItem(idx); // Lightweight update to clear the AI spinner
                 return;
             }
 
@@ -2284,14 +2364,14 @@
             capturedElements[idx].value = aiLoc.value;
             capturedElements[idx].count = aiLoc.count;
             
-            // Merge AI locators into alternatives if they are not already there
+            // Merge AI locators into alternatives
             aiLocators.slice(1).forEach(l => {
                 if (!capturedElements[idx].alternatives.find(alt => alt.value === l.value)) {
                     capturedElements[idx].alternatives.unshift(l);
                 }
             });
 
-            renderQueue();
+            renderSingleItem(idx); // Only update the one affected card
         }
 
 
@@ -2862,8 +2942,7 @@
             };
 
             capturedElements.push(manualLoc);
-            showStatus("Added manual locator", "var(--success)");
-            renderQueue();
+            appendNewItem(capturedElements.length - 1);
             document.getElementById('liveConsoleInput').value = '';
             triggerVerifyLiveLocator();
         }
