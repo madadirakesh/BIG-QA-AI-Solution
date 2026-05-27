@@ -1,0 +1,33 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# EditorConfig — http://editorconfig.org
+#
+# Why this file exists:
+#   Java teams in 2025-2026 routinely mix IntelliJ, Eclipse, VS Code (with the
+#   Java extension), and a couple of macOS-vs-Windows machines. Without an
+#   EditorConfig file each IDE applies its own default for indentation, line
+#   endings, and trailing whitespace, producing noisy review-diffs that have
+#   nothing to do with the actual code change. This file pins consistent
+#   formatting so a `git diff` only shows real changes.
+# ─────────────────────────────────────────────────────────────────────────────
+
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 4
+
+# Build / dependency / config files conventionally use 2-space indent.
+[*.{xml,yml,yaml,json,md}]
+indent_size = 2
+
+# Markdown often relies on two trailing spaces for hard line breaks.
+[*.md]
+trim_trailing_whitespace = false
+
+# .feature files (Cucumber) — 2-space indent is the community norm.
+[*.feature]
+indent_size = 2

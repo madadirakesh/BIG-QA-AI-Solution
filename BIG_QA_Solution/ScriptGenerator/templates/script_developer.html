@@ -335,17 +335,19 @@
                 <div class="form-row">
                     <div class="form-col">
                         <div class="form-group">
-                            <label><i class="fas fa-tag"></i> Project Name</label>
-                            <input type="text" id="bsProjectName" class="form-control" placeholder="e.g. MyWebTests" oninput="updatePathPreview()">
+                            <label><i class="fas fa-tag"></i> Project Name <span class="required-mark">*</span></label>
+                            <input type="text" id="bsProjectName" class="form-control" placeholder="e.g. MyWebTests" oninput="updatePathPreview(); clearFieldError('bsProjectName')">
+                            <small class="error-text" id="bsProjectNameError"></small>
                         </div>
                     </div>
                 </div>
                 <div class="form-group">
-                    <label><i class="fas fa-folder"></i> Save Location</label>
+                    <label><i class="fas fa-folder"></i> Save Location <span class="required-mark">*</span></label>
                     <div class="d-flex align-items-center gap-2">
                         <input type="text" id="bsProjectPath" class="form-control flex-1" style="margin-bottom:0 !important;" placeholder="Select folder..." readonly>
                         <button class="btn btn-outline" type="button" onclick="browseBsDirectory()" style="white-space:nowrap;"><i class="fas fa-folder-open"></i> Browse</button>
                     </div>
+                    <small class="error-text" id="bsProjectPathError"></small>
                     <div class="path-preview-container" id="bsPathPreviewBox">
                         <i class="fas fa-terminal mr-2"></i> <b>Path:</b> <span id="bsPathPreview">/Select/A/Folder...</span>
                     </div>
@@ -396,7 +398,8 @@
                     <div class="form-col">
                         <div class="form-group">
                             <label><i class="fas fa-link"></i> Application URL</label>
-                            <input type="text" id="bsUrl" class="form-control" placeholder="https://example.com">
+                            <input type="text" id="bsUrl" class="form-control" placeholder="https://example.com" oninput="clearFieldError('bsUrl')">
+                            <small class="error-text" id="bsUrlError"></small>
                         </div>
                     </div>
                 </div>
@@ -426,6 +429,11 @@
                 <div class="spinner"><i class="fas fa-circle-notch fa-spin fa-3x text-primary"></i></div>
                 <h4 class="mt-3">Setting Up Project Files & Downloading Libraries...</h4>
                 <p id="bsLoadingText" class="text-secondary">Please wait, this usually takes 10-60 seconds.</p>
+                <!-- Live elapsed-time hint. The interval that updates this is started by
+                     pollBootstrapper() and cleared when the job finishes (completed/error). -->
+                <p id="bsElapsed" class="text-secondary mt-2" style="font-size: 0.85rem; opacity: 0.7;">
+                    Elapsed: <span id="bsElapsedValue">00:00</span>
+                </p>
             </div>
 
             <!-- Result State -->
@@ -796,6 +804,32 @@
         margin: 30px 0 !important;
         width: 100% !important;
     }
+
+    /* ─── Bootstrapper modal: inline form validation ─── */
+    /* Red asterisk next to required field labels. */
+    .required-mark {
+        color: var(--error);
+        margin-left: 2px;
+        font-weight: 700;
+    }
+    /* Applied to .form-control when validation fails: red border + soft red glow. */
+    .form-control.is-invalid,
+    .form-control.is-invalid:focus {
+        border-color: var(--error) !important;
+        box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.18) !important;
+    }
+    /* Error message that appears under a field. Hidden by default; .show makes it visible. */
+    .error-text {
+        display: none;
+        color: var(--error);
+        font-size: 0.8rem;
+        font-weight: 500;
+        margin-top: 6px;
+        line-height: 1.3;
+    }
+    .error-text.show {
+        display: block;
+    }
 </style>
 {% endblock %}
 
@@ -1063,13 +1097,82 @@ function openBootstrapperModal() {
     document.getElementById('bootstrapperForm').style.display = 'block';
     document.getElementById('bsLoading').style.display = 'none';
     document.getElementById('bsResult').style.display = 'none';
+    // Always start from a clean slate. closeBootstrapperModal() already calls reset on the
+    // way out, but doing it here too is cheap and protects against the first ever open
+    // (where close has never run) and any future code path that might bypass close.
+    resetBootstrapperForm();
+}
+
+/**
+ * Wipes every user-editable field in the Create New Automation Project modal back to its
+ * default state, including dropdowns, validation highlights, and the path preview.
+ *
+ * Called from:
+ *   - openBootstrapperModal()  — defensive; guarantees a clean form on every open.
+ *   - closeBootstrapperModal() — runs after Cancel, the × button, "Close & Refresh" on
+ *     success, and "Close & Refresh" on failure. The user explicitly asked that every
+ *     post-submit close behave this way, so the same call site covers all three.
+ *
+ * The dropdowns are reset by re-selecting the first <option> on the Tool select and then
+ * calling updateBsOptions(), which is the existing helper that cascades the Language /
+ * Framework / Package Manager selects based on the chosen Tool.
+ */
+function resetBootstrapperForm() {
+    // Text inputs
     document.getElementById('bsProjectName').value = '';
-    updateBsOptions(); // Initialize dropdowns
+    document.getElementById('bsProjectPath').value = '';
+    document.getElementById('bsUrl').value = '';
+    document.getElementById('bsUsername').value = '';
+    document.getElementById('bsPassword').value = '';
+
+    // Tool dropdown -> first option (Selenium). updateBsOptions() then rebuilds the
+    // dependent dropdowns (Language / Framework / Package Manager) to match.
+    const toolSelect = document.getElementById('bsTool');
+    if (toolSelect && toolSelect.options.length > 0) {
+        toolSelect.selectedIndex = 0;
+    }
+    updateBsOptions();
+
+    // Validation state — red borders and inline messages.
+    clearFieldErrors(['bsProjectName', 'bsProjectPath', 'bsUrl']);
+
+    // Path preview at the bottom of the Save Location row.
     updatePathPreview();
+}
+
+/**
+ * Validate the bootstrapper form fields and surface inline messages.
+ *
+ * The mechanics (red border, message swap, regex matching) live in
+ * static/js/form_validation.js as validateForm(). This function just declares THIS modal's
+ * rules — which fields are required, what URL format is allowed, what messages to show.
+ * Keeping the schema next to the submit handler makes the rules easy to find when editing.
+ *
+ * Required (marked with * in the UI): projectName, projectPath.
+ * Optional but format-checked when present: url (must look like http(s)://...).
+ *
+ * Returns true if every rule passes, false otherwise (and the user sees red highlights).
+ */
+function validateBootstrapForm(data) {
+    return validateForm(
+        {
+            bsProjectName: { required: true, message: 'Project Name is required.' },
+            bsProjectPath: { required: true, message: 'Please choose a save location using the Browse button.' },
+            bsUrl: { pattern: /^https?:\/\/\S+/i, message: 'URL must start with http:// or https://' }
+        },
+        {
+            bsProjectName: data.projectName,
+            bsProjectPath: data.projectPath,
+            bsUrl: data.url
+        }
+    );
 }
 
 function closeBootstrapperModal() {
     document.getElementById('bootstrapperModal').style.display = 'none';
+    // Wipe form state so the next time the user opens "Create New Automation Project" they
+    // get a fresh form — not stale values from the previous successful (or failed) run.
+    resetBootstrapperForm();
 }
 
 function browseBsDirectory() {
@@ -1078,6 +1181,8 @@ function browseBsDirectory() {
         .then(data => {
             if(data.path) {
                 document.getElementById('bsProjectPath').value = data.path;
+                // Picking a path counts as resolving the "Save Location is required" error.
+                clearFieldError('bsProjectPath');
                 updatePathPreview();
             }
         });
@@ -1129,7 +1234,39 @@ function updateBsOptions() {
     }
 }
 
+// ─── Bootstrapper progress: polling + elapsed-time counter ───
+// bsPollInterval   : poll /api/bootstrap-status every 2s while the job is running.
+// bsElapsedInterval: tick the "Elapsed: MM:SS" counter every 1s so the user knows the
+//                    backend is still alive during the multi-minute install. Both intervals
+//                    are cleared together by stopBsTimers() on completion/error/cancel.
 let bsPollInterval;
+let bsElapsedInterval;
+let bsElapsedStartMs;
+
+function startBsElapsedTimer() {
+    bsElapsedStartMs = Date.now();
+    const valueEl = document.getElementById('bsElapsedValue');
+    if (valueEl) valueEl.textContent = '00:00';
+    // Tick every second. Cheap (just DOM text + Math) so it's fine to leave running.
+    bsElapsedInterval = setInterval(() => {
+        const totalSec = Math.floor((Date.now() - bsElapsedStartMs) / 1000);
+        const mm = String(Math.floor(totalSec / 60)).padStart(2, '0');
+        const ss = String(totalSec % 60).padStart(2, '0');
+        if (valueEl) valueEl.textContent = mm + ':' + ss;
+    }, 1000);
+}
+
+function stopBsTimers() {
+    if (bsPollInterval) {
+        clearInterval(bsPollInterval);
+        bsPollInterval = null;
+    }
+    if (bsElapsedInterval) {
+        clearInterval(bsElapsedInterval);
+        bsElapsedInterval = null;
+    }
+}
+
 function submitBootstrapper() {
     const data = {
         projectName: document.getElementById('bsProjectName').value,
@@ -1143,14 +1280,17 @@ function submitBootstrapper() {
         password: document.getElementById('bsPassword').value
     };
 
-    if(!data.projectName || !data.projectPath) {
-        alert("Please provide project name and location.");
+    // Inline validation — replaces the previous alert() popup. validateBootstrapForm()
+    // highlights bad fields in red and writes a message under each one.
+    if (!validateBootstrapForm(data)) {
         return;
     }
 
     document.getElementById('bootstrapperForm').style.display = 'none';
     document.getElementById('bsLoading').style.display = 'block';
     document.getElementById('bsLoadingText').innerText = "Starting project setup...";
+    // Reset & start the elapsed counter as soon as the loading panel appears.
+    startBsElapsedTimer();
 
     fetch('/api/bootstrap-project', {
         method: 'POST',
@@ -1162,10 +1302,14 @@ function submitBootstrapper() {
         if(res.job_id) {
             pollBootstrapper(res.job_id);
         } else {
+            stopBsTimers();
             showBsResult(false, "Setup Error", res.message || res.error || "Failed to start job.");
         }
     })
-    .catch(err => showBsResult(false, "Network Error", err.message));
+    .catch(err => {
+        stopBsTimers();
+        showBsResult(false, "Network Error", err.message);
+    });
 }
 
 function pollBootstrapper(job_id) {
@@ -1174,14 +1318,17 @@ function pollBootstrapper(job_id) {
             .then(r => r.json())
             .then(res => {
                 if(res.status === 'completed') {
-                    clearInterval(bsPollInterval);
+                    stopBsTimers();
                     document.getElementById('projectPath').value = res.target_dir;
                     detectProject(res.target_dir);
                     showBsResult(true, "Project Ready!", res.message, res.tree);
                 } else if(res.status === 'error') {
-                    clearInterval(bsPollInterval);
+                    stopBsTimers();
                     showBsResult(false, "Setup Failed", res.message);
                 } else {
+                    // Per-phase update from EnvironmentSetup.install_project_dependencies —
+                    // e.g. "Resolving Maven dependencies..." then "Downloading Playwright
+                    // browser binaries...". Keeps the user informed across minutes of work.
                     document.getElementById('bsLoadingText').innerText = res.message;
                 }
             });

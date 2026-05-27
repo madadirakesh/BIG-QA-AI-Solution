@@ -1,0 +1,121 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Maven build file for the generated Selenium + Java + Cucumber project.
+
+  Notes for future maintainers:
+   - {{ARTIFACT_ID}} is substituted by BootstrapperEngine.generate_project with a Maven-safe
+     version of the user's project name (e.g. "First Java App" -> "first-java-app"). The
+     companion {{PROJECT_NAME}} placeholder is NOT sanitised and is used in human-facing
+     contexts like the README title. See _to_artifact_id() in bootstrapper_engine.py.
+   - Selenium 4 + WebDriverManager + Cucumber 7 + JUnit Platform is the most common
+     enterprise pairing in 2025-2026. Bump versions deliberately — Cucumber + JUnit Platform
+     have a tight version coupling.
+   - WebDriverManager auto-downloads the matching driver binary the first time a browser is
+     launched. No separate install step is required (contrast Playwright's CLI install).
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>com.qa</groupId>
+    <artifactId>{{ARTIFACT_ID}}</artifactId>
+    <version>1.0-SNAPSHOT</version>
+
+    <properties>
+        <maven.compiler.source>11</maven.compiler.source>
+        <maven.compiler.target>11</maven.compiler.target>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <selenium.version>4.21.0</selenium.version>
+        <wdm.version>5.8.0</wdm.version>
+        <cucumber.version>7.18.0</cucumber.version>
+        <junit.platform.version>1.10.2</junit.platform.version>
+        <junit.jupiter.version>5.10.2</junit.jupiter.version>
+        <slf4j.version>2.0.13</slf4j.version>
+        <surefire.version>3.2.5</surefire.version>
+    </properties>
+
+    <dependencies>
+        <!-- Selenium WebDriver. -->
+        <dependency>
+            <groupId>org.seleniumhq.selenium</groupId>
+            <artifactId>selenium-java</artifactId>
+            <version>${selenium.version}</version>
+        </dependency>
+
+        <!-- WebDriverManager auto-resolves chromedriver/geckodriver/edgedriver at runtime.
+             Avoids the old "put the driver binary on PATH" foot-gun. -->
+        <dependency>
+            <groupId>io.github.bonigarcia</groupId>
+            <artifactId>webdrivermanager</artifactId>
+            <version>${wdm.version}</version>
+        </dependency>
+
+        <!-- Cucumber + JUnit 5 wiring (identical pattern to the Playwright/Java template):
+             cucumber-java                    : @Given/@When/@Then annotations.
+             cucumber-junit-platform-engine   : engine that lets JUnit Platform discover features.
+             junit-platform-suite             : @Suite annotation for TestRunner.java. -->
+        <dependency>
+            <groupId>io.cucumber</groupId>
+            <artifactId>cucumber-java</artifactId>
+            <version>${cucumber.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>io.cucumber</groupId>
+            <artifactId>cucumber-junit-platform-engine</artifactId>
+            <version>${cucumber.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.platform</groupId>
+            <artifactId>junit-platform-suite</artifactId>
+            <version>${junit.platform.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <version>${junit.jupiter.version}</version>
+            <scope>test</scope>
+        </dependency>
+
+        <!-- dotenv-java keeps .env handling identical across every Java template in this repo. -->
+        <dependency>
+            <groupId>io.github.cdimascio</groupId>
+            <artifactId>dotenv-java</artifactId>
+            <version>3.0.0</version>
+        </dependency>
+
+        <!-- SLF4J binding. Selenium 4 and WebDriverManager both log through SLF4J. Without a
+             concrete binding they print a "No SLF4J providers were found" warning on every
+             test run, which clutters output and confuses newcomers. slf4j-simple writes a
+             one-line-per-event log to stderr — minimal, no XML config required. Swap for
+             logback-classic if you ever want richer logging. -->
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-simple</artifactId>
+            <version>${slf4j.version}</version>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <version>${surefire.version}</version>
+                <configuration>
+                    <!-- Force the include so Surefire always finds the @Suite runner even if
+                         the user later adds plain unit tests with non-default names. -->
+                    <includes>
+                        <include>**/TestRunner.java</include>
+                    </includes>
+                    <!-- Drop Surefire XML/text reports into Results/ alongside the Cucumber
+                         HTML and JSON. Keeping every test artefact in one folder makes
+                         "archive Results/" a one-line step in CI. -->
+                    <reportsDirectory>${project.basedir}/Results/surefire</reportsDirectory>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>

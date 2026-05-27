@@ -1,4 +1,5 @@
 import os
+import re
 import logging
 import sqlite3
 import subprocess
@@ -6,6 +7,28 @@ import subprocess
 from db.app_db import DB_PATH
 
 logger = logging.getLogger("ProjectBootstrapper")
+
+
+def _to_artifact_id(project_name):
+    """
+    Convert a free-form project name into a Maven-safe artifactId.
+
+    Maven requires artifactId to match [A-Za-z0-9_\\-.]+ — spaces and most punctuation are
+    rejected. Users typically type human-friendly names like "First Java App", so we sanitise
+    here rather than forcing the user into a stricter naming convention on the modal.
+
+    Rule:
+      - Replace any run of disallowed characters with a single dash.
+      - Lowercase the result so coordinates look conventional (Maven convention).
+      - Trim leading/trailing dashes so we never produce "-foo-".
+      - Fall back to "qa-project" if the whole name was disallowed characters (e.g. "!!!").
+
+    The original project_name is still used for the on-disk directory name and for the
+    {{PROJECT_NAME}} placeholder, so the user's chosen casing survives where it doesn't break
+    a downstream tool.
+    """
+    sanitized = re.sub(r'[^A-Za-z0-9_.-]+', '-', project_name).strip('-').lower()
+    return sanitized or 'qa-project'
 
 class BootstrapperEngine:
     """
@@ -73,7 +96,11 @@ class BootstrapperEngine:
                     pass
                 else:
                     if content:
+                        # {{PROJECT_NAME}} stays as the user typed it (used in display labels and
+                        # the on-disk directory). {{ARTIFACT_ID}} is sanitised for Maven / npm
+                        # package-name contexts where spaces and most punctuation are illegal.
                         content = content.replace("{{PROJECT_NAME}}", project_name)
+                        content = content.replace("{{ARTIFACT_ID}}", _to_artifact_id(project_name))
                         content = content.replace("{{BASE_URL}}", url or "https://example.com")
                         content = content.replace("{{USERNAME}}", username or "admin")
                         content = content.replace("{{PASSWORD}}", password or "password123")
@@ -81,7 +108,11 @@ class BootstrapperEngine:
                     with open(full_path, 'w', encoding='utf-8') as f:
                         f.write(content or "")
 
-            # 4. Ensure mandatory empty directories for AI generation exist
+            # 4. Ensure mandatory empty directories for AI generation exist.
+            # The template ingestion only creates parent directories implicitly when it writes
+            # a file (see the os.makedirs(os.path.dirname(full_path), ...) call above), so any
+            # folder the user expects to see at scaffold time but that has no seed file must be
+            # created here. The Script Developer wizard later writes step/page files into these.
             # For Playwright/TS (Cucumber)
             if search_lang == "TypeScript":
                 for folder in ["test/pageObjects", "test/stepDefinitions", "test/features", "Results"]:
@@ -89,6 +120,17 @@ class BootstrapperEngine:
             # For Python (Generic)
             elif search_lang == "Python":
                 for folder in ["pages", "tests", "features", "Results"]:
+                    os.makedirs(os.path.join(target_dir, folder), exist_ok=True)
+            # For Java (Playwright + Cucumber). Step definitions and page objects start empty so
+            # the user immediately sees where AI-generated code will land. Results/ is created
+            # at runtime by the Cucumber HTML reporter, but pre-creating it avoids first-run
+            # confusion when the user opens the project in their IDE.
+            elif search_lang == "Java":
+                for folder in [
+                    "src/main/java/pageObjects",
+                    "src/test/java/stepDefinitions",
+                    "Results",
+                ]:
                     os.makedirs(os.path.join(target_dir, folder), exist_ok=True)
 
             # 5. Generate sample test files using provided URL and credentials
@@ -214,6 +256,15 @@ class BootstrapperEngine:
         if language in ["Typescript", "JavaScript", "TypeScript"] and tool == "Playwright":
             logger.info(f"Skipping smoke test for {language}/{tool} (scaffolding only)")
             return True, "Smoke test skipped for TypeScript scaffolding. Ready for manual test development."
+
+        # Skip smoke test for any Java + Cucumber template (currently Playwright/Java/Cucumber
+        # and Selenium/Java/Cucumber). The scaffold ships a sample feature file but NO step
+        # definitions — those are filled in later by the Script Developer AI wizard. Running
+        # `mvn test` against undefined steps would mark the suite as failed and surface a
+        # misleading "Setup Failed" in the UI even though the project is healthy.
+        if language == "Java" and "Cucumber" in (framework or ""):
+            logger.info(f"Skipping smoke test for {language}/{tool}/{framework} (Cucumber scaffold has no step defs yet)")
+            return True, f"Smoke test skipped for {tool}/Java/Cucumber scaffolding. Ready for manual test development."
         
         if language == "Python":
             if "Behave" in framework or "Jbehave" in framework:
