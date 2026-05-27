@@ -1,4 +1,3 @@
-from openpyxl import Workbook
 import os
 
 class ExcelExporter:
@@ -9,6 +8,7 @@ class ExcelExporter:
         locators is a list of dicts: [{"name": "...", "type": "...", "action": "...", "value": "..."}, ...]
         """
         try:
+            from openpyxl import Workbook
             wb = Workbook()
             ws = wb.active
             ws.title = "Page Objects"

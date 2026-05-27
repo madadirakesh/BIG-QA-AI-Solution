@@ -4,6 +4,10 @@ import subprocess
 import platform
 from pathlib import Path
 
+# Bypass GPU acceleration driver negotiation on Windows to ensure instant launch
+if platform.system() == "Windows":
+    os.environ["QTWEBENGINE_CHROMIUM_FLAGS"] = "--disable-gpu --disable-gpu-compositing --disable-software-rasterizer"
+
 def main():
     print("Initializing Antigravity Locator Studio...")
     

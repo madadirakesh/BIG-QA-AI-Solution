@@ -1,6 +1,11 @@
 import sys
 import os
+import platform
 import json
+
+# Bypass GPU acceleration driver negotiation on Windows to ensure instant launch
+if platform.system() == "Windows":
+    os.environ["QTWEBENGINE_CHROMIUM_FLAGS"] = "--disable-gpu --disable-gpu-compositing --disable-software-rasterizer"
 import logging
 import sqlite3
 import threading
