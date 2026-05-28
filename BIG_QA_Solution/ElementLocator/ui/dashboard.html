@@ -3066,87 +3066,78 @@
 
         function initSplitResizer() {
             const container = document.querySelector('.diff-container');
-            const leftPane = document.getElementById('diffPaneLeft');
+            const leftPane  = document.getElementById('diffPaneLeft');
             const rightPane = document.getElementById('diffPaneRight');
-            const resizer = document.getElementById('diffResizer');
+            const resizer   = document.getElementById('diffResizer');
 
             if (!container || !leftPane || !rightPane || !resizer) return;
 
-            let isDragging = false;
-            let rafPending = false;
-            let lastX = 0, lastY = 0;
-
-            // Full-screen overlay prevents iframe/webview pointer-event costs during drag
-            let dragOverlay = null;
+            let isDragging  = false;
+            let ghostLine   = null;  // thin indicator line - ONLY this moves during drag
+            let dragOverlay = null;  // full-screen pointer absorber
+            let pendingPct  = 50;   // final split % stored during drag, applied on mouseup
 
             resizer.addEventListener('mousedown', function (e) {
-                isDragging = true;
                 const isVertical = window.getComputedStyle(container).flexDirection === 'column';
-                document.body.style.cursor = isVertical ? 'row-resize' : 'col-resize';
-                resizer.style.background = 'rgba(99, 102, 241, 0.35)';
+                const cRect = container.getBoundingClientRect();
+                isDragging = true;
 
-                // Block pointer events to child iframes/textareas so they don't cause repaints
-                leftPane.style.pointerEvents = 'none';
-                rightPane.style.pointerEvents = 'none';
+                // Ghost line: a 2px coloured strip that follows the cursor.
+                // Only CSS left/top changes - zero layout reflow, zero content repaint.
+                ghostLine = document.createElement('div');
+                if (isVertical) {
+                    ghostLine.style.cssText = 'position:fixed;left:' + cRect.left + 'px;width:' + cRect.width + 'px;height:2px;background:rgba(99,102,241,0.8);top:' + e.clientY + 'px;z-index:10000;pointer-events:none;box-shadow:0 0 8px rgba(99,102,241,0.6);';
+                } else {
+                    ghostLine.style.cssText = 'position:fixed;top:' + cRect.top + 'px;height:' + cRect.height + 'px;width:2px;background:rgba(99,102,241,0.8);left:' + e.clientX + 'px;z-index:10000;pointer-events:none;box-shadow:0 0 8px rgba(99,102,241,0.6);';
+                }
+                document.body.appendChild(ghostLine);
 
-                // Create a transparent overlay to absorb all mouse events at document level
+                // Full-screen overlay: absorbs pointer events from iframes/textareas
                 dragOverlay = document.createElement('div');
-                dragOverlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;z-index:9999;cursor:' + (isVertical ? 'row-resize' : 'col-resize');
+                dragOverlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;z-index:9999;cursor:' + (isVertical ? 'row-resize' : 'col-resize') + ';';
                 document.body.appendChild(dragOverlay);
 
+                resizer.style.background = 'rgba(99,102,241,0.35)';
+                document.body.style.cursor = isVertical ? 'row-resize' : 'col-resize';
                 e.preventDefault();
             });
 
             document.addEventListener('mousemove', function (e) {
-                if (!isDragging) return;
-                lastX = e.clientX;
-                lastY = e.clientY;
-
-                // Throttle: only schedule one DOM write per animation frame
-                if (rafPending) return;
-                rafPending = true;
-                requestAnimationFrame(function () {
-                    rafPending = false;
-                    if (!isDragging) return;
-
-                    const containerRect = container.getBoundingClientRect();
-                    const isVertical = window.getComputedStyle(container).flexDirection === 'column';
-
-                    if (isVertical) {
-                        const offsetY = lastY - containerRect.top;
-                        const pct = (offsetY / containerRect.height) * 100;
-                        if (pct > 15 && pct < 85) {
-                            leftPane.style.flex = '0 0 ' + pct.toFixed(2) + '%';
-                            rightPane.style.flex = '0 0 ' + (100 - pct - (8 / containerRect.height * 100)).toFixed(2) + '%';
-                        }
-                    } else {
-                        const offsetX = lastX - containerRect.left;
-                        const pct = (offsetX / containerRect.width) * 100;
-                        if (pct > 15 && pct < 85) {
-                            leftPane.style.flex = '0 0 ' + pct.toFixed(2) + '%';
-                            rightPane.style.flex = '0 0 ' + (100 - pct - (8 / containerRect.width * 100)).toFixed(2) + '%';
-                        }
-                    }
-                });
+                if (!isDragging || !ghostLine) return;
+                // ONLY move the ghost line - no flex change, no layout, no repaint of pane content
+                const cRect = container.getBoundingClientRect();
+                const isVertical = window.getComputedStyle(container).flexDirection === 'column';
+                if (isVertical) {
+                    const clamped = Math.max(cRect.top + cRect.height * 0.15, Math.min(e.clientY, cRect.top + cRect.height * 0.85));
+                    ghostLine.style.top = clamped + 'px';
+                    pendingPct = ((clamped - cRect.top) / cRect.height) * 100;
+                } else {
+                    const clamped = Math.max(cRect.left + cRect.width * 0.15, Math.min(e.clientX, cRect.left + cRect.width * 0.85));
+                    ghostLine.style.left = clamped + 'px';
+                    pendingPct = ((clamped - cRect.left) / cRect.width) * 100;
+                }
             });
 
             document.addEventListener('mouseup', function () {
                 if (!isDragging) return;
                 isDragging = false;
-                rafPending = false;
+
+                // Apply the split ONCE on release - single layout reflow, single repaint
+                const cRect = container.getBoundingClientRect();
+                const isVertical = window.getComputedStyle(container).flexDirection === 'column';
+                const rPct = isVertical ? (8 / cRect.height * 100) : (8 / cRect.width * 100);
+                leftPane.style.flex  = '0 0 ' + pendingPct.toFixed(2) + '%';
+                rightPane.style.flex = '0 0 ' + (100 - pendingPct - rPct).toFixed(2) + '%';
+
+                // Clean up ghost + overlay
+                if (ghostLine   && ghostLine.parentNode)   { ghostLine.parentNode.removeChild(ghostLine);     ghostLine = null; }
+                if (dragOverlay && dragOverlay.parentNode) { dragOverlay.parentNode.removeChild(dragOverlay); dragOverlay = null; }
+
+                resizer.style.background = 'rgba(255,255,255,0.03)';
                 document.body.style.cursor = '';
-                resizer.style.background = 'rgba(255, 255, 255, 0.03)';
-                leftPane.style.pointerEvents = 'auto';
-                rightPane.style.pointerEvents = 'auto';
 
-                // Remove overlay
-                if (dragOverlay && dragOverlay.parentNode) {
-                    dragOverlay.parentNode.removeChild(dragOverlay);
-                    dragOverlay = null;
-                }
-
-                // Only refresh CodeMirror ONCE on release, not on every mousemove
-                if (cmLeft) cmLeft.refresh();
+                // Refresh CodeMirror ONCE after final resize
+                if (cmLeft)  cmLeft.refresh();
                 if (cmRight) cmRight.refresh();
             });
         }
