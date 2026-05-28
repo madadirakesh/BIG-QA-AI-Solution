@@ -3082,39 +3082,40 @@
                 const cRect = container.getBoundingClientRect();
                 isDragging = true;
 
-                // Ghost line: a 2px coloured strip that follows the cursor.
-                // Only CSS left/top changes - zero layout reflow, zero content repaint.
+                // Ghost line: a 4px bright cyan strip absolutely positioned inside .diff-container.
+                // This bypasses any position:fixed containing block or z-index clipping issues in Qt WebEngine.
                 ghostLine = document.createElement('div');
                 if (isVertical) {
-                    ghostLine.style.cssText = 'position:fixed;left:' + cRect.left + 'px;width:' + cRect.width + 'px;height:2px;background:rgba(99,102,241,0.8);top:' + e.clientY + 'px;z-index:10000;pointer-events:none;box-shadow:0 0 8px rgba(99,102,241,0.6);';
+                    const localY = e.clientY - cRect.top;
+                    ghostLine.style.cssText = 'position:absolute;left:0;width:100%;height:4px;background:#00bcf2;top:' + localY + 'px;z-index:100;pointer-events:none;box-shadow:0 0 12px #00bcf2, 0 0 4px #00bcf2;';
                 } else {
-                    ghostLine.style.cssText = 'position:fixed;top:' + cRect.top + 'px;height:' + cRect.height + 'px;width:2px;background:rgba(99,102,241,0.8);left:' + e.clientX + 'px;z-index:10000;pointer-events:none;box-shadow:0 0 8px rgba(99,102,241,0.6);';
+                    const localX = e.clientX - cRect.left;
+                    ghostLine.style.cssText = 'position:absolute;top:0;height:100%;width:4px;background:#00bcf2;left:' + localX + 'px;z-index:100;pointer-events:none;box-shadow:0 0 12px #00bcf2, 0 0 4px #00bcf2;';
                 }
-                document.body.appendChild(ghostLine);
+                container.appendChild(ghostLine);
 
                 // Full-screen overlay: absorbs pointer events from iframes/textareas
                 dragOverlay = document.createElement('div');
                 dragOverlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;z-index:9999;cursor:' + (isVertical ? 'row-resize' : 'col-resize') + ';';
                 document.body.appendChild(dragOverlay);
 
-                resizer.style.background = 'rgba(99,102,241,0.35)';
+                resizer.style.background = 'rgba(0, 188, 242, 0.5)';
                 document.body.style.cursor = isVertical ? 'row-resize' : 'col-resize';
                 e.preventDefault();
             });
 
             document.addEventListener('mousemove', function (e) {
                 if (!isDragging || !ghostLine) return;
-                // ONLY move the ghost line - no flex change, no layout, no repaint of pane content
                 const cRect = container.getBoundingClientRect();
                 const isVertical = window.getComputedStyle(container).flexDirection === 'column';
                 if (isVertical) {
-                    const clamped = Math.max(cRect.top + cRect.height * 0.15, Math.min(e.clientY, cRect.top + cRect.height * 0.85));
+                    const clamped = Math.max(cRect.height * 0.15, Math.min(e.clientY - cRect.top, cRect.height * 0.85));
                     ghostLine.style.top = clamped + 'px';
-                    pendingPct = ((clamped - cRect.top) / cRect.height) * 100;
+                    pendingPct = (clamped / cRect.height) * 100;
                 } else {
-                    const clamped = Math.max(cRect.left + cRect.width * 0.15, Math.min(e.clientX, cRect.left + cRect.width * 0.85));
+                    const clamped = Math.max(cRect.width * 0.15, Math.min(e.clientX - cRect.left, cRect.width * 0.85));
                     ghostLine.style.left = clamped + 'px';
-                    pendingPct = ((clamped - cRect.left) / cRect.width) * 100;
+                    pendingPct = (clamped / cRect.width) * 100;
                 }
             });
 
