@@ -1,0 +1,110 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Maven build file for the generated Playwright + Java + Cucumber project.
+
+  Notes for future maintainers:
+   - {{ARTIFACT_ID}} is replaced by BootstrapperEngine.generate_project at scaffold time with a
+     Maven-safe version of the project name the user typed into the modal. E.g. "First Java
+     App" -> "first-java-app". This separation matters because Maven's artifactId rule
+     ([A-Za-z0-9_\-.]+) disallows spaces, but we still want to keep the user's free-form name
+     for the on-disk directory and any human-facing label. The companion {{PROJECT_NAME}}
+     placeholder (used in other templates) is NOT sanitised. See _to_artifact_id() in
+     bootstrapper_engine.py.
+   - The pinned versions below are the ones validated together at template-authoring time. Bump
+     them deliberately — Cucumber + JUnit Platform tend to break across major versions.
+   - Surefire is restricted to running TestRunner.java so the suite executes via the JUnit
+     Platform engine (which then drives Cucumber). Adding more test classes that match the
+     default Surefire patterns (*Test.java / Test*.java) will still work because JUnit Platform
+     picks them up; the include filter just guarantees the runner is always discovered.
+   - Playwright browser binaries are NOT installed by `mvn install`. The web app's
+     EnvironmentSetup.install_project_dependencies step also runs
+     `mvn exec:java -Dexec.mainClass=com.microsoft.playwright.CLI -Dexec.args=install`
+     after `mvn install -DskipTests` to download the browsers. If you run this project
+     standalone, do the same once before `mvn test`.
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>com.qa</groupId>
+    <artifactId>{{ARTIFACT_ID}}</artifactId>
+    <version>1.0-SNAPSHOT</version>
+
+    <properties>
+        <maven.compiler.source>11</maven.compiler.source>
+        <maven.compiler.target>11</maven.compiler.target>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <playwright.version>1.45.0</playwright.version>
+        <cucumber.version>7.18.0</cucumber.version>
+        <junit.platform.version>1.10.2</junit.platform.version>
+        <junit.jupiter.version>5.10.2</junit.jupiter.version>
+        <surefire.version>3.2.5</surefire.version>
+    </properties>
+
+    <dependencies>
+        <!-- Browser automation library (com.microsoft.playwright). -->
+        <dependency>
+            <groupId>com.microsoft.playwright</groupId>
+            <artifactId>playwright</artifactId>
+            <version>${playwright.version}</version>
+        </dependency>
+
+        <!-- Cucumber + JUnit 5 wiring. Three artifacts work together:
+             cucumber-java                    : the Given/When/Then annotations.
+             cucumber-junit-platform-engine   : the engine that lets JUnit Platform discover Cucumber features.
+             junit-platform-suite             : provides the @Suite annotation used by TestRunner.java. -->
+        <dependency>
+            <groupId>io.cucumber</groupId>
+            <artifactId>cucumber-java</artifactId>
+            <version>${cucumber.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>io.cucumber</groupId>
+            <artifactId>cucumber-junit-platform-engine</artifactId>
+            <version>${cucumber.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.platform</groupId>
+            <artifactId>junit-platform-suite</artifactId>
+            <version>${junit.platform.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <version>${junit.jupiter.version}</version>
+            <scope>test</scope>
+        </dependency>
+
+        <!-- dotenv-java keeps config parity with the TypeScript template, which also reads from a
+             .env file. ConfigReader.java wraps this dependency. -->
+        <dependency>
+            <groupId>io.github.cdimascio</groupId>
+            <artifactId>dotenv-java</artifactId>
+            <version>3.0.0</version>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <version>${surefire.version}</version>
+                <configuration>
+                    <!-- Force the include so Surefire always picks up the @Suite runner even if
+                         the user adds plain unit tests later with non-default names. -->
+                    <includes>
+                        <include>**/TestRunner.java</include>
+                    </includes>
+                    <!-- Drop Surefire XML/text reports into Results/ alongside the Cucumber
+                         HTML and JSON. Keeping every test artefact in one folder makes
+                         "archive Results/" a one-line step in CI. -->
+                    <reportsDirectory>${project.basedir}/Results/surefire</reportsDirectory>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>

@@ -1,10 +1,22 @@
 import sqlite3
 import os
+import json
 
 # Standalone Seeder Script generated for the BIG-QA Team
 # Run this to populate your local database with standardized project templates.
+#
+# Two sources of templates are merged at runtime:
+#   1. TEMPLATES_DATA below (legacy inline strings — kept for the first three templates).
+#   2. The `templates/` directory next to this file, where each subdirectory is one template
+#      stored as real source files (pom.xml, *.java, *.feature, etc.) plus a metadata.json.
+#      This is the preferred place to add new templates going forward — files keep IDE syntax
+#      highlighting and avoid Python string-escape pain.
+#
+# Both sources are deduplicated by (tool, language, framework). Files-on-disk templates win on
+# tie, so you can override an inline template by creating a directory with matching metadata.
 
 DB_PATH = os.path.join(os.path.dirname(__file__), "..", "local_database.db")
+TEMPLATES_DIR = os.path.join(os.path.dirname(__file__), "templates")
 
 TEMPLATES_DATA = [
   {
@@ -180,8 +192,103 @@ TEMPLATES_DATA = [
   }
 ]
 
+def _load_filesystem_templates(templates_dir):
+    """
+    Walks ``templates_dir`` and converts each subdirectory into the same
+    ``{"metadata": {...}, "files": [...]}`` shape used by the inline TEMPLATES_DATA list.
+
+    Layout convention for each template directory:
+      templates/<some_name>/
+        metadata.json                  -- tool, language, framework, description, default_run_commands
+        <any file tree>                -- ingested verbatim; file paths become relative to this dir.
+
+    Skipped entries:
+      - metadata.json itself (it is parsed into the metadata block, not stored as a file).
+      - Editor / OS noise: .DS_Store, __pycache__, .pyc.
+
+    Binary detection: files are read as bytes and decoded as UTF-8; if decoding fails we mark
+    is_binary=1 and store an empty content string (matches the existing inline contract — see
+    BootstrapperEngine.generate_project, which currently no-ops on is_binary files anyway).
+    """
+    discovered = []
+    if not os.path.isdir(templates_dir):
+        return discovered
+
+    for entry in sorted(os.listdir(templates_dir)):
+        tpl_root = os.path.join(templates_dir, entry)
+        if not os.path.isdir(tpl_root):
+            continue
+
+        meta_path = os.path.join(tpl_root, "metadata.json")
+        if not os.path.isfile(meta_path):
+            print(f"  ! Skipping '{entry}': missing metadata.json")
+            continue
+
+        with open(meta_path, "r", encoding="utf-8") as f:
+            raw_meta = json.load(f)
+        # Drop any leading-underscore explanatory keys (e.g. "_comment") so they do not leak
+        # into the ProjectTemplates row.
+        metadata = {k: v for k, v in raw_meta.items() if not k.startswith("_")}
+
+        files = []
+        for dirpath, _dirnames, filenames in os.walk(tpl_root):
+            for fname in filenames:
+                if fname in ("metadata.json", ".DS_Store") or fname.endswith(".pyc"):
+                    continue
+                if "__pycache__" in dirpath:
+                    continue
+
+                abs_path = os.path.join(dirpath, fname)
+                # Store paths relative to the template root, using forward slashes so the
+                # scaffolded project layout is identical on Windows and Unix.
+                rel_path = os.path.relpath(abs_path, tpl_root).replace(os.sep, "/")
+
+                try:
+                    with open(abs_path, "r", encoding="utf-8") as f:
+                        content = f.read()
+                    is_binary = 0
+                except UnicodeDecodeError:
+                    content = ""
+                    is_binary = 1
+
+                files.append({
+                    "file_path": rel_path,
+                    "file_content": content,
+                    "is_binary": is_binary,
+                })
+
+        # Stable file order so re-seeds produce identical DB state.
+        files.sort(key=lambda f: f["file_path"])
+        discovered.append({"metadata": metadata, "files": files})
+        print(f"  + Loaded template from disk: {entry} -> "
+              f"{metadata.get('tool')}/{metadata.get('language')}/{metadata.get('framework')} "
+              f"({len(files)} files)")
+
+    return discovered
+
+
+def _merge_templates(inline, from_disk):
+    """
+    Combines the two template sources. Disk templates win on (tool, language, framework) tie
+    so an on-disk override silently replaces the inline definition.
+    """
+    by_key = {}
+    for tpl in inline:
+        m = tpl["metadata"]
+        by_key[(m["tool"], m["language"], m["framework"])] = tpl
+    for tpl in from_disk:
+        m = tpl["metadata"]
+        by_key[(m["tool"], m["language"], m["framework"])] = tpl
+    return list(by_key.values())
+
+
 def seed():
     print(f"Connecting to database at: {DB_PATH}")
+    # Pull in any filesystem-backed templates before opening the DB connection so failures
+    # while reading the disk tree are reported up-front without leaving a stale transaction.
+    disk_templates = _load_filesystem_templates(TEMPLATES_DIR)
+    templates = _merge_templates(TEMPLATES_DATA, disk_templates)
+
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
 
@@ -208,7 +315,8 @@ def seed():
         """)
 
         print("Seeding templates...")
-        for t in TEMPLATES_DATA:
+        # Iterate the merged list (inline + on-disk). See _merge_templates above.
+        for t in templates:
             meta = t["metadata"]
             cursor.execute(
                 "SELECT id FROM ProjectTemplates WHERE tool=? AND language=? AND framework=?",

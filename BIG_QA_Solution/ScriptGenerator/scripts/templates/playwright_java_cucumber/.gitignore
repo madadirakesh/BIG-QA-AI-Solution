@@ -1,0 +1,55 @@
+# ─── Maven ──────────────────────────────────────────────────────────────────
+target/
+.mvn/wrapper/maven-wrapper.jar
+dependency-reduced-pom.xml
+buildNumber.properties
+release.properties
+pom.xml.tag
+pom.xml.releaseBackup
+pom.xml.versionsBackup
+pom.xml.next
+
+# ─── Compiled Java ──────────────────────────────────────────────────────────
+*.class
+
+# ─── IDE: IntelliJ IDEA ─────────────────────────────────────────────────────
+.idea/
+*.iml
+*.iws
+*.ipr
+out/
+
+# ─── IDE: Eclipse ───────────────────────────────────────────────────────────
+.project
+.classpath
+.settings/
+.factorypath
+.springBeans
+.sts4-cache
+bin/
+
+# ─── IDE: VS Code ───────────────────────────────────────────────────────────
+.vscode/
+
+# ─── Test artefacts ─────────────────────────────────────────────────────────
+Results/
+allure-results/
+test-output/
+*.log
+
+# ─── Playwright ─────────────────────────────────────────────────────────────
+# Browser binaries live in ~/.cache/ms-playwright, not in the project, so
+# nothing to ignore here — but downloads/ may appear if you ever invoke
+# the CLI with a custom output path.
+downloads/
+playwright-report/
+
+# ─── OS noise ───────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ─── Local environment (contains credentials) ──────────────────────────────
+# .env is per-developer; .env.example is the committed template.
+.env
+.env.local

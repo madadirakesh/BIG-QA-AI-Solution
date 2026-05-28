@@ -1,4 +1,5 @@
 venv/
+.venv/
 tmp/
 __pycache__/
 *.db
@@ -16,4 +17,6 @@ obj/
 *.pyc
 package-lock.json
 .idea/workspace.xml
-./ScriptGenerator/backend.log
+backend.log
+studio_error.log
+debug_poll.log

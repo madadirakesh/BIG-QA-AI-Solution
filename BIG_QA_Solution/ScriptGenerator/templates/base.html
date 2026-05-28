@@ -103,6 +103,9 @@
     {% endif %}
 
     <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+    <!-- Shared inline-validation helpers (setFieldError, clearFieldError, validateForm).
+         Used by any modal/form in the app — see static/js/form_validation.js for usage. -->
+    <script src="{{ url_for('static', filename='js/form_validation.js') }}"></script>
     <script>
         // ── Toast utility ──────────────────────────────────────────────
         function showToast(message, type = 'info', duration = 4000) {
