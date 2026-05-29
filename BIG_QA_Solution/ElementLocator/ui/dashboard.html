@@ -1743,7 +1743,7 @@
                     <label
                         style="font-size: 0.68rem; margin-bottom: 2px; display: block; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px;">Automation
                         Tool</label>
-                    <select id="toolSelect" style="padding: 3px 6px; font-size: 0.75rem; height: 28px;">
+                    <select id="toolSelect" onchange="updateLanguageOptions()" style="padding: 3px 6px; font-size: 0.75rem; height: 28px;">
                         <option value="Playwright">Playwright</option>
                         <option value="Selenium">Selenium</option>
                     </select>
@@ -1794,10 +1794,14 @@
         <!-- Element Queue -->
         <div class="card" style="flex: 1; display: flex; flex-direction: column; min-height: 0; padding: 10px 12px;">
             <div
-                style="display:flex; justify-content:space-between; align-items:center; margin-bottom:5px; flex-shrink:0;">
-                <label style="margin:0; font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.5px;">Captured
-                    Elements Queue</label>
-                <span id="elemCountBadge" style="font-size:0.68rem;color:var(--text-secondary);">0 elements</span>
+                style="display:flex; justify-content:space-between; align-items:center; margin-bottom:5px; flex-shrink:0; gap: 8px;">
+                <label style="margin:0; font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.5px;">Captured Elements Queue</label>
+                <div style="display: flex; align-items: center; gap: 6px; margin-left: auto;">
+                    <button class="btn" onclick="showAddManualModal()" style="padding: 3px 8px; font-size: 0.68rem; background: rgba(0, 188, 242, 0.12); border: 1px solid var(--accent-secondary); color: var(--accent-secondary); border-radius: 4px;" title="Add Custom Element Manually">
+                        <i class="fas fa-plus"></i> Add Custom
+                    </button>
+                    <span id="elemCountBadge" style="font-size:0.68rem;color:var(--text-secondary);">0 elements</span>
+                </div>
             </div>
 
             <!-- Search & Filter -->
@@ -1871,45 +1875,97 @@
                     style="margin-top:3px; font-size:0.65rem; color:var(--text-secondary); min-height:11px;"></div>
             </div>
         </div>
+
+        <!-- Status Bar — inside .container so it is always visible -->
+        <div class="status-bar" style="flex-shrink:0; margin: 0 -12px; border-radius: 0;">
+            <span><span class="status-dot idle" id="captureDot"></span><span id="captureStatus">Idle</span></span>
+            <span class="status-sep">|</span>
+            <span><i class="fas fa-layer-group" style="margin-right:4px;"></i><span id="elemCountStatus">0
+                    elements</span></span>
+            <span class="status-sep">|</span>
+            <span><i class="fas fa-robot" style="margin-right:4px;"></i><span id="aiStatus">AI: Checking...</span></span>
+            <span class="status-sep" style="margin-left:auto;"></span>
+            <span id="lastActionStatus" style="color:rgba(255,255,255,0.3);">Ready</span>
+        </div>
+
+        <!-- Action buttons — inside .container so they are always pinned and visible -->
+        <div class="actions" style="flex-shrink:0; margin: 0 -12px; grid-template-columns: repeat(3, 1fr); gap: 6px; padding: 8px 10px; border-radius: 0;">
+            <button class="btn btn-outline" style="min-width: unset; font-size: 0.75rem; padding: 6px;"
+                onclick="clearQueue()">
+                <i class="fas fa-trash"></i> Clear
+            </button>
+            <button class="btn btn-outline"
+                style="border-color: #10ac84; color: #10ac84; min-width: unset; font-size: 0.75rem; padding: 6px;"
+                onclick="exportToExcel()">
+                <i class="fas fa-file-excel"></i> Excel
+            </button>
+            <button class="btn btn-outline"
+                style="border-color: #9b59b6; color: #9b59b6; min-width: unset; font-size: 0.75rem; padding: 6px;"
+                onclick="showDbModal()">
+                <i class="fas fa-database"></i> DB
+            </button>
+            <button class="btn btn-primary"
+                style="background: #f39c12; grid-column: span 1; font-size: 0.75rem; padding: 6px;" onclick="smartMerge()">
+                <i class="fas fa-code-branch"></i> Merge
+            </button>
+            <button class="btn btn-primary" style="grid-column: span 2; font-size: 0.75rem; padding: 6px;"
+                onclick="generateCode()">
+                <i class="fas fa-file-code"></i> Gen New PO
+            </button>
+        </div>
     </div>
 
-
-    <!-- Status Bar -->
-    <div class="status-bar">
-        <span><span class="status-dot idle" id="captureDot"></span><span id="captureStatus">Idle</span></span>
-        <span class="status-sep">|</span>
-        <span><i class="fas fa-layer-group" style="margin-right:4px;"></i><span id="elemCountStatus">0
-                elements</span></span>
-        <span class="status-sep">|</span>
-        <span><i class="fas fa-robot" style="margin-right:4px;"></i><span id="aiStatus">AI: Checking...</span></span>
-        <span class="status-sep" style="margin-left:auto;"></span>
-        <span id="lastActionStatus" style="color:rgba(255,255,255,0.3);">Ready</span>
-    </div>
-
-
-    <div class="actions" style="grid-template-columns: repeat(3, 1fr); gap: 6px; padding: 10px;">
-        <button class="btn btn-outline" style="min-width: unset; font-size: 0.75rem; padding: 6px;"
-            onclick="clearQueue()">
-            <i class="fas fa-trash"></i> Clear
-        </button>
-        <button class="btn btn-outline"
-            style="border-color: #10ac84; color: #10ac84; min-width: unset; font-size: 0.75rem; padding: 6px;"
-            onclick="exportToExcel()">
-            <i class="fas fa-file-excel"></i> Excel
-        </button>
-        <button class="btn btn-outline"
-            style="border-color: #9b59b6; color: #9b59b6; min-width: unset; font-size: 0.75rem; padding: 6px;"
-            onclick="showDbModal()">
-            <i class="fas fa-database"></i> DB
-        </button>
-        <button class="btn btn-primary"
-            style="background: #f39c12; grid-column: span 1; font-size: 0.75rem; padding: 6px;" onclick="smartMerge()">
-            <i class="fas fa-code-branch"></i> Merge
-        </button>
-        <button class="btn btn-primary" style="grid-column: span 2; font-size: 0.75rem; padding: 6px;"
-            onclick="generateCode()">
-            <i class="fas fa-file-code"></i> Gen New PO
-        </button>
+    <!-- Add Custom Element Modal -->
+    <div id="addManualModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3><i class="fas fa-plus-circle" style="color: var(--accent-secondary);"></i> Add Custom Element</h3>
+                <button class="modal-close" onclick="hideAddManualModal()"><i class="fas fa-times"></i></button>
+            </div>
+            <div class="form-group">
+                <label>Element Name</label>
+                <input type="text" id="manualName" placeholder="e.g. loginButton" required>
+            </div>
+            <div class="form-group">
+                <label>Locator Type</label>
+                <select id="manualType" onchange="onManualTypeChange()">
+                    <option value="XPath">XPath</option>
+                    <option value="CSS">CSS</option>
+                    <option value="ID">ID</option>
+                    <option value="getByRole">Playwright getByRole</option>
+                    <option value="getByText">Playwright getByText</option>
+                    <option value="getByPlaceholder">Playwright getByPlaceholder</option>
+                    <option value="getByLabel">Playwright getByLabel</option>
+                    <option value="getByTestId">Playwright getByTestId</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Locator Value</label>
+                <input type="text" id="manualValue" placeholder="e.g. //button[@id='submit']" style="font-family: monospace;" required>
+            </div>
+            <div class="form-group">
+                <label>Preferred Action</label>
+                <select id="manualAction">
+                    <option value="Click">Click</option>
+                    <option value="Type">Type</option>
+                    <option value="Clear">Clear</option>
+                    <option value="Hover">Hover</option>
+                    <option value="DoubleClick">DoubleClick</option>
+                    <option value="RightClick">ContextClick</option>
+                    <option value="GetText">GetText</option>
+                    <option value="IsDisplayed">IsDisplayed</option>
+                    <option value="WaitForVisible">WaitForVisible</option>
+                    <option value="ScrollIntoView">ScrollIntoView</option>
+                    <option value="SelectByVisibleText">Select</option>
+                    <option value="Check">Check</option>
+                    <option value="Uncheck">Uncheck</option>
+                </select>
+            </div>
+            <div style="display: flex; gap: 10px; margin-top: 25px;">
+                <button class="btn btn-outline" style="flex: 1;" onclick="hideAddManualModal()">Cancel</button>
+                <button class="btn btn-primary" style="flex: 1;" onclick="submitManualElement()">Add to Queue</button>
+            </div>
+        </div>
     </div>
 
     <!-- DB Storage Modal -->
@@ -1952,40 +2008,36 @@
                 <button class="modal-close" onclick="hidePoEditorModal()"><i class="fas fa-times"></i></button>
             </div>
 
+            <!-- Beautiful full-width dark editor layout with zero gutter clipping and full vertical scroll -->
             <div
-                style="flex:1; display:flex; flex-direction:column; min-height:0; position:relative; background: #0f172a;">
-                <div
-                    style="position:absolute; left:0; top:0; bottom:0; width:45px; background:rgba(255,255,255,0.03); border-right:1px solid rgba(255,255,255,0.05); display:flex; flex-direction:column; align-items:center; padding-top:15px; pointer-events:none;">
-                    <div style="font-size:0.7rem; font-family:monospace; color:rgba(255,255,255,0.2); line-height:1.6;">
-                        1<br>2<br>3<br>4<br>5<br>6<br>7<br>8<br>9<br>10<br>11<br>12<br>13<br>14<br>15<br>16<br>17<br>18<br>19<br>20
-                    </div>
-                </div>
+                style="flex:1; display:flex; flex-direction:column; min-height:0; background: #090d16; padding: 4px; border-bottom: 1px solid rgba(255,255,255,0.05);">
                 <textarea id="poEditorContent" class="po-editor" spellcheck="false"
-                    style="flex:1; border:none; background:transparent; padding:15px 15px 15px 60px; font-size:0.9rem; line-height:1.6; color:#e2e8f0; resize:none; outline:none; font-family:'Fira Code', 'Cascadia Code', 'Consolas', monospace;"></textarea>
+                    style="flex:1; border:none; background:transparent !important; padding:16px 20px; font-size:0.85rem; line-height:1.6; color:#e2e8f0; resize:none; outline:none; font-family:'Fira Code', 'Cascadia Code', 'Consolas', monospace; width:100%; box-sizing:border-box; margin:0;"></textarea>
             </div>
 
+            <!-- Compact & highly responsive control footer with dynamic flex-wrap wrapping -->
             <div
-                style="padding: 20px 25px; background: rgba(0,0,0,0.2); border-top: 1px solid rgba(255,255,255,0.05); display: flex; justify-content: space-between; align-items: center;">
-                <div style="display:flex; align-items:center; gap:12px;">
-                    <div style="display:flex; flex-direction:column; gap:2px;">
+                style="padding: 12px 16px; background: rgba(0,0,0,0.2); border-top: 1px solid rgba(255,255,255,0.05); display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap;">
+                <div style="display:flex; align-items:center; gap:8px;">
+                    <div style="display:flex; flex-direction:column; gap:1px;">
                         <span
-                            style="font-size:0.65rem; text-transform:uppercase; letter-spacing:1px; color:var(--text-secondary); opacity:0.6;">Language</span>
+                            style="font-size:0.6rem; text-transform:uppercase; letter-spacing:0.5px; color:var(--text-secondary); opacity:0.6;">Language</span>
                         <span id="poEditorLang"
-                            style="font-size:0.85rem; color:var(--accent); font-weight:bold; display:flex; align-items:center; gap:6px;">
-                            <i class="fas fa-terminal" style="font-size:0.7rem;"></i> TypeScript
+                            style="font-size:0.78rem; color:var(--accent-secondary); font-weight:bold; display:flex; align-items:center; gap:4px;">
+                            <i class="fas fa-terminal" style="font-size:0.65rem;"></i> TypeScript
                         </span>
                     </div>
                 </div>
-                <div style="display: flex; gap: 12px;">
-                    <button class="btn btn-outline" style="padding: 8px 20px; border-radius:8px;"
+                <div style="display: flex; gap: 6px; flex-wrap: wrap;">
+                    <button class="btn btn-outline" style="padding: 6px 12px; border-radius:6px; font-size:0.75rem;"
                         onclick="hidePoEditorModal()">Cancel</button>
                     <button class="btn btn-outline"
-                        style="padding: 8px 20px; border-radius:8px; display:flex; align-items:center; gap:8px;"
+                        style="padding: 6px 12px; border-radius:6px; font-size:0.75rem; display:flex; align-items:center; gap:4px;"
                         onclick="copyEditedCode(this)">
                         <i class="fas fa-copy"></i> Copy Code
                     </button>
                     <button class="btn btn-primary"
-                        style="padding: 8px 24px; border-radius:8px; display:flex; align-items:center; gap:8px; box-shadow: 0 4px 12px rgba(99,102,241,0.3);"
+                        style="padding: 6px 16px; border-radius:6px; font-size:0.75rem; display:flex; align-items:center; gap:4px; box-shadow: 0 4px 10px rgba(0, 188, 242, 0.2);"
                         onclick="saveEditedCode()">
                         <i class="fas fa-save"></i> Save to File
                     </button>
@@ -1994,132 +2046,7 @@
         </div>
     </div>
 
-    <!-- Smart Merge Preview Modal -->
-    <div id="mergeModal" class="modal">
-        <div class="modal-content modal-large"
-            style="padding: 20px; gap: 0; max-height: 94%; overflow: hidden; display: flex; flex-direction: column;">
-            <div class="modal-header" style="margin-bottom: 10px; padding-bottom: 8px;">
-                <h3 style="margin: 0; display: flex; align-items: center; gap: 10px;">
-                    <i class="fas fa-code-merge" style="color: var(--accent-secondary);"></i>
-                    Smart Merge
-                    <span
-                        style="font-size: 0.7rem; font-weight: 400; color: var(--text-secondary); background: rgba(255,255,255,0.05); border: 1px solid var(--glass-border); border-radius: 20px; padding: 2px 10px;">Interactive
-                        Diff Editor</span>
-                </h3>
-                <button class="modal-close" onclick="hideMergeModal()"><i class="fas fa-times"></i></button>
-            </div>
-
-            <!-- Checklist + Stats row -->
-            <div
-                style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px; flex-shrink: 0; flex-wrap: wrap;">
-                <div class="checklist-title" style="margin-bottom: 0; flex-shrink: 0;">
-                    <span>Locators</span>
-                    <span id="checklistCountBadge"
-                        style="font-size: 0.65rem; color: var(--accent-secondary); text-transform: none;">0 of 0</span>
-                </div>
-                <div id="mergeChecklist" class="checklist-container" style="flex: 1; margin-bottom: 0; min-width: 0;">
-                </div>
-                <div id="mergeStatsBar" class="merge-stats" style="margin-bottom: 0; flex-shrink: 0;">
-                    <span id="statLocators" class="merge-stat-pill"><i class="fas fa-fingerprint"></i> +0
-                        locators</span>
-                    <span id="statActions" class="merge-stat-pill"><i class="fas fa-running"></i> +0 actions</span>
-                </div>
-            </div>
-
-            <!-- Split Editable Code Areas -->
-            <div id="diffViewContainer" class="diff-viewer-wrap"
-                style="flex: 1; min-height: 0; display: flex; flex-direction: column;">
-
-                <!-- Navigation toolbar -->
-                <div class="diff-nav-bar" style="flex-shrink: 0;">
-                    <div class="diff-nav-group">
-                        <span class="diff-change-badge" id="diffChangeBadge"
-                            style="background: rgba(0, 188, 242, 0.1); border-color: rgba(0, 188, 242, 0.2); color: #00bcf2;">
-                            <span class="badge-num" id="diffChangeIndex">—</span><span id="diffChangeTotal">
-                                changes</span>
-                        </span>
-                    </div>
-                    <div style="display: flex; align-items: center; gap: 8px;">
-                        <!-- Target file browse row (compact, inside nav) -->
-                        <input type="text" id="mergeFilePath" readonly placeholder="Browse target file →"
-                            style="font-size: 0.72rem; padding: 4px 8px; background: rgba(255,255,255,0.04); border: 1px solid var(--glass-border); border-radius: 6px; color: var(--text-secondary); width: 230px; font-family: 'Fira Code', monospace; outline: none;">
-                        <button class="diff-nav-btn" onclick="browseMergeFile()" style="white-space: nowrap;">
-                            <i class="fas fa-folder-open"></i> Browse…
-                        </button>
-                    </div>
-                </div>
-
-                <!-- Column headers (3 columns: left | gutter | right) -->
-                <div class="diff-col-headers" style="flex-shrink: 0;">
-                    <div class="diff-col-header left-header">
-                        <i class="fas fa-code" style="color: #34d399;"></i>
-                        New Locators
-                        <span class="file-badge"
-                            style="background: rgba(16,185,129,0.1); border-color: rgba(16,185,129,0.2); color: #34d399;">generated</span>
-                    </div>
-                    <div class="diff-col-header-gutter" title="Separator">·</div>
-                    <div class="diff-col-header">
-                        <i class="fas fa-file-code"></i>
-                        Target File
-                        <span class="file-badge" id="diffRightFileBadge">—</span>
-                    </div>
-                </div>
-
-                <!-- Twin editable textareas -->
-                <div class="diff-container"
-                    style="display: flex; flex: 1; min-height: 0; position: relative; user-select: none;">
-                    <!-- Left pane: Editable generated new locators -->
-                    <div class="diff-pane" id="diffPaneLeft"
-                        style="display: flex; flex: 1; flex-direction: column; padding: 0; background: transparent; overflow: hidden; border: none; min-width: 100px;">
-                        <textarea class="diff-pane-textarea" id="mergeNewCodeTextarea" spellcheck="false"
-                            placeholder="New generated code will show here..."
-                            style="height: 100%; width: 100%;"></textarea>
-                    </div>
-
-                    <!-- Center separator -->
-                    <div id="diffResizer" class="diff-col-header-gutter"
-                        style="width: 8px; flex-shrink: 0; background: rgba(255, 255, 255, 0.03); border-left: 1px solid rgba(255,255,255,0.05); border-right: 1px solid rgba(255,255,255,0.05); cursor: col-resize; display: flex; align-items: center; justify-content: center; font-size: 0.6rem; color: rgba(255,255,255,0.25); transition: background 0.2s;"
-                        title="Drag to resize columns">·</div>
-
-                    <!-- Right pane: Editable target file content -->
-                    <div class="diff-pane" id="diffPaneRight"
-                        style="display: flex; flex: 1; flex-direction: column; padding: 0; background: transparent; overflow: hidden; border: none; min-width: 100px;">
-                        <!-- Placeholder shown until file is browsed -->
-                        <div class="diff-right-placeholder" id="diffRightPlaceholder"
-                            style="flex: 1; display: flex; flex-direction: column; justify-content: center; align-items: center;">
-                            <i class="fas fa-folder-open"></i>
-                            <p>No target file selected</p>
-                            <span class="browse-hint" onclick="browseMergeFile()">Click Browse… to select a file</span>
-                        </div>
-                        <textarea class="diff-pane-textarea" id="mergeExistingCodeTextarea" spellcheck="false"
-                            style="display: none; height: 100%; width: 100%;"
-                            placeholder="Select target file to load merged content..."></textarea>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Hidden textarea used only as string store for confirmMerge -->
-            <textarea id="mergeExistingCode" style="display: none;"></textarea>
-
-            <!-- Action Bar -->
-            <div
-                style="display: flex; gap: 10px; justify-content: space-between; align-items: center; flex-shrink: 0; border-top: 1px solid var(--glass-border); padding-top: 10px; margin-top: 8px;">
-                <div style="font-size: 0.72rem; color: var(--text-secondary);">
-                    <span id="mergeAcceptStatus" style="color: var(--text-secondary);">Click <strong
-                            style="color: var(--accent-secondary);">→</strong> on a hunk to move it to the target
-                        file</span>
-                </div>
-                <div style="display: flex; gap: 10px;">
-                    <button class="btn btn-outline" style="padding: 7px 16px; font-size: 0.78rem;"
-                        onclick="hideMergeModal()">Cancel</button>
-                    <button class="btn btn-primary" style="padding: 7px 22px; font-size: 0.78rem;" id="mergeConfirmBtn"
-                        onclick="confirmMerge()">
-                        <i class="fas fa-save"></i> Commit Merge to File
-                    </button>
-                </div>
-            </div>
-        </div>
-    </div>
+    <!-- Smart Merge now opens in a dedicated popup window -->
 
     <!-- CodeMirror Core and Language Modes -->
     <script src="libs/codemirror.min.js"></script>
@@ -2248,8 +2175,40 @@
         }
         initBridge();
 
+        function updateLanguageOptions() {
+            const tool = document.getElementById('toolSelect').value;
+            const langSelect = document.getElementById('langSelect');
+            const currentLang = langSelect.value;
+            
+            langSelect.innerHTML = '';
+            
+            let options = [];
+            if (tool === 'Selenium') {
+                options = [
+                    { value: 'C#', text: 'C#' },
+                    { value: 'Java', text: 'Java' },
+                    { value: 'Python', text: 'Python' }
+                ];
+            } else if (tool === 'Playwright') {
+                options = [
+                    { value: 'TypeScript', text: 'TypeScript' },
+                    { value: 'Java', text: 'Java' },
+                    { value: 'Python', text: 'Python' }
+                ];
+            }
+            
+            options.forEach(opt => {
+                const el = document.createElement('option');
+                el.value = opt.value;
+                el.textContent = opt.text;
+                if (opt.value === currentLang) el.selected = true;
+                langSelect.appendChild(el);
+            });
+        }
+
         window.addEventListener('DOMContentLoaded', () => {
             initSplitResizer();
+            updateLanguageOptions();
             // CodeMirror is now lazy-initialized on first merge modal open
             // (removed from here to avoid blocking startup repaint)
         });
@@ -2331,7 +2290,7 @@
             capturedElements.forEach((el, idx) => {
                 const count = el.count;
                 const badgeColor = count === 1 ? 'var(--success)' : (count === 0 ? 'var(--danger)' : 'var(--warning)');
-                const badgeText = count === 1 ? 'Unique ✓' : `${count ?? '?'} matches`;
+                const badgeText = count === 1 ? 'Unique' : `${count ?? '?'} matches`;
                 const borderColor = count === 1 ? 'var(--success)' : (count === 0 ? 'var(--danger)' : 'var(--warning)');
                 const alts = el.alternatives || [];
 
@@ -2458,7 +2417,7 @@
             const el = capturedElements[idx];
             const count = el.count;
             const badgeColor = count === 1 ? 'var(--success)' : (count === 0 ? 'var(--danger)' : 'var(--warning)');
-            const badgeText = count === 1 ? 'Unique [OK]' : (count != null ? `${count} matches` : '? matches');
+            const badgeText = count === 1 ? 'Unique' : (count != null ? `${count} matches` : '? matches');
             const itemEl = document.getElementById(`locator-item-${idx}`);
             if (!itemEl) { renderQueue(); return; }
             itemEl.style.borderLeftColor = badgeColor;
@@ -2481,7 +2440,7 @@
             const el = capturedElements[idx];
             const count = el.count;
             const badgeColor = count === 1 ? 'var(--success)' : (count === 0 ? 'var(--danger)' : 'var(--warning)');
-            const badgeText = count === 1 ? 'Unique [OK]' : (count != null ? `${count} matches` : '? matches');
+            const badgeText = count === 1 ? 'Unique' : (count != null ? `${count} matches` : '? matches');
             const borderColor = badgeColor;
             const alts = el.alternatives || [];
             const altsHtml = alts.map((l, i) => {
@@ -2594,7 +2553,7 @@
         function updateItemMatchBadge(idx, count) {
             const badge = document.getElementById(`match-badge-${idx}`);
             if (badge) {
-                badge.innerText = `${count} match${count === 1 ? '' : 'es'}`;
+                badge.innerText = count === 1 ? 'Unique' : `${count} match${count === 1 ? '' : 'es'}`;
                 badge.style.color = count === 1 ? 'var(--success)' : (count === 0 ? 'var(--danger)' : 'var(--warning)');
 
                 // Also update the locator value color
@@ -2859,7 +2818,9 @@
 
         function copyEditedCode(btn) {
             const content = document.getElementById('poEditorContent').value;
-            navigator.clipboard.writeText(content).then(() => {
+            if (!content) return;
+
+            function _showCopied() {
                 const originalHtml = btn.innerHTML;
                 btn.innerHTML = '<i class="fas fa-check"></i> Copied!';
                 btn.style.borderColor = 'var(--success)';
@@ -2869,7 +2830,25 @@
                     btn.style.borderColor = '';
                     btn.style.color = '';
                 }, 2000);
-            });
+            }
+
+            // navigator.clipboard is blocked on file:// in QWebEngineView.
+            // Route through Python which uses Qt's clipboard API instead.
+            if (pyBridge && typeof pyBridge.callPython === 'function') {
+                pyBridge.callPython('copy_to_clipboard', JSON.stringify({ text: content }));
+                _showCopied();
+            } else {
+                // Legacy fallback: select + execCommand (works in WebEngine even on file://)
+                const ta = document.getElementById('poEditorContent');
+                ta.select();
+                try {
+                    document.execCommand('copy');
+                    _showCopied();
+                } catch(e) {
+                    console.error('Copy failed:', e);
+                }
+                window.getSelection && window.getSelection().removeAllRanges();
+            }
         }
 
         function saveEditedCode() {
@@ -2920,6 +2899,91 @@
                 }));
             }
             hideDbModal();
+        }
+
+        // Add Custom Element Manually Logic
+        function showAddManualModal() {
+            document.getElementById('manualName').value = '';
+            document.getElementById('manualValue').value = '';
+            document.getElementById('manualType').value = 'XPath';
+            document.getElementById('manualAction').value = 'Click';
+            document.getElementById('addManualModal').style.display = 'flex';
+            
+            // Trigger placeholder update
+            onManualTypeChange();
+            
+            // Set focus
+            setTimeout(() => {
+                const el = document.getElementById('manualName');
+                if (el) el.focus();
+            }, 100);
+        }
+
+        function hideAddManualModal() {
+            document.getElementById('addManualModal').style.display = 'none';
+        }
+
+        function onManualTypeChange() {
+            const type = document.getElementById('manualType').value;
+            const valEl = document.getElementById('manualValue');
+            if (!valEl) return;
+            if (type === 'XPath') {
+                valEl.placeholder = "e.g. //button[@id='submit']";
+            } else if (type === 'CSS') {
+                valEl.placeholder = "e.g. #submit, .btn-primary";
+            } else if (type === 'ID') {
+                valEl.placeholder = "e.g. submit";
+            } else if (type.startsWith('getBy')) {
+                valEl.placeholder = "e.g. button, { name: 'Submit' } or text values";
+            }
+        }
+
+        function submitManualElement() {
+            const name = document.getElementById('manualName').value.trim();
+            const type = document.getElementById('manualType').value;
+            const value = document.getElementById('manualValue').value.trim();
+            const action = document.getElementById('manualAction').value;
+
+            if (!name || !value) {
+                showAlert("Please enter both Element Name and Locator Value.");
+                return;
+            }
+
+            const newElement = {
+                name: name,
+                nameHint: name,
+                type: type,
+                value: value,
+                action: action,
+                count: 1, // Default to 1 match
+                alternatives: [],
+                aiGenerated: false
+            };
+
+            capturedElements.push(newElement);
+            hideAddManualModal();
+            renderQueue();
+            
+            // Immediately verify the manually entered locator against the page
+            if (pyBridge) {
+                const idx = capturedElements.length - 1;
+                let verifyType = type;
+                let verifyVal = value;
+                if (type === 'ID') {
+                    verifyType = 'CSS';
+                    verifyVal = `#${value}`;
+                }
+                // Only verify CSS/XPath/ID in browser
+                if (verifyType === 'CSS' || verifyType === 'XPath') {
+                    pyBridge.callPython("verify_locator", JSON.stringify({ 
+                        type: verifyType, 
+                        value: verifyVal,
+                        idx: idx
+                    }));
+                }
+            }
+            
+            setLastAction(`Added manual element: ${name}`);
         }
 
         // ═══ Smart Merge — State ═════════════════════════════════════════════
@@ -3234,28 +3298,11 @@
                 return;
             }
             if (pyBridge) {
-                mergeSelections = capturedElements.map((el, idx) => idx);
-                _leftCode = ''; _rightCode = ''; _targetFilePath = '';
-                document.getElementById('mergeFilePath').value = '';
-                document.getElementById('mergeExistingCode').value = '';
-                // Reset right placeholder and textarea
-                const ph = document.getElementById('diffRightPlaceholder');
-                if (ph) ph.style.display = '';
-                if (cmRight) {
-                    cmRight.setValue('');
-                    cmRight.getWrapperElement().style.display = 'none';
-                } else {
-                    const txtRight = document.getElementById('mergeExistingCodeTextarea');
-                    if (txtRight) {
-                        txtRight.value = '';
-                        txtRight.style.display = 'none';
-                    }
-                }
-                const rBadge = document.getElementById('diffRightFileBadge');
-                if (rBadge) rBadge.textContent = '—';
-                showMergeModal();
-                renderMergeChecklist();
-                triggerSmartMergePreview();
+                pyBridge.callPython("open_merge_window", JSON.stringify({
+                    locators: capturedElements,
+                    tool: document.getElementById('toolSelect').value,
+                    lang: document.getElementById('langSelect').value
+                }));
             }
         }
 

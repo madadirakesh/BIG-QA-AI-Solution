@@ -34,7 +34,8 @@ def main():
         # Create the QApplication instance
         app = locator_studio.QApplication(sys.argv)
         studio = locator_studio.LocatorStudio()
-        studio.show()
+        # Always launch maximized so all panels and buttons are fully visible
+        studio.showMaximized()
         sys.exit(app.exec())
     except Exception as e:
         print(f"Failed to launch: {e}")

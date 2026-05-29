@@ -1,0 +1,1080 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Smart Merge - Code Diff Viewer</title>
+    
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- CodeMirror Stylesheets -->
+    <link rel="stylesheet" href="libs/codemirror.min.css">
+    <link rel="stylesheet" href="libs/material-darker.min.css">
+    
+    <style>
+        :root {
+            --bg-primary: #0f172a;
+            --bg-secondary: #1e293b;
+            --bg-overlay: rgba(30, 41, 59, 0.7);
+            --bg-card: rgba(30, 41, 59, 0.4);
+            --text-primary: #f8fafc;
+            --text-secondary: #94a3b8;
+            --accent-primary: #0078d4;
+            --accent-secondary: #00bcf2;
+            --accent-glow: rgba(0, 188, 242, 0.35);
+            --success: #10b981;
+            --warning: #f59e0b;
+            --danger: #ef4444;
+            --glass-border: rgba(255, 255, 255, 0.08);
+            --glass-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.35);
+            --transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            --border-radius: 12px;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: 'Inter', -apple-system, sans-serif;
+        }
+
+        body {
+            background: linear-gradient(135deg, var(--bg-primary) 0%, #020617 100%);
+            color: var(--text-primary);
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            padding: 16px;
+        }
+
+        /* Scrollbars */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 10px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: rgba(255, 255, 255, 0.2);
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid var(--glass-border);
+            flex-shrink: 0;
+        }
+
+        .header h3 {
+            font-family: 'Outfit', sans-serif;
+            font-size: 1.2rem;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .checklist-title {
+            font-size: 0.72rem;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            font-weight: 600;
+            margin-bottom: 6px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .checklist-container {
+            background: rgba(0, 0, 0, 0.15);
+            border-radius: 8px;
+            padding: 8px 12px;
+            border: 1px solid var(--glass-border);
+            max-height: 105px;
+            overflow-y: auto;
+            flex-shrink: 0;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+
+        .checklist-item {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 0.75rem;
+            color: var(--text-primary);
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid var(--glass-border);
+            padding: 4px 10px;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: var(--transition);
+            user-select: none;
+        }
+
+        .checklist-item:hover {
+            background: rgba(255, 255, 255, 0.08);
+            border-color: rgba(255, 255, 255, 0.15);
+        }
+
+        .checklist-item input {
+            width: 13px;
+            height: 13px;
+            margin: 0;
+            accent-color: var(--accent-primary);
+            cursor: pointer;
+        }
+
+        .merge-stats {
+            display: flex;
+            gap: 12px;
+            align-items: center;
+            font-size: 0.72rem;
+            color: var(--text-secondary);
+            background: rgba(0, 188, 242, 0.05);
+            border: 1px solid rgba(0, 188, 242, 0.12);
+            padding: 6px 12px;
+            border-radius: 6px;
+        }
+
+        .merge-stat-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            font-weight: 500;
+        }
+
+        .merge-stat-pill i {
+            color: var(--accent-secondary);
+        }
+
+        .diff-viewer-wrap {
+            display: flex;
+            flex-direction: column;
+            flex: 1;
+            min-height: 0;
+            margin-bottom: 12px;
+            border-radius: 10px;
+            border: 1px solid var(--glass-border);
+            overflow: hidden;
+        }
+
+        .diff-nav-bar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 8px 12px;
+            background: rgba(15, 23, 42, 0.9);
+            border-bottom: 1px solid var(--glass-border);
+            flex-shrink: 0;
+        }
+
+        .diff-nav-group {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .diff-nav-btn {
+            background: rgba(255, 255, 255, 0.06);
+            border: 1px solid var(--glass-border);
+            border-radius: 6px;
+            color: var(--text-secondary);
+            cursor: pointer;
+            font-size: 0.75rem;
+            padding: 5px 12px;
+            transition: var(--transition);
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            font-family: 'Outfit', sans-serif;
+            font-weight: 600;
+        }
+
+        .diff-nav-btn:hover {
+            background: rgba(255, 255, 255, 0.12);
+            color: var(--text-primary);
+            border-color: var(--accent-secondary);
+        }
+
+        .diff-change-badge {
+            font-size: 0.72rem;
+            font-family: 'Outfit', sans-serif;
+            font-weight: 600;
+            color: var(--text-secondary);
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--glass-border);
+            border-radius: 20px;
+            padding: 4px 12px;
+            white-space: nowrap;
+        }
+
+        .diff-change-badge .badge-num {
+            color: var(--accent-secondary);
+            font-weight: 700;
+        }
+
+        .diff-col-headers {
+            display: flex;
+            background: rgba(0, 0, 0, 0.25);
+            border-bottom: 1px solid var(--glass-border);
+            flex-shrink: 0;
+        }
+
+        .diff-col-header {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 12px;
+            font-size: 0.75rem;
+            font-family: 'Outfit', sans-serif;
+            font-weight: 600;
+            color: var(--text-secondary);
+            letter-spacing: 0.3px;
+            text-transform: uppercase;
+        }
+
+        .diff-col-header.left-header {
+            border-right: 1px solid var(--glass-border);
+        }
+
+        .diff-col-header .file-badge {
+            font-size: 0.65rem;
+            font-family: 'Fira Code', monospace;
+            background: rgba(255, 255, 255, 0.06);
+            border: 1px solid var(--glass-border);
+            border-radius: 4px;
+            padding: 1px 6px;
+            color: var(--text-secondary);
+            opacity: 0.8;
+            max-width: 180px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            text-transform: none;
+            font-weight: 400;
+        }
+
+        .diff-container {
+            display: flex;
+            flex: 1;
+            min-height: 0;
+            background: rgba(255, 255, 255, 0.04);
+            overflow: hidden;
+        }
+
+        .diff-pane-textarea {
+            flex: 1;
+            overflow: auto;
+            background: #090d18;
+            padding: 12px;
+            color: #d1fae5;
+            font-family: 'Fira Code', 'Cascadia Code', 'Consolas', monospace;
+            font-size: 0.8rem;
+            line-height: 1.6;
+            border: none;
+            outline: none;
+            resize: none;
+            box-sizing: border-box;
+            height: 100%;
+        }
+
+        .diff-pane-textarea.left-pane {
+            border-right: 1px solid rgba(255, 255, 255, 0.06);
+        }
+
+        /* CodeMirror Custom Styling */
+        .CodeMirror {
+            flex: 1;
+            height: 100% !important;
+            font-family: 'Fira Code', 'Cascadia Code', 'Consolas', monospace;
+            font-size: 0.82rem !important;
+            background: #090d18 !important;
+            color: #d1fae5 !important;
+        }
+
+        .CodeMirror-gutters {
+            background: #060911 !important;
+            border-right: 1px solid rgba(255, 255, 255, 0.05) !important;
+        }
+
+        .CodeMirror-linenumber {
+            color: #475569 !important;
+        }
+
+        .CodeMirror-cursor {
+            border-left: 2px solid #34d399 !important;
+        }
+
+        .diff-pane {
+            flex: 1;
+            overflow: auto;
+            background: #090d18;
+            padding: 6px 0;
+            position: relative;
+        }
+
+        .diff-pane.left-pane {
+            border-right: 1px solid rgba(255, 255, 255, 0.06);
+        }
+
+        .diff-lines {
+            display: flex;
+            flex-direction: column;
+            width: 100%;
+            min-width: 0;
+        }
+
+        .diff-line {
+            display: flex;
+            align-items: stretch;
+            width: 100%;
+            min-height: 20px;
+            font-family: 'Fira Code', 'Cascadia Code', 'Consolas', monospace;
+            font-size: 0.8rem;
+            line-height: 1.6;
+            white-space: pre;
+        }
+
+        .diff-gutter {
+            display: flex;
+            align-items: center;
+            gap: 0;
+            flex-shrink: 0;
+        }
+
+        .diff-ln {
+            width: 42px;
+            text-align: right;
+            padding: 0 8px;
+            color: rgba(255, 255, 255, 0.18);
+            font-size: 0.68rem;
+            user-select: none;
+            flex-shrink: 0;
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+        }
+
+        .diff-sign {
+            width: 18px;
+            text-align: center;
+            padding: 0 2px;
+            color: rgba(255, 255, 255, 0.15);
+            font-size: 0.8rem;
+            font-weight: 700;
+            flex-shrink: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-right: 2px solid transparent;
+        }
+
+        .diff-code {
+            flex: 1;
+            overflow: hidden;
+            padding: 0 10px;
+            display: flex;
+            align-items: center;
+            min-width: 0;
+        }
+
+        .diff-code-inner {
+            white-space: pre;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            width: 100%;
+        }
+
+        /* Diff Type Highlights */
+        .diff-line.added {
+            background: rgba(16, 185, 129, 0.08);
+        }
+        .diff-line.added .diff-ln {
+            color: rgba(52, 211, 153, 0.5);
+        }
+        .diff-line.added .diff-sign {
+            color: #10b981;
+            border-right-color: #10b981;
+            background: rgba(16, 185, 129, 0.18);
+        }
+        .diff-line.added .diff-code {
+            color: #d1fae5;
+        }
+
+        .diff-line.removed {
+            background: rgba(239, 68, 68, 0.08);
+        }
+        .diff-line.removed .diff-ln {
+            color: rgba(248, 113, 113, 0.5);
+        }
+        .diff-line.removed .diff-sign {
+            color: #ef4444;
+            border-right-color: #ef4444;
+            background: rgba(239, 68, 68, 0.18);
+        }
+        .diff-line.removed .diff-code {
+            color: #fee2e2;
+        }
+
+        .diff-line.empty {
+            background: repeating-linear-gradient(45deg,
+                    transparent,
+                    transparent 4px,
+                    rgba(255, 255, 255, 0.012) 4px,
+                    rgba(255, 255, 255, 0.012) 8px);
+            opacity: 0.4;
+        }
+
+        .diff-char-added {
+            background: rgba(16, 185, 129, 0.35);
+            border-radius: 2px;
+            color: #bbf7d0;
+        }
+
+        .diff-char-removed {
+            background: rgba(239, 68, 68, 0.35);
+            border-radius: 2px;
+            color: #fecaca;
+        }
+
+        .diff-col-header-gutter {
+            width: 8px;
+            flex-shrink: 0;
+            background: rgba(255, 255, 255, 0.03);
+            border-left: 1px solid rgba(255, 255, 255, 0.05);
+            border-right: 1px solid rgba(255, 255, 255, 0.05);
+            font-size: 0.6rem;
+            color: rgba(255, 255, 255, 0.15);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .diff-right-placeholder {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            gap: 12px;
+            color: var(--text-secondary);
+            padding: 30px;
+            text-align: center;
+            user-select: none;
+        }
+
+        .diff-right-placeholder i {
+            font-size: 3rem;
+            opacity: 0.25;
+            margin-bottom: 6px;
+        }
+
+        .diff-right-placeholder .browse-hint {
+            font-size: 0.8rem;
+            color: var(--accent-secondary);
+            opacity: 0.8;
+            cursor: pointer;
+            text-decoration: underline;
+        }
+
+        .btn {
+            cursor: pointer;
+            border: none;
+            border-radius: 8px;
+            padding: 8px 18px;
+            font-family: 'Outfit', sans-serif;
+            font-weight: 600;
+            font-size: 0.85rem;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            transition: var(--transition);
+        }
+
+        .btn:hover {
+            transform: translateY(-1.5px);
+        }
+
+        .btn:active {
+            transform: translateY(0.5px);
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary)) !important;
+            color: white !important;
+            box-shadow: 0 4px 14px var(--accent-glow);
+        }
+
+        .btn-primary:hover {
+            box-shadow: 0 6px 20px var(--accent-glow);
+            filter: brightness(1.05);
+        }
+
+        .btn-outline {
+            background: transparent;
+            border: 1px solid var(--glass-border);
+            color: var(--text-secondary);
+        }
+
+        .btn-outline:hover {
+            background: rgba(255, 255, 255, 0.05);
+            color: var(--text-primary);
+            border-color: var(--text-secondary);
+        }
+
+        .footer {
+            display: flex;
+            gap: 10px;
+            justify-content: space-between;
+            align-items: center;
+            flex-shrink: 0;
+            border-top: 1px solid var(--glass-border);
+            padding-top: 12px;
+        }
+
+        input[type="text"] {
+            width: 100%;
+            background: rgba(15, 23, 42, 0.5) !important;
+            border: 1px solid var(--glass-border);
+            border-radius: 8px;
+            padding: 8px 12px;
+            color: var(--text-primary);
+            outline: none;
+            font-size: 0.85rem;
+            transition: var(--transition);
+        }
+
+        input[type="text"]:focus {
+            border-color: var(--accent-secondary) !important;
+            box-shadow: 0 0 0 3px var(--accent-glow) !important;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="header">
+        <h3>
+            <i class="fas fa-code-merge" style="color: var(--accent-secondary);"></i>
+            Smart Merge
+        </h3>
+    </div>
+
+    <!-- Checklist + Stats row -->
+    <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 12px; flex-shrink: 0; flex-wrap: wrap;">
+        <div class="checklist-title" style="margin-bottom: 0; flex-shrink: 0;">
+            <span>Locators</span>
+            <span id="checklistCountBadge" style="font-size: 0.65rem; color: var(--accent-secondary); text-transform: none; margin-left: 6px;">0 of 0</span>
+        </div>
+        <div id="mergeChecklist" class="checklist-container" style="flex: 1; margin-bottom: 0; min-width: 0;"></div>
+        <div id="mergeStatsBar" class="merge-stats" style="margin-bottom: 0; flex-shrink: 0;">
+            <span id="statLocators" class="merge-stat-pill"><i class="fas fa-fingerprint"></i> +0 locators</span>
+            <span id="statActions" class="merge-stat-pill"><i class="fas fa-running"></i> +0 actions</span>
+        </div>
+    </div>
+
+    <!-- Split Editable Code Areas -->
+    <div id="diffViewContainer" class="diff-viewer-wrap">
+        <!-- Navigation toolbar -->
+        <div class="diff-nav-bar">
+            <div class="diff-nav-group">
+                <span class="diff-change-badge" id="diffChangeBadge" style="background: rgba(0, 188, 242, 0.1); border-color: rgba(0, 188, 242, 0.2); color: #00bcf2;">
+                    <span class="badge-num" id="diffChangeIndex">—</span><span id="diffChangeTotal"> changes</span>
+                </span>
+            </div>
+            <div style="display: flex; align-items: center; gap: 8px;">
+                <input type="text" id="mergeFilePath" readonly placeholder="Browse target file →" style="font-size: 0.78rem; padding: 6px 12px; background: rgba(255,255,255,0.04); border: 1px solid var(--glass-border); border-radius: 6px; color: var(--text-secondary); width: 350px; font-family: 'Fira Code', monospace; outline: none;">
+                <button class="diff-nav-btn" onclick="browseMergeFile()"><i class="fas fa-folder-open"></i> Browse…</button>
+            </div>
+        </div>
+
+        <!-- Column headers -->
+        <div class="diff-col-headers">
+            <div class="diff-col-header left-header">
+                <i class="fas fa-code" style="color: #34d399;"></i>
+                New Locators
+                <span class="file-badge" style="background: rgba(16,185,129,0.1); border-color: rgba(16,185,129,0.2); color: #34d399; margin-left: 6px;">generated</span>
+            </div>
+            <div class="diff-col-header-gutter" style="width:8px;">·</div>
+            <div class="diff-col-header">
+                <i class="fas fa-file-code"></i>
+                Target File
+                <span class="file-badge" id="diffRightFileBadge" style="margin-left: 6px;">—</span>
+            </div>
+        </div>
+
+        <!-- Twin editable textareas -->
+        <div class="diff-container" style="position: relative;">
+            <!-- Left pane: Editable generated new locators -->
+            <div class="diff-pane" id="diffPaneLeft" style="display: flex; flex: 1; flex-direction: column; padding: 0; background: transparent; overflow: hidden; border: none; min-width: 100px;">
+                <textarea class="diff-pane-textarea" id="mergeNewCodeTextarea" spellcheck="false" placeholder="New generated code will show here..."></textarea>
+            </div>
+
+            <!-- Center separator -->
+            <div id="diffResizer" class="diff-col-header-gutter" style="cursor: col-resize;" title="Drag to resize columns">·</div>
+
+            <!-- Right pane: Editable target file content -->
+            <div class="diff-pane" id="diffPaneRight" style="display: flex; flex: 1; flex-direction: column; padding: 0; background: transparent; overflow: hidden; border: none; min-width: 100px;">
+                <!-- Placeholder shown until file is browsed -->
+                <div class="diff-right-placeholder" id="diffRightPlaceholder">
+                    <i class="fas fa-folder-open"></i>
+                    <p>No target file selected</p>
+                    <span class="browse-hint" onclick="browseMergeFile()">Click Browse… to select a file</span>
+                </div>
+                <textarea class="diff-pane-textarea" id="mergeExistingCodeTextarea" spellcheck="false" style="display: none;" placeholder="Select target file to load merged content..."></textarea>
+            </div>
+        </div>
+    </div>
+
+    <!-- Hidden textarea used only as string store for confirmMerge -->
+    <textarea id="mergeExistingCode" style="display: none;"></textarea>
+
+    <!-- Footer Action Bar -->
+    <div class="footer">
+        <div style="font-size: 0.78rem; color: var(--text-secondary);">
+            <span id="mergeAcceptStatus"><i class="fas fa-info-circle"></i> Both windows are fully editable! Make any adjustments on the right and click Save.</span>
+        </div>
+        <div style="display: flex; gap: 10px;">
+            <button class="btn btn-outline" onclick="closeWindow()">Cancel</button>
+            <button class="btn btn-primary" id="mergeConfirmBtn" onclick="confirmMerge()">
+                <i class="fas fa-save"></i> Save
+            </button>
+        </div>
+    </div>
+
+    <!-- CodeMirror Libraries -->
+    <script src="libs/codemirror.min.js"></script>
+    <script src="libs/javascript.min.js"></script>
+    <script src="libs/python.min.js"></script>
+    <script src="libs/clike.min.js"></script>
+    <script src="qrc:///qtwebchannel/qwebchannel.js"></script>
+    
+    <script>
+        let pyBridge = null;
+        let capturedElements = [];
+        let mergeSelections = [];
+        let cmLeft = null;
+        let cmRight = null;
+        let _leftCode = '';
+        let _rightCode = '';
+        let _targetFilePath = '';
+        let _selectedTool = 'Playwright';
+        let _selectedLang = 'TypeScript';
+
+        function initBridge() {
+            console.log("JS: initBridge called. Checking qt and webChannelTransport...");
+            if (typeof qt !== 'undefined' && qt.webChannelTransport && typeof qt.webChannelTransport.send === 'function') {
+                console.log("JS: QWebChannel transport found, initializing channel...");
+                new QWebChannel(qt.webChannelTransport, function (channel) {
+                    pyBridge = channel.objects.pyBridge;
+                    console.log("JS: pyBridge object obtained successfully.");
+                    
+                    // Listen for Smart Merge preview updates from Python
+                    if (pyBridge.mergePreviewReady) {
+                        console.log("JS: Connecting to pyBridge.mergePreviewReady signal.");
+                        pyBridge.mergePreviewReady.connect(function (dataJson) {
+                            try {
+                                console.log("JS: Received mergePreviewReady signal. Payload length: " + dataJson.length);
+                                const data = JSON.parse(dataJson);
+                                _targetFilePath = data.target_file || '';
+                                document.getElementById('mergeFilePath').value = _targetFilePath;
+
+                                _leftCode = data.new_code || '';
+                                _rightCode = _targetFilePath ? (data.merged_code || '') : '';
+                                document.getElementById('mergeExistingCode').value = _rightCode || _leftCode;
+
+                                console.log("JS: Left code preview length: " + _leftCode.length + ", right code length: " + _rightCode.length);
+                                renderDiff(_leftCode, _rightCode, _targetFilePath);
+                            } catch (e) {
+                                console.error('JS ERROR: mergePreviewReady parsing error:', e);
+                            }
+                        });
+                    } else {
+                        console.error("JS ERROR: mergePreviewReady signal does not exist on pyBridge!");
+                    }
+
+                    // Let Python know the window is ready to load locators
+                    console.log("JS: Calling merge_window_ready in Python.");
+                    pyBridge.callPython("merge_window_ready", "");
+                });
+            } else {
+                console.log("JS: QWebChannel transport not found, retrying in 100ms...");
+                setTimeout(initBridge, 100);
+            }
+        }
+
+        window.addEventListener('DOMContentLoaded', () => {
+            console.log("JS: DOMContentLoaded fired.");
+            initSplitResizer();
+            initBridge();
+        });
+
+        function getLangMode() {
+            const lang = (_selectedLang || '').toLowerCase();
+            if (lang === 'python') return 'text/x-python';
+            if (lang === 'java') return 'text/x-java';
+            if (lang === 'c#') return 'text/x-csharp';
+            if (lang === 'javascript') return 'text/javascript';
+            return 'text/typescript'; // TypeScript and anything else
+        }
+
+        function initCodeMirrorEditors() {
+            console.log("JS: initCodeMirrorEditors called. typeof CodeMirror: " + (typeof CodeMirror));
+            if (typeof CodeMirror === 'undefined') {
+                console.error("JS ERROR: CodeMirror library is NOT loaded!");
+                return;
+            }
+            const mode = getLangMode();
+            const leftTxt = document.getElementById('mergeNewCodeTextarea');
+            if (leftTxt && !cmLeft) {
+                console.log("JS: Creating cmLeft CodeMirror instance with mode: " + mode);
+                cmLeft = CodeMirror.fromTextArea(leftTxt, {
+                    lineNumbers: true,
+                    mode: mode,
+                    theme: "material-darker",
+                    lineWrapping: false
+                });
+                // Ensure container fills available height
+                cmLeft.getWrapperElement().style.height = '100%';
+            }
+
+            const rightTxt = document.getElementById('mergeExistingCodeTextarea');
+            if (rightTxt && !cmRight) {
+                console.log("JS: Creating cmRight CodeMirror instance with mode: " + mode);
+                cmRight = CodeMirror.fromTextArea(rightTxt, {
+                    lineNumbers: true,
+                    mode: mode,
+                    theme: "material-darker",
+                    lineWrapping: false
+                });
+                cmRight.getWrapperElement().style.height = '100%';
+            }
+        }
+
+        function getCodeMirrorMode(filePath) {
+            if (filePath) {
+                const ext = filePath.split('.').pop().toLowerCase();
+                if (ext === 'py') return 'text/x-python';
+                if (ext === 'java') return 'text/x-java';
+                if (ext === 'cs') return 'text/x-csharp';
+                if (ext === 'js' || ext === 'ts') return 'text/typescript';
+            }
+            return 'text/typescript';
+        }
+
+        function renderDiff(leftCode, rightCode, filePath) {
+            console.log("JS: renderDiff called. LeftCode length: " + (leftCode ? leftCode.length : 0) + ", filePath: " + filePath);
+            initCodeMirrorEditors();
+
+            const ph = document.getElementById('diffRightPlaceholder');
+            const txtRight = document.getElementById('mergeExistingCodeTextarea');
+            const rBadge = document.getElementById('diffRightFileBadge');
+
+            if (filePath) {
+                if (ph) ph.style.display = 'none';
+                if (cmRight) {
+                    console.log("JS: Populating cmRight editor.");
+                    cmRight.setValue(rightCode);
+                    cmRight.getWrapperElement().style.display = '';
+                    cmRight.refresh();
+                } else if (txtRight) {
+                    console.log("JS: Populating raw right textarea.");
+                    txtRight.value = rightCode;
+                    txtRight.style.display = '';
+                }
+                if (rBadge) {
+                    rBadge.textContent = filePath.split(/[/\\]/).pop();
+                    rBadge.title = filePath;
+                    rBadge.style.background = 'rgba(16,185,129,0.1)';
+                    rBadge.style.borderColor = 'rgba(16,185,129,0.2)';
+                    rBadge.style.color = '#34d399';
+                }
+            } else {
+                if (ph) ph.style.display = '';
+                if (cmRight) {
+                    cmRight.setValue('');
+                    cmRight.getWrapperElement().style.display = 'none';
+                } else if (txtRight) {
+                    txtRight.value = '';
+                    txtRight.style.display = 'none';
+                }
+                if (rBadge) rBadge.textContent = '—';
+            }
+
+            if (cmLeft) {
+                console.log("JS: Populating cmLeft editor with leftCode.");
+                cmLeft.setValue(leftCode);
+                cmLeft.refresh();
+                // Dynamic layout engine refresh safeguard
+                setTimeout(() => {
+                    if (cmLeft) {
+                        console.log("JS: Performing delayed cmLeft refresh.");
+                        cmLeft.refresh();
+                    }
+                }, 150);
+            } else {
+                const leftTxt = document.getElementById('mergeNewCodeTextarea');
+                if (leftTxt) {
+                    console.log("JS: Populating raw left textarea.");
+                    leftTxt.value = leftCode;
+                }
+            }
+
+            if (cmLeft || cmRight) {
+                const mode = getCodeMirrorMode(filePath);
+                if (cmLeft) cmLeft.setOption("mode", mode);
+                if (cmRight) cmRight.setOption("mode", mode);
+            }
+
+            const el = document.getElementById('diffChangeIndex');
+            const tt = document.getElementById('diffChangeTotal');
+            const st = document.getElementById('mergeAcceptStatus');
+
+            if (el) el.textContent = filePath ? `${mergeSelections.length}` : '—';
+            if (tt) tt.textContent = filePath ? ` locators ready to save` : ` changes`;
+
+            if (st) {
+                if (!filePath) {
+                    st.innerHTML = `<span style="color:var(--text-secondary);"><i class="fas fa-folder-open"></i> Click <strong>Browse...</strong> to select a target Page Object or Test file to merge with</span>`;
+                } else {
+                    st.innerHTML = `<span style="color:var(--success);"><i class="fas fa-edit"></i> Both windows are editable! Make any adjustments on the right and click Save.</span>`;
+                }
+            }
+        }
+
+        // Checklist Rendering
+        window.addEventListener('message', function(event) {
+            // Can be used if communicating via postMessage, but pyBridge handles state
+        });
+
+        // Set list of elements to checklist
+        function loadChecklist(elements, tool, lang) {
+            console.log("JS: loadChecklist called. Elements: " + (elements ? elements.length : 0) + ", tool: " + tool + ", lang: " + lang);
+            if (tool) _selectedTool = tool;
+            if (lang) _selectedLang = lang;
+            capturedElements = elements || [];
+            mergeSelections = capturedElements.map((_, idx) => idx);
+            
+            const container = document.getElementById('mergeChecklist');
+            container.innerHTML = '';
+            
+            capturedElements.forEach((el, idx) => {
+                const item = document.createElement('div');
+                item.className = 'checklist-item';
+                item.innerHTML = `
+                    <input type="checkbox" id="chk-merge-${idx}" checked onchange="toggleMergeSelection(${idx}, this.checked)">
+                    <label for="chk-merge-${idx}" style="text-transform:none; font-size:0.75rem; color:var(--text-primary); cursor:pointer; font-weight:bold; margin:0;">${el.nameHint || el.name || 'element'}</label>
+                `;
+                container.appendChild(item);
+            });
+            updateChecklistCountBadge();
+        }
+
+        function loadInitialMergeData(data) {
+            console.log("JS: loadInitialMergeData called with payload: ", data);
+            if (!data) return;
+            
+            // Set tool and lang
+            if (data.tool) _selectedTool = data.tool;
+            if (data.lang) _selectedLang = data.lang;
+            
+            // 1. Load checklist
+            capturedElements = data.elements || [];
+            mergeSelections = capturedElements.map((_, idx) => idx);
+            
+            const container = document.getElementById('mergeChecklist');
+            if (container) {
+                container.innerHTML = '';
+                capturedElements.forEach((el, idx) => {
+                    const item = document.createElement('div');
+                    item.className = 'checklist-item';
+                    item.innerHTML = `
+                        <input type="checkbox" id="chk-merge-${idx}" checked onchange="toggleMergeSelection(${idx}, this.checked)">
+                        <label for="chk-merge-${idx}" style="text-transform:none; font-size:0.75rem; color:var(--text-primary); cursor:pointer; font-weight:bold; margin:0;">${el.nameHint || el.name || 'element'}</label>
+                    `;
+                    container.appendChild(item);
+                });
+            }
+            updateChecklistCountBadge();
+            
+            // 2. Set left and right code
+            _targetFilePath = data.target_file || '';
+            const pathInput = document.getElementById('mergeFilePath');
+            if (pathInput) pathInput.value = _targetFilePath;
+
+            _leftCode = data.new_code || '';
+            _rightCode = _targetFilePath ? (data.merged_code || '') : '';
+            const storeArea = document.getElementById('mergeExistingCode');
+            if (storeArea) storeArea.value = _rightCode || _leftCode;
+
+            // 3. Render diff
+            renderDiff(_leftCode, _rightCode, _targetFilePath);
+        }
+
+        // Add a signal listener from pyBridge once it is loaded
+        function setupDataListener() {
+            if (pyBridge) {
+                // If Python pushes data, let's load it
+            }
+        }
+
+        // Polling fallback: request data from Python if not yet received.
+        // The interval clears itself once elements arrive to prevent repeated calls.
+        const _dataWaitTimer = setInterval(() => {
+            if (pyBridge && capturedElements.length === 0 && pyBridge.callPython) {
+                console.log("JS: capturedElements still empty, re-requesting from Python...");
+                pyBridge.callPython("merge_window_ready", "");
+            } else if (capturedElements.length > 0) {
+                console.log("JS: Data received, clearing polling interval.");
+                clearInterval(_dataWaitTimer);
+            }
+        }, 500);
+
+        window.addEventListener('load', () => {
+            console.log("JS: load event fired. Initializing editors.");
+            initCodeMirrorEditors();
+            if (_leftCode) {
+                renderDiff(_leftCode, _rightCode, _targetFilePath);
+            }
+        });
+
+        function updateChecklistCountBadge() {
+            const total = capturedElements.length;
+            const selected = mergeSelections.length;
+            const el = document.getElementById('checklistCountBadge');
+            if (el) el.innerText = `${selected} of ${total}`;
+            const statLocs = document.getElementById('statLocators');
+            const statActs = document.getElementById('statActions');
+            if (statLocs) statLocs.innerHTML = `<i class="fas fa-fingerprint"></i> +${selected} locator${selected === 1 ? '' : 's'}`;
+            if (statActs) statActs.innerHTML = `<i class="fas fa-running"></i> +${selected} action${selected === 1 ? '' : 's'}`;
+        }
+
+        function toggleMergeSelection(idx, isChecked) {
+            console.log("JS: toggleMergeSelection element: " + idx + ", checked: " + isChecked);
+            if (isChecked) {
+                if (!mergeSelections.includes(idx)) mergeSelections.push(idx);
+            } else {
+                mergeSelections = mergeSelections.filter(i => i !== idx);
+            }
+            updateChecklistCountBadge();
+            triggerSmartMergePreview();
+        }
+
+        function triggerSmartMergePreview() {
+            if (!pyBridge) return;
+            const selectedLocators = capturedElements.filter((el, idx) => mergeSelections.includes(idx));
+            console.log("JS: triggerSmartMergePreview. Tool: " + _selectedTool + ", Lang: " + _selectedLang + ", locators: " + selectedLocators.length);
+            pyBridge.callPython('refresh_merge_preview', JSON.stringify({
+                locators: selectedLocators,
+                tool: _selectedTool,
+                lang: _selectedLang,
+                file_path: _targetFilePath
+            }));
+        }
+
+        // ─── Polling-based bridge (no QWebChannel dependency) ───────────────────
+        // Python calls getPendingAction() every 250 ms via runJavaScript.
+        // Buttons just set _pendingAction; Python reads and clears it.
+        let _pendingAction  = null;
+        let _pendingPayload = null;
+
+        function getPendingAction() {
+            if (!_pendingAction) return null;
+            const result = JSON.stringify({ action: _pendingAction, payload: _pendingPayload || '' });
+            _pendingAction  = null;   // clear so Python won't pick it up twice
+            _pendingPayload = null;
+            return result;
+        }
+
+        // Called by Python via runJavaScript after Browse file is selected
+        function loadMergedFile(data) {
+            console.log('JS: loadMergedFile called. target_file=' + data.target_file);
+            _targetFilePath = data.target_file || '';
+            document.getElementById('mergeFilePath').value = _targetFilePath;
+            _leftCode  = data.new_code    || '';
+            _rightCode = data.merged_code || '';
+            document.getElementById('mergeExistingCode').value = _rightCode || _leftCode;
+            renderDiff(_leftCode, _rightCode, _targetFilePath);
+        }
+
+        function browseMergeFile() {
+            console.log('JS: Browse button clicked');
+            const selectedLocators = capturedElements.filter((el, idx) => mergeSelections.includes(idx));
+            _pendingAction  = 'browse_merge_file';
+            _pendingPayload = JSON.stringify({ locators: selectedLocators, tool: _selectedTool, lang: _selectedLang });
+        }
+
+        function confirmMerge() {
+            console.log('JS: Save button clicked');
+            if (!_targetFilePath) { alert('Please browse and select a target file first.'); return; }
+            const mergedCode = cmRight ? cmRight.getValue() : document.getElementById('mergeExistingCodeTextarea').value;
+            if (!mergedCode || !mergedCode.trim()) { alert('Merged code is empty!'); return; }
+            _pendingAction  = 'smart_merge_confirm';
+            _pendingPayload = JSON.stringify({ file_path: _targetFilePath, merged_code: mergedCode });
+        }
+
+        function closeWindow() {
+            console.log('JS: Cancel button clicked');
+            _pendingAction  = 'close_merge_window';
+            _pendingPayload = '';
+        }
+
+        function initSplitResizer() {
+            const container = document.querySelector('.diff-container');
+            const leftPane = document.getElementById('diffPaneLeft');
+            const rightPane = document.getElementById('diffPaneRight');
+            const resizer = document.getElementById('diffResizer');
+
+            if (!container || !leftPane || !rightPane || !resizer) return;
+
+            let isDragging = false;
+
+            resizer.addEventListener('mousedown', (e) => {
+                isDragging = true;
+                document.body.style.cursor = 'col-resize';
+                e.preventDefault();
+            });
+
+            document.addEventListener('mousemove', (e) => {
+                if (!isDragging) return;
+                const containerRect = container.getBoundingClientRect();
+                const pointerRelativeX = e.clientX - containerRect.left;
+                const percentage = (pointerRelativeX / containerRect.width) * 100;
+                
+                if (percentage > 10 && percentage < 90) {
+                    leftPane.style.flex = percentage;
+                    rightPane.style.flex = 100 - percentage;
+                }
+            });
+
+            document.addEventListener('mouseup', () => {
+                if (isDragging) {
+                    isDragging = false;
+                    document.body.style.cursor = '';
+                    if (cmLeft) cmLeft.refresh();
+                    if (cmRight) cmRight.refresh();
+                }
+            });
+        }
+    </script>
+</body>
+</html>

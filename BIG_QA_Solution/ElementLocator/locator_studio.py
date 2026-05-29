@@ -23,6 +23,20 @@ BASE_DIR = Path(__file__).resolve().parent
 if str(BASE_DIR) not in sys.path:
     sys.path.append(str(BASE_DIR))
 
+from PyQt6.QtWebEngineCore import QWebEnginePage
+
+class WebPage(QWebEnginePage):
+    def javaScriptConsoleMessage(self, level, message, lineNumber, sourceID):
+        msg = f"JS Console: {message} (Line: {lineNumber}, Source: {sourceID})"
+        print(msg)
+        # Force writing to studio_error.log
+        try:
+            with open(os.path.join(os.path.dirname(__file__), 'studio_error.log'), 'a', encoding='utf-8') as f:
+                f.write(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - JS_CONSOLE - {msg}\n")
+        except Exception as e:
+            pass
+
+
 from browser_controller import BrowserController
 from ai_service import AIService
 from code_generator import CodeGenerator
@@ -50,11 +64,257 @@ class StudioBridge(QObject):
     def callPython(self, action, payload):
         self.commandReceived.emit(action, payload)
 
+class MergeBridge(QObject):
+    """
+    Dedicated, isolated QObject bridge for the Smart Merge popup window.
+    QWebChannel REQUIRES a pure QObject (not QMainWindow) to reliably expose
+    slots and signals to JavaScript. This is the canonical Qt approach.
+    """
+    mergePreviewReady = pyqtSignal(str)
+
+    def __init__(self):
+        super().__init__()
+        self._window = None   # Back-pointer to the MergeWindow
+
+    @pyqtSlot(str, str)
+    def callPython(self, action, payload_str):
+        if self._window is not None:
+            self._window._handle_command(action, payload_str)
+
+
+class MergeWindow(QMainWindow):
+    def __init__(self, parent, locators, tool, lang):
+        super().__init__(parent)
+        self.setWindowTitle("Smart Merge")
+        self.locators = locators
+        self.tool = tool
+        self.lang = lang
+        self._preview_sent = False
+        self._parent_studio = parent   # explicit reference for cross-window calls
+
+        # Size the window to match the right browser pane of Locator Studio:
+        # screen width minus the left control panel (~320 px), 88% of screen height.
+        screen = QApplication.primaryScreen().availableGeometry()
+        LEFT_PANEL_W = 320
+        win_w = max(900, screen.width() - LEFT_PANEL_W)
+        win_h = int(screen.height() * 0.88)
+        win_x = screen.x() + LEFT_PANEL_W
+        win_y = screen.y() + (screen.height() - win_h) // 2
+        self.setGeometry(win_x, win_y, win_w, win_h)
+        self.setMinimumSize(860, 620)
+
+        central_widget = QWidget()
+        layout = QVBoxLayout(central_widget)
+        layout.setContentsMargins(0, 0, 0, 0)
+
+        self.view = QWebEngineView()
+        self.page_obj = WebPage(self.view)
+        self.view.setPage(self.page_obj)
+
+        # NOTE: QWebChannel is NOT used for button actions (it fails to connect reliably).
+        # Buttons use a Python-side polling timer instead (see _start_action_poll).
+        # We still keep the channel so JS initBridge() doesn't crash, but buttons
+        # go via _pendingAction / getPendingAction() polling.
+        self._bridge = MergeBridge()
+        self._bridge._window = self
+        self.channel = QWebChannel()
+        self.channel.registerObject("pyBridge", self._bridge)
+        self.view.page().setWebChannel(self.channel)
+
+        # When page finishes loading, send data and start action polling
+        self.view.loadFinished.connect(self._on_load_finished)
+
+        merge_path = BASE_DIR / "ui" / "merge.html"
+        self.view.setUrl(QUrl.fromLocalFile(str(merge_path)))
+
+        layout.addWidget(self.view)
+        self.setCentralWidget(central_widget)
+
+        # Action polling timer — polls JS every 250 ms for button presses
+        self._poll_timer = QTimer(self)
+        self._poll_timer.timeout.connect(self._poll_js_action)
+
+        # Force foreground on Windows
+        QTimer.singleShot(150, self.force_foreground)
+
+    # ------------------------------------------------------------------ #
+    #  Data loading                                                         #
+    # ------------------------------------------------------------------ #
+    def _on_load_finished(self, ok):
+        """Called when merge.html finishes loading. Push data and start polling."""
+        print(f"[MergeWindow] loadFinished ok={ok}, locators={len(self.locators)}")
+        if ok:
+            # Give the page 600 ms to initialise, then push data via runJavaScript
+            QTimer.singleShot(600, self._push_data_to_js)
+            # Start polling for button actions (250 ms interval)
+            self._poll_timer.start(250)
+
+    def _push_data_to_js(self):
+        """Directly inject all locator data into the JS page via runJavaScript."""
+        try:
+            title_cl = "".join(
+                c for c in self._parent_studio.browser_ctrl.view.page().title()
+                if c.isalnum()
+            )
+            if not title_cl:
+                title_cl = "MyPage"
+            new_code = CodeGenerator.generate_class_content(
+                self.tool, self.lang, title_cl, self.locators
+            )
+            payload = {
+                "elements": self.locators,
+                "tool":     self.tool,
+                "lang":     self.lang,
+                "new_code": new_code,
+                "target_file": "",
+                "merged_code": ""
+            }
+            payload_json = json.dumps(payload)
+            print(f"[MergeWindow] Pushing {len(self.locators)} elements to JS via runJavaScript")
+
+            def _cb(result):
+                print(f"[MergeWindow] loadInitialMergeData JS result: {result}")
+
+            self.view.page().runJavaScript(
+                f"(function(){{ try{{ loadInitialMergeData({payload_json}); return 'ok'; }}"
+                f" catch(e){{ return 'ERR:'+e.toString(); }} }})()",
+                _cb
+            )
+            self._preview_sent = True
+        except Exception as e:
+            print(f"[MergeWindow] _push_data_to_js ERROR: {e}")
+            logging.error(f"Error in _push_data_to_js: {e}")
+
+    # ------------------------------------------------------------------ #
+    #  Action polling (replaces QWebChannel for button events)             #
+    # ------------------------------------------------------------------ #
+    def _poll_js_action(self):
+        """Poll JS every 250 ms for any pending button action."""
+        try:
+            self.view.page().runJavaScript(
+                "typeof getPendingAction === 'function' ? getPendingAction() : null",
+                self._on_js_action
+            )
+        except Exception:
+            pass
+
+    def _on_js_action(self, result):
+        """Called with the result of getPendingAction() — handle if non-null."""
+        if not result:
+            return
+        try:
+            data = json.loads(result)
+            action  = data.get("action", "")
+            payload = data.get("payload", "")
+            if action:
+                print(f"[MergeWindow] Polled action: {action}")
+                self._handle_command(action, payload)
+        except Exception as e:
+            print(f"[MergeWindow] _on_js_action parse error: {e}")
+
+    # ------------------------------------------------------------------ #
+    #  Window helpers                                                       #
+    # ------------------------------------------------------------------ #
+    def force_foreground(self):
+        self.raise_()
+        self.activateWindow()
+        if platform.system() == "Windows":
+            self.setWindowFlags(self.windowFlags() | Qt.WindowType.WindowStaysOnTopHint)
+            self.show()
+            self.setWindowFlags(self.windowFlags() & ~Qt.WindowType.WindowStaysOnTopHint)
+            self.show()
+
+    def closeEvent(self, event):
+        """Stop the polling timer when the window closes."""
+        self._poll_timer.stop()
+        super().closeEvent(event)
+
+    def update_data(self, locators, tool, lang):
+        self.locators = locators
+        self.tool = tool
+        self.lang = lang
+        self._preview_sent = False
+        self._push_data_to_js()
+
+    # ------------------------------------------------------------------ #
+    #  Command handler                                                      #
+    # ------------------------------------------------------------------ #
+    def _handle_command(self, action, payload_str):
+        """Handle all JS → Python commands (polled or via QWebChannel)."""
+        try:
+            payload = json.loads(payload_str) if payload_str else {}
+            print(f"[MergeWindow] Received command: {action}")
+
+            if action == "merge_window_ready":
+                # QWebChannel did connect — push data immediately too
+                self._push_data_to_js()
+
+            elif action == "close_merge_window":
+                self.close()
+                if hasattr(self._parent_studio, "merge_window"):
+                    self._parent_studio.merge_window = None
+
+            elif action == "browse_merge_file":
+                locators = payload.get("locators", [])
+                tool     = payload.get("tool", self.tool)
+                lang     = payload.get("lang", self.lang)
+
+                fname, _ = QFileDialog.getOpenFileName(
+                    self, "Select existing Page Object file to merge with", "", "All Files (*)"
+                )
+                if fname:
+                    try:
+                        with open(fname, "r", encoding="utf-8") as f:
+                            current_code = f.read()
+                        title_cl = "".join(
+                            c for c in self._parent_studio.browser_ctrl.view.page().title()
+                            if c.isalnum()
+                        )
+                        if not title_cl:
+                            title_cl = "MyPage"
+                        new_code    = CodeGenerator.generate_class_content(tool, lang, title_cl, locators)
+                        merged_code = MergeEngine.merge_locators(current_code, locators, tool, lang)
+
+                        # Push result directly via runJavaScript — no signal needed
+                        result_json = json.dumps({
+                            "target_file":   fname,
+                            "new_code":      new_code,
+                            "merged_code":   merged_code,
+                            "original_code": current_code
+                        })
+                        self.view.page().runJavaScript(
+                            f"(function(){{ try{{ loadMergedFile({result_json}); }}"
+                            f" catch(e){{ console.error('loadMergedFile error:',e); }} }})()"
+                        )
+                    except Exception as e:
+                        QMessageBox.critical(self, "Merge Error", f"Failed to read file: {e}")
+
+            elif action == "smart_merge_confirm":
+                file_path   = payload.get("file_path")
+                merged_code = payload.get("merged_code")
+                if file_path and merged_code:
+                    try:
+                        with open(file_path, "w", encoding="utf-8") as f:
+                            f.write(merged_code)
+                        QMessageBox.information(self, "Success", "File merged and saved successfully!")
+                        QTimer.singleShot(100, self.close)
+                        if hasattr(self._parent_studio, "merge_window"):
+                            self._parent_studio.merge_window = None
+                    except Exception as e:
+                        QMessageBox.critical(self, "Error", f"Failed to save merged file: {e}")
+
+        except Exception as e:
+            print(f"[MergeWindow] _handle_command ERROR ({action}): {e}")
+            logging.error(f"Error handling MergeWindow command {action}: {e}")
+
+
 class LocatorStudio(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Locator Studio")
-        self.resize(1600, 900)
+        # Minimum size ensures all panels are usable; app always starts maximized
+        self.setMinimumSize(1200, 700)
+        self.resize(1600, 900)   # fallback size
         
         # Load environment
         load_dotenv(BASE_DIR.parent / "ScriptGenerator" / ".env")
@@ -62,6 +322,7 @@ class LocatorStudio(QMainWindow):
         # Initialize Backend Services
         self.browser_ctrl = BrowserController()
         self.bridge = StudioBridge()
+        self.merge_window = None
         
         # Setup AI Service
         self.ai_tool = os.getenv("AI_TOOL", "GEMINI").strip().upper()
@@ -85,6 +346,18 @@ class LocatorStudio(QMainWindow):
         
         # Connect Browser Signals
         self.browser_ctrl.pybridge.locatorsReceived.connect(self._on_elements_captured)
+        
+        # Force foreground on Windows/OS after launch
+        QTimer.singleShot(150, self.force_foreground)
+
+    def force_foreground(self):
+        self.raise_()
+        self.activateWindow()
+        if platform.system() == "Windows":
+            self.setWindowFlags(self.windowFlags() | Qt.WindowType.WindowStaysOnTopHint)
+            self.show()
+            self.setWindowFlags(self.windowFlags() & ~Qt.WindowType.WindowStaysOnTopHint)
+            self.show()
 
     def _setup_ui(self):
         central_widget = QWidget()
@@ -93,9 +366,12 @@ class LocatorStudio(QMainWindow):
         layout.setSpacing(0)
         
         self.splitter = QSplitter(Qt.Orientation.Horizontal)
+        self.splitter.setOpaqueResize(False)
         
         # Left Panel: Dashboard UI (HTML/JS)
         self.dashboard_view = QWebEngineView()
+        self.dashboard_page = WebPage(self.dashboard_view)
+        self.dashboard_view.setPage(self.dashboard_page)
         
         # IMPORTANT: Set up the channel BEFORE loading the URL to avoid race conditions
         self.channel = QWebChannel()
@@ -314,84 +590,20 @@ class LocatorStudio(QMainWindow):
                 except Exception as e:
                     QMessageBox.critical(self, "DB Error", str(e))
 
-            elif action == "init_merge_modal":
+            elif action == "open_merge_window":
                 locators = payload.get("locators", [])
                 tool = payload.get("tool", "Playwright")
                 lang = payload.get("lang", "TypeScript")
                 
-                title_cl = "".join(c for c in self.browser_ctrl.view.page().title() if c.isalnum())
-                if not title_cl: title_cl = "MyPage"
-                new_code = CodeGenerator.generate_class_content(tool, lang, title_cl, locators)
-                
-                self.bridge.mergePreviewReady.emit(json.dumps({
-                    "target_file": "",
-                    "new_code": new_code,
-                    "merged_code": ""
-                }))
+                if not hasattr(self, 'merge_window') or self.merge_window is None:
+                    self.merge_window = MergeWindow(self, locators, tool, lang)
+                else:
+                    self.merge_window.update_data(locators, tool, lang)
 
-            elif action == "browse_merge_file":
-                locators = payload.get("locators", [])
-                tool = payload.get("tool", "Playwright")
-                lang = payload.get("lang", "TypeScript")
-                
-                fname, _ = QFileDialog.getOpenFileName(self, "Select existing Page Object file to merge with", "", "All Files (*)")
-                if fname:
-                    try:
-                        with open(fname, 'r', encoding='utf-8') as f:
-                            current_code = f.read()
-                            
-                        title_cl = "".join(c for c in self.browser_ctrl.view.page().title() if c.isalnum())
-                        if not title_cl: title_cl = "MyPage"
-                        new_code = CodeGenerator.generate_class_content(tool, lang, title_cl, locators)
-                        
-                        merged_code = MergeEngine.merge_locators(current_code, locators, tool, lang)
-                        
-                        self.bridge.mergePreviewReady.emit(json.dumps({
-                            "target_file": fname,
-                            "new_code": new_code,
-                            "merged_code": merged_code,
-                            "original_code": current_code
-                        }))
-                    except Exception as e:
-                        QMessageBox.critical(self, "Merge Error", f"Failed to read file: {e}")
-
-            elif action == "refresh_merge_preview":
-                locators = payload.get("locators", [])
-                tool = payload.get("tool", "Playwright")
-                lang = payload.get("lang", "TypeScript")
-                file_path = payload.get("file_path", "")
-                
-                try:
-                    title_cl = "".join(c for c in self.browser_ctrl.view.page().title() if c.isalnum())
-                    if not title_cl: title_cl = "MyPage"
-                    new_code = CodeGenerator.generate_class_content(tool, lang, title_cl, locators)
-                    
-                    merged_code = ""
-                    current_code = ""
-                    if file_path and os.path.exists(file_path):
-                        with open(file_path, 'r', encoding='utf-8') as f:
-                            current_code = f.read()
-                        merged_code = MergeEngine.merge_locators(current_code, locators, tool, lang)
-                    
-                    self.bridge.mergePreviewReady.emit(json.dumps({
-                        "target_file": file_path,
-                        "new_code": new_code,
-                        "merged_code": merged_code,
-                        "original_code": current_code
-                    }))
-                except Exception as e:
-                    logging.error(f"Error in refresh_merge_preview: {e}")
-
-            elif action == "smart_merge_confirm":
-                file_path = payload.get("file_path")
-                merged_code = payload.get("merged_code")
-                if file_path and merged_code:
-                    try:
-                        with open(file_path, 'w', encoding='utf-8') as f:
-                            f.write(merged_code)
-                        QMessageBox.information(self, "Success", "File merged and saved successfully!")
-                    except Exception as e:
-                        QMessageBox.critical(self, "Error", f"Failed to save merged file: {e}")
+                # Show at computed size (right-pane-sized, not maximized)
+                self.merge_window.show()
+                self.merge_window.raise_()
+                self.merge_window.activateWindow()
 
             elif action == "request_ai_locators":
                 if not self.ai_api_key:
@@ -422,7 +634,6 @@ class LocatorStudio(QMainWindow):
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
-    # Apply global styling if needed, or rely on HTML/CSS
     studio = LocatorStudio()
-    studio.show()
+    studio.showMaximized()   # launch maximized so all panels and buttons are visible
     sys.exit(app.exec())
