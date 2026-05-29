@@ -1,5 +1,4 @@
 import json
-import requests
 import re
 
 class AIService:
@@ -13,6 +12,7 @@ class AIService:
         """Precision-mode: ask AI to produce ONE unique relative XPath."""
         if not self.api_key or not outer_html:
             return []
+        import requests
         try:
             prompt = (
                 f"You are an expert test automation engineer. Analyze this HTML element and generate the MOST STABLE, "
@@ -62,6 +62,7 @@ class AIService:
     def generate_locators(self, name_hint: str, outer_html: str, tool: str) -> list:
         if not self.api_key or not self.api_key.strip() or not outer_html:
             return []
+        import requests
 
         try:
             extra_tooling = ""

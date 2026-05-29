@@ -1,23 +1,26 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Locator Studio Dashboard</title>
     <link rel="icon" type="image/png" href="favicon.png">
-    
+
     <!-- Resource Preconnects for Google Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    
+    <link
+        href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600;700&display=swap"
+        rel="stylesheet">
+
     <!-- Font Awesome -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    
+
     <!-- CodeMirror Stylesheets -->
     <link rel="stylesheet" href="libs/codemirror.min.css">
     <link rel="stylesheet" href="libs/material-darker.min.css">
-    
+
     <style>
         :root {
             /* Color Palette - Premium Dark Mode */
@@ -70,12 +73,19 @@
             font-family: 'Inter', -apple-system, sans-serif;
         }
 
-        html, body {
+        html,
+        body {
             -webkit-text-size-adjust: 100%;
             text-size-adjust: 100%;
         }
 
-        h1, h2, h3, h4, h5, h6, .logo {
+        h1,
+        h2,
+        h3,
+        h4,
+        h5,
+        h6,
+        .logo {
             font-family: 'Outfit', 'Inter', -apple-system, sans-serif;
             font-weight: 600;
         }
@@ -99,30 +109,44 @@
             width: 6px;
             height: 6px;
         }
+
         ::-webkit-scrollbar-track {
             background: transparent;
         }
+
         ::-webkit-scrollbar-thumb {
             background: rgba(255, 255, 255, 0.1);
             border-radius: 10px;
             backdrop-filter: blur(5px);
         }
+
         ::-webkit-scrollbar-thumb:hover {
             background: rgba(255, 255, 255, 0.2);
         }
+
         [data-theme="light"] ::-webkit-scrollbar-thumb {
             background: rgba(0, 0, 0, 0.1);
         }
+
         [data-theme="light"] ::-webkit-scrollbar-thumb:hover {
             background: rgba(0, 0, 0, 0.2);
         }
 
         /* Pulse Animation for Recording */
         @keyframes pulse-red {
-            0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); }
-            70% { box-shadow: 0 0 0 10px rgba(239, 68, 68, 0); }
-            100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+            0% {
+                box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7);
+            }
+
+            70% {
+                box-shadow: 0 0 0 10px rgba(239, 68, 68, 0);
+            }
+
+            100% {
+                box-shadow: 0 0 0 0 rgba(239, 68, 68, 0);
+            }
         }
+
         .btn-recording {
             background: var(--danger) !important;
             border-color: #dc2626 !important;
@@ -130,13 +154,21 @@
             color: white !important;
         }
 
-        /* Staggered Entry Animation */
+        /* Staggered Entry Animation — only for newly appended items, NOT on re-renders */
         @keyframes slideInUp {
-            from { opacity: 0; transform: translateY(15px); }
-            to { opacity: 1; transform: translateY(0); }
+            from {
+                opacity: 0;
+                transform: translateY(12px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
         }
-        .feed-item {
-            animation: slideInUp 0.35s ease-out forwards;
+
+        .feed-item--new {
+            animation: slideInUp 0.3s ease-out forwards;
         }
 
         .header {
@@ -150,6 +182,7 @@
             align-items: center;
             box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
         }
+
         [data-theme="light"] .header {
             background: rgba(255, 255, 255, 0.8);
             box-shadow: 0 4px 20px rgba(0, 0, 0, 0.04);
@@ -180,8 +213,7 @@
 
         .card {
             background: var(--bg-card);
-            backdrop-filter: blur(16px);
-            -webkit-backdrop-filter: blur(16px);
+            /* backdrop-filter removed: causes severe lag in software-render mode (--disable-gpu) */
             border: 1px solid var(--glass-border);
             border-radius: var(--border-radius);
             padding: 12px 14px;
@@ -190,14 +222,17 @@
             flex-direction: column;
             transition: var(--transition);
         }
+
         .card:hover {
             border-color: rgba(255, 255, 255, 0.15);
             box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4), 0 0 15px rgba(0, 188, 242, 0.05);
         }
+
         [data-theme="light"] .card {
             background: var(--bg-card);
             border-color: var(--glass-border);
         }
+
         [data-theme="light"] .card:hover {
             border-color: rgba(0, 0, 0, 0.12);
             box-shadow: 0 12px 32px rgba(0, 0, 0, 0.08);
@@ -217,7 +252,8 @@
             font-weight: 600;
         }
 
-        input, select {
+        input,
+        select {
             width: 100%;
             background: rgba(15, 23, 42, 0.5) !important;
             border: 1px solid var(--glass-border);
@@ -228,18 +264,23 @@
             font-size: 0.85rem;
             transition: var(--transition);
         }
-        [data-theme="light"] input, [data-theme="light"] select {
+
+        [data-theme="light"] input,
+        [data-theme="light"] select {
             background: rgba(255, 255, 255, 0.9) !important;
             color: #0f172a;
         }
 
-        input:focus, select:focus {
+        input:focus,
+        select:focus {
             outline: none;
             border-color: var(--accent-secondary) !important;
             box-shadow: 0 0 0 3px var(--accent-glow) !important;
             background: rgba(15, 23, 42, 0.85) !important;
         }
-        [data-theme="light"] input:focus, [data-theme="light"] select:focus {
+
+        [data-theme="light"] input:focus,
+        [data-theme="light"] select:focus {
             background: #ffffff !important;
         }
 
@@ -258,9 +299,11 @@
             transition: var(--transition);
             transform: translateY(0);
         }
+
         .btn:hover {
             transform: translateY(-1.5px);
         }
+
         .btn:active {
             transform: translateY(0.5px);
         }
@@ -270,10 +313,12 @@
             color: white !important;
             box-shadow: 0 4px 14px var(--accent-glow);
         }
+
         .btn-primary:hover {
             box-shadow: 0 6px 20px var(--accent-glow);
             filter: brightness(1.05);
         }
+
         .btn-primary:active {
             box-shadow: 0 2px 8px var(--accent-glow);
         }
@@ -291,14 +336,17 @@
             cursor: pointer;
             transition: var(--transition);
         }
+
         .nav-btn:hover {
             background: rgba(255, 255, 255, 0.08);
             color: var(--text-primary);
             transform: translateY(-1px);
         }
+
         [data-theme="light"] .nav-btn:hover {
             background: rgba(0, 0, 0, 0.05);
         }
+
         .nav-btn:active {
             transform: scale(0.95);
         }
@@ -308,6 +356,7 @@
             border: 1px solid var(--accent-primary);
             color: var(--accent-primary);
         }
+
         .btn-outline:hover {
             background: rgba(0, 120, 212, 0.08);
             border-color: var(--accent-secondary);
@@ -326,34 +375,71 @@
             align-items: center;
             justify-content: center;
         }
+
         [data-theme="light"] .action-icon-btn {
             background: rgba(0, 0, 0, 0.03);
             border-color: rgba(0, 0, 0, 0.06);
         }
+
         .action-icon-btn:hover {
             transform: translateY(-1.5px);
         }
+
         .feed-item .action-icon-btn {
             padding: 5px 6px;
         }
 
-        .action-icon-btn.btn-highlight:hover { color: #60a5fa; border-color: rgba(96, 165, 250, 0.5); background: rgba(96, 165, 250, 0.15); box-shadow: 0 0 10px rgba(96, 165, 250, 0.2); }
-        .action-icon-btn.btn-copy:hover { color: #10b981; border-color: rgba(16, 185, 129, 0.5); background: rgba(16, 185, 129, 0.15); box-shadow: 0 0 10px rgba(16, 185, 129, 0.2); }
-        .action-icon-btn.btn-ai:hover { color: #c084fc; border-color: rgba(192, 132, 252, 0.6); background: rgba(192, 132, 252, 0.15); box-shadow: 0 0 12px rgba(192, 132, 252, 0.4); }
-        .action-icon-btn.btn-alts:hover { color: #e2e8f0; border-color: rgba(226, 232, 240, 0.5); background: rgba(226, 232, 240, 0.15); box-shadow: 0 0 10px rgba(226, 232, 240, 0.1); }
-        [data-theme="light"] .action-icon-btn.btn-alts:hover { color: #1e293b; border-color: rgba(30, 41, 59, 0.3); }
-        .action-icon-btn.btn-delete:hover { color: #f87171; border-color: rgba(248, 113, 113, 0.5); background: rgba(248, 113, 113, 0.15); box-shadow: 0 0 10px rgba(248, 113, 113, 0.2); }
+        .action-icon-btn.btn-highlight:hover {
+            color: #60a5fa;
+            border-color: rgba(96, 165, 250, 0.5);
+            background: rgba(96, 165, 250, 0.15);
+            box-shadow: 0 0 10px rgba(96, 165, 250, 0.2);
+        }
+
+        .action-icon-btn.btn-copy:hover {
+            color: #10b981;
+            border-color: rgba(16, 185, 129, 0.5);
+            background: rgba(16, 185, 129, 0.15);
+            box-shadow: 0 0 10px rgba(16, 185, 129, 0.2);
+        }
+
+        .action-icon-btn.btn-ai:hover {
+            color: #c084fc;
+            border-color: rgba(192, 132, 252, 0.6);
+            background: rgba(192, 132, 252, 0.15);
+            box-shadow: 0 0 12px rgba(192, 132, 252, 0.4);
+        }
+
+        .action-icon-btn.btn-alts:hover {
+            color: #e2e8f0;
+            border-color: rgba(226, 232, 240, 0.5);
+            background: rgba(226, 232, 240, 0.15);
+            box-shadow: 0 0 10px rgba(226, 232, 240, 0.1);
+        }
+
+        [data-theme="light"] .action-icon-btn.btn-alts:hover {
+            color: #1e293b;
+            border-color: rgba(30, 41, 59, 0.3);
+        }
+
+        .action-icon-btn.btn-delete:hover {
+            color: #f87171;
+            border-color: rgba(248, 113, 113, 0.5);
+            background: rgba(248, 113, 113, 0.15);
+            box-shadow: 0 0 10px rgba(248, 113, 113, 0.2);
+        }
 
         .toggle-container {
             display: flex;
             align-items: center;
             justify-content: space-between;
             padding: 10px;
-            background: rgba(0,0,0,0.15);
+            background: rgba(0, 0, 0, 0.15);
             border-radius: 8px;
         }
+
         [data-theme="light"] .toggle-container {
-            background: rgba(0,0,0,0.03);
+            background: rgba(0, 0, 0, 0.03);
         }
 
         .feed-item.dragging {
@@ -372,9 +458,11 @@
             margin-right: 8px;
             transition: color 0.2s;
         }
+
         .drag-handle:hover {
             color: var(--text-primary);
         }
+
         .drag-handle:active {
             cursor: grabbing;
         }
@@ -386,22 +474,29 @@
             height: 18px;
             flex-shrink: 0;
         }
+
         .switch input {
             opacity: 0;
             width: 0;
             height: 0;
         }
+
         .slider {
             position: absolute;
             cursor: pointer;
-            top: 0; left: 0; right: 0; bottom: 0;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
             background-color: #334155;
             transition: .4s;
             border-radius: 34px;
         }
+
         [data-theme="light"] .slider {
             background-color: #cbd5e1;
         }
+
         .slider:before {
             position: absolute;
             content: "";
@@ -413,10 +508,12 @@
             transition: .4s;
             border-radius: 50%;
         }
-        input:checked + .slider {
+
+        input:checked+.slider {
             background-color: var(--accent-primary);
         }
-        input:checked + .slider:before {
+
+        input:checked+.slider:before {
             transform: translateX(14px);
         }
 
@@ -448,16 +545,19 @@
             transition: var(--transition);
             flex-shrink: 0;
         }
+
         [data-theme="light"] .feed-item {
             background: rgba(0, 0, 0, 0.02);
             border-color: rgba(0, 0, 0, 0.05);
         }
+
         .feed-item:hover {
             background: rgba(255, 255, 255, 0.04);
             border-color: rgba(255, 255, 255, 0.1);
             box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
             transform: translateY(-1px);
         }
+
         [data-theme="light"] .feed-item:hover {
             background: rgba(0, 0, 0, 0.04);
             border-color: rgba(0, 0, 0, 0.08);
@@ -465,8 +565,15 @@
         }
 
         @keyframes slideIn {
-            from { transform: translateX(-15px); opacity: 0; }
-            to { transform: translateX(0); opacity: 1; }
+            from {
+                transform: translateX(-15px);
+                opacity: 0;
+            }
+
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
         }
 
         .feed-item-info {
@@ -495,45 +602,150 @@
             font-weight: 700;
             text-transform: uppercase;
         }
-        .badge-best   { background: rgba(16, 185, 129, 0.2); color: var(--success); }
-        .badge-ok     { background: rgba(245, 158, 11, 0.2);  color: var(--warning); }
-        .badge-danger { background: rgba(239, 68, 68, 0.2);   color: var(--danger);  }
+
+        .badge-best {
+            background: rgba(16, 185, 129, 0.2);
+            color: var(--success);
+        }
+
+        .badge-ok {
+            background: rgba(245, 158, 11, 0.2);
+            color: var(--warning);
+        }
+
+        .badge-danger {
+            background: rgba(239, 68, 68, 0.2);
+            color: var(--danger);
+        }
 
         .status-bar {
-            display: flex; align-items: center; gap: 10px;
-            padding: 5px 12px; background: rgba(0,0,0,0.3);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 5px 12px;
+            background: rgba(0, 0, 0, 0.3);
             border-top: 1px solid var(--glass-border);
-            font-size: 0.68rem; color: var(--text-secondary); flex-shrink: 0;
+            font-size: 0.68rem;
+            color: var(--text-secondary);
+            flex-shrink: 0;
         }
+
         [data-theme="light"] .status-bar {
             background: rgba(255, 255, 255, 0.5);
         }
+
         .status-dot {
-            width: 7px; height: 7px; border-radius: 50%;
-            display: inline-block; margin-right: 4px;
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            display: inline-block;
+            margin-right: 4px;
         }
-        .status-dot.green  { background: var(--success); box-shadow: 0 0 6px var(--success); animation: pulse-dot 2s infinite; }
-        .status-dot.yellow { background: var(--warning); }
-        .status-dot.red    { background: var(--danger); }
-        .status-dot.idle   { background: #475569; }
-        @keyframes pulse-dot { 0%,100%{opacity:1} 50%{opacity:0.4} }
 
-        .search-bar { display: flex; gap: 6px; margin-bottom: 10px; align-items: center; }
-        .search-bar input  { flex:1; padding:7px 10px; font-size:0.78rem; border-radius:6px; }
-        .search-bar select { width:auto; padding:7px 8px; font-size:0.75rem; border-radius:6px; }
+        .status-dot.green {
+            background: var(--success);
+            box-shadow: 0 0 6px var(--success);
+            animation: pulse-dot 2s infinite;
+        }
+
+        .status-dot.yellow {
+            background: var(--warning);
+        }
+
+        .status-dot.red {
+            background: var(--danger);
+        }
+
+        .status-dot.idle {
+            background: #475569;
+        }
+
+        @keyframes pulse-dot {
+
+            0%,
+            100% {
+                opacity: 1
+            }
+
+            50% {
+                opacity: 0.4
+            }
+        }
+
+        .search-bar {
+            display: flex;
+            gap: 6px;
+            margin-bottom: 10px;
+            align-items: center;
+        }
+
+        .search-bar input {
+            flex: 1;
+            padding: 7px 10px;
+            font-size: 0.78rem;
+            border-radius: 6px;
+        }
+
+        .search-bar select {
+            width: auto;
+            padding: 7px 8px;
+            font-size: 0.75rem;
+            border-radius: 6px;
+        }
+
         .filter-toggle {
-            font-size:0.7rem; padding:6px 9px; border-radius:6px;
-            border:1px solid var(--glass-border); background:transparent;
-            color:var(--text-secondary); cursor:pointer; white-space:nowrap; transition:var(--transition);
+            font-size: 0.7rem;
+            padding: 6px 9px;
+            border-radius: 6px;
+            border: 1px solid var(--glass-border);
+            background: transparent;
+            color: var(--text-secondary);
+            cursor: pointer;
+            white-space: nowrap;
+            transition: var(--transition);
         }
-        .filter-toggle.active { border-color:var(--success); color:var(--success); background:rgba(16,185,129,0.1); }
 
-        @keyframes copy-flash { 0%{background:rgba(16,185,129,0.35)} 100%{background:transparent} }
-        .copy-flash { animation: copy-flash 0.6s ease-out; border-radius:4px; }
+        .filter-toggle.active {
+            border-color: var(--success);
+            color: var(--success);
+            background: rgba(16, 185, 129, 0.1);
+        }
 
-        .bulk-toolbar { display:none; gap:6px; padding:6px 0; font-size:0.75rem; animation:slideIn 0.2s ease-out; }
-        .bulk-toolbar.visible { display:flex; }
-        .elem-checkbox { width:14px; height:14px; accent-color:var(--accent-primary); cursor:pointer; flex-shrink:0; margin-right:4px; }
+        @keyframes copy-flash {
+            0% {
+                background: rgba(16, 185, 129, 0.35)
+            }
+
+            100% {
+                background: transparent
+            }
+        }
+
+        .copy-flash {
+            animation: copy-flash 0.6s ease-out;
+            border-radius: 4px;
+        }
+
+        .bulk-toolbar {
+            display: none;
+            gap: 6px;
+            padding: 6px 0;
+            font-size: 0.75rem;
+            animation: slideIn 0.2s ease-out;
+        }
+
+        .bulk-toolbar.visible {
+            display: flex;
+        }
+
+        .elem-checkbox {
+            width: 14px;
+            height: 14px;
+            accent-color: var(--accent-primary);
+            cursor: pointer;
+            flex-shrink: 0;
+            margin-right: 4px;
+        }
 
         .actions {
             display: grid;
@@ -544,6 +756,7 @@
             border-top: 1px solid var(--glass-border);
             flex-shrink: 0;
         }
+
         [data-theme="light"] .actions {
             background: rgba(255, 255, 255, 0.9);
         }
@@ -551,10 +764,12 @@
         .modal {
             display: none;
             position: fixed;
-            top: 0; left: 0; right: 0; bottom: 0;
-            background: rgba(2, 6, 17, 0.7);
-            backdrop-filter: blur(12px);
-            -webkit-backdrop-filter: blur(12px);
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            /* backdrop-filter removed: causes 2-3s black-screen on Windows software rasterizer */
+            background: rgba(2, 6, 17, 0.82);
             z-index: 1000;
             align-items: center;
             justify-content: center;
@@ -568,10 +783,12 @@
             width: 92%;
             max-width: 520px;
             box-shadow: 0 20px 50px rgba(0, 0, 0, 0.6);
-            animation: modalScaleIn 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+            /* Fast fade-in only: scale() animation forces compositor repaint in software mode */
+            animation: modalFadeIn 0.15s ease-out;
             display: flex;
             flex-direction: column;
         }
+
         [data-theme="light"] .modal-content {
             background: #ffffff;
             box-shadow: 0 20px 40px rgba(0, 0, 0, 0.12);
@@ -584,7 +801,8 @@
             flex-direction: column;
         }
 
-        .po-editor, .code-area {
+        .po-editor,
+        .code-area {
             flex: 1;
             width: 100%;
             background: #090d16 !important;
@@ -600,11 +818,15 @@
             overflow: auto;
             transition: var(--transition);
         }
-        .po-editor:focus, .code-area:focus {
+
+        .po-editor:focus,
+        .code-area:focus {
             border-color: var(--accent-secondary);
             box-shadow: 0 0 0 2px var(--accent-glow);
         }
-        [data-theme="light"] .po-editor, [data-theme="light"] .code-area {
+
+        [data-theme="light"] .po-editor,
+        [data-theme="light"] .code-area {
             background: #f8fafc !important;
             color: #0f172a;
             border-color: rgba(0, 0, 0, 0.1);
@@ -627,6 +849,7 @@
             cursor: pointer;
             transition: var(--transition);
         }
+
         .modal-close:hover {
             color: var(--text-primary);
             transform: scale(1.1);
@@ -646,9 +869,10 @@
             gap: 10px;
         }
 
-        @keyframes modalScaleIn {
-            from { transform: scale(0.92); opacity: 0; }
-            to { transform: scale(1); opacity: 1; }
+        /* Replaced modalScaleIn: scale() animation forces full repaint on software rasterizer */
+        @keyframes modalFadeIn {
+            from { opacity: 0; }
+            to   { opacity: 1; }
         }
 
         /* Smart Merge Premium Tabbed Layout & Checklist */
@@ -661,9 +885,11 @@
             border: 1px solid var(--glass-border);
             flex-shrink: 0;
         }
+
         [data-theme="light"] .merge-tabs {
             background: rgba(0, 0, 0, 0.05);
         }
+
         .merge-tab {
             flex: 1;
             text-align: center;
@@ -676,15 +902,17 @@
             border-radius: 6px;
             transition: var(--transition);
         }
+
         .merge-tab:hover {
             color: var(--text-primary);
         }
+
         .merge-tab.active {
             background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
             color: white;
             box-shadow: 0 2px 8px var(--accent-glow);
         }
-        
+
         .checklist-title {
             font-size: 0.72rem;
             color: var(--text-secondary);
@@ -696,7 +924,7 @@
             justify-content: space-between;
             align-items: center;
         }
-        
+
         .checklist-container {
             background: rgba(0, 0, 0, 0.15);
             border-radius: 8px;
@@ -710,16 +938,18 @@
             flex-wrap: wrap;
             gap: 8px;
         }
+
         [data-theme="light"] .checklist-container {
             background: rgba(0, 0, 0, 0.02);
         }
+
         .checklist-item {
             display: inline-flex;
             align-items: center;
             gap: 6px;
             font-size: 0.75rem;
             color: var(--text-primary);
-            background: rgba(255,255,255,0.03);
+            background: rgba(255, 255, 255, 0.03);
             border: 1px solid var(--glass-border);
             padding: 4px 10px;
             border-radius: 6px;
@@ -727,16 +957,20 @@
             transition: var(--transition);
             user-select: none;
         }
+
         [data-theme="light"] .checklist-item {
-            background: rgba(0,0,0,0.02);
+            background: rgba(0, 0, 0, 0.02);
         }
+
         .checklist-item:hover {
             background: rgba(255, 255, 255, 0.08);
             border-color: rgba(255, 255, 255, 0.15);
         }
+
         [data-theme="light"] .checklist-item:hover {
-            background: rgba(0,0,0,0.05);
+            background: rgba(0, 0, 0, 0.05);
         }
+
         .checklist-item input {
             width: 13px;
             height: 13px;
@@ -744,7 +978,7 @@
             accent-color: var(--accent-primary);
             cursor: pointer;
         }
-        
+
         .merge-stats {
             display: flex;
             gap: 12px;
@@ -758,16 +992,19 @@
             padding: 6px 12px;
             border-radius: 6px;
         }
+
         [data-theme="light"] .merge-stats {
             background: rgba(0, 120, 212, 0.03);
             border-color: rgba(0, 120, 212, 0.08);
         }
+
         .merge-stat-pill {
             display: inline-flex;
             align-items: center;
             gap: 4px;
             font-weight: 500;
         }
+
         .merge-stat-pill i {
             color: var(--accent-secondary);
         }
@@ -796,16 +1033,19 @@
             border-bottom: 1px solid var(--glass-border);
             flex-shrink: 0;
         }
+
         [data-theme="light"] .diff-nav-bar {
             background: rgba(248, 250, 252, 0.95);
         }
+
         .diff-nav-group {
             display: flex;
             align-items: center;
             gap: 6px;
         }
+
         .diff-nav-btn {
-            background: rgba(255,255,255,0.06);
+            background: rgba(255, 255, 255, 0.06);
             border: 1px solid var(--glass-border);
             border-radius: 6px;
             color: var(--text-secondary);
@@ -819,35 +1059,41 @@
             font-family: 'Outfit', sans-serif;
             font-weight: 600;
         }
+
         .diff-nav-btn:hover {
-            background: rgba(255,255,255,0.12);
+            background: rgba(255, 255, 255, 0.12);
             color: var(--text-primary);
             border-color: var(--accent-secondary);
         }
+
         .diff-nav-btn:disabled {
             opacity: 0.35;
             cursor: not-allowed;
             pointer-events: none;
         }
+
         [data-theme="light"] .diff-nav-btn {
-            background: rgba(0,0,0,0.04);
-            border-color: rgba(0,0,0,0.1);
+            background: rgba(0, 0, 0, 0.04);
+            border-color: rgba(0, 0, 0, 0.1);
         }
+
         .diff-change-badge {
             font-size: 0.72rem;
             font-family: 'Outfit', sans-serif;
             font-weight: 600;
             color: var(--text-secondary);
-            background: rgba(255,255,255,0.05);
+            background: rgba(255, 255, 255, 0.05);
             border: 1px solid var(--glass-border);
             border-radius: 20px;
             padding: 3px 10px;
             white-space: nowrap;
         }
+
         .diff-change-badge .badge-num {
             color: var(--accent-secondary);
             font-weight: 700;
         }
+
         .diff-legend {
             display: flex;
             gap: 12px;
@@ -855,8 +1101,10 @@
             font-size: 0.68rem;
             color: var(--text-secondary);
         }
+
         .diff-legend-dot {
-            width: 8px; height: 8px;
+            width: 8px;
+            height: 8px;
             border-radius: 2px;
             display: inline-block;
             margin-right: 3px;
@@ -865,13 +1113,15 @@
         /* Column header row */
         .diff-col-headers {
             display: flex;
-            background: rgba(0,0,0,0.25);
+            background: rgba(0, 0, 0, 0.25);
             border-bottom: 1px solid var(--glass-border);
             flex-shrink: 0;
         }
+
         [data-theme="light"] .diff-col-headers {
-            background: rgba(0,0,0,0.04);
+            background: rgba(0, 0, 0, 0.04);
         }
+
         .diff-col-header {
             flex: 1;
             display: flex;
@@ -885,17 +1135,20 @@
             letter-spacing: 0.3px;
             text-transform: uppercase;
         }
+
         .diff-col-header.left-header {
             border-right: 1px solid var(--glass-border);
         }
+
         .diff-col-header i {
             color: var(--text-secondary);
             opacity: 0.7;
         }
+
         .diff-col-header .file-badge {
             font-size: 0.65rem;
             font-family: 'Fira Code', monospace;
-            background: rgba(255,255,255,0.06);
+            background: rgba(255, 255, 255, 0.06);
             border: 1px solid var(--glass-border);
             border-radius: 4px;
             padding: 1px 6px;
@@ -917,6 +1170,7 @@
             background: rgba(255, 255, 255, 0.04);
             overflow: hidden;
         }
+
         .diff-pane-textarea {
             flex: 1;
             overflow: auto;
@@ -932,16 +1186,20 @@
             box-sizing: border-box;
             height: 100%;
         }
+
         .diff-pane-textarea.left-pane {
-            border-right: 1px solid rgba(255,255,255,0.06);
+            border-right: 1px solid rgba(255, 255, 255, 0.06);
         }
+
         [data-theme="light"] .diff-pane-textarea {
             background: #f8fafc;
             color: #1e293b;
         }
+
         [data-theme="light"] .diff-pane-textarea.left-pane {
-            border-right: 1px solid rgba(0,0,0,0.06);
+            border-right: 1px solid rgba(0, 0, 0, 0.06);
         }
+
         [data-theme="light"] .diff-container {
             background: rgba(0, 0, 0, 0.04);
         }
@@ -955,28 +1213,34 @@
             background: #090d18 !important;
             color: #d1fae5 !important;
         }
+
         .CodeMirror-gutters {
             background: #060911 !important;
             border-right: 1px solid rgba(255, 255, 255, 0.05) !important;
         }
+
         .CodeMirror-linenumber {
             color: #475569 !important;
         }
+
         .CodeMirror-cursor {
             border-left: 2px solid #34d399 !important;
         }
-        
+
         [data-theme="light"] .CodeMirror {
             background: #f8fafc !important;
             color: #1e293b !important;
         }
+
         [data-theme="light"] .CodeMirror-gutters {
             background: #f1f5f9 !important;
             border-right: 1px solid rgba(0, 0, 0, 0.05) !important;
         }
+
         [data-theme="light"] .CodeMirror-linenumber {
             color: #94a3b8 !important;
         }
+
         [data-theme="light"] .CodeMirror-cursor {
             border-left: 2px solid #2563eb !important;
         }
@@ -986,43 +1250,52 @@
             .diff-container {
                 flex-direction: column !important;
             }
-            #diffPaneLeft, #diffPaneRight {
+
+            #diffPaneLeft,
+            #diffPaneRight {
                 flex: 1 !important;
                 width: 100% !important;
             }
+
             #diffResizer {
                 width: 100% !important;
                 height: 8px !important;
                 cursor: row-resize !important;
                 border-left: none !important;
                 border-right: none !important;
-                border-top: 1px solid rgba(255,255,255,0.05) !important;
-                border-bottom: 1px solid rgba(255,255,255,0.05) !important;
+                border-top: 1px solid rgba(255, 255, 255, 0.05) !important;
+                border-bottom: 1px solid rgba(255, 255, 255, 0.05) !important;
             }
+
             .diff-col-headers {
                 display: none !important;
             }
         }
-        
+
         /* Laptop / 13-14" screen adaptations (1280px wide) */
         @media (max-width: 1400px) {
             .container {
                 padding: 10px;
                 gap: 10px;
             }
+
             .card {
                 padding: 14px;
             }
+
             .header {
                 padding: 10px 16px;
             }
+
             .feed-item {
                 padding: 10px;
             }
+
             .actions {
                 padding: 8px;
                 gap: 6px;
             }
+
             .btn {
                 font-size: 0.78rem;
                 padding: 6px 12px;
@@ -1035,14 +1308,17 @@
                 font-size: 0.7rem !important;
                 padding: 4px 8px !important;
             }
+
             .logo {
                 font-size: 1rem !important;
             }
+
             .container {
                 padding: 10px !important;
                 gap: 10px !important;
             }
         }
+
         .diff-pane {
             flex: 1;
             overflow: auto;
@@ -1051,32 +1327,49 @@
             scroll-behavior: auto;
             position: relative;
         }
+
         .diff-pane.left-pane {
-            border-right: 1px solid rgba(255,255,255,0.06);
+            border-right: 1px solid rgba(255, 255, 255, 0.06);
         }
+
         [data-theme="light"] .diff-pane {
             background: #f8fafc;
         }
+
         [data-theme="light"] .diff-pane.left-pane {
-            border-right: 1px solid rgba(0,0,0,0.06);
+            border-right: 1px solid rgba(0, 0, 0, 0.06);
         }
 
         /* Scrollbars */
-        .diff-pane::-webkit-scrollbar { width: 6px; height: 6px; }
-        .diff-pane::-webkit-scrollbar-track { background: transparent; }
+        .diff-pane::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+
+        .diff-pane::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
         .diff-pane::-webkit-scrollbar-thumb {
             background: rgba(255, 255, 255, 0.08);
             border-radius: 10px;
         }
+
         .diff-pane::-webkit-scrollbar-thumb:hover {
             background: rgba(255, 255, 255, 0.15);
         }
+
         [data-theme="light"] .diff-pane::-webkit-scrollbar-thumb {
             background: rgba(0, 0, 0, 0.08);
         }
 
         /* Line containers */
-        .diff-lines { display: flex; flex-direction: column; width: 100%; min-width: 0; }
+        .diff-lines {
+            display: flex;
+            flex-direction: column;
+            width: 100%;
+            min-width: 0;
+        }
 
         .diff-line {
             display: flex;
@@ -1097,6 +1390,7 @@
             gap: 0;
             flex-shrink: 0;
         }
+
         .diff-ln {
             width: 42px;
             text-align: right;
@@ -1109,11 +1403,12 @@
             align-items: center;
             justify-content: flex-end;
         }
+
         .diff-sign {
             width: 18px;
             text-align: center;
             padding: 0 2px;
-            color: rgba(255,255,255,0.15);
+            color: rgba(255, 255, 255, 0.15);
             font-size: 0.8rem;
             font-weight: 700;
             flex-shrink: 0;
@@ -1122,8 +1417,14 @@
             justify-content: center;
             border-right: 2px solid transparent;
         }
-        [data-theme="light"] .diff-ln { color: rgba(0, 0, 0, 0.25); }
-        [data-theme="light"] .diff-sign { color: rgba(0, 0, 0, 0.15); }
+
+        [data-theme="light"] .diff-ln {
+            color: rgba(0, 0, 0, 0.25);
+        }
+
+        [data-theme="light"] .diff-sign {
+            color: rgba(0, 0, 0, 0.15);
+        }
 
         /* Code content area */
         .diff-code {
@@ -1134,6 +1435,7 @@
             align-items: center;
             min-width: 0;
         }
+
         .diff-code-inner {
             white-space: pre;
             overflow: hidden;
@@ -1145,43 +1447,54 @@
         .diff-line.added {
             background: rgba(16, 185, 129, 0.08);
         }
-        .diff-line.added .diff-ln { color: rgba(52, 211, 153, 0.5); }
+
+        .diff-line.added .diff-ln {
+            color: rgba(52, 211, 153, 0.5);
+        }
+
         .diff-line.added .diff-sign {
             color: #10b981;
             border-right-color: #10b981;
             background: rgba(16, 185, 129, 0.18);
         }
-        .diff-line.added .diff-code { color: #d1fae5; }
+
+        .diff-line.added .diff-code {
+            color: #d1fae5;
+        }
 
         .diff-line.removed {
             background: rgba(239, 68, 68, 0.08);
         }
-        .diff-line.removed .diff-ln { color: rgba(248, 113, 113, 0.5); }
+
+        .diff-line.removed .diff-ln {
+            color: rgba(248, 113, 113, 0.5);
+        }
+
         .diff-line.removed .diff-sign {
             color: #ef4444;
             border-right-color: #ef4444;
             background: rgba(239, 68, 68, 0.18);
         }
-        .diff-line.removed .diff-code { color: #fee2e2; }
+
+        .diff-line.removed .diff-code {
+            color: #fee2e2;
+        }
 
         .diff-line.empty {
-            background: repeating-linear-gradient(
-                45deg,
-                transparent,
-                transparent 4px,
-                rgba(255,255,255,0.012) 4px,
-                rgba(255,255,255,0.012) 8px
-            );
+            background: repeating-linear-gradient(45deg,
+                    transparent,
+                    transparent 4px,
+                    rgba(255, 255, 255, 0.012) 4px,
+                    rgba(255, 255, 255, 0.012) 8px);
             opacity: 0.4;
         }
+
         [data-theme="light"] .diff-line.empty {
-            background: repeating-linear-gradient(
-                45deg,
-                transparent,
-                transparent 4px,
-                rgba(0,0,0,0.015) 4px,
-                rgba(0,0,0,0.015) 8px
-            );
+            background: repeating-linear-gradient(45deg,
+                    transparent,
+                    transparent 4px,
+                    rgba(0, 0, 0, 0.015) 4px,
+                    rgba(0, 0, 0, 0.015) 8px);
         }
 
         /* Hunk separator */
@@ -1197,6 +1510,7 @@
             color: rgba(0, 188, 242, 0.7);
             user-select: none;
         }
+
         [data-theme="light"] .diff-hunk-sep {
             background: rgba(0, 120, 212, 0.04);
         }
@@ -1213,24 +1527,35 @@
             border-radius: 2px;
             color: #bbf7d0;
         }
+
         .diff-char-removed {
             background: rgba(239, 68, 68, 0.35);
             border-radius: 2px;
             color: #fecaca;
         }
+
         [data-theme="light"] .diff-char-added {
             background: rgba(16, 185, 129, 0.22);
             color: #166534;
         }
+
         [data-theme="light"] .diff-char-removed {
             background: rgba(239, 68, 68, 0.2);
             color: #991b1b;
         }
 
         /* Normal lines in light theme */
-        [data-theme="light"] .diff-line.normal .diff-code { color: #1e293b; }
-        [data-theme="light"] .diff-line.added .diff-code { color: #14532d; }
-        [data-theme="light"] .diff-line.removed .diff-code { color: #7f1d1d; }
+        [data-theme="light"] .diff-line.normal .diff-code {
+            color: #1e293b;
+        }
+
+        [data-theme="light"] .diff-line.added .diff-code {
+            color: #14532d;
+        }
+
+        [data-theme="light"] .diff-line.removed .diff-code {
+            color: #7f1d1d;
+        }
 
         /* ── Center Accept-Gutter ──────────────────────────────────────── */
         .diff-center-gutter {
@@ -1240,15 +1565,17 @@
             flex-direction: column;
             align-items: center;
             background: rgba(0, 0, 0, 0.25);
-            border-left: 1px solid rgba(255,255,255,0.05);
-            border-right: 1px solid rgba(255,255,255,0.05);
+            border-left: 1px solid rgba(255, 255, 255, 0.05);
+            border-right: 1px solid rgba(255, 255, 255, 0.05);
             position: relative;
             overflow: visible;
             z-index: 2;
         }
+
         [data-theme="light"] .diff-center-gutter {
             background: rgba(0, 0, 0, 0.04);
         }
+
         .diff-gutter-row {
             width: 100%;
             min-height: 20px;
@@ -1257,6 +1584,7 @@
             justify-content: center;
             flex-shrink: 0;
         }
+
         .diff-accept-btn {
             width: 26px;
             height: 26px;
@@ -1272,6 +1600,7 @@
             transition: var(--transition);
             flex-shrink: 0;
         }
+
         .diff-accept-btn:hover {
             background: rgba(0, 120, 212, 0.4);
             border-color: var(--accent-secondary);
@@ -1279,12 +1608,14 @@
             transform: scale(1.15);
             box-shadow: 0 0 12px rgba(0, 188, 242, 0.4);
         }
+
         .diff-accept-btn.accepted {
             border-color: rgba(16, 185, 129, 0.6);
             background: rgba(16, 185, 129, 0.15);
             color: #10b981;
             cursor: default;
         }
+
         .diff-accept-btn.accepted:hover {
             transform: none;
             box-shadow: none;
@@ -1303,26 +1634,32 @@
             text-align: center;
             user-select: none;
         }
+
         .diff-right-placeholder i {
             font-size: 2.5rem;
             opacity: 0.25;
             margin-bottom: 6px;
         }
+
         .diff-right-placeholder p {
             font-size: 0.78rem;
             opacity: 0.5;
             max-width: 200px;
             line-height: 1.6;
         }
+
         .diff-right-placeholder .browse-hint {
             font-size: 0.72rem;
             color: var(--accent-secondary);
             opacity: 0.8;
             cursor: pointer;
             text-decoration: underline;
-            text-decoration-color: rgba(0,188,242,0.3);
+            text-decoration-color: rgba(0, 188, 242, 0.3);
         }
-        .diff-right-placeholder .browse-hint:hover { opacity: 1; }
+
+        .diff-right-placeholder .browse-hint:hover {
+            opacity: 1;
+        }
 
         /* Accepted hunk glow on right */
         .diff-line.accepted {
@@ -1338,20 +1675,23 @@
             align-items: center;
             justify-content: center;
             background: rgba(0, 0, 0, 0.25);
-            border-left: 1px solid rgba(255,255,255,0.05);
-            border-right: 1px solid rgba(255,255,255,0.05);
+            border-left: 1px solid rgba(255, 255, 255, 0.05);
+            border-right: 1px solid rgba(255, 255, 255, 0.05);
             font-size: 0.6rem;
-            color: rgba(255,255,255,0.15);
+            color: rgba(255, 255, 255, 0.15);
         }
+
         [data-theme="light"] .diff-col-header-gutter {
             background: rgba(0, 0, 0, 0.04);
         }
     </style>
 </head>
+
 <body>
     <div class="header" style="padding: 8px 16px;">
         <div class="logo" style="font-size: 1rem;">
-            <img src="images/big_logo_horizontal.png" alt="BIG Logo" style="height: 24px; width: auto; margin-right: 8px;"> LOCATOR STUDIO
+            <img src="images/big_logo_horizontal.png" alt="BIG Logo"
+                style="height: 24px; width: auto; margin-right: 8px;"> LOCATOR STUDIO
         </div>
         <div id="connectionStatus" style="font-size: 0.7rem; color: var(--success);">
             <i class="fas fa-circle"></i> Connected to Python
@@ -1362,34 +1702,55 @@
         <!-- Configuration Card -->
         <div class="card" style="flex-shrink: 0;">
             <div style="margin-bottom: 6px;">
-                <label style="font-size: 0.68rem; margin-bottom: 3px; display: block; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px;">Target URL</label>
+                <label
+                    style="font-size: 0.68rem; margin-bottom: 3px; display: block; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px;">Target
+                    URL</label>
                 <div style="display: flex; gap: 6px; align-items: center;">
-                    <div style="display: flex; gap: 2px; background: rgba(0,0,0,0.2); padding: 2px; border-radius: 14px; border: 1px solid rgba(255,255,255,0.05);">
-                        <button onclick="navigateBrowser('back')" class="nav-btn" style="width: 24px; height: 24px;" title="Back">
-                            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+                    <div
+                        style="display: flex; gap: 2px; background: rgba(0,0,0,0.2); padding: 2px; border-radius: 14px; border: 1px solid rgba(255,255,255,0.05);">
+                        <button onclick="navigateBrowser('back')" class="nav-btn" style="width: 24px; height: 24px;"
+                            title="Back">
+                            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="m15 18-6-6 6-6" />
+                            </svg>
                         </button>
-                        <button onclick="navigateBrowser('forward')" class="nav-btn" style="width: 24px; height: 24px;" title="Forward">
-                            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+                        <button onclick="navigateBrowser('forward')" class="nav-btn" style="width: 24px; height: 24px;"
+                            title="Forward">
+                            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="m9 18 6-6-6-6" />
+                            </svg>
                         </button>
-                        <button onclick="navigateBrowser('reload')" class="nav-btn" style="width: 24px; height: 24px;" title="Reload">
-                            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg>
+                        <button onclick="navigateBrowser('reload')" class="nav-btn" style="width: 24px; height: 24px;"
+                            title="Reload">
+                            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8" />
+                                <path d="M21 3v5h-5" />
+                            </svg>
                         </button>
                     </div>
-                    <input type="text" id="targetUrl" placeholder="https://example.com" style="flex:1; padding: 5px 8px; font-size: 0.78rem;">
-                    <button class="btn btn-primary" onclick="launchUrl()" style="min-width: 60px; padding: 5px 10px; font-size: 0.75rem;">Launch</button>
+                    <input type="text" id="targetUrl" placeholder="https://example.com"
+                        style="flex:1; padding: 5px 8px; font-size: 0.78rem;">
+                    <button class="btn btn-primary" onclick="launchUrl()"
+                        style="min-width: 60px; padding: 5px 10px; font-size: 0.75rem;">Launch</button>
                 </div>
             </div>
 
             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 5px;">
                 <div>
-                    <label style="font-size: 0.68rem; margin-bottom: 2px; display: block; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px;">Automation Tool</label>
-                    <select id="toolSelect" style="padding: 3px 6px; font-size: 0.75rem; height: 28px;">
+                    <label
+                        style="font-size: 0.68rem; margin-bottom: 2px; display: block; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px;">Automation
+                        Tool</label>
+                    <select id="toolSelect" onchange="updateLanguageOptions()" style="padding: 3px 6px; font-size: 0.75rem; height: 28px;">
                         <option value="Playwright">Playwright</option>
                         <option value="Selenium">Selenium</option>
                     </select>
                 </div>
                 <div>
-                    <label style="font-size: 0.68rem; margin-bottom: 2px; display: block; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px;">Language</label>
+                    <label
+                        style="font-size: 0.68rem; margin-bottom: 2px; display: block; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px;">Language</label>
                     <select id="langSelect" style="padding: 3px 6px; font-size: 0.75rem; height: 28px;">
                         <option value="TypeScript">TypeScript</option>
                         <option value="Python">Python</option>
@@ -1398,10 +1759,12 @@
                 </div>
             </div>
 
-            <div style="display: flex; align-items: center; justify-content: space-between; background: rgba(0,0,0,0.15); padding: 4px 8px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.05); margin-top: 5px;">
+            <div
+                style="display: flex; align-items: center; justify-content: space-between; background: rgba(0,0,0,0.15); padding: 4px 8px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.05); margin-top: 5px;">
                 <div>
                     <span style="font-size: 0.68rem; font-weight: 600;">Playwright-Native Mode</span>
-                    <span style="font-size: 0.58rem; color: var(--text-secondary); margin-left: 4px;">getByRole, etc.</span>
+                    <span style="font-size: 0.58rem; color: var(--text-secondary); margin-left: 4px;">getByRole,
+                        etc.</span>
                 </div>
                 <label class="switch">
                     <input type="checkbox" id="pwNativeToggle" checked>
@@ -1412,11 +1775,14 @@
 
         <!-- Capture Controls -->
         <div style="display: flex; gap: 6px; flex-shrink: 0;">
-            <button id="captureBtn" class="btn btn-primary" style="flex: 1; height: 32px; background: var(--accent); font-size: 0.75rem;" onclick="toggleCapture()">
+            <button id="captureBtn" class="btn btn-primary"
+                style="flex: 1; height: 32px; background: var(--accent); font-size: 0.75rem;" onclick="toggleCapture()">
                 <i class="fas fa-play"></i> Start Capturing
             </button>
-            <button class="btn btn-outline" style="width: 34px; height: 32px; padding: 0;" title="Freeze Page (Pause JS)" onclick="freezePage()">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <button class="btn btn-outline" style="width: 34px; height: 32px; padding: 0;"
+                title="Freeze Page (Pause JS)" onclick="freezePage()">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                    stroke-linecap="round" stroke-linejoin="round">
                     <line x1="12" y1="2" x2="12" y2="22"></line>
                     <line x1="4.93" y1="4.93" x2="19.07" y2="19.07"></line>
                     <line x1="2" y1="12" x2="22" y2="12"></line>
@@ -1427,14 +1793,21 @@
 
         <!-- Element Queue -->
         <div class="card" style="flex: 1; display: flex; flex-direction: column; min-height: 0; padding: 10px 12px;">
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:5px; flex-shrink:0;">
+            <div
+                style="display:flex; justify-content:space-between; align-items:center; margin-bottom:5px; flex-shrink:0; gap: 8px;">
                 <label style="margin:0; font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.5px;">Captured Elements Queue</label>
-                <span id="elemCountBadge" style="font-size:0.68rem;color:var(--text-secondary);">0 elements</span>
+                <div style="display: flex; align-items: center; gap: 6px; margin-left: auto;">
+                    <button class="btn" onclick="showAddManualModal()" style="padding: 3px 8px; font-size: 0.68rem; background: rgba(0, 188, 242, 0.12); border: 1px solid var(--accent-secondary); color: var(--accent-secondary); border-radius: 4px;" title="Add Custom Element Manually">
+                        <i class="fas fa-plus"></i> Add Custom
+                    </button>
+                    <span id="elemCountBadge" style="font-size:0.68rem;color:var(--text-secondary);">0 elements</span>
+                </div>
             </div>
 
             <!-- Search & Filter -->
             <div class="search-bar" style="margin-bottom:5px; flex-shrink:0;">
-                <input type="text" id="searchInput" placeholder="Search elements..." oninput="filterQueue()" style="padding:5px 8px;font-size:0.75rem;">
+                <input type="text" id="searchInput" placeholder="Search elements..." oninput="filterQueue()"
+                    style="padding:5px 8px;font-size:0.75rem;">
                 <select id="filterType" onchange="filterQueue()" style="width:80px;padding:5px 6px;font-size:0.72rem;">
                     <option value="">All Types</option>
                     <option value="XPath">XPath</option>
@@ -1442,86 +1815,157 @@
                     <option value="ID">ID</option>
                     <option value="getBy">Playwright</option>
                 </select>
-                <button id="uniqueFilterBtn" class="filter-toggle" onclick="toggleUniqueFilter()" title="Show only unique locators" style="font-size:0.65rem;padding:5px 7px;">1/1</button>
+                <button id="uniqueFilterBtn" class="filter-toggle" onclick="toggleUniqueFilter()"
+                    title="Show only unique locators" style="font-size:0.65rem;padding:5px 7px;">1/1</button>
             </div>
 
             <!-- Bulk toolbar (visible when items selected) -->
             <div class="bulk-toolbar" id="bulkToolbar" style="flex-shrink:0;">
                 <span id="selectedCount" style="color:var(--text-secondary);align-self:center;">0 selected</span>
-                <button class="btn btn-outline" style="padding:3px 8px;font-size:0.7rem;" onclick="bulkDelete()"><i class="fas fa-trash"></i> Delete</button>
-                <button class="btn btn-outline" style="padding:3px 8px;font-size:0.7rem;border-color:var(--warning);color:var(--warning);" onclick="bulkActionChange()"><i class="fas fa-exchange-alt"></i> Set Action</button>
-                <button class="btn btn-outline" style="padding:3px 8px;font-size:0.7rem;margin-left:auto;" onclick="clearSelection()">x Deselect</button>
+                <button class="btn btn-outline" style="padding:3px 8px;font-size:0.7rem;" onclick="bulkDelete()"><i
+                        class="fas fa-trash"></i> Delete</button>
+                <button class="btn btn-outline"
+                    style="padding:3px 8px;font-size:0.7rem;border-color:var(--warning);color:var(--warning);"
+                    onclick="bulkActionChange()"><i class="fas fa-exchange-alt"></i> Set Action</button>
+                <button class="btn btn-outline" style="padding:3px 8px;font-size:0.7rem;margin-left:auto;"
+                    onclick="clearSelection()">x Deselect</button>
             </div>
 
             <!-- Scrollable element list - this MUST be flex:1 min-height:0 to scroll properly -->
             <div class="feed-container" id="elementQueue">
                 <div style="text-align: center; color: var(--text-secondary); margin-top: 30px; font-size: 0.8rem;">
-                    <i class="fas fa-mouse-pointer" style="display: block; font-size: 1.2rem; margin-bottom: 8px; opacity: 0.5;"></i>
+                    <i class="fas fa-mouse-pointer"
+                        style="display: block; font-size: 1.2rem; margin-bottom: 8px; opacity: 0.5;"></i>
                     Click elements in the browser to start capturing.
                 </div>
             </div>
 
             <!-- Live Locator Console (compact) -->
-            <div style="background:rgba(0,0,0,0.2); border-radius:6px; padding:6px 8px; margin-top:5px; border:1px solid rgba(255,255,255,0.05); flex-shrink:0;">
-                <div style="display:flex; justify-content:space-between; align-items:center; font-size:0.7rem; color:var(--text-secondary); margin-bottom:4px;">
+            <div
+                style="background:rgba(0,0,0,0.2); border-radius:6px; padding:6px 8px; margin-top:5px; border:1px solid rgba(255,255,255,0.05); flex-shrink:0;">
+                <div
+                    style="display:flex; justify-content:space-between; align-items:center; font-size:0.7rem; color:var(--text-secondary); margin-bottom:4px;">
                     <span><i class="fas fa-terminal"></i> Live Locator Console</span>
-                    <span id="liveConsoleCount" style="cursor:pointer;" title="Click to highlight" onclick="highlightFromConsole()">0 matches</span>
+                    <span id="liveConsoleCount" style="cursor:pointer;" title="Click to highlight"
+                        onclick="highlightFromConsole()">0 matches</span>
                 </div>
                 <div style="display:flex; gap:5px;">
-                    <input type="text" id="liveConsoleInput"
-                           placeholder="//xpath or .css ..."
-                           style="flex:1; background:rgba(0,0,0,0.4); border:1px solid rgba(255,255,255,0.1); color:white; padding:5px 8px; border-radius:5px; font-family:monospace; font-size:0.75rem;"
-                           oninput="triggerVerifyLiveLocator()"
-                           onkeydown="if(event.key==='Enter') highlightFromConsole()">
+                    <input type="text" id="liveConsoleInput" placeholder="//xpath or .css ..."
+                        style="flex:1; background:rgba(0,0,0,0.4); border:1px solid rgba(255,255,255,0.1); color:white; padding:5px 8px; border-radius:5px; font-family:monospace; font-size:0.75rem;"
+                        oninput="triggerVerifyLiveLocator()" onkeydown="if(event.key==='Enter') highlightFromConsole()">
                     <button class="btn" id="liveHighlightBtn"
-                            style="padding:5px 8px; background:rgba(0,120,212,0.3); border:1px solid #0078d4; color:#0078d4;"
-                            onclick="highlightFromConsole()" title="Highlight element in browser">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        style="padding:5px 8px; background:rgba(0,120,212,0.3); border:1px solid #0078d4; color:#0078d4;"
+                        onclick="highlightFromConsole()" title="Highlight element in browser">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                             <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
                             <circle cx="12" cy="12" r="3"></circle>
                         </svg>
                     </button>
-                    <button class="btn btn-primary" style="padding:5px 8px;" onclick="addLiveLocator()" title="Add to Queue">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <button class="btn btn-primary" style="padding:5px 8px;" onclick="addLiveLocator()"
+                        title="Add to Queue">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                             <line x1="12" y1="5" x2="12" y2="19"></line>
                             <line x1="5" y1="12" x2="19" y2="12"></line>
                         </svg>
                     </button>
                 </div>
-                <div id="liveConsoleFeedback" style="margin-top:3px; font-size:0.65rem; color:var(--text-secondary); min-height:11px;"></div>
+                <div id="liveConsoleFeedback"
+                    style="margin-top:3px; font-size:0.65rem; color:var(--text-secondary); min-height:11px;"></div>
             </div>
+        </div>
+
+        <!-- Status Bar — inside .container so it is always visible -->
+        <div class="status-bar" style="flex-shrink:0; margin: 0 -12px; border-radius: 0;">
+            <span><span class="status-dot idle" id="captureDot"></span><span id="captureStatus">Idle</span></span>
+            <span class="status-sep">|</span>
+            <span><i class="fas fa-layer-group" style="margin-right:4px;"></i><span id="elemCountStatus">0
+                    elements</span></span>
+            <span class="status-sep">|</span>
+            <span><i class="fas fa-robot" style="margin-right:4px;"></i><span id="aiStatus">AI: Checking...</span></span>
+            <span class="status-sep" style="margin-left:auto;"></span>
+            <span id="lastActionStatus" style="color:rgba(255,255,255,0.3);">Ready</span>
+        </div>
+
+        <!-- Action buttons — inside .container so they are always pinned and visible -->
+        <div class="actions" style="flex-shrink:0; margin: 0 -12px; grid-template-columns: repeat(3, 1fr); gap: 6px; padding: 8px 10px; border-radius: 0;">
+            <button class="btn btn-outline" style="min-width: unset; font-size: 0.75rem; padding: 6px;"
+                onclick="clearQueue()">
+                <i class="fas fa-trash"></i> Clear
+            </button>
+            <button class="btn btn-outline"
+                style="border-color: #10ac84; color: #10ac84; min-width: unset; font-size: 0.75rem; padding: 6px;"
+                onclick="exportToExcel()">
+                <i class="fas fa-file-excel"></i> Excel
+            </button>
+            <button class="btn btn-outline"
+                style="border-color: #9b59b6; color: #9b59b6; min-width: unset; font-size: 0.75rem; padding: 6px;"
+                onclick="showDbModal()">
+                <i class="fas fa-database"></i> DB
+            </button>
+            <button class="btn btn-primary"
+                style="background: #f39c12; grid-column: span 1; font-size: 0.75rem; padding: 6px;" onclick="smartMerge()">
+                <i class="fas fa-code-branch"></i> Merge
+            </button>
+            <button class="btn btn-primary" style="grid-column: span 2; font-size: 0.75rem; padding: 6px;"
+                onclick="generateCode()">
+                <i class="fas fa-file-code"></i> Gen New PO
+            </button>
         </div>
     </div>
 
-
-    <!-- Status Bar -->
-    <div class="status-bar">
-        <span><span class="status-dot idle" id="captureDot"></span><span id="captureStatus">Idle</span></span>
-        <span class="status-sep">|</span>
-        <span><i class="fas fa-layer-group" style="margin-right:4px;"></i><span id="elemCountStatus">0 elements</span></span>
-        <span class="status-sep">|</span>
-        <span><i class="fas fa-robot" style="margin-right:4px;"></i><span id="aiStatus">AI: Checking...</span></span>
-        <span class="status-sep" style="margin-left:auto;"></span>
-        <span id="lastActionStatus" style="color:rgba(255,255,255,0.3);">Ready</span>
-    </div>
-
-
-    <div class="actions" style="grid-template-columns: repeat(3, 1fr); gap: 6px; padding: 10px;">
-        <button class="btn btn-outline" style="min-width: unset; font-size: 0.75rem; padding: 6px;" onclick="clearQueue()">
-            <i class="fas fa-trash"></i> Clear
-        </button>
-        <button class="btn btn-outline" style="border-color: #10ac84; color: #10ac84; min-width: unset; font-size: 0.75rem; padding: 6px;" onclick="exportToExcel()">
-            <i class="fas fa-file-excel"></i> Excel
-        </button>
-        <button class="btn btn-outline" style="border-color: #9b59b6; color: #9b59b6; min-width: unset; font-size: 0.75rem; padding: 6px;" onclick="showDbModal()">
-            <i class="fas fa-database"></i> DB
-        </button>
-        <button class="btn btn-primary" style="background: #f39c12; grid-column: span 1; font-size: 0.75rem; padding: 6px;" onclick="smartMerge()">
-            <i class="fas fa-code-branch"></i> Merge
-        </button>
-        <button class="btn btn-primary" style="grid-column: span 2; font-size: 0.75rem; padding: 6px;" onclick="generateCode()">
-            <i class="fas fa-file-code"></i> Gen New PO
-        </button>
+    <!-- Add Custom Element Modal -->
+    <div id="addManualModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3><i class="fas fa-plus-circle" style="color: var(--accent-secondary);"></i> Add Custom Element</h3>
+                <button class="modal-close" onclick="hideAddManualModal()"><i class="fas fa-times"></i></button>
+            </div>
+            <div class="form-group">
+                <label>Element Name</label>
+                <input type="text" id="manualName" placeholder="e.g. loginButton" required>
+            </div>
+            <div class="form-group">
+                <label>Locator Type</label>
+                <select id="manualType" onchange="onManualTypeChange()">
+                    <option value="XPath">XPath</option>
+                    <option value="CSS">CSS</option>
+                    <option value="ID">ID</option>
+                    <option value="getByRole">Playwright getByRole</option>
+                    <option value="getByText">Playwright getByText</option>
+                    <option value="getByPlaceholder">Playwright getByPlaceholder</option>
+                    <option value="getByLabel">Playwright getByLabel</option>
+                    <option value="getByTestId">Playwright getByTestId</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Locator Value</label>
+                <input type="text" id="manualValue" placeholder="e.g. //button[@id='submit']" style="font-family: monospace;" required>
+            </div>
+            <div class="form-group">
+                <label>Preferred Action</label>
+                <select id="manualAction">
+                    <option value="Click">Click</option>
+                    <option value="Type">Type</option>
+                    <option value="Clear">Clear</option>
+                    <option value="Hover">Hover</option>
+                    <option value="DoubleClick">DoubleClick</option>
+                    <option value="RightClick">ContextClick</option>
+                    <option value="GetText">GetText</option>
+                    <option value="IsDisplayed">IsDisplayed</option>
+                    <option value="WaitForVisible">WaitForVisible</option>
+                    <option value="ScrollIntoView">ScrollIntoView</option>
+                    <option value="SelectByVisibleText">Select</option>
+                    <option value="Check">Check</option>
+                    <option value="Uncheck">Uncheck</option>
+                </select>
+            </div>
+            <div style="display: flex; gap: 10px; margin-top: 25px;">
+                <button class="btn btn-outline" style="flex: 1;" onclick="hideAddManualModal()">Cancel</button>
+                <button class="btn btn-primary" style="flex: 1;" onclick="submitManualElement()">Add to Queue</button>
+            </div>
+        </div>
     </div>
 
     <!-- DB Storage Modal -->
@@ -1548,11 +1992,13 @@
 
     <!-- PO Editor Modal -->
     <div id="poEditorModal" class="modal">
-        <div class="modal-content modal-large" style="padding: 0; overflow: hidden; border: 1px solid rgba(255,255,255,0.1);">
-            <div class="modal-header" style="padding: 20px 25px; background: linear-gradient(to right, rgba(99,102,241,0.15), transparent);">
+        <div class="modal-content modal-large"
+            style="padding: 0; overflow: hidden; border: 1px solid rgba(255,255,255,0.1);">
+            <div class="modal-header"
+                style="padding: 20px 25px; background: linear-gradient(to right, rgba(99,102,241,0.15), transparent);">
                 <div style="display:flex; flex-direction:column; gap:4px;">
                     <h3 style="margin:0; display:flex; align-items:center; gap:10px;">
-                        <i class="fas fa-file-code" style="color:var(--accent);"></i> 
+                        <i class="fas fa-file-code" style="color:var(--accent);"></i>
                         Preview & Edit Page Object
                     </h3>
                     <div style="font-size:0.75rem; color:var(--text-secondary); opacity:0.7;">
@@ -1562,29 +2008,37 @@
                 <button class="modal-close" onclick="hidePoEditorModal()"><i class="fas fa-times"></i></button>
             </div>
 
-            <div style="flex:1; display:flex; flex-direction:column; min-height:0; position:relative; background: #0f172a;">
-                <div style="position:absolute; left:0; top:0; bottom:0; width:45px; background:rgba(255,255,255,0.03); border-right:1px solid rgba(255,255,255,0.05); display:flex; flex-direction:column; align-items:center; padding-top:15px; pointer-events:none;">
-                    <div style="font-size:0.7rem; font-family:monospace; color:rgba(255,255,255,0.2); line-height:1.6;">1<br>2<br>3<br>4<br>5<br>6<br>7<br>8<br>9<br>10<br>11<br>12<br>13<br>14<br>15<br>16<br>17<br>18<br>19<br>20</div>
-                </div>
-                <textarea id="poEditorContent" class="po-editor" spellcheck="false" 
-                    style="flex:1; border:none; background:transparent; padding:15px 15px 15px 60px; font-size:0.9rem; line-height:1.6; color:#e2e8f0; resize:none; outline:none; font-family:'Fira Code', 'Cascadia Code', 'Consolas', monospace;"></textarea>
+            <!-- Beautiful full-width dark editor layout with zero gutter clipping and full vertical scroll -->
+            <div
+                style="flex:1; display:flex; flex-direction:column; min-height:0; background: #090d16; padding: 4px; border-bottom: 1px solid rgba(255,255,255,0.05);">
+                <textarea id="poEditorContent" class="po-editor" spellcheck="false"
+                    style="flex:1; border:none; background:transparent !important; padding:16px 20px; font-size:0.85rem; line-height:1.6; color:#e2e8f0; resize:none; outline:none; font-family:'Fira Code', 'Cascadia Code', 'Consolas', monospace; width:100%; box-sizing:border-box; margin:0;"></textarea>
             </div>
 
-            <div style="padding: 20px 25px; background: rgba(0,0,0,0.2); border-top: 1px solid rgba(255,255,255,0.05); display: flex; justify-content: space-between; align-items: center;">
-                <div style="display:flex; align-items:center; gap:12px;">
-                    <div style="display:flex; flex-direction:column; gap:2px;">
-                        <span style="font-size:0.65rem; text-transform:uppercase; letter-spacing:1px; color:var(--text-secondary); opacity:0.6;">Language</span>
-                        <span id="poEditorLang" style="font-size:0.85rem; color:var(--accent); font-weight:bold; display:flex; align-items:center; gap:6px;">
-                            <i class="fas fa-terminal" style="font-size:0.7rem;"></i> TypeScript
+            <!-- Compact & highly responsive control footer with dynamic flex-wrap wrapping -->
+            <div
+                style="padding: 12px 16px; background: rgba(0,0,0,0.2); border-top: 1px solid rgba(255,255,255,0.05); display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap;">
+                <div style="display:flex; align-items:center; gap:8px;">
+                    <div style="display:flex; flex-direction:column; gap:1px;">
+                        <span
+                            style="font-size:0.6rem; text-transform:uppercase; letter-spacing:0.5px; color:var(--text-secondary); opacity:0.6;">Language</span>
+                        <span id="poEditorLang"
+                            style="font-size:0.78rem; color:var(--accent-secondary); font-weight:bold; display:flex; align-items:center; gap:4px;">
+                            <i class="fas fa-terminal" style="font-size:0.65rem;"></i> TypeScript
                         </span>
                     </div>
                 </div>
-                <div style="display: flex; gap: 12px;">
-                    <button class="btn btn-outline" style="padding: 8px 20px; border-radius:8px;" onclick="hidePoEditorModal()">Cancel</button>
-                    <button class="btn btn-outline" style="padding: 8px 20px; border-radius:8px; display:flex; align-items:center; gap:8px;" onclick="copyEditedCode(this)">
+                <div style="display: flex; gap: 6px; flex-wrap: wrap;">
+                    <button class="btn btn-outline" style="padding: 6px 12px; border-radius:6px; font-size:0.75rem;"
+                        onclick="hidePoEditorModal()">Cancel</button>
+                    <button class="btn btn-outline"
+                        style="padding: 6px 12px; border-radius:6px; font-size:0.75rem; display:flex; align-items:center; gap:4px;"
+                        onclick="copyEditedCode(this)">
                         <i class="fas fa-copy"></i> Copy Code
                     </button>
-                    <button class="btn btn-primary" style="padding: 8px 24px; border-radius:8px; display:flex; align-items:center; gap:8px; box-shadow: 0 4px 12px rgba(99,102,241,0.3);" onclick="saveEditedCode()">
+                    <button class="btn btn-primary"
+                        style="padding: 6px 16px; border-radius:6px; font-size:0.75rem; display:flex; align-items:center; gap:4px; box-shadow: 0 4px 10px rgba(0, 188, 242, 0.2);"
+                        onclick="saveEditedCode()">
                         <i class="fas fa-save"></i> Save to File
                     </button>
                 </div>
@@ -1592,106 +2046,7 @@
         </div>
     </div>
 
-    <!-- Smart Merge Preview Modal -->
-    <div id="mergeModal" class="modal">
-        <div class="modal-content modal-large" style="padding: 20px; gap: 0; max-height: 94%; overflow: hidden; display: flex; flex-direction: column;">
-            <div class="modal-header" style="margin-bottom: 10px; padding-bottom: 8px;">
-                <h3 style="margin: 0; display: flex; align-items: center; gap: 10px;">
-                    <i class="fas fa-code-merge" style="color: var(--accent-secondary);"></i>
-                    Smart Merge
-                    <span style="font-size: 0.7rem; font-weight: 400; color: var(--text-secondary); background: rgba(255,255,255,0.05); border: 1px solid var(--glass-border); border-radius: 20px; padding: 2px 10px;">Interactive Diff Editor</span>
-                </h3>
-                <button class="modal-close" onclick="hideMergeModal()"><i class="fas fa-times"></i></button>
-            </div>
-
-            <!-- Checklist + Stats row -->
-            <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px; flex-shrink: 0; flex-wrap: wrap;">
-                <div class="checklist-title" style="margin-bottom: 0; flex-shrink: 0;">
-                    <span>Locators</span>
-                    <span id="checklistCountBadge" style="font-size: 0.65rem; color: var(--accent-secondary); text-transform: none;">0 of 0</span>
-                </div>
-                <div id="mergeChecklist" class="checklist-container" style="flex: 1; margin-bottom: 0; min-width: 0;"></div>
-                <div id="mergeStatsBar" class="merge-stats" style="margin-bottom: 0; flex-shrink: 0;">
-                    <span id="statLocators" class="merge-stat-pill"><i class="fas fa-fingerprint"></i> +0 locators</span>
-                    <span id="statActions" class="merge-stat-pill"><i class="fas fa-running"></i> +0 actions</span>
-                </div>
-            </div>
-
-            <!-- Split Editable Code Areas -->
-            <div id="diffViewContainer" class="diff-viewer-wrap" style="flex: 1; min-height: 0; display: flex; flex-direction: column;">
-
-                <!-- Navigation toolbar -->
-                <div class="diff-nav-bar" style="flex-shrink: 0;">
-                    <div class="diff-nav-group">
-                        <span class="diff-change-badge" id="diffChangeBadge" style="background: rgba(0, 188, 242, 0.1); border-color: rgba(0, 188, 242, 0.2); color: #00bcf2;">
-                            <span class="badge-num" id="diffChangeIndex">—</span><span id="diffChangeTotal"> changes</span>
-                        </span>
-                    </div>
-                    <div style="display: flex; align-items: center; gap: 8px;">
-                        <!-- Target file browse row (compact, inside nav) -->
-                        <input type="text" id="mergeFilePath" readonly placeholder="Browse target file →"
-                            style="font-size: 0.72rem; padding: 4px 8px; background: rgba(255,255,255,0.04); border: 1px solid var(--glass-border); border-radius: 6px; color: var(--text-secondary); width: 230px; font-family: 'Fira Code', monospace; outline: none;">
-                        <button class="diff-nav-btn" onclick="browseMergeFile()" style="white-space: nowrap;">
-                            <i class="fas fa-folder-open"></i> Browse…
-                        </button>
-                    </div>
-                </div>
-
-                <!-- Column headers (3 columns: left | gutter | right) -->
-                <div class="diff-col-headers" style="flex-shrink: 0;">
-                    <div class="diff-col-header left-header">
-                        <i class="fas fa-code" style="color: #34d399;"></i>
-                        New Locators
-                        <span class="file-badge" style="background: rgba(16,185,129,0.1); border-color: rgba(16,185,129,0.2); color: #34d399;">generated</span>
-                    </div>
-                    <div class="diff-col-header-gutter" title="Separator">·</div>
-                    <div class="diff-col-header">
-                        <i class="fas fa-file-code"></i>
-                        Target File
-                        <span class="file-badge" id="diffRightFileBadge">—</span>
-                    </div>
-                </div>
-
-                <!-- Twin editable textareas -->
-                <div class="diff-container" style="display: flex; flex: 1; min-height: 0; position: relative; user-select: none;">
-                    <!-- Left pane: Editable generated new locators -->
-                    <div class="diff-pane" id="diffPaneLeft" style="display: flex; flex: 1; flex-direction: column; padding: 0; background: transparent; overflow: hidden; border: none; min-width: 100px;">
-                        <textarea class="diff-pane-textarea" id="mergeNewCodeTextarea" spellcheck="false" placeholder="New generated code will show here..." style="height: 100%; width: 100%;"></textarea>
-                    </div>
-
-                    <!-- Center separator -->
-                    <div id="diffResizer" class="diff-col-header-gutter" style="width: 8px; flex-shrink: 0; background: rgba(255, 255, 255, 0.03); border-left: 1px solid rgba(255,255,255,0.05); border-right: 1px solid rgba(255,255,255,0.05); cursor: col-resize; display: flex; align-items: center; justify-content: center; font-size: 0.6rem; color: rgba(255,255,255,0.25); transition: background 0.2s;" title="Drag to resize columns">·</div>
-
-                    <!-- Right pane: Editable target file content -->
-                    <div class="diff-pane" id="diffPaneRight" style="display: flex; flex: 1; flex-direction: column; padding: 0; background: transparent; overflow: hidden; border: none; min-width: 100px;">
-                        <!-- Placeholder shown until file is browsed -->
-                        <div class="diff-right-placeholder" id="diffRightPlaceholder" style="flex: 1; display: flex; flex-direction: column; justify-content: center; align-items: center;">
-                            <i class="fas fa-folder-open"></i>
-                            <p>No target file selected</p>
-                            <span class="browse-hint" onclick="browseMergeFile()">Click Browse… to select a file</span>
-                        </div>
-                        <textarea class="diff-pane-textarea" id="mergeExistingCodeTextarea" spellcheck="false" style="display: none; height: 100%; width: 100%;" placeholder="Select target file to load merged content..."></textarea>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Hidden textarea used only as string store for confirmMerge -->
-            <textarea id="mergeExistingCode" style="display: none;"></textarea>
-
-            <!-- Action Bar -->
-            <div style="display: flex; gap: 10px; justify-content: space-between; align-items: center; flex-shrink: 0; border-top: 1px solid var(--glass-border); padding-top: 10px; margin-top: 8px;">
-                <div style="font-size: 0.72rem; color: var(--text-secondary);">
-                    <span id="mergeAcceptStatus" style="color: var(--text-secondary);">Click <strong style="color: var(--accent-secondary);">→</strong> on a hunk to move it to the target file</span>
-                </div>
-                <div style="display: flex; gap: 10px;">
-                    <button class="btn btn-outline" style="padding: 7px 16px; font-size: 0.78rem;" onclick="hideMergeModal()">Cancel</button>
-                    <button class="btn btn-primary" style="padding: 7px 22px; font-size: 0.78rem;" id="mergeConfirmBtn" onclick="confirmMerge()">
-                        <i class="fas fa-save"></i> Commit Merge to File
-                    </button>
-                </div>
-            </div>
-        </div>
-    </div>
+    <!-- Smart Merge now opens in a dedicated popup window -->
 
     <!-- CodeMirror Core and Language Modes -->
     <script src="libs/codemirror.min.js"></script>
@@ -1713,7 +2068,7 @@
                 new QWebChannel(qt.webChannelTransport, function (channel) {
                     pyBridge = channel.objects.pyBridge;
                     setAIStatus('Ready', 'var(--success)');
-            
+
                     // Listen for locators from Python (browser click events)
                     pyBridge.locatorsReceived.connect(function (dataJson) {
                         const data = JSON.parse(dataJson);
@@ -1740,10 +2095,10 @@
                                     if (feedbackEl) {
                                         if (count > 0) {
                                             feedbackEl.innerHTML = `<span style="color:var(--success);"><i class="fas fa-check-circle"></i> ${count} element(s) found. Press <kbd style="background:rgba(255,255,255,0.15);padding:1px 4px;border-radius:3px;">Enter</kbd> or click <i class="fas fa-eye"></i> to highlight.</span>`;
-                                            if (inputEl) { inputEl.style.borderColor = 'var(--success)'; setTimeout(() => { if(inputEl) inputEl.style.borderColor = 'rgba(255,255,255,0.1)'; }, 1500); }
+                                            if (inputEl) { inputEl.style.borderColor = 'var(--success)'; setTimeout(() => { if (inputEl) inputEl.style.borderColor = 'rgba(255,255,255,0.1)'; }, 1500); }
                                         } else {
                                             feedbackEl.innerHTML = `<span style="color:var(--danger);"><i class="fas fa-times-circle"></i> No elements matched.</span>`;
-                                            if (inputEl) { inputEl.style.borderColor = 'var(--danger)'; setTimeout(() => { if(inputEl) inputEl.style.borderColor = 'rgba(255,255,255,0.1)'; }, 1500); }
+                                            if (inputEl) { inputEl.style.borderColor = 'var(--danger)'; setTimeout(() => { if (inputEl) inputEl.style.borderColor = 'rgba(255,255,255,0.1)'; }, 1500); }
                                         }
                                     }
                                 } else {
@@ -1753,7 +2108,7 @@
                                         updateItemMatchBadge(idx, count);
                                     }
                                 }
-                            } catch(e) {}
+                            } catch (e) { }
                         });
                     }
 
@@ -1788,7 +2143,7 @@
                     }
 
                     // Listen for Smart Merge preview
-                    if(pyBridge.mergePreviewReady) {
+                    if (pyBridge.mergePreviewReady) {
                         pyBridge.mergePreviewReady.connect(function (dataJson) {
                             try {
                                 const data = JSON.parse(dataJson);
@@ -1797,7 +2152,7 @@
                                 document.getElementById('mergeFilePath').value = _targetFilePath;
 
                                 // Left code is ALWAYS the newly generated locator code (fully editable)
-                                _leftCode  = data.new_code || '';
+                                _leftCode = data.new_code || '';
                                 // Right code is the merged target file code if a file is loaded
                                 _rightCode = _targetFilePath ? (data.merged_code || '') : '';
 
@@ -1820,10 +2175,65 @@
         }
         initBridge();
 
+        function updateLanguageOptions() {
+            const tool = document.getElementById('toolSelect').value;
+            const langSelect = document.getElementById('langSelect');
+            const currentLang = langSelect.value;
+            
+            langSelect.innerHTML = '';
+            
+            let options = [];
+            if (tool === 'Selenium') {
+                options = [
+                    { value: 'C#', text: 'C#' },
+                    { value: 'Java', text: 'Java' },
+                    { value: 'Python', text: 'Python' }
+                ];
+            } else if (tool === 'Playwright') {
+                options = [
+                    { value: 'TypeScript', text: 'TypeScript' },
+                    { value: 'Java', text: 'Java' },
+                    { value: 'Python', text: 'Python' }
+                ];
+            }
+            
+            options.forEach(opt => {
+                const el = document.createElement('option');
+                el.value = opt.value;
+                el.textContent = opt.text;
+                if (opt.value === currentLang) el.selected = true;
+                langSelect.appendChild(el);
+            });
+        }
+
         window.addEventListener('DOMContentLoaded', () => {
             initSplitResizer();
-            setTimeout(initCodeMirrorEditors, 400);
+            updateLanguageOptions();
+            // CodeMirror is now lazy-initialized on first merge modal open
+            // (removed from here to avoid blocking startup repaint)
         });
+
+        let _cmInitialized = false;
+
+        function showMergeModal() {
+            const modal = document.getElementById('mergeModal');
+            if (!modal) return;
+            modal.style.display = 'flex';
+            // Defer CM init so the modal frame is PAINTED first, then CM enhances the textareas
+            if (!_cmInitialized) {
+                requestAnimationFrame(function () {
+                    requestAnimationFrame(function () {
+                        initCodeMirrorEditors();
+                        _cmInitialized = true;
+                    });
+                });
+            }
+        }
+
+        function hideMergeModal() {
+            const modal = document.getElementById('mergeModal');
+            if (modal) modal.style.display = 'none';
+        }
 
         function showAlert(msg) {
             if (pyBridge) {
@@ -1880,7 +2290,7 @@
             capturedElements.forEach((el, idx) => {
                 const count = el.count;
                 const badgeColor = count === 1 ? 'var(--success)' : (count === 0 ? 'var(--danger)' : 'var(--warning)');
-                const badgeText  = count === 1 ? 'Unique ✓' : `${count ?? '?'} matches`;
+                const badgeText = count === 1 ? 'Unique' : `${count ?? '?'} matches`;
                 const borderColor = count === 1 ? 'var(--success)' : (count === 0 ? 'var(--danger)' : 'var(--warning)');
                 const alts = el.alternatives || [];
 
@@ -1903,7 +2313,7 @@
                 item.style.flexDirection = 'row';
                 item.style.alignItems = 'flex-start';
                 item.style.gap = '4px';
-                
+
                 // Drag Events
                 item.addEventListener('dragstart', (e) => {
                     draggedItemIdx = idx;
@@ -2001,11 +2411,93 @@
             updateStatusBar();
         }
 
+        // Lightweight in-place update — swaps only visible text/colors for one card, no DOM rebuild
+        function renderSingleItem(idx) {
+            if (idx < 0 || idx >= capturedElements.length) { renderQueue(); return; }
+            const el = capturedElements[idx];
+            const count = el.count;
+            const badgeColor = count === 1 ? 'var(--success)' : (count === 0 ? 'var(--danger)' : 'var(--warning)');
+            const badgeText = count === 1 ? 'Unique' : (count != null ? `${count} matches` : '? matches');
+            const itemEl = document.getElementById(`locator-item-${idx}`);
+            if (!itemEl) { renderQueue(); return; }
+            itemEl.style.borderLeftColor = badgeColor;
+            const badge = document.getElementById(`match-badge-${idx}`);
+            if (badge) { badge.textContent = badgeText; badge.style.color = badgeColor; }
+            const typeEl = document.getElementById(`locator-type-${idx}`);
+            if (typeEl) typeEl.textContent = el.type;
+            const valEl = document.getElementById(`locator-val-${idx}`);
+            if (valEl) { valEl.textContent = el.value; valEl.style.color = badgeColor; valEl.title = el.value; }
+            const nameInput = itemEl.querySelector('.element-name-input');
+            if (nameInput && document.activeElement !== nameInput) nameInput.value = el.nameHint || 'element';
+        }
+
+        // Append a single new card without wiping the whole list
+        function appendNewItem(idx) {
+            const queue = document.getElementById('elementQueue');
+            if (!capturedElements[idx]) return;
+            const placeholder = queue.querySelector('[style*="text-align:center"]');
+            if (placeholder) placeholder.remove();
+            const el = capturedElements[idx];
+            const count = el.count;
+            const badgeColor = count === 1 ? 'var(--success)' : (count === 0 ? 'var(--danger)' : 'var(--warning)');
+            const badgeText = count === 1 ? 'Unique' : (count != null ? `${count} matches` : '? matches');
+            const borderColor = badgeColor;
+            const alts = el.alternatives || [];
+            const altsHtml = alts.map((l, i) => {
+                const c = l.count ?? '?';
+                const col = c === 1 ? '#10b981' : c > 1 ? '#f59e0b' : '#ef4444';
+                return `<div style="display:flex;align-items:center;gap:6px;padding:4px 0;border-bottom:1px solid rgba(255,255,255,0.05);"><span style="font-size:0.65rem;padding:1px 5px;border-radius:3px;background:rgba(255,255,255,0.07);color:${col};min-width:18px;text-align:center;">${c}</span><span style="font-size:0.7rem;color:var(--text-secondary);min-width:80px;">${l.type}</span><span style="font-size:0.7rem;font-family:monospace;color:var(--text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;" title="${l.value}">${l.value}</span><button onclick="selectAlternativeByIndex(${idx}, ${i})" style="font-size:0.65rem;padding:2px 6px;border-radius:4px;background:rgba(99,102,241,0.2);border:1px solid var(--accent);color:var(--accent);cursor:pointer;">Use</button></div>`;
+            }).join('');
+            const item = document.createElement('div');
+            item.className = 'feed-item feed-item--new';
+            item.draggable = true;
+            item.id = `locator-item-${idx}`;
+            item.style.borderLeftColor = borderColor;
+            item.style.flexDirection = 'row';
+            item.style.alignItems = 'flex-start';
+            item.style.gap = '4px';
+            item.addEventListener('dragstart', (e) => { draggedItemIdx = idx; item.classList.add('dragging'); e.dataTransfer.effectAllowed = 'move'; });
+            item.addEventListener('dragover', (e) => { e.preventDefault(); item.style.borderTop = '2px solid var(--accent)'; });
+            item.addEventListener('dragleave', () => { item.style.borderTop = 'none'; });
+            item.addEventListener('drop', (e) => { e.preventDefault(); item.style.borderTop = 'none'; if (draggedItemIdx === null || draggedItemIdx === idx) return; const movedItem = capturedElements.splice(draggedItemIdx, 1)[0]; capturedElements.splice(idx, 0, movedItem); renderQueue(); });
+            item.addEventListener('dragend', () => { item.classList.remove('dragging'); draggedItemIdx = null; });
+            item.innerHTML = `
+                <div class="drag-handle" title="Drag to reorder" style="flex-shrink:0;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="5" r="1"></circle><circle cx="9" cy="12" r="1"></circle><circle cx="9" cy="19" r="1"></circle><circle cx="15" cy="5" r="1"></circle><circle cx="15" cy="12" r="1"></circle><circle cx="15" cy="19" r="1"></circle></svg></div>
+                <div style="display:flex;flex-direction:column;flex:1;min-width:0;">
+                    <div class="feed-item-info" style="width:100%;min-width:0;">
+                        <div class="feed-item-title" style="display:flex;align-items:center;min-width:0;width:100%;">
+                            <input type="text" class="element-name-input" value="${el.nameHint || 'element'}" onchange="updateNameHint(${idx}, this.value)" style="background:transparent;border:none;color:white;font-weight:bold;font-size:0.85rem;outline:none;border-bottom:1px dashed rgba(255,255,255,0.3);width:auto;flex-grow:1;min-width:80px;max-width:180px;padding:2px 0;" title="Click to edit element name" />
+                            <span id="match-badge-${idx}" style="font-size:0.65rem;padding:2px 6px;border-radius:4px;background:rgba(0,0,0,0.3);color:${badgeColor};margin-left:6px;">${badgeText}</span>
+                        </div>
+                        <div id="locator-type-${idx}" style="font-size:0.7rem;color:var(--text-secondary);margin:3px 0 1px;">${el.type}</div>
+                        <div id="locator-val-${idx}" style="font-size:0.75rem;font-family:monospace;color:${badgeColor};word-break:break-all;margin-bottom:8px;" title="${el.value}">${el.value}</div>
+                        <div style="display:flex;align-items:center;justify-content:space-between;width:100%;margin-top:8px;">
+                            <select onchange="updateAction(${idx}, this.value)" style="flex:1;min-width:120px;padding:5px 8px;font-size:0.78rem;font-weight:500;background:rgba(0,0,0,0.6);border-radius:6px;color:#60a5fa;border:1px solid rgba(96,165,250,0.4);cursor:pointer;outline:none;text-overflow:ellipsis;white-space:nowrap;overflow:hidden;box-shadow:0 0 8px rgba(0,0,0,0.2);">
+                                <optgroup label="Basic"><option value="Click" ${el.action === 'Click' ? 'selected' : ''}>Click</option><option value="Type" ${el.action === 'Type' ? 'selected' : ''}>Type</option><option value="Clear" ${el.action === 'Clear' ? 'selected' : ''}>Clear</option></optgroup>
+                                <optgroup label="Mouse"><option value="Hover" ${el.action === 'Hover' ? 'selected' : ''}>Hover</option><option value="DoubleClick" ${el.action === 'DoubleClick' ? 'selected' : ''}>DoubleClick</option><option value="RightClick" ${el.action === 'RightClick' ? 'selected' : ''}>ContextClick</option></optgroup>
+                                <optgroup label="State / Data"><option value="GetText" ${el.action === 'GetText' ? 'selected' : ''}>GetText</option><option value="IsDisplayed" ${el.action === 'IsDisplayed' ? 'selected' : ''}>IsDisplayed</option><option value="WaitForVisible" ${el.action === 'WaitForVisible' ? 'selected' : ''}>WaitForVisible</option><option value="ScrollIntoView" ${el.action === 'ScrollIntoView' ? 'selected' : ''}>ScrollIntoView</option></optgroup>
+                                <optgroup label="Specifics"><option value="SelectByVisibleText" ${el.action === 'SelectByVisibleText' ? 'selected' : ''}>Select</option><option value="Check" ${el.action === 'Check' ? 'selected' : ''}>Check</option><option value="Uncheck" ${el.action === 'Uncheck' ? 'selected' : ''}>Uncheck</option></optgroup>
+                            </select>
+                            <div style="display:flex;gap:4px;flex-shrink:0;">
+                                <button class="action-icon-btn btn-highlight" onclick="highlightItem(${idx})" title="Highlight in Browser"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg></button>
+                                <button class="action-icon-btn btn-copy" onclick="copyLocator(${idx}, this)" title="Copy Locator"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg></button>
+                                <button class="action-icon-btn btn-ai" onclick="generateAILocators(${idx})" title="AI Suggest Unique Locator"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.64 3.64-1.28-1.28a1.21 1.21 0 0 0-1.72 0L2.36 18.64a1.21 1.21 0 0 0 0 1.72l1.28 1.28a1.2 1.2 0 0 0 1.72 0L21.64 5.36a1.2 1.2 0 0 0 0-1.72Z"></path><path d="m14 7 3 3"></path><path d="M5 6v4"></path><path d="M19 14v4"></path><path d="M10 2v2"></path><path d="M7 8H3"></path><path d="M21 16h-4"></path><path d="M11 3H9"></path></svg></button>
+                                <button class="action-icon-btn btn-alts" onclick="toggleAlts(${idx})" title="Show All Alternatives"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"></polygon><polyline points="2 12 12 17 22 12"></polyline><polyline points="2 17 12 22 22 17"></polyline></svg></button>
+                                <button class="action-icon-btn btn-delete" onclick="deleteItem(${idx})" title="Delete Element"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg></button>
+                            </div>
+                        </div>
+                    </div>
+                    ${alts.length > 0 ? `<div id="alts-${idx}" style="display:none;width:100%;margin-top:10px;padding-top:8px;border-top:1px solid rgba(255,255,255,0.08);"><div style="font-size:0.7rem;color:var(--text-secondary);margin-bottom:6px;"><i class="fas fa-layer-group"></i> All Locator Alternatives (${alts.length})</div>${altsHtml}</div>` : ''}
+                </div>`;
+            queue.appendChild(item);
+            updateStatusBar();
+        }
+
         function addCapturedElement(locators) {
             if (!locators || locators.length === 0) return;
-            
+
             const selectedTool = document.getElementById('toolSelect').value;
-            const isPwNative   = document.getElementById('pwNativeToggle').checked;
+            const isPwNative = document.getElementById('pwNativeToggle').checked;
 
             const ranked = locators
                 .filter(l => l.count == null || l.count > 0)
@@ -2035,11 +2527,10 @@
 
             bestLoc.action = 'Click';
             bestLoc.alternatives = ranked.filter(l => l !== bestLoc).slice(0, 8);
-            
-            // Push new element to the state
+
+            // Push new element to the state and append without wiping the list
             capturedElements.push(bestLoc);
-            
-            renderQueue();
+            appendNewItem(capturedElements.length - 1);
 
             // Auto-trigger AI if no unique locator was found by the engine
             const idx = capturedElements.length - 1;
@@ -2062,9 +2553,9 @@
         function updateItemMatchBadge(idx, count) {
             const badge = document.getElementById(`match-badge-${idx}`);
             if (badge) {
-                badge.innerText = `${count} match${count === 1 ? '' : 'es'}`;
+                badge.innerText = count === 1 ? 'Unique' : `${count} match${count === 1 ? '' : 'es'}`;
                 badge.style.color = count === 1 ? 'var(--success)' : (count === 0 ? 'var(--danger)' : 'var(--warning)');
-                
+
                 // Also update the locator value color
                 const valEl = document.getElementById(`locator-val-${idx}`);
                 if (valEl) {
@@ -2091,7 +2582,7 @@
             const el = capturedElements[elemIdx];
             if (!el || !el.alternatives || altIdx >= el.alternatives.length) return;
             const chosen = el.alternatives[altIdx];
-            
+
             // Swap chosen with current
             const current = { type: el.type, value: el.value, count: el.count };
             el.type = chosen.type;
@@ -2099,13 +2590,13 @@
             el.count = chosen.count;
             el.alternatives[altIdx] = current;
 
-            renderQueue();
+            renderSingleItem(elemIdx);
         }
 
         function selectAlternative(idx, type, value, count) {
             // Legacy — keep for backward compat; prefer selectAlternativeByIndex
             if (idx >= 0 && idx < capturedElements.length) {
-                capturedElements[idx].type  = type;
+                capturedElements[idx].type = type;
                 capturedElements[idx].value = value;
                 capturedElements[idx].count = count;
                 const valEl = document.getElementById(`locator-val-${idx}`);
@@ -2130,16 +2621,16 @@
         function copyLocator(idx, btn) {
             if (idx < 0 || idx >= capturedElements.length) return;
             const val = capturedElements[idx].value || '';
-            
+
             if (pyBridge) {
                 pyBridge.callPython("copy_to_clipboard", JSON.stringify({ text: val }));
-                
+
                 const valEl = document.getElementById(`locator-val-${idx}`);
-                if (valEl) { 
-                    valEl.classList.add('copy-flash'); 
-                    setTimeout(() => valEl.classList.remove('copy-flash'), 600); 
+                if (valEl) {
+                    valEl.classList.add('copy-flash');
+                    setTimeout(() => valEl.classList.remove('copy-flash'), 600);
                 }
-                
+
                 // Visual feedback on button
                 btn.style.color = 'var(--success)';
                 btn.style.borderColor = 'var(--success)';
@@ -2163,19 +2654,19 @@
         }
 
         function filterQueue() {
-            const term  = (document.getElementById('searchInput').value || '').toLowerCase();
-            const type  = document.getElementById('filterType').value.toLowerCase();
+            const term = (document.getElementById('searchInput').value || '').toLowerCase();
+            const type = document.getElementById('filterType').value.toLowerCase();
             const items = document.querySelectorAll('#elementQueue .feed-item');
             items.forEach((item, i) => {
-                const realIdx = parseInt(item.id?.replace('locator-item-','') ?? '-1');
+                const realIdx = parseInt(item.id?.replace('locator-item-', '') ?? '-1');
                 if (realIdx < 0 || realIdx >= capturedElements.length) return;
-                const loc  = capturedElements[realIdx];
+                const loc = capturedElements[realIdx];
                 const name = (loc.nameHint || '').toLowerCase();
-                const val  = (loc.value || '').toLowerCase();
+                const val = (loc.value || '').toLowerCase();
                 const lType = (loc.type || '').toLowerCase();
 
                 const matchSearch = !term || name.includes(term) || val.includes(term);
-                const matchType   = !type  || (type === 'getby' ? lType.startsWith('getby') : lType.includes(type));
+                const matchType = !type || (type === 'getby' ? lType.startsWith('getby') : lType.includes(type));
                 const matchUnique = !showUniqueOnly || loc.count === 1 || loc.aiGenerated;
                 item.style.display = (matchSearch && matchType && matchUnique) ? '' : 'none';
             });
@@ -2197,7 +2688,7 @@
         }
 
         function bulkDelete() {
-            const toRemove = Array.from(selectedIndices).sort((a,b) => b-a);
+            const toRemove = Array.from(selectedIndices).sort((a, b) => b - a);
             toRemove.forEach(i => {
                 capturedElements.splice(i, 1);
             });
@@ -2222,9 +2713,9 @@
         function updateStatusBar() {
             const count = capturedElements.length;
             const el = document.getElementById('elemCountStatus');
-            if (el) el.textContent  = `${count} element${count !== 1 ? 's' : ''}`;
+            if (el) el.textContent = `${count} element${count !== 1 ? 's' : ''}`;
             const badge = document.getElementById('elemCountBadge');
-            if (badge) badge.textContent   = `${count} element${count !== 1 ? 's' : ''}`;
+            if (badge) badge.textContent = `${count} element${count !== 1 ? 's' : ''}`;
         }
 
         function setLastAction(msg) {
@@ -2238,13 +2729,13 @@
         }
 
         function updateAction(index, action) {
-            if(index >= 0 && index < capturedElements.length) {
+            if (index >= 0 && index < capturedElements.length) {
                 capturedElements[index].action = action;
             }
         }
 
         function updateNameHint(index, newName) {
-            if(index >= 0 && index < capturedElements.length) {
+            if (index >= 0 && index < capturedElements.length) {
                 capturedElements[index].nameHint = newName;
                 capturedElements[index].name = newName;
             }
@@ -2257,15 +2748,15 @@
         }
 
         function generateAILocators(idx) {
-            if(idx >= 0 && idx < capturedElements.length && pyBridge) {
+            if (idx >= 0 && idx < capturedElements.length && pyBridge) {
                 const loc = capturedElements[idx];
                 const valEl = document.getElementById(`locator-val-${idx}`);
                 if (valEl) {
                     valEl.innerHTML = '<i class="fas fa-spinner fa-spin" style="color:var(--accent);"></i> Generating AI XPath...';
                 }
-                pyBridge.callPython("request_ai_locators", JSON.stringify({ 
-                    nameHint: loc.nameHint || loc.name, 
-                    outerHtml: loc.outerHtml, 
+                pyBridge.callPython("request_ai_locators", JSON.stringify({
+                    nameHint: loc.nameHint || loc.name,
+                    outerHtml: loc.outerHtml,
                     tool: document.getElementById('toolSelect').value,
                     elemIdx: idx
                 }));
@@ -2275,7 +2766,7 @@
 
         function applyAIResult(idx, aiLocators) {
             if (!capturedElements[idx] || !aiLocators || aiLocators.length === 0) {
-                renderQueue(); // Refresh to clear spinner
+                renderSingleItem(idx); // Lightweight update to clear the AI spinner
                 return;
             }
 
@@ -2283,15 +2774,15 @@
             capturedElements[idx].type = aiLoc.type;
             capturedElements[idx].value = aiLoc.value;
             capturedElements[idx].count = aiLoc.count;
-            
-            // Merge AI locators into alternatives if they are not already there
+
+            // Merge AI locators into alternatives
             aiLocators.slice(1).forEach(l => {
                 if (!capturedElements[idx].alternatives.find(alt => alt.value === l.value)) {
                     capturedElements[idx].alternatives.unshift(l);
                 }
             });
 
-            renderQueue();
+            renderSingleItem(idx); // Only update the one affected card
         }
 
 
@@ -2327,7 +2818,9 @@
 
         function copyEditedCode(btn) {
             const content = document.getElementById('poEditorContent').value;
-            navigator.clipboard.writeText(content).then(() => {
+            if (!content) return;
+
+            function _showCopied() {
                 const originalHtml = btn.innerHTML;
                 btn.innerHTML = '<i class="fas fa-check"></i> Copied!';
                 btn.style.borderColor = 'var(--success)';
@@ -2337,7 +2830,25 @@
                     btn.style.borderColor = '';
                     btn.style.color = '';
                 }, 2000);
-            });
+            }
+
+            // navigator.clipboard is blocked on file:// in QWebEngineView.
+            // Route through Python which uses Qt's clipboard API instead.
+            if (pyBridge && typeof pyBridge.callPython === 'function') {
+                pyBridge.callPython('copy_to_clipboard', JSON.stringify({ text: content }));
+                _showCopied();
+            } else {
+                // Legacy fallback: select + execCommand (works in WebEngine even on file://)
+                const ta = document.getElementById('poEditorContent');
+                ta.select();
+                try {
+                    document.execCommand('copy');
+                    _showCopied();
+                } catch(e) {
+                    console.error('Copy failed:', e);
+                }
+                window.getSelection && window.getSelection().removeAllRanges();
+            }
         }
 
         function saveEditedCode() {
@@ -2374,11 +2885,11 @@
         function submitDbStorage() {
             const project = document.getElementById('dbProjectName').value;
             const page = document.getElementById('dbPageName').value;
-            if(!project || !page) {
+            if (!project || !page) {
                 showAlert("Please provide both Project Name and Page Name.");
                 return;
             }
-            if(pyBridge) {
+            if (pyBridge) {
                 pyBridge.callPython("store_in_db", JSON.stringify({
                     project: project,
                     page: page,
@@ -2390,12 +2901,97 @@
             hideDbModal();
         }
 
+        // Add Custom Element Manually Logic
+        function showAddManualModal() {
+            document.getElementById('manualName').value = '';
+            document.getElementById('manualValue').value = '';
+            document.getElementById('manualType').value = 'XPath';
+            document.getElementById('manualAction').value = 'Click';
+            document.getElementById('addManualModal').style.display = 'flex';
+            
+            // Trigger placeholder update
+            onManualTypeChange();
+            
+            // Set focus
+            setTimeout(() => {
+                const el = document.getElementById('manualName');
+                if (el) el.focus();
+            }, 100);
+        }
+
+        function hideAddManualModal() {
+            document.getElementById('addManualModal').style.display = 'none';
+        }
+
+        function onManualTypeChange() {
+            const type = document.getElementById('manualType').value;
+            const valEl = document.getElementById('manualValue');
+            if (!valEl) return;
+            if (type === 'XPath') {
+                valEl.placeholder = "e.g. //button[@id='submit']";
+            } else if (type === 'CSS') {
+                valEl.placeholder = "e.g. #submit, .btn-primary";
+            } else if (type === 'ID') {
+                valEl.placeholder = "e.g. submit";
+            } else if (type.startsWith('getBy')) {
+                valEl.placeholder = "e.g. button, { name: 'Submit' } or text values";
+            }
+        }
+
+        function submitManualElement() {
+            const name = document.getElementById('manualName').value.trim();
+            const type = document.getElementById('manualType').value;
+            const value = document.getElementById('manualValue').value.trim();
+            const action = document.getElementById('manualAction').value;
+
+            if (!name || !value) {
+                showAlert("Please enter both Element Name and Locator Value.");
+                return;
+            }
+
+            const newElement = {
+                name: name,
+                nameHint: name,
+                type: type,
+                value: value,
+                action: action,
+                count: 1, // Default to 1 match
+                alternatives: [],
+                aiGenerated: false
+            };
+
+            capturedElements.push(newElement);
+            hideAddManualModal();
+            renderQueue();
+            
+            // Immediately verify the manually entered locator against the page
+            if (pyBridge) {
+                const idx = capturedElements.length - 1;
+                let verifyType = type;
+                let verifyVal = value;
+                if (type === 'ID') {
+                    verifyType = 'CSS';
+                    verifyVal = `#${value}`;
+                }
+                // Only verify CSS/XPath/ID in browser
+                if (verifyType === 'CSS' || verifyType === 'XPath') {
+                    pyBridge.callPython("verify_locator", JSON.stringify({ 
+                        type: verifyType, 
+                        value: verifyVal,
+                        idx: idx
+                    }));
+                }
+            }
+            
+            setLastAction(`Added manual element: ${name}`);
+        }
+
         // ═══ Smart Merge — State ═════════════════════════════════════════════
         let mergeSelections = [];
-        let _leftCode        = '';   // generated new locators (left pane)
-        let _rightCode       = '';   // current target file content (right pane)
-        let _targetFilePath  = '';
-        let _diffResult      = null; // last computed diffLines result
+        let _leftCode = '';   // generated new locators (left pane)
+        let _rightCode = '';   // current target file content (right pane)
+        let _targetFilePath = '';
+        let _diffResult = null; // last computed diffLines result
 
         // ═══ LCS Line Diff Algorithm ══════════════════════════════════════════
         function diffLines(oldText, newText) {
@@ -2406,21 +3002,21 @@
             for (let i = 1; i <= m; i++) {
                 const lineX = X[i - 1];
                 for (let j = 1; j <= n; j++)
-                    C[i][j] = lineX === Y[j - 1] ? C[i-1][j-1]+1 : Math.max(C[i-1][j], C[i][j-1]);
+                    C[i][j] = lineX === Y[j - 1] ? C[i - 1][j - 1] + 1 : Math.max(C[i - 1][j], C[i][j - 1]);
             }
             const left = [], right = [];
             let i = m, j = n;
             while (i > 0 || j > 0) {
-                if (i > 0 && j > 0 && X[i-1] === Y[j-1]) {
-                    left.push({ type: 'normal', lineNum: i, text: X[i-1], srcIdx: i-1 });
-                    right.push({ type: 'normal', lineNum: j, text: Y[j-1], srcIdx: j-1 });
+                if (i > 0 && j > 0 && X[i - 1] === Y[j - 1]) {
+                    left.push({ type: 'normal', lineNum: i, text: X[i - 1], srcIdx: i - 1 });
+                    right.push({ type: 'normal', lineNum: j, text: Y[j - 1], srcIdx: j - 1 });
                     i--; j--;
-                } else if (j > 0 && (i === 0 || C[i][j-1] >= C[i-1][j])) {
+                } else if (j > 0 && (i === 0 || C[i][j - 1] >= C[i - 1][j])) {
                     left.push({ type: 'empty', lineNum: '', text: '', srcIdx: -1 });
-                    right.push({ type: 'added', lineNum: j, text: Y[j-1], srcIdx: j-1 });
+                    right.push({ type: 'added', lineNum: j, text: Y[j - 1], srcIdx: j - 1 });
                     j--;
                 } else {
-                    left.push({ type: 'removed', lineNum: i, text: X[i-1], srcIdx: i-1 });
+                    left.push({ type: 'removed', lineNum: i, text: X[i - 1], srcIdx: i - 1 });
                     right.push({ type: 'empty', lineNum: '', text: '', srcIdx: -1 });
                     i--;
                 }
@@ -2432,16 +3028,16 @@
         function charDiff(a, b) {
             const A = [...a], B = [...b];
             const m = A.length, n = B.length;
-            const C = Array.from({ length: m+1 }, () => new Int32Array(n+1));
+            const C = Array.from({ length: m + 1 }, () => new Int32Array(n + 1));
             for (let i = 1; i <= m; i++)
                 for (let j = 1; j <= n; j++)
-                    C[i][j] = A[i-1]===B[j-1] ? C[i-1][j-1]+1 : Math.max(C[i-1][j], C[i][j-1]);
+                    C[i][j] = A[i - 1] === B[j - 1] ? C[i - 1][j - 1] + 1 : Math.max(C[i - 1][j], C[i][j - 1]);
             const oldT = [], newT = [];
             let i = m, j = n;
             while (i > 0 || j > 0) {
-                if (i>0 && j>0 && A[i-1]===B[j-1]) { oldT.push({text:A[i-1],type:'n'}); newT.push({text:B[j-1],type:'n'}); i--;j--; }
-                else if (j>0 && (i===0||C[i][j-1]>=C[i-1][j])) { oldT.push({text:'',type:'e'}); newT.push({text:B[j-1],type:'a'}); j--; }
-                else { oldT.push({text:A[i-1],type:'r'}); newT.push({text:'',type:'e'}); i--; }
+                if (i > 0 && j > 0 && A[i - 1] === B[j - 1]) { oldT.push({ text: A[i - 1], type: 'n' }); newT.push({ text: B[j - 1], type: 'n' }); i--; j--; }
+                else if (j > 0 && (i === 0 || C[i][j - 1] >= C[i - 1][j])) { oldT.push({ text: '', type: 'e' }); newT.push({ text: B[j - 1], type: 'a' }); j--; }
+                else { oldT.push({ text: A[i - 1], type: 'r' }); newT.push({ text: '', type: 'e' }); i--; }
             }
             return { old: oldT.reverse(), new: newT.reverse() };
         }
@@ -2452,8 +3048,8 @@
                 if (run && run.type === t.type) { run.span.textContent += t.text; return; }
                 run = { type: t.type, span: document.createElement('span') };
                 run.span.textContent = t.text;
-                if (t.type==='a') run.span.className='diff-char-added';
-                if (t.type==='r') run.span.className='diff-char-removed';
+                if (t.type === 'a') run.span.className = 'diff-char-added';
+                if (t.type === 'r') run.span.className = 'diff-char-removed';
                 el.appendChild(run.span);
             });
         }
@@ -2465,11 +3061,11 @@
             const R = document.getElementById('diffPaneRight');
             if (!L || !R) return;
             if (pane === 'left') {
-                if (isSyncingLeftScroll) { isSyncingLeftScroll=false; return; }
+                if (isSyncingLeftScroll) { isSyncingLeftScroll = false; return; }
                 isSyncingRightScroll = true;
                 R.scrollTop = L.scrollTop; R.scrollLeft = L.scrollLeft;
             } else {
-                if (isSyncingRightScroll) { isSyncingRightScroll=false; return; }
+                if (isSyncingRightScroll) { isSyncingRightScroll = false; return; }
                 isSyncingLeftScroll = true;
                 L.scrollTop = R.scrollTop; L.scrollLeft = R.scrollLeft;
             }
@@ -2479,11 +3075,11 @@
         let diffHunks = [];
         let diffHunkIndex = -1;
 
-        function jumpToHunk() {}
-        function navigateDiff() {}
-        function acceptHunk() {}
-        function acceptAllHunks() {}
-        function updateDiffNavBadge() {}
+        function jumpToHunk() { }
+        function navigateDiff() { }
+        function acceptHunk() { }
+        function acceptAllHunks() { }
+        function updateDiffNavBadge() { }
 
         function initCodeMirrorEditors() {
             if (typeof CodeMirror === 'undefined') {
@@ -2497,8 +3093,8 @@
                     lineNumbers: true,
                     mode: "text/typescript",
                     theme: "material-darker",
-                    lineWrapping: true,
-                    viewportMargin: Infinity
+                    lineWrapping: false
+                    // viewportMargin: Infinity removed — forces full re-render of all lines at once (very slow)
                 });
             }
 
@@ -2508,8 +3104,8 @@
                     lineNumbers: true,
                     mode: "text/typescript",
                     theme: "material-darker",
-                    lineWrapping: true,
-                    viewportMargin: Infinity
+                    lineWrapping: false
+                    // viewportMargin: Infinity removed — forces full re-render of all lines at once (very slow)
                 });
             }
         }
@@ -2534,61 +3130,80 @@
 
         function initSplitResizer() {
             const container = document.querySelector('.diff-container');
-            const leftPane = document.getElementById('diffPaneLeft');
+            const leftPane  = document.getElementById('diffPaneLeft');
             const rightPane = document.getElementById('diffPaneRight');
-            const resizer = document.getElementById('diffResizer');
+            const resizer   = document.getElementById('diffResizer');
 
             if (!container || !leftPane || !rightPane || !resizer) return;
 
-            let isDragging = false;
+            let isDragging  = false;
+            let ghostLine   = null;  // thin indicator line - ONLY this moves during drag
+            let dragOverlay = null;  // full-screen pointer absorber
+            let pendingPct  = 50;   // final split % stored during drag, applied on mouseup
 
             resizer.addEventListener('mousedown', function (e) {
-                isDragging = true;
                 const isVertical = window.getComputedStyle(container).flexDirection === 'column';
+                const cRect = container.getBoundingClientRect();
+                isDragging = true;
+
+                // Ghost line: a 4px bright cyan strip absolutely positioned inside .diff-container.
+                // This bypasses any position:fixed containing block or z-index clipping issues in Qt WebEngine.
+                ghostLine = document.createElement('div');
+                if (isVertical) {
+                    const localY = e.clientY - cRect.top;
+                    ghostLine.style.cssText = 'position:absolute;left:0;width:100%;height:4px;background:#00bcf2;top:' + localY + 'px;z-index:100;pointer-events:none;box-shadow:0 0 12px #00bcf2, 0 0 4px #00bcf2;';
+                } else {
+                    const localX = e.clientX - cRect.left;
+                    ghostLine.style.cssText = 'position:absolute;top:0;height:100%;width:4px;background:#00bcf2;left:' + localX + 'px;z-index:100;pointer-events:none;box-shadow:0 0 12px #00bcf2, 0 0 4px #00bcf2;';
+                }
+                container.appendChild(ghostLine);
+
+                // Full-screen overlay: absorbs pointer events from iframes/textareas
+                dragOverlay = document.createElement('div');
+                dragOverlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;z-index:9999;cursor:' + (isVertical ? 'row-resize' : 'col-resize') + ';';
+                document.body.appendChild(dragOverlay);
+
+                resizer.style.background = 'rgba(0, 188, 242, 0.5)';
                 document.body.style.cursor = isVertical ? 'row-resize' : 'col-resize';
-                resizer.style.background = 'rgba(99, 102, 241, 0.25)';
-                leftPane.style.pointerEvents = 'none';
-                rightPane.style.pointerEvents = 'none';
                 e.preventDefault();
             });
 
             document.addEventListener('mousemove', function (e) {
-                if (!isDragging) return;
-
-                const containerRect = container.getBoundingClientRect();
+                if (!isDragging || !ghostLine) return;
+                const cRect = container.getBoundingClientRect();
                 const isVertical = window.getComputedStyle(container).flexDirection === 'column';
-
                 if (isVertical) {
-                    const offsetY = e.clientY - containerRect.top;
-                    const percentage = (offsetY / containerRect.height) * 100;
-                    if (percentage > 15 && percentage < 85) {
-                        leftPane.style.flex = `0 0 ${percentage}%`;
-                        rightPane.style.flex = `0 0 ${100 - percentage - (8 / containerRect.height * 100)}%`;
-                        if (cmLeft) cmLeft.refresh();
-                        if (cmRight) cmRight.refresh();
-                    }
+                    const clamped = Math.max(cRect.height * 0.15, Math.min(e.clientY - cRect.top, cRect.height * 0.85));
+                    ghostLine.style.top = clamped + 'px';
+                    pendingPct = (clamped / cRect.height) * 100;
                 } else {
-                    const offsetX = e.clientX - containerRect.left;
-                    const percentage = (offsetX / containerRect.width) * 100;
-                    if (percentage > 15 && percentage < 85) {
-                        leftPane.style.flex = `0 0 ${percentage}%`;
-                        rightPane.style.flex = `0 0 ${100 - percentage - (8 / containerRect.width * 100)}%`;
-                        if (cmLeft) cmLeft.refresh();
-                        if (cmRight) cmRight.refresh();
-                    }
+                    const clamped = Math.max(cRect.width * 0.15, Math.min(e.clientX - cRect.left, cRect.width * 0.85));
+                    ghostLine.style.left = clamped + 'px';
+                    pendingPct = (clamped / cRect.width) * 100;
                 }
             });
 
             document.addEventListener('mouseup', function () {
-                if (isDragging) {
-                    isDragging = false;
-                    document.body.style.cursor = '';
-                    resizer.style.background = 'rgba(255, 255, 255, 0.03)';
-                    leftPane.style.pointerEvents = 'auto';
-                    rightPane.style.pointerEvents = 'auto';
-                    if (cmLeft) cmLeft.refresh();
-                    if (cmRight) cmRight.refresh();
-                }
+                if (!isDragging) return;
+                isDragging = false;
+
+                // Apply the split ONCE on release - single layout reflow, single repaint
+                const cRect = container.getBoundingClientRect();
+                const isVertical = window.getComputedStyle(container).flexDirection === 'column';
+                const rPct = isVertical ? (8 / cRect.height * 100) : (8 / cRect.width * 100);
+                leftPane.style.flex  = '0 0 ' + pendingPct.toFixed(2) + '%';
+                rightPane.style.flex = '0 0 ' + (100 - pendingPct - rPct).toFixed(2) + '%';
+
+                // Clean up ghost + overlay
+                if (ghostLine   && ghostLine.parentNode)   { ghostLine.parentNode.removeChild(ghostLine);     ghostLine = null; }
+                if (dragOverlay && dragOverlay.parentNode) { dragOverlay.parentNode.removeChild(dragOverlay); dragOverlay = null; }
+
+                resizer.style.background = 'rgba(255,255,255,0.03)';
+                document.body.style.cursor = '';
+
+                // Refresh CodeMirror ONCE after final resize
+                if (cmLeft)  cmLeft.refresh();
+                if (cmRight) cmRight.refresh();
             });
         }
 
@@ -2683,28 +3298,11 @@
                 return;
             }
             if (pyBridge) {
-                mergeSelections = capturedElements.map((el, idx) => idx);
-                _leftCode = ''; _rightCode = ''; _targetFilePath = '';
-                document.getElementById('mergeFilePath').value = '';
-                document.getElementById('mergeExistingCode').value = '';
-                // Reset right placeholder and textarea
-                const ph = document.getElementById('diffRightPlaceholder');
-                if (ph) ph.style.display = '';
-                if (cmRight) {
-                    cmRight.setValue('');
-                    cmRight.getWrapperElement().style.display = 'none';
-                } else {
-                    const txtRight = document.getElementById('mergeExistingCodeTextarea');
-                    if (txtRight) {
-                        txtRight.value = '';
-                        txtRight.style.display = 'none';
-                    }
-                }
-                const rBadge = document.getElementById('diffRightFileBadge');
-                if (rBadge) rBadge.textContent = '—';
-                showMergeModal();
-                renderMergeChecklist();
-                triggerSmartMergePreview();
+                pyBridge.callPython("open_merge_window", JSON.stringify({
+                    locators: capturedElements,
+                    tool: document.getElementById('toolSelect').value,
+                    lang: document.getElementById('langSelect').value
+                }));
             }
         }
 
@@ -2716,8 +3314,8 @@
                 const item = document.createElement('div');
                 item.className = 'checklist-item';
                 item.innerHTML = `
-                    <input type="checkbox" id="chk-merge-${idx}" ${isChecked?'checked':''} onchange="toggleMergeSelection(${idx}, this.checked)">
-                    <label for="chk-merge-${idx}" style="text-transform:none; font-size:0.75rem; color:var(--text-primary); cursor:pointer; font-weight:bold; margin:0;">${el.nameHint||el.name||'element'}</label>
+                    <input type="checkbox" id="chk-merge-${idx}" ${isChecked ? 'checked' : ''} onchange="toggleMergeSelection(${idx}, this.checked)">
+                    <label for="chk-merge-${idx}" style="text-transform:none; font-size:0.75rem; color:var(--text-primary); cursor:pointer; font-weight:bold; margin:0;">${el.nameHint || el.name || 'element'}</label>
                 `;
                 container.appendChild(item);
             });
@@ -2731,8 +3329,8 @@
             if (el) el.innerText = `${selected} of ${total}`;
             const statLocs = document.getElementById('statLocators');
             const statActs = document.getElementById('statActions');
-            if (statLocs) statLocs.innerHTML = `<i class="fas fa-fingerprint"></i> +${selected} locator${selected===1?'':'s'}`;
-            if (statActs) statActs.innerHTML = `<i class="fas fa-running"></i> +${selected} action${selected===1?'':'s'}`;
+            if (statLocs) statLocs.innerHTML = `<i class="fas fa-fingerprint"></i> +${selected} locator${selected === 1 ? '' : 's'}`;
+            if (statActs) statActs.innerHTML = `<i class="fas fa-running"></i> +${selected} action${selected === 1 ? '' : 's'}`;
         }
 
         function toggleMergeSelection(idx, isChecked) {
@@ -2744,7 +3342,7 @@
 
         function triggerSmartMergePreview() {
             if (!pyBridge) return;
-            const selectedLocators = capturedElements.filter((el,idx) => mergeSelections.includes(idx));
+            const selectedLocators = capturedElements.filter((el, idx) => mergeSelections.includes(idx));
             const file_path = document.getElementById('mergeFilePath').value;
             pyBridge.callPython('refresh_merge_preview', JSON.stringify({
                 locators: selectedLocators,
@@ -2756,7 +3354,7 @@
 
         function browseMergeFile() {
             if (pyBridge) {
-                const selectedLocators = capturedElements.filter((el,idx) => mergeSelections.includes(idx));
+                const selectedLocators = capturedElements.filter((el, idx) => mergeSelections.includes(idx));
                 pyBridge.callPython('browse_merge_file', JSON.stringify({
                     locators: selectedLocators,
                     tool: document.getElementById('toolSelect').value,
@@ -2778,13 +3376,13 @@
             if (pyBridge) {
                 const targetFile = document.getElementById('mergeFilePath').value;
                 if (!targetFile) { showAlert('Please browse and select a target file first.'); return; }
-                
+
                 const mergedCode = cmRight ? cmRight.getValue() : document.getElementById('mergeExistingCodeTextarea').value;
-                if (!mergedCode || !mergedCode.trim()) { 
-                    showAlert('Merged code is empty!'); 
-                    return; 
+                if (!mergedCode || !mergedCode.trim()) {
+                    showAlert('Merged code is empty!');
+                    return;
                 }
-                
+
                 pyBridge.callPython('smart_merge_confirm', JSON.stringify({
                     file_path: targetFile,
                     merged_code: mergedCode
@@ -2809,10 +3407,10 @@
                     if (pyBridge) pyBridge.callPython("verify_locator", JSON.stringify({ type: "CSS", value: "" }));
                     return;
                 }
-                
+
                 let type = 'CSS';
                 if (val.startsWith('//') || val.startsWith('(/')) type = 'XPath';
-                
+
                 countEl.innerText = 'Verifying...';
                 countEl.style.color = 'var(--text-secondary)';
                 if (feedbackEl) feedbackEl.innerHTML = '<span style="color:var(--text-secondary);"><i class="fas fa-spinner fa-spin"></i> Searching...</span>';
@@ -2847,7 +3445,7 @@
         function addLiveLocator() {
             const val = document.getElementById('liveConsoleInput').value.trim();
             if (!val) return;
-            
+
             let type = 'CSS';
             if (val.startsWith('//') || val.startsWith('(/')) type = 'XPath';
 
@@ -2862,15 +3460,14 @@
             };
 
             capturedElements.push(manualLoc);
-            showStatus("Added manual locator", "var(--success)");
-            renderQueue();
+            appendNewItem(capturedElements.length - 1);
             document.getElementById('liveConsoleInput').value = '';
             triggerVerifyLiveLocator();
         }
 
         // ─── Patch toggleCapture to animate status dot ─────────────────────
         const _origToggleCapture = window.toggleCapture;
-        window.toggleCapture = function() {
+        window.toggleCapture = function () {
             if (typeof _origToggleCapture === 'function') _origToggleCapture();
             const isCapturing = document.getElementById('captureBtn')?.textContent?.includes('Stop');
             const dot = document.getElementById('captureDot');
@@ -2892,4 +3489,5 @@
 
     </script>
 </body>
+
 </html>
