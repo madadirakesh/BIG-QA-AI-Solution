@@ -160,6 +160,16 @@ def init_db():
     );
     """
 
+    create_project_inputs_table = """
+    CREATE TABLE IF NOT EXISTS ProjectInputs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        projectId INTEGER,
+        req_name TEXT NOT NULL,
+        requirement TEXT NOT NULL,
+        FOREIGN KEY(projectId) REFERENCES ProjectDetails(id)
+    );
+    """
+
     try:
         with get_db() as conn:
             cursor = conn.cursor()
@@ -171,6 +181,7 @@ def init_db():
             cursor.execute(create_project_templates_table)
             cursor.execute(create_template_files_table)
             cursor.execute(create_backupfiles_table)
+            cursor.execute(create_project_inputs_table)
             
             # Indexes
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_locators_project_id ON Locators(project_id)")

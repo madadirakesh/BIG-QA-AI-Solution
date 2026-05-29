@@ -612,7 +612,33 @@ def test_case_generator():
     if session.get('user_role', '').lower() not in ['qa', 'admin']:
         flash('Not authorized', 'error')
         return redirect(url_for('home'))
-    return render_template('test_case_generator.html')
+    projects = fetch_data("SELECT id, project_name FROM ProjectDetails ORDER BY project_name ASC")
+    return render_template('test_case_generator.html', projects=projects)
+
+@app.route('/api/project-inputs/<int:project_id>', methods=['GET'])
+@login_required()
+def get_project_inputs(project_id):
+    inputs = fetch_data("SELECT id, req_name, requirement FROM ProjectInputs WHERE projectId = ? ORDER BY id DESC", (project_id,))
+    return jsonify({"status": "success", "data": inputs})
+
+@app.route('/api/save-project-input', methods=['POST'])
+@login_required()
+def save_project_input():
+    data = request.json
+    project_id = data.get('projectId')
+    req_name = data.get('req_name', '').strip()
+    requirement = data.get('requirement', '').strip()
+    
+    if not project_id:
+        return jsonify({"status": "error", "message": "Project selection is required to save a requirement."}), 400
+    if not req_name or not requirement:
+        return jsonify({"status": "error", "message": "Requirement name and content are required."}), 400
+        
+    try:
+        insert_data("INSERT INTO ProjectInputs (projectId, req_name, requirement) VALUES (?, ?, ?)", (project_id, req_name, requirement))
+        return jsonify({"status": "success", "message": "Requirement saved successfully."})
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
 
 @app.route('/qa/launch-element-locator', methods=['GET'])
 @login_required()

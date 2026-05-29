@@ -38,6 +38,16 @@
                 <h3 class="premium-header">Project Inputs</h3>
 
                 <div class="form-group mt-3">
+                    <label>Select Project (Optional)</label>
+                    <select id="projectSelect" class="form-select bg-dark text-light border-secondary" style="background-color: rgba(0,0,0,0.2) !important;" onchange="handleProjectSelection()">
+                        <option value="">-- Skip Project Selection --</option>
+                        {% for p in projects %}
+                        <option value="{{ p.id }}">{{ p.project_name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div class="form-group mt-3">
                     <label>What are we testing? <small class="text-secondary">(Describe features or user stories)</small></label>
                     <textarea id="requirementInput" rows="8"
                         placeholder="e.g., User should be able to search for products, filter by category, and add items to the shopping cart."></textarea>
@@ -156,6 +166,38 @@
                             <i class="fas fa-cloud-upload-alt fa-2x mb-2" style="color: var(--accent-primary);"></i>
                             <p class="text-secondary small mb-0">Drop your .xlsx or .csv template here.</p>
                         </div>
+                    </div>
+                </div>
+
+                <div class="requirement-save-section mt-4 p-3 border rounded" style="background: rgba(0,0,0,0.2); border-color: var(--glass-border) !important;">
+                    <div class="d-flex align-items-center mb-2">
+                        <label class="mb-0 me-3">Is this a new req?</label>
+                        <div class="form-check form-check-inline">
+                            <input class="form-check-input" type="radio" name="isNewReq" id="newReqYes" value="yes" checked onchange="toggleReqType()">
+                            <label class="form-check-label" for="newReqYes">Yes</label>
+                        </div>
+                        <div class="form-check form-check-inline">
+                            <input class="form-check-input" type="radio" name="isNewReq" id="newReqNo" value="no" onchange="toggleReqType()">
+                            <label class="form-check-label" for="newReqNo">No</label>
+                        </div>
+                    </div>
+
+                    <div id="newReqSection" class="mt-2">
+                        <label>Requirement Name</label>
+                        <div class="input-group">
+                            <input type="text" id="reqNameInput" class="form-control bg-dark text-light border-secondary" placeholder="Enter a name to save this requirement">
+                            <button class="btn btn-outline-success" type="button" id="saveReqBtn" onclick="saveRequirement()">
+                                <i class="fas fa-save"></i> Save
+                            </button>
+                        </div>
+                    </div>
+
+                    <div id="existingReqSection" class="mt-2" style="display: none;">
+                        <label>Select Saved Requirement(s)</label>
+                        <select id="savedReqSelect" class="form-select bg-dark text-light border-secondary" multiple size="4">
+                            <option value="" disabled>-- Select Requirement(s) --</option>
+                        </select>
+                        <small class="text-secondary mt-1 d-block"><i class="fas fa-info-circle"></i> Hold Ctrl/Cmd to select multiple. The selected requirements will be merged with your current input above.</small>
                     </div>
                 </div>
 
@@ -304,6 +346,86 @@
     let selectedOptValue = 0;
     let generatedFileDownloadName = 'test_cases.txt';
     let currentStep = 1;
+    let savedRequirementsData = {};
+
+    function toggleReqType() {
+        const isNew = document.getElementById('newReqYes').checked;
+        document.getElementById('newReqSection').style.display = isNew ? 'block' : 'none';
+        document.getElementById('existingReqSection').style.display = isNew ? 'none' : 'block';
+        
+        if (!isNew) {
+            handleProjectSelection();
+        }
+    }
+
+    async function handleProjectSelection() {
+        const projectId = document.getElementById('projectSelect').value;
+        const isNew = document.getElementById('newReqYes').checked;
+        
+        if (isNew || !projectId) return;
+
+        const select = document.getElementById('savedReqSelect');
+        select.innerHTML = '<option value="">-- Loading --</option>';
+        
+        try {
+            const response = await fetch(`/api/project-inputs/${projectId}`);
+            const result = await response.json();
+            
+            select.innerHTML = '';
+            savedRequirementsData = {};
+            
+            if (result.status === 'success' && result.data.length > 0) {
+                result.data.forEach(req => {
+                    savedRequirementsData[req.id] = req.requirement;
+                    const opt = document.createElement('option');
+                    opt.value = req.id;
+                    opt.textContent = req.req_name;
+                    select.appendChild(opt);
+                });
+            } else {
+                select.innerHTML = '<option value="" disabled>-- No saved requirements found --</option>';
+            }
+        } catch (err) {
+            select.innerHTML = '<option value="">-- Error loading requirements --</option>';
+        }
+    }
+
+    async function saveRequirement() {
+        const projectId = document.getElementById('projectSelect').value;
+        const reqName = document.getElementById('reqNameInput').value.trim();
+        const requirement = document.getElementById('requirementInput').value.trim();
+
+        if (!projectId) {
+            alert("Project selection is required before saving any requirement.");
+            return;
+        }
+        if (!reqName) {
+            alert("Please enter a Requirement Name to save.");
+            return;
+        }
+        if (!requirement) {
+            alert("Please enter the requirement text in the 'What are we testing?' box.");
+            return;
+        }
+
+        try {
+            const response = await fetch(`/api/save-project-input`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ projectId, req_name: reqName, requirement })
+            });
+            const result = await response.json();
+            
+            if (response.ok) {
+                alert("Requirement saved successfully!");
+                document.getElementById('reqNameInput').value = '';
+            } else {
+                alert("Error: " + (result.message || result.detail || "Unknown error"));
+            }
+        } catch (error) {
+            alert("Failed to save requirement: " + error.message);
+        }
+    }
 
     function nextStep(step) {
         document.querySelectorAll('.step-p').forEach((el, idx) => {
@@ -332,9 +454,27 @@
     }
 
     async function startGeneration() {
-        const requirement = document.getElementById('requirementInput').value.trim();
+        let requirement = document.getElementById('requirementInput').value.trim();
+        
+        const isNewReq = document.getElementById('newReqYes').checked;
+        if (!isNewReq) {
+            const select = document.getElementById('savedReqSelect');
+            const selectedReqIds = Array.from(select.selectedOptions).map(opt => opt.value).filter(val => val !== "");
+            
+            if (selectedReqIds.length > 0) {
+                let combinedExistingText = "";
+                selectedReqIds.forEach(id => {
+                    if (savedRequirementsData[id]) {
+                        combinedExistingText += savedRequirementsData[id] + "\n\n";
+                    }
+                });
+                requirement = combinedExistingText + requirement;
+                requirement = requirement.trim();
+            }
+        }
+
         if (!requirement) {
-            alert('Please enter your requirements first!');
+            alert('Please enter your requirements first or select an existing one!');
             return;
         }
 
