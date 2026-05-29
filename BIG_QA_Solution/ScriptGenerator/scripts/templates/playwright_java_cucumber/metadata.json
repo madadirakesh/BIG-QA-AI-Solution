@@ -1,0 +1,8 @@
+{
+  "_comment": "Metadata for the Playwright + Java + Cucumber project template. The seeder (deploy_team_templates.py) reads this file to populate the ProjectTemplates row, then ingests every other file in this directory tree as TemplateFiles rows. Match on (tool, language, framework) is used at scaffold time by BootstrapperEngine.generate_project.",
+  "tool": "Playwright",
+  "language": "Java",
+  "framework": "Cucumber",
+  "description": "Enterprise Playwright Java Cucumber BDD Template (JUnit 5, Maven)",
+  "default_run_commands": "mvn test"
+}

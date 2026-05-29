@@ -1,2 +1,0 @@
-2026-05-24 21:12:22,416 - ERROR - Error in refresh_merge_preview: cannot access local variable 'current_code' where it is not associated with a value
-2026-05-24 21:12:54,408 - ERROR - Error in refresh_merge_preview: cannot access local variable 'current_code' where it is not associated with a value

@@ -205,9 +205,19 @@ def _bootstrapper_worker(job_id, p_name, p_path, tool, lang, fw, pm, url, user, 
             return
 
         target_dir = res
-        bootstrapper_jobs[job_id] = {"status": "processing", "message": "Scaffolding complete. Installing dependencies..."}
+        bootstrapper_jobs[job_id] = {"status": "processing", "message": "Scaffolding complete. Starting dependency install..."}
 
-        inst_success, inst_msg = EnvironmentSetup.install_project_dependencies(target_dir, pm, tool)
+        # Per-phase status updates: EnvironmentSetup splits the install into discrete phases
+        # (dependency resolution, browser download, etc.) and invokes this callback before
+        # each one so the polling endpoint reflects what is actually running right now,
+        # instead of a single static "Installing dependencies..." message that hides minutes
+        # of activity. See EnvironmentSetup._build_install_phases for the phase list.
+        def _update_install_status(phase_message):
+            bootstrapper_jobs[job_id] = {"status": "processing", "message": phase_message}
+
+        inst_success, inst_msg = EnvironmentSetup.install_project_dependencies(
+            target_dir, pm, tool, status_cb=_update_install_status
+        )
         if not inst_success:
             bootstrapper_jobs[job_id] = {"status": "error", "message": f"Dependency installation failed: {inst_msg}"}
             return
@@ -240,34 +250,210 @@ def _bootstrapper_worker(job_id, p_name, p_path, tool, lang, fw, pm, url, user, 
     except Exception as e:
         bootstrapper_jobs[job_id] = {"status": "error", "message": str(e)}
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Native folder / file pickers
+#
+# These helpers pop a real OS folder-picker on the user's desktop and return
+# the selected absolute path. Because Flask serves the UI but the picker lives
+# on whatever machine the Flask process is running on, this assumes the user
+# is on the same host as the server (which is how this app is run in practice
+# — locally, via the IDE extension).
+#
+# Picker strategy:
+#   macOS   : AppleScript "choose folder" / "choose file" (always installed).
+#   Windows : tkinter subprocess (ships with the standard Python installer).
+#   Linux   : try tkinter → zenity → kdialog. Tk is preferred when present
+#             (consistent look across DEs), zenity is the GNOME standard and
+#             widely pre-installed on Ubuntu/Fedora, kdialog covers KDE.
+#
+# Each picker is its own helper that EITHER returns a path string (possibly
+# empty if the user cancelled) OR raises. The dispatcher catches the
+# "binary/module missing" exceptions and falls through; any other failure is
+# logged so the issue is visible next time. Previously this whole block lived
+# inside a bare `except Exception: return ""`, which silently masked a
+# missing python3-tk install and made the Browse button look broken.
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Time we let a desktop picker stay open before we give up. Plenty for a user
+# to navigate, short enough that a hung Flask request thread eventually frees.
+_PICKER_TIMEOUT_SECONDS = 300
+
+
+def _tk_subprocess_kwargs():
+    """Windows needs CREATE_NO_WINDOW so the spawned python.exe doesn't flash a console."""
+    import platform
+    if platform.system() == 'Windows':
+        return {"creationflags": 0x08000000}
+    return {}
+
+
+def _pick_directory_tkinter(prompt):
+    """Folder picker via tkinter in a subprocess. Raises ModuleNotFoundError if tk is missing."""
+    safe_prompt = json.dumps(prompt)
+    script = (
+        "import tkinter as tk; "
+        "from tkinter import filedialog; "
+        "root = tk.Tk(); "
+        "root.withdraw(); "
+        "root.attributes('-topmost', True); "
+        f"path = filedialog.askdirectory(title={safe_prompt}); "
+        "print(path, end='')"
+    )
+    result = subprocess.run(
+        [sys.executable, '-c', script],
+        capture_output=True, text=True,
+        timeout=_PICKER_TIMEOUT_SECONDS,
+        **_tk_subprocess_kwargs(),
+    )
+    # The subprocess hides ImportError as a non-zero exit; surface it explicitly so the
+    # dispatcher can fall through to the next picker instead of giving up.
+    if result.returncode != 0 and "No module named 'tkinter'" in (result.stderr or ""):
+        raise ModuleNotFoundError("tkinter not installed in subprocess Python")
+    if result.returncode != 0:
+        raise RuntimeError(f"tkinter dialog exit {result.returncode}: {(result.stderr or '').strip()}")
+    return result.stdout.strip()
+
+
+def _pick_directory_zenity(prompt):
+    """Folder picker via zenity (GNOME). Raises FileNotFoundError if zenity is missing."""
+    result = subprocess.run(
+        ['zenity', '--file-selection', '--directory', '--title', prompt],
+        capture_output=True, text=True,
+        timeout=_PICKER_TIMEOUT_SECONDS,
+    )
+    # zenity: 0 = picked, 1 = cancelled (treat as empty selection), >1 = real error.
+    if result.returncode > 1:
+        raise RuntimeError(f"zenity exit {result.returncode}: {(result.stderr or '').strip()}")
+    return result.stdout.strip()
+
+
+def _pick_directory_kdialog(prompt):
+    """Folder picker via kdialog (KDE). Raises FileNotFoundError if kdialog is missing."""
+    start_dir = os.path.expanduser('~')
+    result = subprocess.run(
+        ['kdialog', '--getexistingdirectory', start_dir, '--title', prompt],
+        capture_output=True, text=True,
+        timeout=_PICKER_TIMEOUT_SECONDS,
+    )
+    if result.returncode > 1:
+        raise RuntimeError(f"kdialog exit {result.returncode}: {(result.stderr or '').strip()}")
+    return result.stdout.strip()
+
+
+def _pick_file_tkinter(prompt):
+    """File picker via tkinter in a subprocess."""
+    safe_prompt = json.dumps(prompt)
+    script = (
+        "import tkinter as tk; "
+        "from tkinter import filedialog; "
+        "root = tk.Tk(); "
+        "root.withdraw(); "
+        "root.attributes('-topmost', True); "
+        f"path = filedialog.askopenfilename(title={safe_prompt}); "
+        "print(path, end='')"
+    )
+    result = subprocess.run(
+        [sys.executable, '-c', script],
+        capture_output=True, text=True,
+        timeout=_PICKER_TIMEOUT_SECONDS,
+        **_tk_subprocess_kwargs(),
+    )
+    if result.returncode != 0 and "No module named 'tkinter'" in (result.stderr or ""):
+        raise ModuleNotFoundError("tkinter not installed in subprocess Python")
+    if result.returncode != 0:
+        raise RuntimeError(f"tkinter dialog exit {result.returncode}: {(result.stderr or '').strip()}")
+    return result.stdout.strip()
+
+
+def _pick_file_zenity(prompt):
+    """File picker via zenity."""
+    result = subprocess.run(
+        ['zenity', '--file-selection', '--title', prompt],
+        capture_output=True, text=True,
+        timeout=_PICKER_TIMEOUT_SECONDS,
+    )
+    if result.returncode > 1:
+        raise RuntimeError(f"zenity exit {result.returncode}: {(result.stderr or '').strip()}")
+    return result.stdout.strip()
+
+
+def _pick_file_kdialog(prompt):
+    """File picker via kdialog."""
+    start_dir = os.path.expanduser('~')
+    result = subprocess.run(
+        ['kdialog', '--getopenfilename', start_dir, '--title', prompt],
+        capture_output=True, text=True,
+        timeout=_PICKER_TIMEOUT_SECONDS,
+    )
+    if result.returncode > 1:
+        raise RuntimeError(f"kdialog exit {result.returncode}: {(result.stderr or '').strip()}")
+    return result.stdout.strip()
+
+
+def _run_picker_chain(pickers, prompt):
+    """
+    Try each picker in order, falling through ONLY when the picker's underlying tool is missing
+    (ModuleNotFoundError for tkinter, FileNotFoundError for zenity/kdialog). Other failures are
+    logged and we still continue to the next picker — if every picker fails the caller sees "".
+
+    Cancellation (picker returned but path is empty) is treated as "user said no", not as a
+    failure, so we do NOT fall through to the next picker in that case.
+    """
+    import logging
+    for picker in pickers:
+        try:
+            path = picker(prompt)
+        except (ModuleNotFoundError, FileNotFoundError) as missing:
+            logging.info("Picker %s unavailable: %s", picker.__name__, missing)
+            continue
+        except subprocess.TimeoutExpired:
+            logging.warning("Picker %s timed out after %ss", picker.__name__, _PICKER_TIMEOUT_SECONDS)
+            return ""  # user walked away — don't open another dialog behind their back
+        except Exception as e:
+            logging.warning("Picker %s failed: %s", picker.__name__, e)
+            continue
+
+        return os.path.normpath(path) if path else ""
+
+    logging.error("No working file/folder picker found on this host.")
+    return ""
+
+
 def _get_directory_path(prompt="Select Directory"):
-    """Helper to get a directory path across different platforms without blocking Flask."""
+    """Open a native folder picker and return the selected absolute path, or '' if cancelled."""
+    import platform
     try:
-        import platform
-        import json
-        safe_prompt = json.dumps(prompt)
-        
         if platform.system() == 'Darwin':
-            # MacOS: Use Native AppleScript (reliable, no threading issues)
-            script = f'tell application "System Events" to activate\ntell application "System Events"\nset folderPath to choose folder with prompt {safe_prompt}\nPOSIX path of folderPath\nend tell'
-            result = subprocess.run(['osascript', '-e', script], capture_output=True, text=True)
+            # macOS uses the native AppleScript dialog — always present, no fallback needed.
+            safe_prompt = json.dumps(prompt)
+            script = (
+                f'tell application "System Events" to activate\n'
+                f'tell application "System Events"\n'
+                f'set folderPath to choose folder with prompt {safe_prompt}\n'
+                f'POSIX path of folderPath\n'
+                f'end tell'
+            )
+            result = subprocess.run(
+                ['osascript', '-e', script],
+                capture_output=True, text=True,
+                timeout=_PICKER_TIMEOUT_SECONDS,
+            )
             if result.returncode == 0 and result.stdout.strip():
                 return result.stdout.strip()
-        else:
-            # Windows/Linux: Use a separate process with Tkinter to avoid main-thread GUI locks
-            script = f"import tkinter as tk; from tkinter import filedialog; root = tk.Tk(); root.withdraw(); root.attributes('-topmost', True); folder_path = filedialog.askdirectory(title={safe_prompt}); print(folder_path, end='')"
-            
-            # On Windows, we need to hide the console window for the subprocess
-            creation_flags = 0
-            if platform.system() == 'Windows':
-                creation_flags = 0x08000000 # CREATE_NO_WINDOW
-                
-            result = subprocess.run([sys.executable, '-c', script], capture_output=True, text=True, creationflags=creation_flags)
-            if result.returncode == 0 and result.stdout.strip():
-                import os
-                return os.path.normpath(result.stdout.strip())
-        return ""
-    except Exception:
+            return ""
+
+        if platform.system() == 'Windows':
+            # Windows: tkinter is shipped with the standard Python installer, so just use it.
+            return _run_picker_chain([_pick_directory_tkinter], prompt)
+
+        # Linux (and anything else): tkinter is best when available; otherwise GTK then KDE.
+        return _run_picker_chain(
+            [_pick_directory_tkinter, _pick_directory_zenity, _pick_directory_kdialog],
+            prompt,
+        )
+    except Exception as e:
+        import logging
+        logging.exception("Unexpected error in _get_directory_path: %s", e)
         return ""
 
 @app.route('/api/browse-directory', methods=['GET'])
@@ -276,29 +462,41 @@ def browse_directory():
     return jsonify({"path": path})
 
 def _get_file_path(prompt="Select File"):
-    """Helper to get a file path across different platforms without blocking Flask."""
+    """Open a native file picker and return the selected absolute path, or '' if cancelled.
+
+    Same picker-chain strategy as _get_directory_path above — see that function's docstring
+    for platform-by-platform notes.
+    """
+    import platform
     try:
-        import platform
-        import json
-        safe_prompt = json.dumps(prompt)
-        
         if platform.system() == 'Darwin':
-            script = f'tell application "System Events" to activate\ntell application "System Events"\nset filePath to choose file with prompt {safe_prompt}\nPOSIX path of filePath\nend tell'
-            result = subprocess.run(['osascript', '-e', script], capture_output=True, text=True)
+            safe_prompt = json.dumps(prompt)
+            script = (
+                f'tell application "System Events" to activate\n'
+                f'tell application "System Events"\n'
+                f'set filePath to choose file with prompt {safe_prompt}\n'
+                f'POSIX path of filePath\n'
+                f'end tell'
+            )
+            result = subprocess.run(
+                ['osascript', '-e', script],
+                capture_output=True, text=True,
+                timeout=_PICKER_TIMEOUT_SECONDS,
+            )
             if result.returncode == 0 and result.stdout.strip():
                 return result.stdout.strip()
-        else:
-            script = f"import tkinter as tk; from tkinter import filedialog; root = tk.Tk(); root.withdraw(); root.attributes('-topmost', True); root.lift(); root.focus_force(); file_path = filedialog.askopenfilename(title={safe_prompt}); print(file_path, end='')"
-            creation_flags = 0
-            if platform.system() == 'Windows':
-                creation_flags = 0x08000000
-                
-            result = subprocess.run([sys.executable, '-c', script], capture_output=True, text=True, creationflags=creation_flags)
-            if result.returncode == 0 and result.stdout.strip():
-                import os
-                return os.path.normpath(result.stdout.strip())
-        return ""
-    except Exception:
+            return ""
+
+        if platform.system() == 'Windows':
+            return _run_picker_chain([_pick_file_tkinter], prompt)
+
+        return _run_picker_chain(
+            [_pick_file_tkinter, _pick_file_zenity, _pick_file_kdialog],
+            prompt,
+        )
+    except Exception as e:
+        import logging
+        logging.exception("Unexpected error in _get_file_path: %s", e)
         return ""
 
 @app.route('/api/browse-file', methods=['GET'])
