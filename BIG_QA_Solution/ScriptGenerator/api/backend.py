@@ -71,15 +71,12 @@ def _get_jira_client():
         if JIRA is None:
             raise RuntimeError("jira library not installed. Run: pip install jira")
         
-        server = os.getenv("jira_server", "").strip().strip('"')
-        email = os.getenv("email", "").strip().strip('"')
-        token = os.getenv("api_token", "").strip().strip('"')
+        # Reload dotenv to pick up changes made via UI without restarting backend
+        load_dotenv(dotenv_path=env_path, override=True)
         
-        if not all([server, email, token]):
-            # Try without spaces in env names if they were misparsed
-            server = server or os.getenv("JIRA_SERVER", "").strip().strip('"')
-            email = email or os.getenv("EMAIL", "").strip().strip('"')
-            token = token or os.getenv("API_TOKEN", "").strip().strip('"')
+        server = os.getenv("jira_server", os.getenv("JIRA_SERVER", "")).strip().strip('"')
+        email = os.getenv("jira_email", os.getenv("JIRA_EMAIL", os.getenv("email", os.getenv("EMAIL", "")))).strip().strip('"')
+        token = os.getenv("jira_api_token", os.getenv("JIRA_API_TOKEN", os.getenv("api_token", os.getenv("API_TOKEN", "")))).strip().strip('"')
 
         if not all([server, email, token]):
             raise RuntimeError("Jira credentials not found in .env")

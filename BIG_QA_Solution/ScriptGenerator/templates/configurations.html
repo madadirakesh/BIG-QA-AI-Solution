@@ -1,0 +1,120 @@
+{% extends "base.html" %}
+
+{% block title %}Configurations — BIG AI QA Solution{% endblock %}
+
+{% block page_title %}Configurations{% endblock %}
+{% block header_breadcrumb %}
+    <a href="{{ url_for('home') }}">Home</a>
+    <span class="sep">/</span>
+    <span class="current">Configurations</span>
+{% endblock %}
+
+{% block content %}
+<div class="breadcrumb animate-fade-in">
+    <i class="fas fa-home" style="font-size:0.75rem;"></i>
+    <span class="sep">/</span>
+    <a href="{{ url_for('home') }}">Home</a>
+    <span class="sep">/</span>
+    <span class="current">Configurations</span>
+</div>
+
+<div class="dashboard-header animate-slide-up">
+    <h1>System Configurations</h1>
+    <p>Manage your AI, Prompts, and Jira integrations here.</p>
+</div>
+
+<div class="dashboard-grid">
+    <!-- 1. Configure AI -->
+    <a href="#" onclick="openConfigureAIModal(); return false;" class="dashboard-card glassmorphism hover-effect animate-slide-up delay-1">
+        <div class="card-icon" style="background: rgba(0,120,212,0.12); color: #00bcf2; border-color: rgba(0,188,242,0.2);"><i class="fas fa-robot"></i></div>
+        <h3>Configure AI</h3>
+        <p>Set up and manage your AI models and API keys for script and test case generation.</p>
+    </a>
+
+    <!-- 2. Configure Prompts -->
+    <a href="{{ url_for('configure_prompts') }}" class="dashboard-card glassmorphism hover-effect animate-slide-up delay-2">
+        <div class="card-icon" style="background: rgba(16,185,129,0.1); color: #10b981; border-color: rgba(16,185,129,0.2);"><i class="fas fa-edit"></i></div>
+        <h3>Configure Prompts</h3>
+        <p>Customize and fine-tune the system prompts used for AI generation tasks.</p>
+    </a>
+
+    <!-- 3. Configure Jira -->
+    <a href="#" onclick="openConfigureJiraModal(); return false;" class="dashboard-card glassmorphism hover-effect animate-slide-up delay-3">
+        <div class="card-icon" style="background: rgba(139,92,246,0.1); color: #a78bfa; border-color: rgba(139,92,246,0.2);"><i class="fas fa-brands fa-jira"></i></div>
+        <h3>Configure Jira</h3>
+        <p>Connect your Jira instance to easily import user stories and link test cases.</p>
+    </a>
+</div>
+
+<!-- Configure Jira Modal -->
+<div id="configureJiraModal" class="confirm-backdrop" style="align-items:center;justify-content:center;">
+    <div class="confirm-dialog" style="max-width:500px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--glass-border);padding-bottom:1rem;margin-bottom:1.5rem;">
+            <h3 style="margin:0;font-size:1.2rem;"><i class="fas fa-brands fa-jira" style="color:var(--accent-secondary);margin-right:8px;"></i>Configure Jira</h3>
+            <button onclick="closeConfigureJiraModal()" style="background:none;border:none;color:var(--text-secondary);font-size:1.5rem;cursor:pointer;line-height:1;">&times;</button>
+        </div>
+        <div class="form-group" style="margin-bottom:1.25rem;">
+            <label for="jiraUrlInput" style="margin-bottom:6px;display:block;font-size:0.9rem;color:var(--text-secondary);">Jira Server</label>
+            <input type="text" id="jiraUrlInput" placeholder="e.g. https://your-domain.atlassian.net" style="width:100%;padding:10px 12px;background:var(--bg-primary);border:1px solid var(--glass-border);border-radius:8px;color:var(--text-primary);font-family:inherit;">
+        </div>
+        <div class="form-group" style="margin-bottom:1.25rem;">
+            <label for="jiraEmailInput" style="margin-bottom:6px;display:block;font-size:0.9rem;color:var(--text-secondary);">Email</label>
+            <input type="email" id="jiraEmailInput" placeholder="Enter Jira Email" style="width:100%;padding:10px 12px;background:var(--bg-primary);border:1px solid var(--glass-border);border-radius:8px;color:var(--text-primary);font-family:inherit;">
+        </div>
+        <div class="form-group" style="margin-bottom:1.5rem;">
+            <label for="jiraTokenInput" style="margin-bottom:6px;display:block;font-size:0.9rem;color:var(--text-secondary);">API Token</label>
+            <div class="password-wrapper">
+                <input type="password" id="jiraTokenInput" placeholder="Enter Jira API Token" style="width:100%;padding:10px 12px;background:var(--bg-primary);border:1px solid var(--glass-border);border-radius:8px;color:var(--text-primary);font-family:inherit;">
+                <button class="pwd-toggle" onclick="togglePwd('jiraTokenInput', this)" type="button"><i class="fas fa-eye"></i></button>
+            </div>
+        </div>
+        <button onclick="submitJiraConfiguration()" class="btn btn-primary" style="width:100%;"><i class="fas fa-save"></i> Submit</button>
+    </div>
+</div>
+
+<script>
+    function openConfigureJiraModal() {
+        document.getElementById('configureJiraModal').style.display = 'flex';
+        // Try to fetch existing Jira configuration
+        fetch('/api/configure-jira').then(r => r.json()).then(d => {
+            if (d.status === 'success') {
+                document.getElementById('jiraUrlInput').value = d.config.jira_server || '';
+                document.getElementById('jiraEmailInput').value = d.config.jira_email || '';
+                document.getElementById('jiraTokenInput').value = d.config.jira_api_token || '';
+            }
+        }).catch(() => {});
+    }
+
+    function closeConfigureJiraModal() {
+        document.getElementById('configureJiraModal').style.display = 'none';
+    }
+
+    async function submitJiraConfiguration() {
+        const btn = document.querySelector('#configureJiraModal .btn-primary');
+        if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving...'; }
+        try {
+            const r = await fetch('/api/configure-jira', { 
+                method: 'POST', 
+                headers: {'Content-Type':'application/json'}, 
+                body: JSON.stringify({ 
+                    jira_server: document.getElementById('jiraUrlInput').value, 
+                    jira_email: document.getElementById('jiraEmailInput').value, 
+                    jira_api_token: document.getElementById('jiraTokenInput').value 
+                }) 
+            });
+            const d = await r.json();
+            if (d.status === 'success') { 
+                showToast('Jira configuration saved!', 'success'); 
+                closeConfigureJiraModal(); 
+            } else {
+                showToast('Failed to save: ' + (d.message || 'Unknown error'), 'error');
+            }
+        } catch (e) { 
+            showToast('Error saving configuration', 'error'); 
+        }
+        finally { 
+            if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-save"></i> Submit'; } 
+        }
+    }
+</script>
+{% endblock %}

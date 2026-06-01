@@ -143,6 +143,14 @@ def logout():
 def home():
     return render_template('home.html')
 
+@app.route('/configurations')
+@login_required()
+def configurations():
+    if session.get('user_role', '').lower() not in ['qa', 'admin']:
+        flash('Not authorized', 'error')
+        return redirect(url_for('home'))
+    return render_template('configurations.html')
+
 @app.route('/admin/add-user', methods=['GET', 'POST'])
 @login_required(role='admin')
 def add_user():
@@ -1160,6 +1168,67 @@ def configure_ai_endpoint():
         status_data = {"error": str(e)}
         
     return jsonify({"status": "success", "system_status": status_data})
+
+@app.route('/api/configure-jira', methods=['GET', 'POST'])
+@login_required()
+def configure_jira_endpoint():
+    env_path = os.path.join(BASE_DIR, '.env')
+    
+    if request.method == 'GET':
+        config = {'jira_server': '', 'jira_email': '', 'jira_api_token': ''}
+        if os.path.exists(env_path):
+            with open(env_path, 'r') as f:
+                for line in f:
+                    if line.startswith('JIRA_SERVER') or line.startswith('jira_server'):
+                        config['jira_server'] = line.split('=', 1)[1].strip().strip('"').strip("'")
+                    elif line.startswith('JIRA_EMAIL') or line.startswith('jira_email'):
+                        config['jira_email'] = line.split('=', 1)[1].strip().strip('"').strip("'")
+                    elif line.startswith('JIRA_API_TOKEN') or line.startswith('jira_api_token'):
+                        config['jira_api_token'] = line.split('=', 1)[1].strip().strip('"').strip("'")
+        return jsonify({"status": "success", "config": config})
+        
+    # POST
+    data = request.json
+    jira_server = data.get('jira_server')
+    jira_email = data.get('jira_email')
+    jira_api_token = data.get('jira_api_token')
+    
+    env_lines = []
+    if os.path.exists(env_path):
+        with open(env_path, 'r') as f:
+            env_lines = f.readlines()
+            
+    new_env_lines = []
+    updated_keys = {'JIRA_SERVER': False, 'JIRA_EMAIL': False, 'JIRA_API_TOKEN': False}
+    
+    for line in env_lines:
+        if line.startswith('JIRA_SERVER') or line.startswith('jira_server'):
+            new_env_lines.append(f'JIRA_SERVER = "{jira_server}"\n')
+            updated_keys['JIRA_SERVER'] = True
+        elif line.startswith('JIRA_EMAIL') or line.startswith('jira_email'):
+            new_env_lines.append(f'JIRA_EMAIL = "{jira_email}"\n')
+            updated_keys['JIRA_EMAIL'] = True
+        elif line.startswith('JIRA_API_TOKEN') or line.startswith('jira_api_token'):
+            new_env_lines.append(f'JIRA_API_TOKEN = "{jira_api_token}"\n')
+            updated_keys['JIRA_API_TOKEN'] = True
+        else:
+            new_env_lines.append(line)
+            
+    if not updated_keys['JIRA_SERVER']:
+        new_env_lines.append(f'JIRA_SERVER = "{jira_server}"\n')
+    if not updated_keys['JIRA_EMAIL']:
+        new_env_lines.append(f'JIRA_EMAIL = "{jira_email}"\n')
+    if not updated_keys['JIRA_API_TOKEN']:
+        new_env_lines.append(f'JIRA_API_TOKEN = "{jira_api_token}"\n')
+        
+    with open(env_path, 'w') as f:
+        f.writelines(new_env_lines)
+        
+    os.environ['JIRA_SERVER'] = str(jira_server)
+    os.environ['JIRA_EMAIL'] = str(jira_email)
+    os.environ['JIRA_API_TOKEN'] = str(jira_api_token)
+        
+    return jsonify({"status": "success"})
 
 import ast
 

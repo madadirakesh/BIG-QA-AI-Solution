@@ -15,13 +15,8 @@
             
             {% if user_role in ['qa', 'admin'] %}
             <li>
-                <a href="#" onclick="openConfigureAIModal(); return false;" class="{% if request.endpoint == 'configure_ai' %}active{% endif %}">
-                    <i class="fas fa-robot"></i> <span>Configure AI</span>
-                </a>
-            </li>
-            <li>
-                <a href="{{ url_for('configure_prompts') }}" class="{% if request.endpoint == 'configure_prompts' %}active{% endif %}">
-                    <i class="fas fa-edit"></i> <span>Configure Prompts</span>
+                <a href="{{ url_for('configurations') }}" class="{% if request.endpoint == 'configurations' %}active{% endif %}">
+                    <i class="fas fa-cogs"></i> <span>Configurations</span>
                 </a>
             </li>
             <li class="sidebar-section-label">Tools</li>
@@ -80,6 +75,7 @@
         <div class="form-group" style="margin-bottom:1.25rem;">
             <label for="aiToolSelect" style="margin-bottom:6px;display:block;font-size:0.9rem;color:var(--text-secondary);">AI Tool</label>
             <select id="aiToolSelect" style="width:100%;padding:10px 12px;background:var(--bg-primary);border:1px solid var(--glass-border);border-radius:8px;color:var(--text-primary);font-family:inherit;">
+                <option value="" disabled selected>Select AI Tool</option>
                 <option value="GEMINI">Gemini</option>
                 <option value="ANTHROPIC">Anthropic</option>
                 <option value="OPENAI">OpenAI</option>

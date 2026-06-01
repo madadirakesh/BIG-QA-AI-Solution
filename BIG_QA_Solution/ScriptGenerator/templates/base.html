@@ -154,7 +154,7 @@
             document.querySelector('.sidebar-nav a[onclick*="openConfigureAIModal"]')?.classList.add('ai-active');
             fetch('/api/configure-ai').then(r => r.json()).then(d => {
                 if (d.status === 'success') {
-                    document.getElementById('aiToolSelect').value = d.config.AI_TOOL || 'GEMINI';
+                    document.getElementById('aiToolSelect').value = d.config.AI_TOOL || '';
                     document.getElementById('aiModelInput').value = d.config.AI_MODEL || '';
                     document.getElementById('apiKeyInput').value = d.config.API_KEY || '';
                 }
