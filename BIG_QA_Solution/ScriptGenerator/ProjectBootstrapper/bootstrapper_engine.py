@@ -5,6 +5,12 @@ import sqlite3
 import subprocess
 #from BIG_QA_Solution.ScriptGenerator.db.app_db import DB_PATH
 from db.app_db import DB_PATH
+# Import works whether this module is loaded flat (bootstrapper_ui.py adds ProjectBootstrapper/ to
+# sys.path) or as a package (app.py imports ProjectBootstrapper.bootstrapper_engine).
+try:
+    from versions_catalog import resolve_versions, FALLBACK_VERSIONS
+except ModuleNotFoundError:
+    from ProjectBootstrapper.versions_catalog import resolve_versions, FALLBACK_VERSIONS
 
 logger = logging.getLogger("ProjectBootstrapper")
 
@@ -40,7 +46,8 @@ class BootstrapperEngine:
         return json.dumps(val or "")[1:-1].replace("'", "\\'")
 
     @staticmethod
-    def generate_project(project_name, base_path, tool, language, framework, package_manager, url, username, password):
+    def generate_project(project_name, base_path, tool, language, framework, package_manager, url, username, password, version_profile=None):
+        # version_profile: label of a validated combo (versions_catalog); None -> default profile.
         target_dir = os.path.join(base_path, project_name)
         
         try:
@@ -87,6 +94,12 @@ class BootstrapperEngine:
             if not template_files:
                 return False, "Found template metadata but no files are associated with it."
 
+            # Resolve the version profile once; falls back to the catalog default / FALLBACK_VERSIONS.
+            versions = resolve_versions(tool, search_lang, framework, version_profile)
+
+            def _ver(key):
+                return versions.get(key) or FALLBACK_VERSIONS.get(key, "")
+
             # 3. Process and write files
             for file_record in template_files:
                 rel_path = file_record['file_path']
@@ -117,6 +130,11 @@ class BootstrapperEngine:
                         content = content.replace("{{BASE_URL}}", BootstrapperEngine._sec_str(url or "https://example.com"))
                         content = content.replace("{{USERNAME}}", BootstrapperEngine._sec_str(username or "admin"))
                         content = content.replace("{{PASSWORD}}", BootstrapperEngine._sec_str(password or "password123"))
+                        # Dependency-version placeholders (trusted catalog values, no escaping needed).
+                        content = content.replace("{{JAVA_VERSION}}", _ver("java"))
+                        content = content.replace("{{PLAYWRIGHT_VERSION}}", _ver("playwright"))
+                        content = content.replace("{{SELENIUM_VERSION}}", _ver("selenium"))
+                        content = content.replace("{{CUCUMBER_VERSION}}", _ver("cucumber"))
                     
                     with open(full_path, 'w', encoding='utf-8') as f:
                         f.write(content or "")
@@ -270,13 +288,13 @@ class BootstrapperEngine:
             logger.info(f"Skipping smoke test for {language}/{tool} (scaffolding only)")
             return True, "Smoke test skipped for TypeScript scaffolding. Ready for manual test development."
 
-        # Skip smoke test for any Java + Cucumber template (currently Playwright/Java/Cucumber
-        # and Selenium/Java/Cucumber). The scaffold ships a sample feature file but NO step
-        # definitions — those are filled in later by the Script Developer AI wizard. Running
-        # `mvn test` against undefined steps would mark the suite as failed and surface a
-        # misleading "Setup Failed" in the UI even though the project is healthy.
+        # Skip smoke test for any Java + Cucumber template. Both Playwright/Java and Selenium/Java
+        # now ship a runnable sample (pageObjects/LoginPage.java + stepDefinitions/LoginSteps.java)
+        # so `mvn test` passes out of the box — we skip here only because a smoke run at creation
+        # time means a full Maven build plus a browser-binary download, too slow/network-dependent
+        # for the interactive flow. The user can run `mvn test` themselves after install.
         if language == "Java" and "Cucumber" in (framework or ""):
-            logger.info(f"Skipping smoke test for {language}/{tool}/{framework} (Cucumber scaffold has no step defs yet)")
+            logger.info(f"Skipping smoke test for {language}/{tool}/{framework} (Cucumber scaffold runs separately)")
             return True, f"Smoke test skipped for {tool}/Java/Cucumber scaffolding. Ready for manual test development."
         
         if language == "Python":

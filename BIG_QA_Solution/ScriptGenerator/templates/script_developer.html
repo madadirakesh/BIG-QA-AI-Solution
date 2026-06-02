@@ -394,6 +394,20 @@
                     </div>
                 </div>
 
+                <!-- Hidden automatically when the chosen stack has no version choice. -->
+                <div class="form-row" id="bsVersionProfileRow">
+                    <div class="form-col">
+                        <div class="form-group">
+                            <label><i class="fas fa-layer-group"></i> Version Profile <span style="color:#e74c3c">*</span></label>
+                            <select id="bsVersionProfile" class="form-control" onchange="clearFieldError('bsVersionProfile')">
+                                <!-- Dynamic -->
+                            </select>
+                            <small class="help-text">Validated dependency versions for this stack.</small>
+                            <small class="error-text" id="bsVersionProfileError"></small>
+                        </div>
+                    </div>
+                </div>
+
                 <div class="form-row">
                     <div class="form-col">
                         <div class="form-group">
@@ -1134,7 +1148,7 @@ function resetBootstrapperForm() {
     updateBsOptions();
 
     // Validation state — red borders and inline messages.
-    clearFieldErrors(['bsProjectName', 'bsProjectPath', 'bsUrl']);
+    clearFieldErrors(['bsProjectName', 'bsProjectPath', 'bsUrl', 'bsVersionProfile']);
 
     // Path preview at the bottom of the Save Location row.
     updatePathPreview();
@@ -1154,18 +1168,23 @@ function resetBootstrapperForm() {
  * Returns true if every rule passes, false otherwise (and the user sees red highlights).
  */
 function validateBootstrapForm(data) {
-    return validateForm(
-        {
-            bsProjectName: { required: true, message: 'Project Name is required.' },
-            bsProjectPath: { required: true, message: 'Please choose a save location using the Browse button.' },
-            bsUrl: { pattern: /^https?:\/\/\S+/i, message: 'URL must start with http:// or https://' }
-        },
-        {
-            bsProjectName: data.projectName,
-            bsProjectPath: data.projectPath,
-            bsUrl: data.url
-        }
-    );
+    const schema = {
+        bsProjectName: { required: true, message: 'Project Name is required.' },
+        bsProjectPath: { required: true, message: 'Please choose a save location using the Browse button.' },
+        bsUrl: { pattern: /^https?:\/\/\S+/i, message: 'URL must start with http:// or https://' }
+    };
+    const values = {
+        bsProjectName: data.projectName,
+        bsProjectPath: data.projectPath,
+        bsUrl: data.url
+    };
+    // Version Profile is required only when its dropdown is shown (stacks that have profiles).
+    const vpRow = document.getElementById('bsVersionProfileRow');
+    if (vpRow && vpRow.style.display !== 'none') {
+        schema.bsVersionProfile = { required: true, message: 'Please select a version profile.' };
+        values.bsVersionProfile = data.versionProfile;
+    }
+    return validateForm(schema, values);
 }
 
 function closeBootstrapperModal() {
@@ -1232,6 +1251,34 @@ function updateBsOptions() {
         fwSelect.add(new Option("Cucumber (JS)", "Cucumber"));
         pmSelect.add(new Option("NPM (package.json)", "NPM"));
     }
+
+    updateVersionProfiles();
+}
+
+// Fills the Version Profile dropdown from the catalog; hides the row when the stack has none.
+function updateVersionProfiles() {
+    const row = document.getElementById('bsVersionProfileRow');
+    const select = document.getElementById('bsVersionProfile');
+    const params = new URLSearchParams({
+        tool: document.getElementById('bsTool').value,
+        language: document.getElementById('bsLanguage').value,
+        framework: document.getElementById('bsFramework').value
+    });
+    fetch('/api/version-profiles?' + params)
+        .then(r => r.json())
+        .then(data => {
+            const profiles = data.profiles || [];
+            select.innerHTML = "";
+            clearFieldError('bsVersionProfile');
+            // Placeholder so nothing is pre-selected — the user must choose explicitly.
+            const placeholder = new Option("-- Select a version --", "");
+            placeholder.disabled = true;
+            placeholder.selected = true;
+            select.add(placeholder);
+            profiles.forEach(p => select.add(new Option(p, p)));
+            row.style.display = profiles.length ? '' : 'none';
+        })
+        .catch(() => { row.style.display = 'none'; });
 }
 
 // ─── Bootstrapper progress: polling + elapsed-time counter ───
@@ -1275,6 +1322,7 @@ function submitBootstrapper() {
         language: document.getElementById('bsLanguage').value,
         framework: document.getElementById('bsFramework').value,
         packageManager: document.getElementById('bsPackageManager').value,
+        versionProfile: document.getElementById('bsVersionProfile').value,
         url: document.getElementById('bsUrl').value,
         username: document.getElementById('bsUsername').value,
         password: document.getElementById('bsPassword').value
