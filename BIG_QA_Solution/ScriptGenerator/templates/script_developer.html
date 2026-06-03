@@ -1682,7 +1682,7 @@ function renderCodeResults(files) {
                     <div class="window-title">${file.filename}</div>
                 </div>
                 <div class="d-flex gap-2">
-                    <button class="copy-btn" onclick="copyCode(this, \`${file.content.replace(/`/g, '\\`').replace(/\$/g, '\\$')}\`)">
+                    <button class="copy-btn" onclick="copyCode(this, ${idx})">
                         <i class="fas fa-clipboard"></i> Copy Text
                     </button>
                     <button class="copy-btn" style="background:var(--success); border-color:var(--success);" onclick="openMergeDialog(${idx})">
@@ -1709,7 +1709,8 @@ function escapeHtml(text) {
     return div.innerHTML;
 }
 
-function copyCode(btn, text) {
+function copyCode(btn, idx) {
+    const text = generatedFilesData[idx].content;
     navigator.clipboard.writeText(text).then(() => {
         const originalContent = btn.innerHTML;
         btn.innerHTML = '<i class="fas fa-check"></i> Copied!';
