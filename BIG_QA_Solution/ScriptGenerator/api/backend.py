@@ -192,7 +192,8 @@ async def call_openai(prompt: str, expect_json: bool = True) -> str:
                 {"role": "system", "content": system_content},
                 {"role": "user", "content": prompt},
             ],
-            temperature=0
+            temperature=0,
+            response_format={"type": "json_object"} if expect_json else None
         )
         return response.choices[0].message.content
     
@@ -204,6 +205,7 @@ async def call_gemini(prompt: str, expect_json: bool = True) -> str:
 
     def _call():
         system_preamble = "You are an expert QA automation engineer.\n\n"
+        config = None
         if expect_json:
             system_preamble += (
                 "You MUST respond with ONLY a valid raw JSON object. "
@@ -212,9 +214,16 @@ async def call_gemini(prompt: str, expect_json: bool = True) -> str:
                 "The very first character of your response MUST be '{' "
                 "and the very last character MUST be '}'.\n\n"
             )
+            try:
+                from google.genai import types
+                config = types.GenerateContentConfig(response_mime_type="application/json")
+            except Exception as e:
+                logger.warning(f"Could not import or configure GenerateContentConfig for JSON mode: {e}")
+                
         response = client.models.generate_content(
             model=AI_MODEL,
-            contents=system_preamble + prompt
+            contents=system_preamble + prompt,
+            config=config
         )
         return response.text
 
@@ -290,11 +299,17 @@ def parse_json_result(result: str, fallback_key: str) -> dict:
     """Robustly parses a JSON object from an AI response string with logging."""
     def _try_parse(s: str):
         try:
-            obj = json.loads(s)
+            obj = json.loads(s, strict=False)
             if isinstance(obj, dict):
                 return obj
         except (json.JSONDecodeError, ValueError):
-            pass
+            try:
+                s_sanitized = re.sub(r'\\(?!["\\\/bfnrt]|u[0-9a-fA-F]{4})', r'\\\\', s)
+                obj = json.loads(s_sanitized, strict=False)
+                if isinstance(obj, dict):
+                    return obj
+            except Exception:
+                pass
         return None
 
     logger.debug(f"Parsing AI JSON result. Fallback key: {fallback_key}")
@@ -451,7 +466,12 @@ class CodeGenerator:
         
         # Enhanced logging instead of file writing
         logger.debug(f"Raw AI Response for {fallback_file}: {result}")
-        
+        try:
+            with open("LastAIResponse_Universal.txt", "w", encoding="utf-8") as f:
+                f.write(result or "")
+        except Exception as e:
+            logger.warning(f"Failed to write LastAIResponse_Universal.txt: {e}")
+            
         parsed = parse_json_result(result, fallback_file)
         return parsed
 

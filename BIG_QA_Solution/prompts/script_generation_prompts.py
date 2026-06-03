@@ -70,6 +70,12 @@ IMPORTANT - Always generate a requirements.txt with ALL required packages:
     webdriver-manager
     behave
     python-dotenv
+
+CRITICAL STYLE HARMONIZATION (For Existing Projects):
+- If "EXISTING STEP DEFINITIONS" or "EXISTING PAGE OBJECTS" are provided in the Supporting Information, you MUST analyze them first.
+- Mirror their exact style: match their imports, class structures, method naming conventions (e.g., snake_case), wait strategies, helper usages, and comment styles.
+- New page objects must inherit from the same base classes (if applicable).
+- New step definitions must use the same step decorator styles (e.g. `@given`, `@when`, `@then`) and parameter conventions (e.g., passing the browser fixture).
 """
 
 SELENIUM_STANDARDS_JAVA = """
@@ -116,6 +122,11 @@ NEVER use any of these deprecated Selenium 3 methods:
     driver.findElementByCssSelector()
     driver.findElementByClassName()
     new WebDriverWait(driver, 10)  (without Duration)
+
+CRITICAL STYLE HARMONIZATION (For Existing Projects):
+- If "EXISTING STEP DEFINITIONS" or "EXISTING PAGE OBJECTS" are provided in the Supporting Information, you MUST analyze them first.
+- Mirror their exact style: match their package statements, imports, annotation patterns (e.g., @Given, @When, @Then), variable naming, class structures, and PageFactory/PageObject initialization patterns.
+- New page objects must inherit from any base page class used by existing pages.
 """
 
 PLAYWRIGHT_STANDARDS_TS = """
@@ -182,6 +193,11 @@ NEVER use:
     Selenium-style locators or methods
     document.querySelector() or other DOM methods
     Non-async calls to Playwright methods
+
+CRITICAL STYLE HARMONIZATION (For Existing Projects):
+- If "EXISTING STEP DEFINITIONS" or "EXISTING PAGE OBJECTS" are provided in the Supporting Information, you MUST analyze them first.
+- Mirror their exact style: match their imports (e.g., ESM import vs CommonJS require), test runner pattern (e.g. Playwright Test `@playwright/test` vs Cucumber-JS wrapper), locator creation style (`page.locator` vs standard `page.getBy*`), naming conventions (camelCase vs snake_case), and async/await usage.
+- New page objects must align with the exact structure of existing ones, including constructor signatures.
 """
 
 LOCATOR_USAGE_STANDARDS = """
