@@ -37,15 +37,7 @@
             <div class="step-inner-align">
                 <h3 class="premium-header">Project Inputs</h3>
 
-                <div class="form-group mt-3">
-                    <label>Select Project (Optional)</label>
-                    <select id="projectSelect" class="form-select bg-dark text-light border-secondary" style="background-color: rgba(0,0,0,0.2) !important;" onchange="handleProjectSelection()">
-                        <option value="">-- Skip Project Selection --</option>
-                        {% for p in projects %}
-                        <option value="{{ p.id }}">{{ p.project_name }}</option>
-                        {% endfor %}
-                    </select>
-                </div>
+
 
                 <div class="form-group mt-3">
                     <label>What are we testing? <small class="text-secondary">(Describe features or user stories)</small></label>
@@ -170,34 +162,46 @@
                 </div>
 
                 <div class="requirement-save-section mt-4 p-3 border rounded" style="background: rgba(0,0,0,0.2); border-color: var(--glass-border) !important;">
-                    <div class="d-flex align-items-center mb-2">
-                        <label class="mb-0 me-3">Is this a new req?</label>
-                        <div class="form-check form-check-inline">
-                            <input class="form-check-input" type="radio" name="isNewReq" id="newReqYes" value="yes" checked onchange="toggleReqType()">
-                            <label class="form-check-label" for="newReqYes">Yes</label>
-                        </div>
-                        <div class="form-check form-check-inline">
-                            <input class="form-check-input" type="radio" name="isNewReq" id="newReqNo" value="no" onchange="toggleReqType()">
-                            <label class="form-check-label" for="newReqNo">No</label>
-                        </div>
-                    </div>
-
-                    <div id="newReqSection" class="mt-2">
-                        <label>Requirement Name</label>
-                        <div class="input-group">
-                            <input type="text" id="reqNameInput" class="form-control bg-dark text-light border-secondary" placeholder="Enter a name to save this requirement">
-                            <button class="btn btn-outline-success" type="button" id="saveReqBtn" onclick="saveRequirement()">
-                                <i class="fas fa-save"></i> Save
-                            </button>
-                        </div>
-                    </div>
-
-                    <div id="existingReqSection" class="mt-2" style="display: none;">
-                        <label>Select Saved Requirement(s)</label>
-                        <select id="savedReqSelect" class="form-select bg-dark text-light border-secondary" multiple size="4">
-                            <option value="" disabled>-- Select Requirement(s) --</option>
+                    <div class="form-group mb-3">
+                        <label>Select Project (Optional)</label>
+                        <select id="projectSelect" class="form-select bg-dark text-light border-secondary" style="background-color: rgba(0,0,0,0.2) !important;" onchange="handleProjectSelection()">
+                            <option value="">-- Skip Project Selection --</option>
+                            {% for p in projects %}
+                            <option value="{{ p.id }}">{{ p.project_name }}</option>
+                            {% endfor %}
                         </select>
-                        <small class="text-secondary mt-1 d-block"><i class="fas fa-info-circle"></i> Hold Ctrl/Cmd to select multiple. The selected requirements will be merged with your current input above.</small>
+                    </div>
+
+                    <div id="reqOptionsContainer" style="display: none; border-top: 1px solid var(--glass-border); padding-top: 15px;">
+                        <div class="d-flex align-items-center mb-2">
+                            <label class="mb-0 me-3">Is this a new req?</label>
+                            <div class="form-check form-check-inline">
+                                <input class="form-check-input" type="radio" name="isNewReq" id="newReqYes" value="yes" checked onchange="toggleReqType()">
+                                <label class="form-check-label" for="newReqYes">Yes</label>
+                            </div>
+                            <div class="form-check form-check-inline">
+                                <input class="form-check-input" type="radio" name="isNewReq" id="newReqNo" value="no" onchange="toggleReqType()">
+                                <label class="form-check-label" for="newReqNo">No</label>
+                            </div>
+                        </div>
+    
+                        <div id="newReqSection" class="mt-2">
+                            <label>Requirement Name</label>
+                            <div class="d-flex gap-2">
+                                <input type="text" id="reqNameInput" class="form-control bg-dark text-light border-secondary" placeholder="Enter a name to save this requirement">
+                                <button class="btn btn-outline-success" type="button" id="saveReqBtn" onclick="saveRequirement()">
+                                    <i class="fas fa-save"></i> Save
+                                </button>
+                            </div>
+                        </div>
+    
+                        <div id="existingReqSection" class="mt-2" style="display: none;">
+                            <label>Select Saved Requirement(s)</label>
+                            <select id="savedReqSelect" class="form-select bg-dark text-light border-secondary" multiple size="4">
+                                <option value="" disabled>-- Select Requirement(s) --</option>
+                            </select>
+                            <small class="text-secondary mt-1 d-block"><i class="fas fa-info-circle"></i> Hold Ctrl/Cmd to select multiple. The selected requirements will be merged with your current input above.</small>
+                        </div>
                     </div>
                 </div>
 
@@ -360,6 +364,11 @@
 
     async function handleProjectSelection() {
         const projectId = document.getElementById('projectSelect').value;
+        const reqOptionsContainer = document.getElementById('reqOptionsContainer');
+        if (reqOptionsContainer) {
+            reqOptionsContainer.style.display = projectId ? 'block' : 'none';
+        }
+
         const isNew = document.getElementById('newReqYes').checked;
         
         if (isNew || !projectId) return;
@@ -734,7 +743,10 @@
 
         try {
             const response = await fetch(`${BACKEND_URL}/jira/projects`);
-            if (!response.ok) throw new Error('Failed to fetch projects');
+            if (!response.ok) {
+                const errData = await response.json().catch(() => ({}));
+                throw new Error(errData.detail || 'Failed to fetch projects');
+            }
             const projects = await response.json();
             if (projects.length === 0) { listEl.innerHTML = '<div class="text-center py-3 text-secondary">No projects found.</div>'; return; }
             listEl.innerHTML = '';
@@ -746,7 +758,20 @@
                 listEl.appendChild(item);
             });
         } catch (error) {
-            listEl.innerHTML = `<div class="text-center py-3 text-danger">Error: ${error.message}</div>`;
+            const errMsg = error.message.toLowerCase();
+            if (errMsg.includes('credentials not found') || errMsg.includes('failed to connect to jira') || errMsg.includes('jira library not installed')) {
+                listEl.innerHTML = `
+                    <div class="text-center py-4">
+                        <i class="fas fa-exclamation-circle fa-2x text-warning mb-3"></i>
+                        <h5 class="text-light">Jira Setup Required</h5>
+                        <p class="text-secondary small mb-3">Please configure your Jira settings (Server, Email, Token) to fetch projects.</p>
+                        <a href="/configurations" class="btn btn-outline-primary btn-sm">
+                            <i class="fas fa-sliders-h"></i> Go to Configurations
+                        </a>
+                    </div>`;
+            } else {
+                listEl.innerHTML = `<div class="text-center py-3 text-danger">Error: ${error.message}</div>`;
+            }
         }
     }
 

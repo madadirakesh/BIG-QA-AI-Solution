@@ -1484,23 +1484,46 @@ def generate_bdd_code():
 
         support_content += f"\nProject Layout Mappings (CRITICAL):\n- Feature Files MUST be placed inside: {discovered_features}\n- Step Definition Files MUST be placed inside: {discovered_steps}\n- Page Object Files MUST be placed inside: {discovered_pages}\n"
 
-        # Collect existing step definitions to avoid regenerating them
-        if project_path and os.path.exists(project_path) and discovered_steps != "steps":
-            steps_dir = os.path.join(project_path, discovered_steps)
-            if os.path.exists(steps_dir):
-                existing_steps = []
-                for root, _, files in os.walk(steps_dir):
-                    for f in files:
-                        if f.endswith(('.py', '.java', '.ts', '.js', '.cs')):
-                            try:
-                                with open(os.path.join(root, f), 'r', encoding='utf-8', errors='ignore') as st_file:
-                                    existing_steps.append(f"--- {f} ---\n{st_file.read()}")
-                            except Exception:
-                                pass
-                if existing_steps:
-                    # Truncate to avoid massive context payloads, but usually steps are manageable
-                    steps_text = "\n".join(existing_steps)[:20000]
-                    support_content += f"\nEXISTING STEP DEFINITIONS (DO NOT regenerate these):\n{steps_text}\n"
+        # Collect existing step definitions to avoid regenerating them and to match style
+        if project_path and os.path.exists(project_path):
+            try:
+                steps_dir = os.path.join(project_path, discovered_steps)
+                if os.path.exists(steps_dir) and os.path.isdir(steps_dir):
+                    existing_steps = []
+                    for root, _, files in os.walk(steps_dir):
+                        for f in files:
+                            if f.endswith(('.py', '.java', '.ts', '.js', '.cs')):
+                                try:
+                                    with open(os.path.join(root, f), 'r', encoding='utf-8', errors='ignore') as st_file:
+                                        existing_steps.append(f"--- {f} ---\n{st_file.read()}")
+                                except Exception:
+                                    pass
+                    if existing_steps:
+                        # Truncate to avoid massive context payloads, but usually steps are manageable
+                        steps_text = "\n".join(existing_steps)[:20000]
+                        support_content += f"\nEXISTING STEP DEFINITIONS (STYLE & DUPLICATE REFERENCE - Match styling and DO NOT duplicate):\n{steps_text}\n"
+            except Exception as e:
+                app.logger.warning(f"Error scanning existing steps: {e}")
+
+        # Collect existing Page Objects for style and pattern matching
+        if project_path and os.path.exists(project_path):
+            try:
+                pages_dir = os.path.join(project_path, discovered_pages)
+                if os.path.exists(pages_dir) and os.path.isdir(pages_dir):
+                    existing_pages = []
+                    for root, _, files in os.walk(pages_dir):
+                        for f in files:
+                            if f.endswith(('.py', '.java', '.ts', '.js', '.cs')):
+                                try:
+                                    with open(os.path.join(root, f), 'r', encoding='utf-8', errors='ignore') as pg_file:
+                                        existing_pages.append(f"--- {f} ---\n{pg_file.read()}")
+                                except Exception:
+                                    pass
+                    if existing_pages:
+                        pages_text = "\n".join(existing_pages)[:20000]
+                        support_content += f"\nEXISTING PAGE OBJECTS (STYLE REFERENCE - Match styling exactly):\n{pages_text}\n"
+            except Exception as e:
+                app.logger.warning(f"Error scanning existing pages: {e}")
 
 
         if strategy == 'db' and project_id and db_locators:

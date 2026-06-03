@@ -17,7 +17,7 @@ Scaffolded by the BIG-QA Script Generator.
 
 ```bash
 # 1. Configure environment (one time)
-cp .env.example .env
+cp .env .env
 #    then edit .env with your application URL and credentials
 
 # 2. Install Maven dependencies (one time)

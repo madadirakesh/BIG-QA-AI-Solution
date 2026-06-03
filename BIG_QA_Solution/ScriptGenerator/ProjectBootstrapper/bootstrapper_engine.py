@@ -139,6 +139,47 @@ class BootstrapperEngine:
                     with open(full_path, 'w', encoding='utf-8') as f:
                         f.write(content or "")
 
+            # Ensure .env file contains and is updated with the correct user details
+            env_file_path = os.path.join(target_dir, ".env")
+            if os.path.exists(env_file_path):
+                try:
+                    with open(env_file_path, 'r', encoding='utf-8') as f:
+                        lines = f.readlines()
+                    
+                    updates = {
+                        'APP_URL': url or "https://example.com",
+                        'USER': username or "admin",
+                        'PASSWORD': password or "password123"
+                    }
+                    
+                    new_lines = []
+                    seen = set()
+                    
+                    for line in lines:
+                        stripped = line.strip()
+                        if stripped and not stripped.startswith('#') and '=' in line:
+                            parts = line.split('=', 1)
+                            key = parts[0].strip()
+                            if key in updates:
+                                new_lines.append(f"{key}={updates[key]}\n")
+                                seen.add(key)
+                            else:
+                                new_lines.append(line)
+                        else:
+                            new_lines.append(line)
+                            
+                    for key, val in updates.items():
+                        if key not in seen:
+                            if new_lines and not new_lines[-1].endswith('\n'):
+                                new_lines[-1] += '\n'
+                            new_lines.append(f"{key}={val}\n")
+                            
+                    with open(env_file_path, 'w', encoding='utf-8') as f:
+                        f.writelines(new_lines)
+                    logger.info(f"Successfully updated/added APP_URL, USER, PASSWORD in {env_file_path}")
+                except Exception as e:
+                    logger.error(f"Failed to post-process .env file: {e}")
+
             # 4. Ensure mandatory empty directories for AI generation exist.
             # The template ingestion only creates parent directories implicitly when it writes
             # a file (see the os.makedirs(os.path.dirname(full_path), ...) call above), so any

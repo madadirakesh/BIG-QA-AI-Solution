@@ -47,6 +47,6 @@ Thumbs.db
 desktop.ini
 
 # ─── Local environment (contains credentials) ──────────────────────────────
-# .env is per-developer; .env.example is the committed template.
+# .env is per-developer; .env is the committed template.
 .env
 .env.local
