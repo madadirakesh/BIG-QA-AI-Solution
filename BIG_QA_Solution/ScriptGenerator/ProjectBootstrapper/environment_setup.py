@@ -98,6 +98,26 @@ class EnvironmentSetup:
         env.setdefault("DOTNET_CLI_TELEMETRY_OPTOUT", "1")
         env.setdefault("DOTNET_NOLOGO", "1")
         env.setdefault("DOTNET_SKIP_FIRST_TIME_EXPERIENCE", "1")
+        # Force .NET sockets to IPv4. On machines that advertise IPv6 (a router-supplied default
+        # route) but have no working IPv6 path to the internet, .NET's HttpClient tries IPv6 first
+        # and hangs until timeout — NuGet then retries the service index several times, so a
+        # `dotnet restore` takes ~10 minutes and fails with NU1301 even though IPv4 works instantly
+        # (curl/Node succeed because they do Happy-Eyeballs IPv4 fallback). Disabling IPv6 in .NET
+        # makes restore use the working IPv4 path. Harmless where IPv6 actually works.
+        env.setdefault("DOTNET_SYSTEM_NET_DISABLEIPV6", "1")
+
+        # Same broken-IPv6 hazard for the other ecosystems (Maven Central / npm / PyPI all publish
+        # AAAA records). The JVM is the worst offender: Maven prefers IPv6 and will hang on a dead
+        # route, so force IPv4 for it. Node 18+ already does Happy-Eyeballs fallback, but
+        # dns-result-order=ipv4first skips the initial IPv6 stall. (pip/urllib3 fall back on their
+        # own; there is no clean per-process knob, so it is covered by the OS-level fix in the docs.)
+        # Append rather than overwrite so an operator's existing MAVEN_OPTS / NODE_OPTIONS survive.
+        maven_opts = env.get("MAVEN_OPTS", "")
+        if "preferIPv4Stack" not in maven_opts:
+            env["MAVEN_OPTS"] = (maven_opts + " -Djava.net.preferIPv4Stack=true").strip()
+        node_opts = env.get("NODE_OPTIONS", "")
+        if "dns-result-order" not in node_opts:
+            env["NODE_OPTIONS"] = (node_opts + " --dns-result-order=ipv4first").strip()
 
         if os.environ.get("BIG_QA_INSECURE_TLS") == "1":
             env["NODE_TLS_REJECT_UNAUTHORIZED"] = "0"
@@ -314,9 +334,12 @@ class EnvironmentSetup:
                 # com.microsoft.playwright.CLI class lives in the compile-scope playwright
                 # artifact, not test-scope.
                 phases.append((
-                    "Downloading Playwright browser binaries (~250 MB, ~2–3 min)...",
+                    "Downloading Playwright Chromium browser (~130 MB)...",
+                    # Only Chromium is installed — every Playwright template defaults to it. This
+                    # roughly thirds the download vs `install` (which pulls Chromium + Firefox +
+                    # WebKit, ~1 GB). To use another browser, run the CLI `install firefox`/`webkit`.
                     'mvn exec:java -Dexec.mainClass="com.microsoft.playwright.CLI"'
-                    ' -Dexec.args="install" -Dexec.classpathScope=compile',
+                    ' -Dexec.args="install chromium" -Dexec.classpathScope=compile',
                 ))
             return phases
 
@@ -329,8 +352,8 @@ class EnvironmentSetup:
                 ]
                 if tool == "Playwright":
                     phases.append((
-                        "Downloading Playwright browser binaries (~250 MB)...",
-                        "venv\\Scripts\\python -m playwright install",
+                        "Downloading Playwright Chromium browser (~130 MB)...",
+                        "venv\\Scripts\\python -m playwright install chromium",
                     ))
             else:
                 phases = [
@@ -342,8 +365,8 @@ class EnvironmentSetup:
                 ]
                 if tool == "Playwright":
                     phases.append((
-                        "Downloading Playwright browser binaries (~250 MB)...",
-                        "venv/bin/python3.12 -m playwright install",
+                        "Downloading Playwright Chromium browser (~130 MB)...",
+                        "venv/bin/python3.12 -m playwright install chromium",
                     ))
             return phases
 
@@ -351,8 +374,8 @@ class EnvironmentSetup:
             phases = [("Installing npm packages from package.json...", "npm install")]
             if tool == "Playwright":
                 phases.append((
-                    "Downloading Playwright browser binaries (~250 MB)...",
-                    "npx playwright install",
+                    "Downloading Playwright Chromium browser (~130 MB)...",
+                    "npx playwright install chromium",
                 ))
             return phases
 
@@ -360,8 +383,8 @@ class EnvironmentSetup:
             phases = [("Restoring NuGet packages...", "dotnet restore")]
             if tool == "Playwright":
                 phases.append((
-                    "Downloading Playwright browser binaries (~250 MB)...",
-                    "pwsh bin/Debug/net6.0/playwright.ps1 install",
+                    "Downloading Playwright Chromium browser (~130 MB)...",
+                    "pwsh bin/Debug/net6.0/playwright.ps1 install chromium",
                 ))
             return phases
 
