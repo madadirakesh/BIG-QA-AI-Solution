@@ -2062,6 +2062,18 @@
         let cmLeft = null;
         let cmRight = null;
 
+        // Project-context state. Declared BEFORE initBridge() runs so that if
+        // Python pushes setProjectContext early (via runJavaScript triggered by
+        // dashboard_ready or loadFinished), these `let`s are out of their
+        // Temporal Dead Zone and the function won't throw
+        // "Cannot access 'originalProjectTool' before initialization".
+        let originalProjectTool = "";
+        let originalProjectLang = "";
+        let originalProjectUrl = "";
+        let previousToolVal = "";
+        let previousLangVal = "";
+        let previousUrlVal = "";
+
         // Initialize WebChannel with polling (qt is injected asynchronously)
         function initBridge() {
             if (typeof qt !== 'undefined' && qt.webChannelTransport && typeof qt.webChannelTransport.send === 'function') {
@@ -2178,13 +2190,6 @@
         }
         initBridge();
 
-        let originalProjectTool = "";
-        let originalProjectLang = "";
-        let originalProjectUrl = "";
-        let previousToolVal = "";
-        let previousLangVal = "";
-        let previousUrlVal = "";
-
         function setProjectContext(tool, lang, url, name) {
             originalProjectTool = tool || "";
             originalProjectLang = lang || "";
@@ -2192,48 +2197,79 @@
             previousToolVal = tool || "";
             previousLangVal = lang || "";
             previousUrlVal = url || "";
-            
-            if (tool) {
-                const toolSelect = document.getElementById("toolSelect");
-                if (toolSelect) {
-                    for (let i = 0; i < toolSelect.options.length; i++) {
-                        if (toolSelect.options[i].value.toLowerCase() === tool.toLowerCase()) {
-                            toolSelect.selectedIndex = i;
-                            break;
+
+            // Each field is set in its own try/catch so one failure (e.g. an
+            // element not yet present in the DOM) doesn't abort the others.
+            try {
+                if (tool) {
+                    const toolSelect = document.getElementById("toolSelect");
+                    if (toolSelect) {
+                        for (let i = 0; i < toolSelect.options.length; i++) {
+                            if (toolSelect.options[i].value.toLowerCase() === tool.toLowerCase()) {
+                                toolSelect.selectedIndex = i;
+                                break;
+                            }
                         }
+                    } else {
+                        console.warn('[setProjectContext] #toolSelect not found');
                     }
                 }
-            }
-            // Populate languages for selected tool
-            updateLanguageOptions();
-            
-            if (lang) {
-                const langSelect = document.getElementById("langSelect");
-                if (langSelect) {
-                    for (let i = 0; i < langSelect.options.length; i++) {
-                        let val = langSelect.options[i].value.toLowerCase();
-                        if (val === lang.toLowerCase() || 
-                            (lang.toLowerCase() === "csharp" && val === "c#") || 
-                            (lang.toLowerCase() === "c#" && val === "c#")) {
-                            langSelect.selectedIndex = i;
-                            break;
-                        }
+            } catch (e) { console.error('[setProjectContext] tool step error:', e); }
+
+            try {
+                // Populate languages for selected tool — guarded against missing
+                // elements so an early call (before DOMContentLoaded fully wires
+                // every dropdown) doesn't throw.
+                if (typeof updateLanguageOptions === 'function') {
+                    const _ts = document.getElementById('toolSelect');
+                    const _ls = document.getElementById('langSelect');
+                    if (_ts && _ls) {
+                        updateLanguageOptions();
+                    } else {
+                        console.warn('[setProjectContext] skipping updateLanguageOptions, selects missing', { toolSelect: !!_ts, langSelect: !!_ls });
                     }
-                    previousLangVal = langSelect.value;
                 }
-            }
-            if (name) {
-                const dbProjectName = document.getElementById("dbProjectName");
-                if (dbProjectName) {
-                    dbProjectName.value = name;
+            } catch (e) { console.error('[setProjectContext] updateLanguageOptions error:', e); }
+
+            try {
+                if (lang) {
+                    const langSelect = document.getElementById("langSelect");
+                    if (langSelect) {
+                        for (let i = 0; i < langSelect.options.length; i++) {
+                            let val = langSelect.options[i].value.toLowerCase();
+                            if (val === lang.toLowerCase() ||
+                                (lang.toLowerCase() === "csharp" && val === "c#") ||
+                                (lang.toLowerCase() === "c#" && val === "c#")) {
+                                langSelect.selectedIndex = i;
+                                break;
+                            }
+                        }
+                        previousLangVal = langSelect.value;
+                    } else {
+                        console.warn('[setProjectContext] #langSelect not found');
+                    }
                 }
-            }
-            if (url) {
-                const targetUrl = document.getElementById("targetUrl");
-                if (targetUrl) {
-                    targetUrl.value = url;
+            } catch (e) { console.error('[setProjectContext] lang step error:', e); }
+
+            try {
+                if (name) {
+                    const dbProjectName = document.getElementById("dbProjectName");
+                    if (dbProjectName) {
+                        dbProjectName.value = name;
+                    }
                 }
-            }
+            } catch (e) { console.error('[setProjectContext] name step error:', e); }
+
+            try {
+                if (url) {
+                    const targetUrl = document.getElementById("targetUrl");
+                    if (targetUrl) {
+                        targetUrl.value = url;
+                    } else {
+                        console.warn('[setProjectContext] #targetUrl not found');
+                    }
+                }
+            } catch (e) { console.error('[setProjectContext] url step error:', e); }
         }
 
         function handleToolChange() {

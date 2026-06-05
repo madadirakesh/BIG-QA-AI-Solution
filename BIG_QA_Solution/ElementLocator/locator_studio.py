@@ -12,9 +12,9 @@ import threading
 from pathlib import Path
 from datetime import datetime
 
-from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
+from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                              QHBoxLayout, QSplitter, QFileDialog, QMessageBox)
-from PyQt6.QtCore import Qt, QUrl, pyqtSlot, QObject, pyqtSignal, QTimer
+from PyQt6.QtCore import Qt, QUrl, pyqtSlot, QObject, pyqtSignal, QTimer, QFile, QIODevice, QTextStream
 from PyQt6.QtWebEngineWidgets import QWebEngineView
 from PyQt6.QtWebChannel import QWebChannel
 
@@ -50,6 +50,37 @@ logging.basicConfig(
     level=logging.ERROR,
     format='%(asctime)s - %(levelname)s - %(message)s'
 )
+
+def _ensure_qwebchannel_js():
+    """Materialise Qt's bundled qwebchannel.js to ui/libs/qwebchannel.js.
+
+    dashboard.html includes <script src="libs/qwebchannel.js"> synchronously
+    during HTML parsing. If the file is missing, the dashboard's initBridge()
+    throws "ReferenceError: QWebChannel is not defined" and pyBridge stays
+    null — which breaks every JS->Python action (capture toggle, AI requests,
+    code preview, smart merge, etc.).
+
+    BrowserController also injects qwebchannel.js into the default profile,
+    but at InjectionPoint.DocumentReady — too late for inline scripts that
+    run during HTML parse. So we drop the file on disk instead.
+    """
+    libs_dir = BASE_DIR / "ui" / "libs"
+    target = libs_dir / "qwebchannel.js"
+    if target.exists():
+        return
+    libs_dir.mkdir(parents=True, exist_ok=True)
+    f = QFile(":/qtwebchannel/qwebchannel.js")
+    if not f.open(QIODevice.OpenModeFlag.ReadOnly):
+        print(f"[Studio] WARNING: could not read :/qtwebchannel/qwebchannel.js from Qt resources; dashboard bridge will be broken", flush=True)
+        return
+    try:
+        stream = QTextStream(f)
+        content = stream.readAll()
+    finally:
+        f.close()
+    target.write_text(content, encoding="utf-8")
+    print(f"[Studio] Wrote qwebchannel.js to {target}", flush=True)
+
 
 def find_existing_page_objects(project_path, language):
     if not project_path or not os.path.exists(project_path):
@@ -442,6 +473,12 @@ class LocatorStudio(QMainWindow):
         # Minimum size ensures all panels are usable; app always starts maximized
         self.setMinimumSize(1200, 700)
         self.resize(1600, 900)   # fallback size
+
+        # Make sure ui/libs/qwebchannel.js exists on disk before the dashboard
+        # loads — otherwise the dashboard's <script src> 404s and pyBridge is
+        # never connected, breaking the capture button (and every other
+        # JS->Python action).
+        _ensure_qwebchannel_js()
         
         # Cache project context with normalization
         def clean_val(v):
@@ -482,10 +519,19 @@ class LocatorStudio(QMainWindow):
             
         self.ai_service = AIService(self.ai_tool, self.ai_model, self.ai_api_key, self.ai_api_url)
         
+        # Track whether the project context has been pushed to the dashboard
+        # so we don't push it twice (once via loadFinished, once via
+        # dashboard_ready). MUST be initialised BEFORE _setup_ui() — that's
+        # the call that wires loadFinished, which can fire and read this attr.
+        self._context_pushed = False
+
         # UI Setup
-        self._setup_ui()
+        # Order matters: connect the bridge signal FIRST so any early
+        # dashboard_ready callback from JS is not lost, then build the UI
+        # (which loads dashboard.html asynchronously).
         self._setup_bridge()
-        
+        self._setup_ui()
+
         # Connect Browser Signals
         self.browser_ctrl.pybridge.locatorsReceived.connect(self._on_elements_captured)
         
@@ -520,9 +566,14 @@ class LocatorStudio(QMainWindow):
         self.channel.registerObject("pyBridge", self.bridge)
         self.dashboard_view.page().setWebChannel(self.channel)
         
+        # Push project context once the dashboard page is fully loaded.
+        # This is more reliable than waiting for a JS->Python dashboard_ready
+        # callback (which can race with WebChannel initialisation).
+        self.dashboard_view.loadFinished.connect(self._on_dashboard_load_finished)
+
         dashboard_path = BASE_DIR / "ui" / "dashboard.html"
         self.dashboard_view.setUrl(QUrl.fromLocalFile(str(dashboard_path)))
-        
+
         # Right Panel: Browser View (The Website being inspected)
         self.browser_view = self.browser_ctrl.get_ui_component()
         
@@ -548,7 +599,60 @@ class LocatorStudio(QMainWindow):
         self.bridge.commandReceived.connect(self._handle_js_command)
 
     def _on_dashboard_load_finished(self, ok):
-        pass
+        """Push project context once the dashboard HTML has finished loading.
+
+        We can't push immediately on loadFinished because the inline <script>
+        block in dashboard.html (which defines setProjectContext) may not have
+        executed yet on slower machines — give it a short delay, then push.
+        """
+        if not ok:
+            print("[Studio] dashboard.html failed to load", flush=True)
+            return
+        print(f"[Studio] dashboard.html loaded; will push context in 250ms", flush=True)
+        QTimer.singleShot(250, self._push_project_context)
+
+    def _push_project_context(self):
+        """Send tool/lang/url/name to the dashboard JS and auto-navigate the
+        right-pane browser to the project URL. Safe to call multiple times —
+        it only fires once thanks to the _context_pushed guard."""
+        if self._context_pushed:
+            return
+        self._context_pushed = True
+
+        tool_val    = self.project_tool or ""
+        lang_val    = self.project_lang or ""
+        app_url_val = self.app_url or ""
+        proj_name   = self.project_name or ""
+
+        print(f"[Studio] Pushing project context to dashboard: tool={tool_val!r}, lang={lang_val!r}, url={app_url_val!r}, name={proj_name!r}", flush=True)
+
+        # Wrap in try/catch so we get an actual error message back if
+        # setProjectContext throws. runJavaScript's callback receives None
+        # on uncaught JS exceptions, which would otherwise hide the cause.
+        js_payload = (
+            f"(function(){{"
+            f"  try {{"
+            f"    if (typeof setProjectContext !== 'function') return 'setProjectContext-missing';"
+            f"    setProjectContext({json.dumps(tool_val)}, {json.dumps(lang_val)}, {json.dumps(app_url_val)}, {json.dumps(proj_name)});"
+            f"    return 'ok';"
+            f"  }} catch (e) {{"
+            f"    return 'ERR: ' + (e && e.message ? e.message : String(e));"
+            f"  }}"
+            f"}})()"
+        )
+
+        def _cb(result):
+            print(f"[Studio] setProjectContext result: {result!r}", flush=True)
+            if result == 'setProjectContext-missing':
+                # Retry once after 500ms — page JS may still be parsing.
+                self._context_pushed = False
+                QTimer.singleShot(500, self._push_project_context)
+
+        self.dashboard_view.page().runJavaScript(js_payload, _cb)
+
+        if app_url_val.strip():
+            print(f"[Studio] Loading URL in browser pane: {app_url_val}", flush=True)
+            self.browser_ctrl.load_url(app_url_val)
 
     def _on_elements_captured(self, data):
         """Elements captured from browser_controller -> send to Dashboard UI"""
@@ -561,16 +665,10 @@ class LocatorStudio(QMainWindow):
             payload = json.loads(payload_str) if payload_str else {}
             
             if action == "dashboard_ready":
-                tool_val = self.project_tool or ""
-                lang_val = self.project_lang or ""
-                app_url_val = self.app_url or ""
-                proj_name = self.project_name or ""
-                
-                js_code = f"if (typeof setProjectContext === 'function') {{ setProjectContext({json.dumps(tool_val)}, {json.dumps(lang_val)}, {json.dumps(app_url_val)}, {json.dumps(proj_name)}); }}"
-                self.dashboard_view.page().runJavaScript(js_code)
-                
-                if app_url_val.strip():
-                    self.browser_ctrl.load_url(app_url_val)
+                # The JS side has confirmed the bridge is up — push context
+                # via the shared helper (which is idempotent).
+                print("[Studio] dashboard_ready received from JS", flush=True)
+                self._push_project_context()
             
             elif action == "launch_url":
                 url = payload.get("url")
