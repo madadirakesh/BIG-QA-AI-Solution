@@ -80,10 +80,32 @@
     }
 
     window.addEventListener('message', function(e) {
-        if (e.data && e.data.type === 'ACTIVATE_INSPECTOR') window.activateDesktopInspector();
-        if (e.data && e.data.type === 'DEACTIVATE_INSPECTOR') window.deactivateDesktopInspector();
-        if (e.data && e.data.type === 'HIGHLIGHT_INSPECTOR') window.highlightElementByLocator(e.data.locatorType, e.data.locatorValue);
+        if (!e.data) return;
+        if (e.data.type === 'ACTIVATE_INSPECTOR') window.activateDesktopInspector();
+        if (e.data.type === 'DEACTIVATE_INSPECTOR') window.deactivateDesktopInspector();
+        if (e.data.type === 'HIGHLIGHT_INSPECTOR') window.highlightElementByLocator(e.data.locatorType, e.data.locatorValue);
+
+        if (e.data.type === 'REQUEST_INSPECTOR_STATUS') {
+            if (window === window.top && window.desktopInspectorActive) {
+                try {
+                    e.source.postMessage({ type: 'ACTIVATE_INSPECTOR' }, '*');
+                } catch (err) {}
+            }
+        }
+
+        if (e.data.type === 'FORWARD_PAYLOAD') {
+            if (window === window.top) {
+                sendPayload(e.data.payload);
+            }
+        }
     });
+
+    // If this script is running inside a subframe (e.g. iframe), request activation status from the top window.
+    if (window !== window.top) {
+        try {
+            window.top.postMessage({ type: 'REQUEST_INSPECTOR_STATUS' }, '*');
+        } catch (e) {}
+    }
 
     function handleMouseOver(e) {
         if (!window.desktopInspectorActive) return;

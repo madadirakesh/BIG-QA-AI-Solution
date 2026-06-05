@@ -58,7 +58,7 @@ class BrowserController(QObject):
             QTabBar::tab { background: #0f172a; color: #94a3b8; padding: 8px 16px; border: 1px solid #1e293b; border-bottom: none; border-top-left-radius: 4px; border-top-right-radius: 4px; }
             QTabBar::tab:selected { background: #1e293b; color: #ffffff; font-weight: bold; }
             QTabBar::tab:hover:!selected { background: #1e293b; }
-            QTabBar::close-button { image: url(''); }
+            QTabBar::close-button { image: none; }
         """)
 
         # Shared Python bridge

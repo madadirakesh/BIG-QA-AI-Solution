@@ -211,3 +211,158 @@ class AIService:
             print(f"Error parsing {self.ai_tool} response: {e}")
 
         return result
+
+    def generate_styled_page_object(self, tool: str, language: str, page_name: str, locators: list, sample_code: str) -> str:
+        """
+        Asks AI to generate the page object class content matching the style/patterns of the provided sample code.
+        """
+        if not self.api_key or not sample_code:
+            return ""
+        import requests
+        try:
+            # Build the prompt
+            locators_str = json.dumps(locators, indent=2)
+            prompt = (
+                f"You are an expert QA automation engineer.\n"
+                f"Your task is to generate a new Page Object file named '{page_name}' using the automation tool '{tool}' and language '{language}'.\n\n"
+                f"── STYLE REFERENCE (EXISTING CODE) ──────────────────────────────────────────\n"
+                f"You MUST strictly follow and replicate the style, architecture, and patterns from this sample code:\n"
+                f"```\n{sample_code}\n```\n\n"
+                f"── LOCATORS TO INCLUDE ───────────────────────────────────────────────────────\n"
+                f"Please generate the page object class with the following captured element locators:\n"
+                f"{locators_str}\n\n"
+                f"── STRICT RULES ──────────────────────────────────────────────────────────────\n"
+                f"1. Match all imports, naming conventions (e.g. camelCase, snake_case), and class declaration style.\n"
+                f"2. Inherit from base classes if the sample code does so (e.g. BasePage).\n"
+                f"3. Replicate internal patterns (e.g. if the sample code uses wrapper methods/helper classes to perform clicks/actions, use them instead of raw driver calls).\n"
+                f"4. Do NOT include markdown blocks, text explanations, or notes. ONLY output the raw, complete source code. The very first character should be the import or class declaration and nothing else."
+            )
+
+            headers = {"Content-Type": "application/json"}
+            url = self.api_url
+            payload = {}
+
+            if self.ai_tool in ["GEMINI", "GOOGLE"]:
+                url = f"{self.api_url}{self.api_key}"
+                payload = {
+                    "contents": [{"parts": [{"text": prompt}]}],
+                    "generationConfig": {"temperature": 0.0}
+                }
+            elif self.ai_tool in ["OPENAI", "COPILOT"]:
+                headers["Authorization"] = f"Bearer {self.api_key}"
+                payload = {"model": self.ai_model, "messages": [{"role": "user", "content": prompt}], "temperature": 0.0}
+            elif self.ai_tool in ["CLAUDE", "ANTHROPIC"]:
+                headers["x-api-key"] = self.ai_key
+                headers["anthropic-version"] = "2023-06-01"
+                payload = {"model": self.ai_model, "max_tokens": 4096, "messages": [{"role": "user", "content": prompt}]}
+
+            response = requests.post(url, json=payload, headers=headers, timeout=40)
+            if response.status_code == 200:
+                res_data = response.json()
+                text = ""
+                if self.ai_tool in ["GEMINI", "GOOGLE"]:
+                    candidates = res_data.get("candidates", [])
+                    if candidates:
+                        parts = candidates[0].get("content", {}).get("parts", [])
+                        if parts:
+                            text = parts[0].get("text", "")
+                elif self.ai_tool in ["OPENAI", "COPILOT"]:
+                    choices = res_data.get("choices", [])
+                    if choices:
+                        text = choices[0].get("message", {}).get("content", "")
+                elif self.ai_tool in ["CLAUDE", "ANTHROPIC"]:
+                    content = res_data.get("content", [])
+                    if content:
+                        text = content[0].get("text", "")
+                
+                # Strip code fences if the model included them
+                text_strip = text.strip()
+                if text_strip.startswith("```"):
+                    lines = text_strip.splitlines()
+                    if lines[0].startswith("```"):
+                        lines = lines[1:]
+                    if lines and lines[-1].strip() == "```":
+                        lines = lines[:-1]
+                    text = "\n".join(lines)
+                return text.strip()
+            else:
+                print(f"API Error in generate_styled_page_object: {response.status_code} - {response.text}")
+                return ""
+        except Exception as e:
+            print(f"Exception in generate_styled_page_object: {e}")
+            return ""
+
+    def merge_locators_with_style(self, tool: str, language: str, current_code: str, locators: list) -> str:
+        """
+        Asks AI to merge new locators into an existing Page Object file, preserving existing custom logic.
+        """
+        if not self.api_key or not current_code:
+            return ""
+        import requests
+        try:
+            locators_str = json.dumps(locators, indent=2)
+            prompt = (
+                f"You are an expert QA automation engineer.\n"
+                f"Your task is to merge new locators into an existing Page Object file for '{tool}' in '{language}'.\n\n"
+                f"── EXISTING PAGE OBJECT CODE ────────────────────────────────────────────────\n"
+                f"```\n{current_code}\n```\n\n"
+                f"── NEW LOCATORS TO ADD ───────────────────────────────────────────────────────\n"
+                f"{locators_str}\n\n"
+                f"── MERGE RULES ───────────────────────────────────────────────────────────────\n"
+                f"1. Do NOT delete or modify any existing attributes, methods, constructors, imports, or logic.\n"
+                f"2. Add the new locators/methods following the EXACT coding style, naming convention, and patterns of the existing code.\n"
+                f"3. If a locator or method with the same name already exists, update its value/locating logic or skip it if it is identical. Do not duplicate it.\n"
+                f"4. Return ONLY the raw merged file content. Do NOT include markdown blocks, text explanations, or notes."
+            )
+
+            headers = {"Content-Type": "application/json"}
+            url = self.api_url
+            payload = {}
+
+            if self.ai_tool in ["GEMINI", "GOOGLE"]:
+                url = f"{self.api_url}{self.ai_key}"
+                payload = {
+                    "contents": [{"parts": [{"text": prompt}]}],
+                    "generationConfig": {"temperature": 0.0}
+                }
+            elif self.ai_tool in ["OPENAI", "COPILOT"]:
+                headers["Authorization"] = f"Bearer {self.api_key}"
+                payload = {"model": self.ai_model, "messages": [{"role": "user", "content": prompt}], "temperature": 0.0}
+            elif self.ai_tool in ["CLAUDE", "ANTHROPIC"]:
+                headers["x-api-key"] = self.api_key
+                headers["anthropic-version"] = "2023-06-01"
+                payload = {"model": self.ai_model, "max_tokens": 4096, "messages": [{"role": "user", "content": prompt}]}
+
+            response = requests.post(url, json=payload, headers=headers, timeout=40)
+            if response.status_code == 200:
+                res_data = response.json()
+                text = ""
+                if self.ai_tool in ["GEMINI", "GOOGLE"]:
+                    candidates = res_data.get("candidates", [])
+                    if candidates:
+                        parts = candidates[0].get("content", {}).get("parts", [])
+                        if parts:
+                            text = parts[0].get("text", "")
+                elif self.ai_tool in ["OPENAI", "COPILOT"]:
+                    choices = res_data.get("choices", [])
+                    if choices:
+                        text = choices[0].get("message", {}).get("content", "")
+                elif self.ai_tool in ["CLAUDE", "ANTHROPIC"]:
+                    content = res_data.get("content", [])
+                    if content:
+                        text = content[0].get("text", "")
+                
+                # Strip code fences
+                text_strip = text.strip()
+                if text_strip.startswith("```"):
+                    lines = text_strip.splitlines()
+                    if lines[0].startswith("```"):
+                        lines = lines[1:]
+                    if lines and lines[-1].strip() == "```":
+                        lines = lines[:-1]
+                    text = "\n".join(lines)
+                return text.strip()
+            else:
+                return ""
+        except Exception:
+            return ""

@@ -161,7 +161,7 @@
                     </div>
                 </div>
 
-                <div class="requirement-save-section mt-4 p-3 border rounded" style="background: rgba(0,0,0,0.2); border-color: var(--glass-border) !important;">
+                <div id="projectSelectionSection" class="requirement-save-section mt-4 p-3 border rounded animate-slide-up" style="display: none; background: rgba(0,0,0,0.2); border-color: var(--glass-border) !important;">
                     <div class="form-group mb-3">
                         <label>Select Project (Optional)</label>
                         <select id="projectSelect" class="form-select bg-dark text-light border-secondary" style="background-color: rgba(0,0,0,0.2) !important;" onchange="handleProjectSelection()">
@@ -460,6 +460,7 @@
         document.getElementById('option1-card').classList.toggle('selected', opt === 1);
         document.getElementById('option2-card').classList.toggle('selected', opt === 2);
         document.getElementById('template-section').style.display = (opt === 2) ? 'block' : 'none';
+        document.getElementById('projectSelectionSection').style.display = (opt === 1) ? 'block' : 'none';
     }
 
     async function startGeneration() {

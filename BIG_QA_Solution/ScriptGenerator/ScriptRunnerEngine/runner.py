@@ -45,6 +45,7 @@ class ScriptRunnerService:
         framework = meta.get('framework') or meta.get('fw') or meta.get('project_fw', '')
         tool = meta.get('tool') or meta.get('project_tool', '')
         
+        start_time = time.time()
         print(f"DEBUG: Starting streaming in {full_path}")
         
         # Mode A: Custom Sequential Commands
@@ -86,6 +87,14 @@ class ScriptRunnerService:
                     yield f"event: progress\ndata: {json.dumps({'msg': f'[Success] Step {i+1} completed', 'type': 'step_pass', 'step': i+1})}\n\n"
 
             # Finalize
+            if success and language and language.lower() == 'java':
+                yield f"event: progress\ndata: {json.dumps({'msg': '[System] Execution successful. Opening latest report file...', 'type': 'system'})}\n\n"
+                latest_report = cls._open_latest_report(full_path, start_time)
+                if latest_report:
+                    yield f"event: progress\ndata: {json.dumps({'msg': f'[System] Opened report: {os.path.basename(latest_report)}', 'type': 'system'})}\n\n"
+                else:
+                    yield f"event: progress\ndata: {json.dumps({'msg': '[System] No recently generated report files (.html, .pdf, etc.) found.', 'type': 'system'})}\n\n"
+
             report_url = cls._get_latest_report(full_path)
             yield f"event: result\ndata: {json.dumps({'status': 'success' if success else 'error', 'report_url': report_url})}\n\n"
             return
@@ -236,10 +245,208 @@ class ScriptRunnerService:
                 break
             attempts += 1
 
+        # Step 2.5: Java Fallback logic if the primary execution failed
+        if not success and language and language.lower() == 'java':
+            yield f"event: progress\ndata: {json.dumps({'msg': '[Fallback] Execution failed. Scanning for Java Test Runners...', 'type': 'system'})}\n\n"
+            
+            import re
+            java_files = []
+            for root, dirs, files in os.walk(full_path):
+                # Skip build, target, .git, etc.
+                if any(p in root.replace('\\', '/').split('/') for p in ['.git', '.idea', '.venv', 'node_modules', 'target', 'bin', 'obj']):
+                    continue
+                for file in files:
+                    if file.endswith('.java'):
+                        java_files.append(os.path.join(root, file))
+            
+            runners = []
+            for jf in java_files:
+                try:
+                    with open(jf, 'r', encoding='utf-8', errors='ignore') as f:
+                        content = f.read()
+                    
+                    content_clean = re.sub(r'//.*|/\*.*?\*/', '', content, flags=re.DOTALL)
+                    has_main = re.search(r'public\s+static\s+void\s+main\b', content_clean) is not None
+                    
+                    package_match = re.search(r'package\s+([\w\.]+)\s*;', content_clean)
+                    package_name = package_match.group(1).strip() if package_match else None
+                    class_name = os.path.splitext(os.path.basename(jf))[0]
+                    full_class_name = f"{package_name}.{class_name}" if package_name else class_name
+                    
+                    is_runnable_junit = any(annot in content_clean for annot in ['@Suite', '@RunWith', '@Test', '@org.junit'])
+                    is_runner_by_name = 'runner' in class_name.lower() or 'test' in class_name.lower() or 'suite' in class_name.lower()
+                    
+                    if has_main or is_runnable_junit or is_runner_by_name:
+                        runners.append({
+                            "filepath": jf,
+                            "has_main": has_main,
+                            "class_name": class_name,
+                            "full_class_name": full_class_name,
+                            "is_runnable_junit": is_runnable_junit,
+                            "is_runner_by_name": is_runner_by_name
+                        })
+                except Exception as e:
+                    print(f"Error parsing Java file {jf}: {e}")
+            
+            # Prioritize:
+            # 1. Has main method
+            # 2. Runnable JUnit suite/test
+            # 3. Named Runner/Test
+            runners.sort(key=lambda r: (r['has_main'], r['is_runnable_junit'], r['is_runner_by_name']), reverse=True)
+            
+            if runners:
+                chosen = runners[0]
+                has_maven = os.path.exists(os.path.join(full_path, "pom.xml"))
+                has_gradle = os.path.exists(os.path.join(full_path, "build.gradle"))
+                
+                fallback_cmd = ""
+                if chosen['has_main']:
+                    msg_text = f"[Fallback] Found main method in runner class: {chosen['full_class_name']}"
+                    yield f"event: progress\ndata: {json.dumps({'msg': msg_text, 'type': 'system'})}\n\n"
+                    if has_gradle:
+                        fallback_cmd = f"gradle execute -PmainClass={chosen['full_class_name']}"
+                    else:
+                        fallback_cmd = f"mvn test-compile exec:java -Dexec.classpathScope=\"test\" -Dexec.mainClass=\"{chosen['full_class_name']}\""
+                else:
+                    msg_text = f"[Fallback] Found runnable runner class: {chosen['full_class_name']}"
+                    yield f"event: progress\ndata: {json.dumps({'msg': msg_text, 'type': 'system'})}\n\n"
+                    if has_gradle:
+                        fallback_cmd = f"gradle test --tests {chosen['full_class_name']}"
+                    else:
+                        fallback_cmd = f"mvn test -Dtest={chosen['class_name']}"
+                
+                if fallback_cmd:
+                    yield f"event: progress\ndata: {json.dumps({'msg': f'[Fallback] Running command: {fallback_cmd}', 'type': 'step_start', 'step': attempts+1})}\n\n"
+                    try:
+                        env_vars = os.environ.copy()
+                        is_windows = os.name == 'nt'
+                        if is_windows:
+                            process = subprocess.Popen(fallback_cmd, cwd=full_path, shell=True, env=env_vars, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1, universal_newlines=True, encoding='utf-8', errors='replace')
+                        else:
+                            import shlex
+                            process = subprocess.Popen(shlex.split(fallback_cmd), cwd=full_path, shell=False, env=env_vars, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1, universal_newlines=True, encoding='utf-8', errors='replace')
+                        
+                        active_processes[process.pid] = process
+                        
+                        cmd_output = ""
+                        for line in process.stdout:
+                            cmd_output += line
+                            yield f"event: log\ndata: {json.dumps({'msg': line.rstrip()})}\n\n"
+                        
+                        process.stdout.close()
+                        return_code = process.wait()
+                        if process.pid in active_processes:
+                            del active_processes[process.pid]
+                        
+                        output_log += f"\n\n[Fallback Command]: {fallback_cmd}\n"
+                        output_log += cmd_output
+                        
+                        if return_code == 0:
+                            success = True
+                            yield f"event: progress\ndata: {json.dumps({'msg': '[Success] Fallback execution completed successfully', 'type': 'step_pass', 'step': attempts+1})}\n\n"
+                        else:
+                            yield f"event: progress\ndata: {json.dumps({'msg': f'[Fail] Fallback execution failed with exit code {return_code}', 'type': 'step_fail', 'step': attempts+1})}\n\n"
+                    except Exception as e:
+                        err_msg = f"Error executing fallback: {e}"
+                        output_log += f"\n{err_msg}"
+                        yield f"event: progress\ndata: {json.dumps({'msg': err_msg, 'type': 'system'})}\n\n"
+            else:
+                yield f"event: progress\ndata: {json.dumps({'msg': '[Fallback] No runner classes found in the project.', 'type': 'system'})}\n\n"
+
+        # Open latest result file if execution was successful and it is a Java project
+        if success and language and language.lower() == 'java':
+            yield f"event: progress\ndata: {json.dumps({'msg': '[System] Execution successful. Opening latest report file...', 'type': 'system'})}\n\n"
+            latest_report = cls._open_latest_report(full_path, start_time)
+            if latest_report:
+                yield f"event: progress\ndata: {json.dumps({'msg': f'[System] Opened report: {os.path.basename(latest_report)}', 'type': 'system'})}\n\n"
+            else:
+                yield f"event: progress\ndata: {json.dumps({'msg': '[System] No recently generated report files (.html, .pdf, etc.) found.', 'type': 'system'})}\n\n"
+
         # Step 3: Finalize
         report_url = cls._get_latest_report(full_path)
         yield f"event: result\ndata: {json.dumps({'status': 'success' if success else 'error', 'report_url': report_url})}\n\n"
         return
+
+    @classmethod
+    def _open_latest_report(cls, full_path, start_time):
+        report_extensions = ['.html', '.htm', '.pdf', '.json', '.xml', '.png']
+        candidates = []
+
+        # 1. Target Directory Identification
+        possible_dirs = []
+        try:
+            for item in os.listdir(full_path):
+                item_path = os.path.join(full_path, item)
+                if os.path.isdir(item_path):
+                    item_lower = item.lower()
+                    if any(variation in item_lower for variation in ["results", "outputs", "reports", "target", "build"]):
+                        if not any(skip in item_lower for skip in [".git", ".idea", ".venv", "node_modules"]):
+                            possible_dirs.append(item_path)
+        except Exception:
+            pass
+
+        # Sort multiple matching directories by latest modification timestamp
+        if possible_dirs:
+            possible_dirs.sort(key=os.path.getmtime, reverse=True)
+            
+            # 2. Directory Traversal & Deep Search
+            target_dir = possible_dirs[0]
+            for root, dirs, files in os.walk(target_dir):
+                for file in files:
+                    ext = os.path.splitext(file)[1].lower()
+                    if ext in report_extensions:
+                        file_path = os.path.join(root, file)
+                        try:
+                            mtime = os.path.getmtime(file_path)
+                            if mtime >= start_time - 10:
+                                candidates.append((file_path, mtime, ext))
+                        except Exception:
+                            pass
+
+        # 3. Fallback (Else Condition)
+        if not candidates:
+            for root, dirs, files in os.walk(full_path):
+                if any(p in root.replace('\\', '/').split('/') for p in ['.git', '.idea', '.venv', 'node_modules', 'classes', 'test-classes', 'src']):
+                    continue
+                for file in files:
+                    ext = os.path.splitext(file)[1].lower()
+                    if ext in report_extensions:
+                        file_path = os.path.join(root, file)
+                        try:
+                            mtime = os.path.getmtime(file_path)
+                            if mtime >= start_time - 10:
+                                candidates.append((file_path, mtime, ext))
+                        except Exception:
+                            pass
+
+        if not candidates:
+            return None
+
+        def sort_key(item):
+            path, mtime, ext = item
+            priority = 0
+            if ext in ['.html', '.htm', '.pdf']:
+                priority = 2
+            elif ext in ['.xml', '.json']:
+                priority = 1
+            return (priority, mtime)
+
+        candidates.sort(key=sort_key, reverse=True)
+        latest_report = candidates[0][0]
+        try:
+            is_windows = os.name == 'nt'
+            if is_windows:
+                os.startfile(latest_report)
+            else:
+                import subprocess
+                if sys.platform == 'darwin':
+                    subprocess.Popen(['open', latest_report])
+                else:
+                    subprocess.Popen(['xdg-open', latest_report])
+            return latest_report
+        except Exception as e:
+            print(f"Failed to open report file {latest_report}: {e}")
+            return None
 
     @classmethod
     def _get_latest_report(cls, full_path):

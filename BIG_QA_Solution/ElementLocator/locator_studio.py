@@ -51,6 +51,62 @@ logging.basicConfig(
     format='%(asctime)s - %(levelname)s - %(message)s'
 )
 
+def find_existing_page_objects(project_path, language):
+    if not project_path or not os.path.exists(project_path):
+        return []
+        
+    ext_map = {
+        "java": ".java",
+        "python": ".py",
+        "c#": ".cs",
+        "javascript": ".js",
+        "typescript": ".ts"
+    }
+    target_ext = ext_map.get(language.lower(), "")
+    if not target_ext:
+        return []
+        
+    page_objects = []
+    # Recursively scan files
+    for root, dirs, files in os.walk(project_path):
+        # Exclude directories we shouldn't scan
+        dirs[:] = [d for d in dirs if d not in ('.venv', '.git', '.idea', '__pycache__', 'node_modules', 'target', 'bin', 'obj')]
+        
+        for file in files:
+            file_lower = file.lower()
+            if not file.endswith(target_ext):
+                continue
+            is_page_object = False
+            if "page" in file_lower or "pom" in file_lower:
+                is_page_object = True
+            elif "page" in root.lower() or "pom" in root.lower():
+                is_page_object = True
+                
+            if is_page_object:
+                page_objects.append(os.path.join(root, file))
+                if len(page_objects) >= 5: # Limit to 5 files to avoid scanning too many
+                    return page_objects
+                    
+    return page_objects
+
+def find_matching_page_object(existing_pos, page_name):
+    if not existing_pos or not page_name:
+        return None
+    page_name_lower = page_name.lower()
+    clean_name = page_name_lower.replace("page", "").replace("_", "").replace("-", "")
+    for path in existing_pos:
+        filename = os.path.basename(path).lower()
+        clean_file = filename.split('.')[0].replace("page", "").replace("_", "").replace("-", "")
+        if clean_file == clean_name:
+            return path
+            
+    for path in existing_pos:
+        filename = os.path.basename(path).lower()
+        if clean_name in filename:
+            return path
+            
+    return None
+
 class StudioBridge(QObject):
     """Bridge for communication between Python and the Dashboard UI"""
     locatorsReceived = pyqtSignal(str) # Send to JS
@@ -83,12 +139,13 @@ class MergeBridge(QObject):
 
 
 class MergeWindow(QMainWindow):
-    def __init__(self, parent, locators, tool, lang):
+    def __init__(self, parent, locators, tool, lang, bypass_style=False):
         super().__init__(parent)
         self.setWindowTitle("Smart Merge")
         self.locators = locators
         self.tool = tool
         self.lang = lang
+        self.bypass_style = bypass_style
         self._preview_sent = False
         self._parent_studio = parent   # explicit reference for cross-window calls
 
@@ -158,16 +215,59 @@ class MergeWindow(QMainWindow):
             )
             if not title_cl:
                 title_cl = "MyPage"
-            new_code = CodeGenerator.generate_class_content(
-                self.tool, self.lang, title_cl, self.locators
-            )
+                
+            new_code = None
+            target_file = ""
+            merged_code = ""
+            original_code = ""
+            
+            # Scenario A: Style inheritance
+            if not self.bypass_style and self._parent_studio.project_path:
+                existing_pos = find_existing_page_objects(self._parent_studio.project_path, self.lang)
+                if existing_pos:
+                    sample_codes = []
+                    for path in existing_pos[:2]:
+                        try:
+                            with open(path, "r", encoding="utf-8") as f:
+                                sample_codes.append(f.read())
+                        except Exception:
+                            pass
+                    if sample_codes and self._parent_studio.ai_api_key:
+                        combined_samples = "\n\n--- NEXT SAMPLE ---\n\n".join(sample_codes)
+                        new_code = self._parent_studio.ai_service.generate_styled_page_object(
+                            self.tool, self.lang, title_cl, self.locators, combined_samples
+                        )
+                        
+                    # Auto-match existing page object file if name matches
+                    matching_file = find_matching_page_object(existing_pos, title_cl)
+                    if matching_file:
+                        try:
+                            with open(matching_file, "r", encoding="utf-8") as f:
+                                original_code = f.read()
+                            target_file = matching_file
+                            if self._parent_studio.ai_api_key:
+                                merged_code = self._parent_studio.ai_service.merge_locators_with_style(
+                                    self.tool, self.lang, original_code, self.locators
+                                )
+                            else:
+                                merged_code = MergeEngine.merge_locators(original_code, self.locators, self.tool, self.lang)
+                        except Exception as e:
+                            print(f"Error auto-reading matching PO: {e}")
+
+            # Scenario B: Fallbacks
+            if not new_code:
+                new_code = CodeGenerator.generate_class_content(
+                    self.tool, self.lang, title_cl, self.locators
+                )
+
             payload = {
                 "elements": self.locators,
                 "tool":     self.tool,
                 "lang":     self.lang,
                 "new_code": new_code,
-                "target_file": "",
-                "merged_code": ""
+                "target_file": target_file,
+                "merged_code": merged_code,
+                "original_code": original_code
             }
             payload_json = json.dumps(payload)
             print(f"[MergeWindow] Pushing {len(self.locators)} elements to JS via runJavaScript")
@@ -229,10 +329,11 @@ class MergeWindow(QMainWindow):
         self._poll_timer.stop()
         super().closeEvent(event)
 
-    def update_data(self, locators, tool, lang):
+    def update_data(self, locators, tool, lang, bypass_style=False):
         self.locators = locators
         self.tool = tool
         self.lang = lang
+        self.bypass_style = bypass_style
         self._preview_sent = False
         self._push_data_to_js()
 
@@ -272,10 +373,36 @@ class MergeWindow(QMainWindow):
                         )
                         if not title_cl:
                             title_cl = "MyPage"
-                        new_code    = CodeGenerator.generate_class_content(tool, lang, title_cl, locators)
-                        merged_code = MergeEngine.merge_locators(current_code, locators, tool, lang)
+                            
+                        new_code = None
+                        merged_code = None
+                        
+                        # Scenario A: Style inheritance
+                        if not self.bypass_style and self._parent_studio.project_path:
+                            existing_pos = find_existing_page_objects(self._parent_studio.project_path, lang)
+                            if existing_pos:
+                                sample_codes = []
+                                for path in existing_pos[:2]:
+                                    try:
+                                        with open(path, "r", encoding="utf-8") as f:
+                                            sample_codes.append(f.read())
+                                    except Exception:
+                                        pass
+                                if sample_codes and self._parent_studio.ai_api_key:
+                                    combined_samples = "\n\n--- NEXT SAMPLE ---\n\n".join(sample_codes)
+                                    new_code = self._parent_studio.ai_service.generate_styled_page_object(
+                                        tool, lang, title_cl, locators, combined_samples
+                                    )
+                                    merged_code = self._parent_studio.ai_service.merge_locators_with_style(
+                                        tool, lang, current_code, locators
+                                    )
+                        
+                        # Scenario B: Fallbacks
+                        if not new_code:
+                            new_code = CodeGenerator.generate_class_content(tool, lang, title_cl, locators)
+                        if not merged_code:
+                            merged_code = MergeEngine.merge_locators(current_code, locators, tool, lang)
 
-                        # Push result directly via runJavaScript — no signal needed
                         result_json = json.dumps({
                             "target_file":   fname,
                             "new_code":      new_code,
@@ -309,12 +436,27 @@ class MergeWindow(QMainWindow):
 
 
 class LocatorStudio(QMainWindow):
-    def __init__(self):
+    def __init__(self, project_path=None, language=None, framework=None, tool=None, app_url=None):
         super().__init__()
         self.setWindowTitle("Locator Studio")
         # Minimum size ensures all panels are usable; app always starts maximized
         self.setMinimumSize(1200, 700)
         self.resize(1600, 900)   # fallback size
+        
+        # Cache project context with normalization
+        def clean_val(v):
+            if not v or v.strip().lower() in ("none", "null", "undefined", "n/a"):
+                return None
+            return v.strip()
+
+        self.project_path = clean_val(project_path)
+        self.project_lang = clean_val(language)
+        self.project_fw = clean_val(framework)
+        self.project_tool = clean_val(tool)
+        self.app_url = clean_val(app_url)
+        self.project_name = os.path.basename(self.project_path) if self.project_path else None
+
+        print(f"[Studio] Normalised parameters - path: {self.project_path}, lang: {self.project_lang}, fw: {self.project_fw}, tool: {self.project_tool}, url: {self.app_url}, name: {self.project_name}", flush=True)
         
         # Load environment
         load_dotenv(BASE_DIR.parent / "ScriptGenerator" / ".env")
@@ -405,6 +547,9 @@ class LocatorStudio(QMainWindow):
         # Handle commands from JS
         self.bridge.commandReceived.connect(self._handle_js_command)
 
+    def _on_dashboard_load_finished(self, ok):
+        pass
+
     def _on_elements_captured(self, data):
         """Elements captured from browser_controller -> send to Dashboard UI"""
         json_data = json.dumps(data)
@@ -415,7 +560,19 @@ class LocatorStudio(QMainWindow):
         try:
             payload = json.loads(payload_str) if payload_str else {}
             
-            if action == "launch_url":
+            if action == "dashboard_ready":
+                tool_val = self.project_tool or ""
+                lang_val = self.project_lang or ""
+                app_url_val = self.app_url or ""
+                proj_name = self.project_name or ""
+                
+                js_code = f"if (typeof setProjectContext === 'function') {{ setProjectContext({json.dumps(tool_val)}, {json.dumps(lang_val)}, {json.dumps(app_url_val)}, {json.dumps(proj_name)}); }}"
+                self.dashboard_view.page().runJavaScript(js_code)
+                
+                if app_url_val.strip():
+                    self.browser_ctrl.load_url(app_url_val)
+            
+            elif action == "launch_url":
                 url = payload.get("url")
                 self.browser_ctrl.load_url(url)
             
@@ -472,18 +629,64 @@ class LocatorStudio(QMainWindow):
                 locators = payload.get("locators", [])
                 tool = payload.get("tool", "Playwright")
                 lang = payload.get("lang", "TypeScript")
+                current_url = payload.get("target_url", "")
                 
-                title_cl = "".join(c for c in self.browser_ctrl.view.page().title() if c.isalnum())
-                if not title_cl: title_cl = "MyPage"
-                
-                content = CodeGenerator.generate_class_content(tool, lang, title_cl, locators)
-                
-                response = {
-                    "code": content,
-                    "default_filename": title_cl,
-                    "lang": lang
-                }
-                self.bridge.codePreviewReady.emit(json.dumps(response))
+                # Check for changes in configuration
+                changed = []
+                if self.project_tool and self.project_tool.lower() != tool.lower():
+                    changed.append(f"Tool (Expected: {self.project_tool}, Got: {tool})")
+                if self.project_lang and self.project_lang.lower() != lang.lower():
+                    changed.append(f"Language (Expected: {self.project_lang}, Got: {lang})")
+
+                proceed = True
+                bypass_style = False
+                if changed:
+                    msg = "The following configuration has changed from the selected project:\n\n"
+                    msg += "\n".join(f"- {c}" for c in changed)
+                    msg += "\n\nIf you proceed, style inheritance will be disabled and the default fallback generation logic will be used. Do you want to continue?"
+                    
+                    res = QMessageBox.warning(
+                        self, 
+                        "Configuration Mismatch Warning", 
+                        msg, 
+                        QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                        QMessageBox.StandardButton.No
+                    )
+                    if res == QMessageBox.StandardButton.No:
+                        proceed = False
+                    else:
+                        bypass_style = True
+
+                if proceed:
+                    title_cl = "".join(c for c in self.browser_ctrl.view.page().title() if c.isalnum())
+                    if not title_cl: title_cl = "MyPage"
+                    
+                    content = None
+                    if not bypass_style and self.project_path:
+                        existing_pos = find_existing_page_objects(self.project_path, lang)
+                        if existing_pos:
+                            sample_codes = []
+                            for path in existing_pos[:2]:
+                                try:
+                                    with open(path, "r", encoding="utf-8") as f:
+                                        sample_codes.append(f.read())
+                                except Exception:
+                                    pass
+                            if sample_codes and self.ai_api_key:
+                                combined_samples = "\n\n--- NEXT SAMPLE ---\n\n".join(sample_codes)
+                                content = self.ai_service.generate_styled_page_object(
+                                    tool, lang, title_cl, locators, combined_samples
+                                )
+                    
+                    if not content:
+                        content = CodeGenerator.generate_class_content(tool, lang, title_cl, locators)
+                    
+                    response = {
+                        "code": content,
+                        "default_filename": title_cl,
+                        "lang": lang
+                    }
+                    self.bridge.codePreviewReady.emit(json.dumps(response))
 
             elif action == "save_generated_code":
                 content = payload.get("code", "")
@@ -594,16 +797,43 @@ class LocatorStudio(QMainWindow):
                 locators = payload.get("locators", [])
                 tool = payload.get("tool", "Playwright")
                 lang = payload.get("lang", "TypeScript")
+                current_url = payload.get("target_url", "")
                 
-                if not hasattr(self, 'merge_window') or self.merge_window is None:
-                    self.merge_window = MergeWindow(self, locators, tool, lang)
-                else:
-                    self.merge_window.update_data(locators, tool, lang)
+                changed = []
+                if self.project_tool and self.project_tool.lower() != tool.lower():
+                    changed.append(f"Tool (Expected: {self.project_tool}, Got: {tool})")
+                if self.project_lang and self.project_lang.lower() != lang.lower():
+                    changed.append(f"Language (Expected: {self.project_lang}, Got: {lang})")
 
-                # Show at computed size (right-pane-sized, not maximized)
-                self.merge_window.show()
-                self.merge_window.raise_()
-                self.merge_window.activateWindow()
+                proceed = True
+                bypass_style = False
+                if changed:
+                    msg = "The following configuration has changed from the selected project:\n\n"
+                    msg += "\n".join(f"- {c}" for c in changed)
+                    msg += "\n\nIf you proceed, style inheritance will be disabled and the default fallback merge logic will be used. Do you want to continue?"
+                    
+                    res = QMessageBox.warning(
+                        self, 
+                        "Configuration Mismatch Warning", 
+                        msg, 
+                        QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                        QMessageBox.StandardButton.No
+                    )
+                    if res == QMessageBox.StandardButton.No:
+                        proceed = False
+                    else:
+                        bypass_style = True
+
+                if proceed:
+                    if not hasattr(self, 'merge_window') or self.merge_window is None:
+                        self.merge_window = MergeWindow(self, locators, tool, lang, bypass_style=bypass_style)
+                    else:
+                        self.merge_window.update_data(locators, tool, lang, bypass_style=bypass_style)
+
+                    # Show at computed size (right-pane-sized, not maximized)
+                    self.merge_window.show()
+                    self.merge_window.raise_()
+                    self.merge_window.activateWindow()
 
             elif action == "request_ai_locators":
                 if not self.ai_api_key:

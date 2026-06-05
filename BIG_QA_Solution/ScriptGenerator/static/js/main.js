@@ -180,7 +180,45 @@ function escapeHtml(unsafe) {
 
 async function launchElementLocator() {
     try {
-        const response = await fetch('/qa/launch-element-locator');
+        const projectSelect = document.getElementById('projectSelect');
+        const selectedOption = projectSelect ? projectSelect.options[projectSelect.selectedIndex] : null;
+        const projectPathInput = document.getElementById('projectPath');
+        
+        let projectName = "";
+        let language = "";
+        let framework = "";
+        let projectLoc = "";
+        let tool = "";
+
+        if (projectPathInput && projectPathInput.value) {
+            projectName = projectPathInput.value.split(/[\\/]/).pop() || "Locally Detected";
+            language = document.getElementById('detLanguage') ? document.getElementById('detLanguage').innerText : "Unknown";
+            framework = document.getElementById('detFramework') ? document.getElementById('detFramework').innerText : "Unknown";
+            tool = document.getElementById('detTool') ? document.getElementById('detTool').innerText : "Unknown";
+            projectLoc = projectPathInput.value;
+        } else if (selectedOption && selectedOption.value) {
+            projectName = selectedOption.value;
+            language = selectedOption.dataset.lang;
+            framework = selectedOption.dataset.fw;
+            projectLoc = selectedOption.dataset.path;
+            tool = selectedOption.dataset.tool;
+        }
+
+        const projectBaseUrl = document.getElementById('projectBaseUrl') ? document.getElementById('projectBaseUrl').value : '';
+
+        let url = '/qa/launch-element-locator';
+        const params = new URLSearchParams();
+        if (projectLoc) params.append('project_path', projectLoc);
+        if (language) params.append('language', language);
+        if (framework) params.append('framework', framework);
+        if (tool) params.append('tool', tool);
+        if (projectBaseUrl) params.append('app_url', projectBaseUrl);
+
+        if (params.toString()) {
+            url += '?' + params.toString();
+        }
+
+        const response = await fetch(url);
         if (response.ok) {
             console.log("Element locator desktop app launched.");
         } else {

@@ -1732,7 +1732,7 @@
                         </button>
                     </div>
                     <input type="text" id="targetUrl" placeholder="https://example.com"
-                        style="flex:1; padding: 5px 8px; font-size: 0.78rem;">
+                        onchange="handleUrlChange()" style="flex:1; padding: 5px 8px; font-size: 0.78rem;">
                     <button class="btn btn-primary" onclick="launchUrl()"
                         style="min-width: 60px; padding: 5px 10px; font-size: 0.75rem;">Launch</button>
                 </div>
@@ -1743,7 +1743,7 @@
                     <label
                         style="font-size: 0.68rem; margin-bottom: 2px; display: block; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px;">Automation
                         Tool</label>
-                    <select id="toolSelect" onchange="updateLanguageOptions()" style="padding: 3px 6px; font-size: 0.75rem; height: 28px;">
+                    <select id="toolSelect" onchange="handleToolChange()" style="padding: 3px 6px; font-size: 0.75rem; height: 28px;">
                         <option value="Playwright">Playwright</option>
                         <option value="Selenium">Selenium</option>
                     </select>
@@ -1751,7 +1751,7 @@
                 <div>
                     <label
                         style="font-size: 0.68rem; margin-bottom: 2px; display: block; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px;">Language</label>
-                    <select id="langSelect" style="padding: 3px 6px; font-size: 0.75rem; height: 28px;">
+                    <select id="langSelect" onchange="handleLangChange()" style="padding: 3px 6px; font-size: 0.75rem; height: 28px;">
                         <option value="TypeScript">TypeScript</option>
                         <option value="Python">Python</option>
                         <option value="Java">Java</option>
@@ -2054,7 +2054,7 @@
     <script src="libs/python.min.js"></script>
     <script src="libs/clike.min.js"></script>
 
-    <script src="qrc:///qtwebchannel/qwebchannel.js"></script>
+    <script src="libs/qwebchannel.js"></script>
     <script>
         let pyBridge = null;
         let isCapturing = false;
@@ -2168,12 +2168,116 @@
                             }
                         });
                     }
+                    if (pyBridge) {
+                        pyBridge.callPython("dashboard_ready", "");
+                    }
                 });
             } else {
                 setTimeout(initBridge, 100);
             }
         }
         initBridge();
+
+        let originalProjectTool = "";
+        let originalProjectLang = "";
+        let originalProjectUrl = "";
+        let previousToolVal = "";
+        let previousLangVal = "";
+        let previousUrlVal = "";
+
+        function setProjectContext(tool, lang, url, name) {
+            originalProjectTool = tool || "";
+            originalProjectLang = lang || "";
+            originalProjectUrl = url || "";
+            previousToolVal = tool || "";
+            previousLangVal = lang || "";
+            previousUrlVal = url || "";
+            
+            if (tool) {
+                const toolSelect = document.getElementById("toolSelect");
+                if (toolSelect) {
+                    for (let i = 0; i < toolSelect.options.length; i++) {
+                        if (toolSelect.options[i].value.toLowerCase() === tool.toLowerCase()) {
+                            toolSelect.selectedIndex = i;
+                            break;
+                        }
+                    }
+                }
+            }
+            // Populate languages for selected tool
+            updateLanguageOptions();
+            
+            if (lang) {
+                const langSelect = document.getElementById("langSelect");
+                if (langSelect) {
+                    for (let i = 0; i < langSelect.options.length; i++) {
+                        let val = langSelect.options[i].value.toLowerCase();
+                        if (val === lang.toLowerCase() || 
+                            (lang.toLowerCase() === "csharp" && val === "c#") || 
+                            (lang.toLowerCase() === "c#" && val === "c#")) {
+                            langSelect.selectedIndex = i;
+                            break;
+                        }
+                    }
+                    previousLangVal = langSelect.value;
+                }
+            }
+            if (name) {
+                const dbProjectName = document.getElementById("dbProjectName");
+                if (dbProjectName) {
+                    dbProjectName.value = name;
+                }
+            }
+            if (url) {
+                const targetUrl = document.getElementById("targetUrl");
+                if (targetUrl) {
+                    targetUrl.value = url;
+                }
+            }
+        }
+
+        function handleToolChange() {
+            const toolSelect = document.getElementById("toolSelect");
+            const newVal = toolSelect.value;
+            if (originalProjectTool && newVal.toLowerCase() !== originalProjectTool.toLowerCase()) {
+                const confirmChange = confirm("Warning: Changing the Automation Tool deviates from the selected project combination. Style inheritance will be disabled. Do you want to proceed?");
+                if (!confirmChange) {
+                    toolSelect.value = previousToolVal || originalProjectTool;
+                    updateLanguageOptions();
+                    return;
+                }
+            }
+            previousToolVal = newVal;
+            updateLanguageOptions();
+            const langSelect = document.getElementById("langSelect");
+            if (langSelect) previousLangVal = langSelect.value;
+        }
+
+        function handleLangChange() {
+            const langSelect = document.getElementById("langSelect");
+            const newVal = langSelect.value;
+            if (originalProjectLang && newVal.toLowerCase() !== originalProjectLang.toLowerCase()) {
+                const confirmChange = confirm("Warning: Changing the Language deviates from the selected project combination. Style inheritance will be disabled. Do you want to proceed?");
+                if (!confirmChange) {
+                    langSelect.value = previousLangVal || originalProjectLang;
+                    return;
+                }
+            }
+            previousLangVal = newVal;
+        }
+
+        function handleUrlChange() {
+            const urlInput = document.getElementById("targetUrl");
+            const newVal = urlInput.value;
+            if (originalProjectUrl && newVal !== originalProjectUrl) {
+                const confirmChange = confirm("Warning: Changing the Target URL deviates from the selected project combination. Do you want to proceed?");
+                if (!confirmChange) {
+                    urlInput.value = previousUrlVal || originalProjectUrl;
+                    return;
+                }
+            }
+            previousUrlVal = newVal;
+        }
 
         function updateLanguageOptions() {
             const tool = document.getElementById('toolSelect').value;
@@ -2805,7 +2909,8 @@
                 const payload = {
                     locators: capturedElements,
                     tool: document.getElementById('toolSelect').value,
-                    lang: document.getElementById('langSelect').value
+                    lang: document.getElementById('langSelect').value,
+                    target_url: document.getElementById('targetUrl') ? document.getElementById('targetUrl').value : ''
                 };
                 pyBridge.callPython("preview_code", JSON.stringify(payload));
             }
@@ -3301,7 +3406,8 @@
                 pyBridge.callPython("open_merge_window", JSON.stringify({
                     locators: capturedElements,
                     tool: document.getElementById('toolSelect').value,
-                    lang: document.getElementById('langSelect').value
+                    lang: document.getElementById('langSelect').value,
+                    target_url: document.getElementById('targetUrl') ? document.getElementById('targetUrl').value : ''
                 }));
             }
         }
