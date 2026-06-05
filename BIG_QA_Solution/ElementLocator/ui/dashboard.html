@@ -1869,7 +1869,7 @@
                 </div>
             </div>
 
-            <div
+            <div id="pwNativeToggleContainer"
                 style="display: flex; align-items: center; justify-content: space-between; background: rgba(0,0,0,0.15); padding: 4px 8px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.05); margin-top: 5px;">
                 <div>
                     <span style="font-size: 0.68rem; font-weight: 600;">Playwright-Native Mode</span>
@@ -1877,7 +1877,7 @@
                         etc.</span>
                 </div>
                 <label class="switch">
-                    <input type="checkbox" id="pwNativeToggle" checked>
+                    <input type="checkbox" id="pwNativeToggle" checked onchange="refreshLocatorsForNewTool()">
                     <span class="slider round"></span>
                 </label>
             </div>
@@ -1931,7 +1931,7 @@
                     <option value="getBy">Playwright</option>
                 </select>
                 <button id="uniqueFilterBtn" class="filter-toggle" onclick="toggleUniqueFilter()"
-                    title="Show only unique locators" style="font-size:0.65rem;padding:5px 7px;">1/1</button>
+                    title="Show only unique locators" style="font-size:0.65rem;padding:5px 7px;">0/0</button>
             </div>
 
             <!-- Bulk toolbar (visible when items selected) -->
@@ -2417,6 +2417,9 @@
             updateLanguageOptions();
             const langSelect = document.getElementById("langSelect");
             if (langSelect) previousLangVal = langSelect.value;
+            
+            // Refresh locators in queue
+            refreshLocatorsForNewTool();
         }
 
         function handleLangChange() {
@@ -2430,6 +2433,70 @@
                 }
             }
             previousLangVal = newVal;
+            
+            // Refresh locators in queue
+            refreshLocatorsForNewTool();
+        }
+
+        function refreshLocatorsForNewTool() {
+            if (!capturedElements || capturedElements.length === 0) return;
+
+            const selectedTool = document.getElementById('toolSelect').value;
+            const isPwNative = document.getElementById('pwNativeToggle') ? document.getElementById('pwNativeToggle').checked : false;
+
+            capturedElements.forEach((el, idx) => {
+                // Combine current primary locator and all alternatives
+                const allLocs = [
+                    { type: el.type, value: el.value, count: el.count, rating: el.rating, note: el.note },
+                    ...(el.alternatives || [])
+                ];
+
+                // De-duplicate them by value
+                const uniqueLocsMap = new Map();
+                allLocs.forEach(l => {
+                    if (l && l.value) uniqueLocsMap.set(l.value, l);
+                });
+                const uniqueLocs = Array.from(uniqueLocsMap.values());
+
+                // Rank
+                const ranked = uniqueLocs
+                    .filter(l => l.count == null || l.count > 0)
+                    .sort((a, b) => {
+                        const ac = a.count ?? 99, bc = b.count ?? 99;
+                        if (ac === 1 && bc !== 1) return -1;
+                        if (bc === 1 && ac !== 1) return 1;
+                        return ac - bc;
+                    });
+
+                // Pick best matching preference
+                let bestLoc = ranked[0];
+                if (!bestLoc) {
+                    bestLoc = uniqueLocs[0];
+                } else {
+                    if (selectedTool === 'Selenium') {
+                        const xp = ranked.find(l => l.type === 'XPath' && l.count === 1);
+                        if (xp) bestLoc = xp;
+                    } else if (isPwNative) {
+                        const pw = ranked.find(l => l.type.startsWith('getBy') && (l.count ?? 2) === 1);
+                        if (pw) bestLoc = pw;
+                    }
+                }
+
+                if (bestLoc) {
+                    bestLoc.action = el.action || 'Click';
+                    bestLoc.nameHint = el.nameHint || 'element';
+                    bestLoc.outerHtml = el.outerHtml;
+                    bestLoc.pageTitle = el.pageTitle;
+                    bestLoc.inIframe = el.inIframe;
+                    bestLoc.frameName = el.frameName;
+                    bestLoc.cid = el.cid;
+                    bestLoc.alternatives = ranked.filter(l => l.value !== bestLoc.value).slice(0, 8);
+
+                    capturedElements[idx] = bestLoc;
+                }
+            });
+
+            renderQueue();
         }
 
         function handleUrlChange() {
@@ -2474,6 +2541,12 @@
                 if (opt.value === currentLang) el.selected = true;
                 langSelect.appendChild(el);
             });
+
+            // Fix #2: Show Playwright-Native toggle only when Playwright is selected
+            const toggleContainer = document.getElementById('pwNativeToggleContainer');
+            if (toggleContainer) {
+                toggleContainer.style.display = (tool === 'Playwright') ? 'flex' : 'none';
+            }
         }
 
         window.addEventListener('DOMContentLoaded', () => {
@@ -2542,9 +2615,29 @@
         }
 
         function freezePage() {
-            if (pyBridge) {
-                pyBridge.callPython("freeze_browser", JSON.stringify({ duration: 5000 }));
+            if (!pyBridge) return;
+            let count = 3;
+            setLastAction(`Freezing page in ${count}s...`);
+            const btn = document.querySelector('button[title*="Freeze Page"]');
+            if (btn) {
+                btn.style.color = 'var(--danger)';
+                btn.innerHTML = `<i class="fas fa-hourglass-half"></i> ${count}`;
             }
+            const timer = setInterval(() => {
+                count--;
+                if (count <= 0) {
+                    clearInterval(timer);
+                    pyBridge.callPython("freeze_browser", JSON.stringify({ duration: 5000 }));
+                    setLastAction("Page frozen for 5 seconds");
+                    if (btn) {
+                        btn.style.color = '#818cf8';
+                        btn.innerHTML = `<i class="fas fa-snowflake"></i>`;
+                    }
+                } else {
+                    setLastAction(`Freezing page in ${count}s...`);
+                    if (btn) btn.innerHTML = `<i class="fas fa-hourglass-half"></i> ${count}`;
+                }
+            }, 1000);
         }
 
         let draggedItemIdx = null;
@@ -2943,7 +3036,19 @@
                 const lType = (loc.type || '').toLowerCase();
 
                 const matchSearch = !term || name.includes(term) || val.includes(term);
-                const matchType = !type || (type === 'getby' ? lType.startsWith('getby') : lType.includes(type));
+
+                // Fix #9: for the Playwright filter, also check alternatives so items
+                // whose primary locator is XPath but have getBy* alternatives are shown.
+                let matchType;
+                if (!type) {
+                    matchType = true;
+                } else if (type === 'getby') {
+                    matchType = lType.startsWith('getby') ||
+                        (loc.alternatives || []).some(a => (a.type || '').toLowerCase().startsWith('getby'));
+                } else {
+                    matchType = lType.includes(type);
+                }
+
                 const matchUnique = !showUniqueOnly || loc.count === 1 || loc.aiGenerated;
                 item.style.display = (matchSearch && matchType && matchUnique) ? '' : 'none';
             });
@@ -2993,6 +3098,11 @@
             if (el) el.textContent = `${count} element${count !== 1 ? 's' : ''}`;
             const badge = document.getElementById('elemCountBadge');
             if (badge) badge.textContent = `${count} element${count !== 1 ? 's' : ''}`;
+
+            // Fix #6: keep the unique-filter badge in sync (X/total format)
+            const uniqueCount = capturedElements.filter(e => e.count === 1 || e.aiGenerated).length;
+            const filterBtn = document.getElementById('uniqueFilterBtn');
+            if (filterBtn) filterBtn.textContent = `${uniqueCount}/${count}`;
         }
 
         function setLastAction(msg) {
@@ -3071,6 +3181,13 @@
                     Click elements in the browser to start capturing.
                 </div>
             `;
+            // Fix #1: update status bar so counts reset to 0
+            updateStatusBar();
+            // Fix #10: clear clipboard so copied locator values don't persist
+            if (pyBridge) {
+                pyBridge.callPython('copy_to_clipboard', JSON.stringify({ text: '' }));
+            }
+            setLastAction('Queue cleared');
         }
 
         function generateCode() {
@@ -3742,8 +3859,23 @@
             capturedElements.push(manualLoc);
             appendNewItem(capturedElements.length - 1);
             document.getElementById('liveConsoleInput').value = '';
+
+            // Fix #3/#4: show success feedback so user knows the locator was added
+            const feedbackEl = document.getElementById('liveConsoleFeedback');
+            if (feedbackEl) {
+                feedbackEl.innerHTML = `<span style="color:var(--success);"><i class="fas fa-check-circle"></i> Locator added to queue as <strong>${type}</strong> / <strong>Click</strong>. Edit in the queue if needed.</span>`;
+                setTimeout(() => { feedbackEl.innerHTML = ''; }, 3000);
+            }
+            setLastAction(`Added live locator (${type}): ${val.substring(0, 40)}`);
+
             triggerVerifyLiveLocator();
         }
+
+        // Fix #7: called by Python → dashboard to sync URL bar on back/forward navigation
+        window.onBrowserUrlChanged = function(url) {
+            const input = document.getElementById('targetUrl');
+            if (input) input.value = url;
+        };
 
         // ─── Patch toggleCapture to animate status dot ─────────────────────
         const _origToggleCapture = window.toggleCapture;

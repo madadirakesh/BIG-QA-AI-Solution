@@ -363,10 +363,13 @@
         }
 
         if (!segments.length) return null;
-        // Join: first segment is already // prefixed; rest are relative
         const first = segments[0];
         const rest  = segments.slice(1).join('/');
-        return rest ? `${first}/${rest}` : first;
+        let path = rest ? `${first}/${rest}` : first;
+        if (!path.startsWith('//') && !path.startsWith('/')) {
+            path = '//' + path;
+        }
+        return path;
     }
 
     /**
@@ -464,6 +467,15 @@
             }
         }
 
+        // Check for stable class names
+        if (el.className && typeof el.className === 'string') {
+            const classes = el.className.split(/\s+/).filter(c => c && !isDynamic(c) && !/^\d/.test(c) && c.length > 2);
+            for (const cls of classes) {
+                if (['active', 'show', 'hide', 'visible', 'hidden', 'disabled', 'enabled', 'btn', 'form-control'].includes(cls)) continue;
+                addXP(`//${tag}[contains(@class, ${escapeXPath(cls)})]`, 2);
+            }
+        }
+
         // ── Strategy 2: Text match ──────────────────────────────────────────
         // Collapse all internal whitespace (handles multi-line text like 'Monitorin\ng' → 'Monitoring')
         const normText = text.replace(/\s+/g, ' ').trim();
@@ -499,6 +511,17 @@
             else if (aId && !isDynamic(aId)) anchor = `//${aTag}[@id=${escapeXPath(aId)}]`;
             else if (aRole && ['dialog','form','grid','table','listbox','combobox','navigation','main'].includes(aRole)) {
                 anchor = `//${aTag}[@role=${escapeXPath(aRole)}]`;
+            }
+            else if (['form', 'main', 'header', 'footer', 'nav', 'section', 'article', 'aside', 'table'].includes(aTag)) {
+                anchor = `//${aTag}`;
+            }
+            else if (ancestor.className && typeof ancestor.className === 'string') {
+                const classes = ancestor.className.split(/\s+/).filter(c => c && !isDynamic(c) && !/^\d/.test(c) && c.length > 2);
+                for (const cls of classes) {
+                    if (['active', 'show', 'hide', 'visible', 'hidden', 'disabled', 'enabled', 'row', 'col', 'container'].includes(cls)) continue;
+                    anchor = `//${aTag}[contains(@class, ${escapeXPath(cls)})]`;
+                    break;
+                }
             }
 
             if (anchor) {
@@ -759,7 +782,7 @@
             overlay.innerText = `❄️ Frozen: ${timeLeft}s`;
             if (timeLeft <= 0) { clearInterval(timer); overlay.remove(); }
         }, 1000);
-        const suppress = ['blur','focusout','mouseleave'];
+        const suppress = ['blur', 'focusout', 'mouseleave', 'mouseout', 'pointerout'];
         const handler  = (e) => { e.stopImmediatePropagation(); e.preventDefault(); };
         suppress.forEach(evt => { window.addEventListener(evt, handler, true); document.addEventListener(evt, handler, true); });
         setTimeout(() => {
@@ -799,33 +822,101 @@
         if (!value) return 0;
 
         let count = 0;
-        const isXpath = type.toLowerCase().includes('xpath');
-        const isRole = type.toLowerCase() === 'getbyrole';
         
-        try {
-            let domResults = [];
-            let shadowResults = [];
+        function countMatchesDeep(d, locType, locVal) {
+            let results = [];
+            if (!d) return results;
 
-            if (isXpath) {
-                const s = document.evaluate(value, document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
-                for (let i=0; i<s.snapshotLength; i++) domResults.push(s.snapshotItem(i));
-                shadowResults = queryShadowDeep(document, value, true);
-            } else if (isRole) {
-                const [role, name] = value.split('||');
-                const tagMap = { 'link': 'a', 'checkbox': 'input[type="checkbox"]', 'textbox': 'input[type="text"],textarea', 'heading': 'h1,h2,h3,h4,h5,h6' };
-                const tagSelector = tagMap[role] || role;
-                const selector = `[role="${role}"],${tagSelector}`;
-                const allNodes = [...Array.from(document.querySelectorAll(selector)), ...queryShadowDeep(document, selector, false)];
-                domResults = name 
-                    ? allNodes.filter(e => e.textContent.trim().includes(name))
-                    : allNodes;
-            } else {
-                // Regular CSS
-                domResults = Array.from(document.querySelectorAll(value));
-                shadowResults = queryShadowDeep(document, value, false);
+            function escapeCSSString(str) {
+                if (!str) return "";
+                return str.replace(/\\/g, "\\\\").replace(/"/g, "\\\"");
             }
 
-            const all = [...new Set([...domResults, ...shadowResults])].filter(e => e.nodeType === 1);
+            try {
+                const escVal = escapeCSSString(locVal);
+                const uType = (locType || "").toUpperCase().replace(/\s/g, '');
+                let domResults = [];
+                let shadowResults = [];
+
+                if (uType === 'ID') {
+                    const n = d.getElementById(locVal);
+                    if (n) domResults.push(n);
+                }
+                else if (uType === 'NAME') {
+                    domResults = Array.from(d.getElementsByName(locVal));
+                }
+                else if (uType === 'CSS') {
+                    domResults = Array.from(d.querySelectorAll(locVal));
+                    shadowResults = queryShadowDeep(d, locVal, false);
+                }
+                else if (uType === 'LINKTEXT') {
+                    domResults = Array.from(d.getElementsByTagName('a')).filter(a => a.textContent.trim() === locVal);
+                }
+                else if (uType === 'XPATH') {
+                    const s = d.evaluate(locVal, d, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
+                    for (let i = 0; i < s.snapshotLength; i++) domResults.push(s.snapshotItem(i));
+                    shadowResults = queryShadowDeep(d, locVal, true);
+                }
+                else if (uType === 'TESTID') {
+                    domResults = Array.from(d.querySelectorAll(`[data-testid="${escVal}"],[data-test="${escVal}"],[data-automation-id="${escVal}"]`));
+                }
+                else if (uType === 'GETBYTESTID') {
+                    domResults = Array.from(d.querySelectorAll(`[data-testid="${escVal}"],[data-test="${escVal}"]`));
+                }
+                else if (uType === 'GETBYPLACEHOLDER') {
+                    domResults = Array.from(d.querySelectorAll(`[placeholder="${escVal}"]`));
+                }
+                else if (uType === 'GETBYLABEL') {
+                    domResults = Array.from(d.querySelectorAll(`[aria-label="${escVal}"]`));
+                }
+                else if (uType === 'GETBYALTTEXT') {
+                    domResults = Array.from(d.querySelectorAll(`[alt="${escVal}"]`));
+                }
+                else if (uType === 'GETBYTITLE') {
+                    domResults = Array.from(d.querySelectorAll(`[title="${escVal}"]`));
+                }
+                else if (uType === 'GETBYTEXT') {
+                    domResults = Array.from(d.querySelectorAll('*')).filter(n => n.children.length === 0 && n.textContent.trim() === locVal);
+                }
+                else if (uType === 'GETBYROLE') {
+                    const [role, name] = locVal.split('||');
+                    const tagMap = { 'link': 'a', 'checkbox': 'input[type="checkbox"]', 'textbox': 'input[type="text"],textarea', 'heading': 'h1,h2,h3,h4,h5,h6' };
+                    const tagSelector = tagMap[role] || role;
+                    const selector = `[role="${escapeCSSString(role)}"],${tagSelector}`;
+                    const allNodes = [...Array.from(d.querySelectorAll(selector)), ...queryShadowDeep(d, selector, false)];
+                    domResults = name ? allNodes.filter(e => e.textContent.trim().includes(name)) : allNodes;
+                } else {
+                    try {
+                        domResults = Array.from(d.querySelectorAll(locVal));
+                        shadowResults = queryShadowDeep(d, locVal, false);
+                    } catch (e1) {
+                        try {
+                            const s = d.evaluate(locVal, d, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
+                            for (let i = 0; i < s.snapshotLength; i++) domResults.push(s.snapshotItem(i));
+                        } catch (e2) {}
+                    }
+                }
+
+                results.push(...new Set([...domResults, ...shadowResults]));
+            } catch (e) {
+                console.error("verify error in frame:", e);
+            }
+
+            try {
+                const iframes = d.querySelectorAll('iframe, frame');
+                for (let i = 0; i < iframes.length; i++) {
+                    try {
+                        const subDoc = iframes[i].contentDocument || iframes[i].contentWindow.document;
+                        results.push(...countMatchesDeep(subDoc, locType, locVal));
+                    } catch (e) {}
+                }
+            } catch (e) {}
+
+            return results;
+        }
+
+        try {
+            const all = [...new Set(countMatchesDeep(document, type, value))].filter(e => e.nodeType === 1);
             count = all.length;
             all.forEach(el => {
                 el.classList.add('live-console-highlight');
@@ -833,7 +924,6 @@
                 setTimeout(() => el.classList.remove('live-console-highlight-pulse'), 1500);
             });
 
-            // Scroll first match into view so user can actually see it
             if (all.length > 0) {
                 try {
                     all[0].scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
@@ -968,6 +1058,14 @@
             }
         }
     };
+
+    // F8 key to freeze the page
+    document.addEventListener('keydown', function (e) {
+        if (e.key === 'F8') {
+            e.preventDefault();
+            window.freezePage(5000);
+        }
+    }, true);
 }
 })();
 

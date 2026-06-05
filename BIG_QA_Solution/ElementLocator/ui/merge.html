@@ -586,6 +586,10 @@
             <span id="checklistCountBadge" style="font-size: 0.65rem; color: var(--accent-secondary); text-transform: none; margin-left: 6px;">0 of 0</span>
         </div>
         <div id="mergeChecklist" class="checklist-container" style="flex: 1; margin-bottom: 0; min-width: 0;"></div>
+        <div id="aiStyleOption" style="display: flex; align-items: center; gap: 6px; font-size: 0.72rem; color: var(--text-secondary); background: rgba(99, 102, 241, 0.08); border: 1px solid rgba(99, 102, 241, 0.2); padding: 5px 10px; border-radius: 6px; user-select: none; flex-shrink: 0; margin-bottom: 0;">
+            <input type="checkbox" id="chk-ai-style" checked onchange="toggleAIStyle(this.checked)" style="width: 13px; height: 13px; margin: 0; cursor: pointer; accent-color: var(--accent-primary);">
+            <label for="chk-ai-style" style="cursor:pointer; font-weight:600; margin:0; color: #a5b4fc; display: flex; align-items: center; gap: 4px;"><i class="fas fa-brain"></i> AI Style Match</label>
+        </div>
         <div id="mergeStatsBar" class="merge-stats" style="margin-bottom: 0; flex-shrink: 0;">
             <span id="statLocators" class="merge-stat-pill"><i class="fas fa-fingerprint"></i> +0 locators</span>
             <span id="statActions" class="merge-stat-pill"><i class="fas fa-running"></i> +0 actions</span>
@@ -679,6 +683,7 @@
         let _targetFilePath = '';
         let _selectedTool = 'Playwright';
         let _selectedLang = 'TypeScript';
+        let _bypassStyle = false;
 
         function initBridge() {
             console.log("JS: initBridge called. Checking qt and webChannelTransport...");
@@ -915,6 +920,13 @@
                 });
             }
             updateChecklistCountBadge();
+
+            // 1.5 Update AI Style Match checkbox
+            const aiStyleChk = document.getElementById('chk-ai-style');
+            if (aiStyleChk) {
+                _bypassStyle = !!data.bypass_style;
+                aiStyleChk.checked = !_bypassStyle;
+            }
             
             // 2. Set left and right code
             _targetFilePath = data.target_file || '';
@@ -979,15 +991,22 @@
             triggerSmartMergePreview();
         }
 
+        function toggleAIStyle(enabled) {
+            console.log("JS: toggleAIStyle: " + enabled);
+            _bypassStyle = !enabled;
+            triggerSmartMergePreview();
+        }
+
         function triggerSmartMergePreview() {
             if (!pyBridge) return;
             const selectedLocators = capturedElements.filter((el, idx) => mergeSelections.includes(idx));
-            console.log("JS: triggerSmartMergePreview. Tool: " + _selectedTool + ", Lang: " + _selectedLang + ", locators: " + selectedLocators.length);
+            console.log("JS: triggerSmartMergePreview. Tool: " + _selectedTool + ", Lang: " + _selectedLang + ", locators: " + selectedLocators.length + ", bypassStyle: " + _bypassStyle);
             pyBridge.callPython('refresh_merge_preview', JSON.stringify({
                 locators: selectedLocators,
                 tool: _selectedTool,
                 lang: _selectedLang,
-                file_path: _targetFilePath
+                file_path: _targetFilePath,
+                bypass_style: _bypassStyle
             }));
         }
 

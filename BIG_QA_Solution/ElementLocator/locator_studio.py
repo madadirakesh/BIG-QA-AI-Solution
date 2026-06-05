@@ -145,6 +145,7 @@ class StudioBridge(QObject):
     mergePreviewReady = pyqtSignal(str) # Send Merge preview to JS
     codePreviewReady = pyqtSignal(str) # Send Generated Code to JS
     liveVerificationResult = pyqtSignal(str) # Send verification result to JS
+    urlChanged = pyqtSignal(str)           # Push browser URL changes to JS
     commandReceived = pyqtSignal(str, str) # From JS: action, payload
 
     @pyqtSlot(str, str)
@@ -880,6 +881,66 @@ class MergeWindow(QMainWindow):
                     except Exception as e:
                         QMessageBox.critical(self, "Merge Error", f"Failed to read file: {e}")
 
+            elif action == "refresh_merge_preview":
+                locators = payload.get("locators", [])
+                tool     = payload.get("tool", self.tool)
+                lang     = payload.get("lang", self.lang)
+                file_path = payload.get("file_path", "")
+                bypass_style = payload.get("bypass_style", self.bypass_style)
+
+                title_cl = "".join(
+                    c for c in self._parent_studio.browser_ctrl.view.page().title()
+                    if c.isalnum()
+                )
+                if not title_cl:
+                    title_cl = "MyPage"
+
+                new_code = None
+                merged_code = None
+                current_code = ""
+
+                if file_path:
+                    try:
+                        with open(file_path, "r", encoding="utf-8") as f:
+                            current_code = f.read()
+                    except Exception as e:
+                        print(f"Error reading file for preview: {e}")
+
+                if not bypass_style and self._parent_studio.project_path:
+                    existing_pos = find_existing_page_objects(self._parent_studio.project_path, lang)
+                    if existing_pos:
+                        sample_codes = []
+                        for path in existing_pos[:2]:
+                            try:
+                                with open(path, "r", encoding="utf-8") as f:
+                                    sample_codes.append(f.read())
+                            except Exception:
+                                pass
+                        if sample_codes and self._parent_studio.ai_api_key:
+                            combined_samples = "\n\n--- NEXT SAMPLE ---\n\n".join(sample_codes)
+                            new_code = self._parent_studio.ai_service.generate_styled_page_object(
+                                tool, lang, title_cl, locators, combined_samples
+                            )
+                            if file_path:
+                                merged_code = self._parent_studio.ai_service.merge_locators_with_style(
+                                    tool, lang, current_code, locators
+                                )
+
+                if not new_code:
+                    new_code = CodeGenerator.generate_class_content(tool, lang, title_cl, locators)
+                if file_path and not merged_code:
+                    merged_code = MergeEngine.merge_locators(current_code, locators, tool, lang)
+
+                result_json = json.dumps({
+                    "target_file":   file_path,
+                    "new_code":      new_code,
+                    "merged_code":   merged_code,
+                    "original_code": current_code
+                })
+                self.view.page().runJavaScript(
+                    f"(function(){{ try{{ loadMergedFile({result_json}); }} catch(e){{ console.error('loadMergedFile error:',e); }} }})()"
+                )
+
             elif action == "smart_merge_confirm":
                 file_path   = payload.get("file_path")
                 merged_code = payload.get("merged_code")
@@ -969,6 +1030,10 @@ class LocatorStudio(QMainWindow):
 
         # Connect Browser Signals
         self.browser_ctrl.pybridge.locatorsReceived.connect(self._on_elements_captured)
+
+        # Fix #7: wire the dashboard view into the browser controller so it can
+        # call window.onBrowserUrlChanged() when the user navigates back/forward.
+        self.browser_ctrl._dashboard_view = self.dashboard_view
         
         # Force foreground on Windows/OS after launch
         QTimer.singleShot(150, self.force_foreground)
@@ -1234,13 +1299,29 @@ class LocatorStudio(QMainWindow):
                 
                 ext_map = {"Java": ".java", "Python": ".py", "C#": ".cs", "JavaScript": ".js", "TypeScript": ".ts"}
                 ext = ext_map.get(lang, ".txt")
+
+                # Issue #13: Windows associates .ts with MPEG-TS video.
+                # For TypeScript, add a .txt alternative in the dialog filter so users
+                # can save as plain text and open safely in their code editor.
+                if lang == "TypeScript":
+                    file_filter = "TypeScript Files (*.ts);;Text Files (*.txt);;All Files (*)"
+                else:
+                    file_filter = f"{lang} File (*{ext});;All Files (*)"
                 
-                fname, _ = QFileDialog.getSaveFileName(self, "Save Page Object", f"{default_filename}{ext}", f"{lang} File (*{ext});;All Files (*)")
+                fname, _ = QFileDialog.getSaveFileName(self, "Save Page Object", f"{default_filename}{ext}", file_filter)
                 if fname:
                     try:
                         with open(fname, "w", encoding="utf-8") as f:
                             f.write(content)
-                        QMessageBox.information(self, "Success", "File saved successfully!")
+                        if lang == "TypeScript" and fname.endswith(".ts"):
+                            QMessageBox.information(
+                                self, "File Saved",
+                                f"File saved successfully!\n\nPath: {fname}\n\n"
+                                "⚠️ Note: Windows may open .ts files in a media player.\n"
+                                "Right-click → Open With → your code editor (VS Code, Notepad++, etc.)"
+                            )
+                        else:
+                            QMessageBox.information(self, "Success", "File saved successfully!")
                     except Exception as e:
                         QMessageBox.critical(self, "Error", f"Could not save file: {e}")
 
