@@ -130,11 +130,15 @@ class BootstrapperEngine:
                         content = content.replace("{{BASE_URL}}", BootstrapperEngine._sec_str(url or "https://example.com"))
                         content = content.replace("{{USERNAME}}", BootstrapperEngine._sec_str(username or "admin"))
                         content = content.replace("{{PASSWORD}}", BootstrapperEngine._sec_str(password or "password123"))
-                        # Dependency-version placeholders (trusted catalog values, no escaping needed).
-                        content = content.replace("{{JAVA_VERSION}}", _ver("java"))
-                        content = content.replace("{{PLAYWRIGHT_VERSION}}", _ver("playwright"))
-                        content = content.replace("{{SELENIUM_VERSION}}", _ver("selenium"))
-                        content = content.replace("{{CUCUMBER_VERSION}}", _ver("cucumber"))
+                        # Dependency-version placeholders ({{PLAYWRIGHT_VERSION}}, {{SELENIUM_VERSION}},
+                        # {{TYPESCRIPT_VERSION}}, {{REQNROLL_VERSION}}, {{JAVA_VERSION}}, ...). Driven by
+                        # the resolved version profile so a new version key added to versions_catalog
+                        # works here with no code change: each key K maps to the placeholder
+                        # {{<K>_VERSION}} (upper-cased). Trusted catalog values, no escaping needed.
+                        for _vkey in set(versions) | set(FALLBACK_VERSIONS):
+                            if _vkey == "label":
+                                continue
+                            content = content.replace("{{" + _vkey.upper() + "_VERSION}}", _ver(_vkey))
                     
                     with open(full_path, 'w', encoding='utf-8') as f:
                         f.write(content or "")
@@ -189,9 +193,11 @@ class BootstrapperEngine:
             if search_lang == "TypeScript":
                 for folder in ["test/pageObjects", "test/stepDefinitions", "test/features", "Results"]:
                     os.makedirs(os.path.join(target_dir, folder), exist_ok=True)
-            # For Python (Generic)
+            # For Python (Behave POM): pages/ + utils/ + features/steps/ mirror both Python
+            # templates' on-disk layout. (Dropped the old "tests/" folder — that was a pytest-ism;
+            # Behave discovers steps under features/steps, never tests/.)
             elif search_lang == "Python":
-                for folder in ["pages", "tests", "features", "Results"]:
+                for folder in ["pages", "utils", "features/steps", "Results"]:
                     os.makedirs(os.path.join(target_dir, folder), exist_ok=True)
             # For Java (Playwright + Cucumber). Step definitions and page objects start empty so
             # the user immediately sees where AI-generated code will land. Results/ is created
@@ -317,12 +323,15 @@ class BootstrapperEngine:
 
     @staticmethod
     def execute_smoke_test(project_path, tool, language, framework, package_manager):
-        # Skip smoke test for Selenium + Python + Behave
-        if (tool and str(tool).lower() == "selenium" and
-            language and str(language).lower() == "python" and
-            framework and ("behave" in str(framework).lower())):
-            logger.info(f"Skipping smoke test execution for {tool} + {language} + {framework} during project creation")
-            return True, "Smoke test skipped for Selenium + Python + Behave. Ready for test development."
+        # Skip smoke test for ANY Python + Behave template (Selenium or Playwright). Both ship a
+        # complete, lenient login sample, so `behave` is meant to be run by the user against a real
+        # app — running it at creation time launches a live browser against the user-supplied URL,
+        # which is slow and fragile (display/headless, network, the target app's real markup). This
+        # mirrors the Java/C#/TypeScript skips: scaffold now, let the user run the suite themselves.
+        if (language and str(language).lower() == "python" and
+                framework and "behave" in str(framework).lower()):
+            logger.info(f"Skipping smoke test for {tool}/{language}/{framework} (Behave scaffold runs separately)")
+            return True, f"Smoke test skipped for {tool}/Python/Behave. Ready for test development."
 
         # Skip smoke test for TypeScript/Playwright projects - they only have scaffolding
         if language in ["Typescript", "JavaScript", "TypeScript"] and tool == "Playwright":
@@ -337,7 +346,16 @@ class BootstrapperEngine:
         if language == "Java" and "Cucumber" in (framework or ""):
             logger.info(f"Skipping smoke test for {language}/{tool}/{framework} (Cucumber scaffold runs separately)")
             return True, f"Smoke test skipped for {tool}/Java/Cucumber scaffolding. Ready for manual test development."
-        
+
+        # Skip smoke test for C# (Reqnroll). Like the Java case, the template ships a runnable
+        # sample (PageObjects/LoginPage.cs + StepDefinitions/LoginSteps.cs) so `dotnet test` passes
+        # on its own — we skip here only because a smoke run at creation time means a full
+        # `dotnet restore` + build plus a Selenium Manager driver download, too slow/network-
+        # dependent for the interactive flow. The user can run `dotnet test` themselves after install.
+        if language == "C#":
+            logger.info(f"Skipping smoke test for {language}/{tool}/{framework} (Reqnroll scaffold runs separately)")
+            return True, f"Smoke test skipped for {tool}/C#/Reqnroll scaffolding. Ready for manual test development."
+
         if language == "Python":
             if "Behave" in framework or "Jbehave" in framework:
                 cmd = "venv\\Scripts\\python -m behave -f html" if os.name == 'nt' else "venv/bin/python3 -m behave -f html"
@@ -375,14 +393,15 @@ class BootstrapperEngine:
     @staticmethod
     def _inject_sample_test(target_dir, search_lang, tool, framework, url, username, password):
         """
-        Dynamically injects a sample login test pointing to the sample app.
+        Inject a sample login test for templates that don't already ship one.
+
+        Currently only the TypeScript/Playwright/Cucumber template needs this — it ships empty
+        step/page folders and we generate the sample via AI here. Every other template (Java, C#,
+        and both Python templates) ships a complete runnable login sample in its on-disk files, so
+        this is a no-op for them. (url/username/password are accepted for parity and possible future
+        use by other branches; the AI flow reads them from the scaffolded .env instead.)
         """
         try:
-            # Ensure we don't duplicate the path if the user already provided it in the base URL
-            target_url = url
-            # if not target_url.endswith("/sample-app/login"):
-            #     target_url = f"{target_url}/sample-app/login"
-                
             if search_lang == "TypeScript" and tool == "Playwright" and "Cucumber" in framework:
                 import glob
                 import asyncio
@@ -469,27 +488,11 @@ class BootstrapperEngine:
                     logger.error(f"Error during AI generation of sample scripts: {e}")
 
 
-            elif search_lang == "Python" and tool == "Playwright" and "Behave" in framework:
-                # 1. Feature file
-                feature_path = os.path.join(target_dir, "features", "sample_login.feature")
-                os.makedirs(os.path.dirname(feature_path), exist_ok=True)
-                safe_url, safe_user, safe_pwd = BootstrapperEngine._sec_str(target_url), BootstrapperEngine._sec_str(username), BootstrapperEngine._sec_str(password)
-                with open(feature_path, 'w', encoding='utf-8') as f:
-                    f.write(f'''Feature: Sample App Login\n\n  Scenario: User can login to the sample application\n    Given I navigate to the sample login page "{safe_url}"\n    When I login with username "{safe_user}" and password "{safe_pwd}"\n    Then I should see the welcome message\n''')
-                
-                # 2. Page Object
-                po_path = os.path.join(target_dir, "pages", "sample_login_page.py")
-                os.makedirs(os.path.dirname(po_path), exist_ok=True)
-                with open(po_path, 'w', encoding='utf-8') as f:
-                    f.write('''class SampleLoginPage:\n    def __init__(self, page):\n        self.page = page\n\n    def navigate(self, url):\n        self.page.goto(url)\n\n    def login(self, username, password):\n        self.page.fill('#username', username)\n        self.page.fill('#password', password)\n        self.page.click('#login-button')\n\n    def verify_welcome(self):\n        assert "Login Successful!" in self.page.content()\n''')
-                
-                # 3. Step Definition
-                steps_path = os.path.join(target_dir, "features", "steps", "sample_login_steps.py")
-                os.makedirs(os.path.dirname(steps_path), exist_ok=True)
-                with open(steps_path, 'w', encoding='utf-8') as f:
-                    f.write('''from behave import given, when, then\nimport sys\nimport os\n\nsys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))\nfrom pages.sample_login_page import SampleLoginPage\n\n@given('I navigate to the sample login page "{url}"')\ndef step_navigate(context, url):\n    context.sample_login_page = SampleLoginPage(context.page)\n    context.sample_login_page.navigate(url)\n\n@when('I login with username "{username}" and password "{password}"')\ndef step_login(context, username, password):\n    context.sample_login_page.login(username, password)\n\n@then('I should see the welcome message')\ndef step_verify(context):\n    context.sample_login_page.verify_welcome()\n''')
             else:
-                logger.info(f"Sample test injection not explicitly mapped for {tool}/{search_lang}/{framework}.")
+                # Java, C#, Selenium/Python and Playwright/Python all ship a complete, runnable
+                # login sample inside their on-disk template (pages + steps + feature), so there is
+                # nothing to inject here. Only the TypeScript template relies on AI generation above.
+                logger.info(f"Sample test injection not needed for {tool}/{search_lang}/{framework} (template ships a sample).")
         except Exception as e:
             logger.error(f"Failed to inject sample test: {e}")
 

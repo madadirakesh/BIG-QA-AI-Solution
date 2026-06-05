@@ -1,0 +1,8 @@
+{
+  "_comment": "Selenium + Python + Behave BDD template. Migrated from inline TEMPLATES_DATA to on-disk files for consistency with the Java templates and easier maintenance.",
+  "tool": "Selenium",
+  "language": "Python",
+  "framework": "Behave",
+  "description": "Enterprise Selenium Python Behave BDD Template",
+  "default_run_commands": "behave\nbehave --tags=@smoke"
+}

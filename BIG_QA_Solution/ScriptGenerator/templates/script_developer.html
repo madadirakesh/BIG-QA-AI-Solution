@@ -1108,13 +1108,32 @@ function toggleProjectMethod() {
 
 function openBootstrapperModal() {
     document.getElementById('bootstrapperModal').style.display = 'block';
+    // Always start from a clean slate. closeBootstrapperModal() already resets on the way out,
+    // but doing it here too is cheap and protects against the first ever open (where close has
+    // never run) and any future code path that might bypass close.
+    resetBootstrapperPanels();
+    resetBootstrapperForm();
+}
+
+/**
+ * Reset the modal's *panels* (as opposed to the form fields): kill any running poll/elapsed
+ * timers, show the form panel, and hide the loading + result + file-tree panels (clearing the
+ * tree DOM). Split out from resetBootstrapperForm() so both open and close fully reset the modal.
+ *
+ * Stopping the timers here is the important bit: if the user closes the modal (× / Close & Refresh)
+ * while a job is still polling, the interval would otherwise keep running in the background and
+ * could flip the modal back to the result panel the next time it's opened — making the form look
+ * "stuck" on the previous run instead of clean.
+ */
+function resetBootstrapperPanels() {
+    stopBsTimers();
     document.getElementById('bootstrapperForm').style.display = 'block';
     document.getElementById('bsLoading').style.display = 'none';
     document.getElementById('bsResult').style.display = 'none';
-    // Always start from a clean slate. closeBootstrapperModal() already calls reset on the
-    // way out, but doing it here too is cheap and protects against the first ever open
-    // (where close has never run) and any future code path that might bypass close.
-    resetBootstrapperForm();
+    const treeContainer = document.getElementById('bsTreeContainer');
+    if (treeContainer) treeContainer.style.display = 'none';
+    const fileTree = document.getElementById('bsFileTree');
+    if (fileTree) fileTree.innerHTML = '';
 }
 
 /**
@@ -1189,8 +1208,11 @@ function validateBootstrapForm(data) {
 
 function closeBootstrapperModal() {
     document.getElementById('bootstrapperModal').style.display = 'none';
-    // Wipe form state so the next time the user opens "Create New Automation Project" they
-    // get a fresh form — not stale values from the previous successful (or failed) run.
+    // Full reset on the way out so the next "Create New Automation Project" opens completely
+    // clean — stop any running timers/poll, restore the form panel (hide loading/result/tree),
+    // and wipe every field. Covers Cancel, the × button, and "Close & Refresh" on both success
+    // and failure.
+    resetBootstrapperPanels();
     resetBootstrapperForm();
 }
 

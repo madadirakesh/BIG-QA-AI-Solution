@@ -1,0 +1,10 @@
+# Pinned dependencies for reproducible installs (Python 3.12). Support libraries are frozen to
+# specific releases so `pip install -r requirements.txt` resolves the same set every time. The
+# Selenium version is chosen at scaffold time from the version profile dropdown (Stable/Latest)
+# and substituted into {{SELENIUM_VERSION}} below. To bump a pinned lib: change it, run, commit if green.
+behave==1.2.6
+behave-html-formatter==0.9.10
+selenium=={{SELENIUM_VERSION}}
+webdriver-manager==4.0.2
+python-dotenv==1.0.1
+allure-behave==2.13.5

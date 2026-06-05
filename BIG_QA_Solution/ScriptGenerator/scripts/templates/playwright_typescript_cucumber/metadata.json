@@ -1,0 +1,8 @@
+{
+  "_comment": "Playwright + TypeScript + Cucumber BDD template. Migrated from the inline TEMPLATES_DATA list in deploy_team_templates.py to on-disk files (matching the Java templates) so the .ts/.json sources are editable and reviewable directly. The seeder ingests every file in this tree as TemplateFiles rows, keyed by (tool, language, framework).",
+  "tool": "Playwright",
+  "language": "TypeScript",
+  "framework": "Cucumber",
+  "description": "Enterprise Playwright TS BDD Template",
+  "default_run_commands": "npm test -- --tags \"@smoke\"\nnpm run report"
+}

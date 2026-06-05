@@ -42,7 +42,160 @@ class EnvironmentSetup:
         return True, []
 
     @staticmethod
-    def _run_command(cmd, cwd, timeout=1800):
+    def _download_env():
+        """
+        Build the environment dict used for the install subprocesses, adding the TLS/CA
+        settings Playwright's browser downloader needs when the machine sits behind a
+        corporate proxy that does TLS interception (Zscaler, Netskope, an internal root CA,
+        etc.).
+
+        Why this lives here and applies to every package manager: Playwright's Node, Python,
+        Java *and* .NET distributions all fetch their browser binaries through a bundled
+        Node.js driver. That means the NODE_* TLS variables below are the single lever that
+        fixes the download for *all* of the stacks _build_install_phases emits — we don't
+        need a per-language tweak.
+
+        Configuration (all read from the Flask process's own environment so operators can set
+        it once on the server / in a .env, instead of every developer exporting it by hand in
+        PowerShell before each run):
+
+          * Default — NODE_USE_SYSTEM_CA=1: tells Node to trust the operating system's
+            certificate store, which is where a corporate root CA is normally installed.
+            Certificate verification stays ON; we just teach Node about the company CA. This
+            is the safe fix and why it's the default. (Requires Node >= 22.15 / 23.5.)
+
+          * BIG_QA_CA_CERTS=<path> — also exports NODE_EXTRA_CA_CERTS so Node trusts an
+            explicit CA bundle (.pem). Use this when the machine's Node is too old for
+            NODE_USE_SYSTEM_CA, or the corporate CA isn't in the OS trust store.
+
+          * BIG_QA_INSECURE_TLS=1 — escape hatch that disables TLS verification entirely
+            (NODE_TLS_REJECT_UNAUTHORIZED=0). This is insecure (accepts ANY certificate, so
+            it's vulnerable to MITM); it exists only as a last resort and logs a loud warning
+            so it can't be enabled silently. Prefer the two options above.
+        """
+        env = os.environ.copy()
+
+        # setdefault, not assignment: if the operator already exported NODE_USE_SYSTEM_CA on
+        # the Flask process (e.g. to "0" to deliberately opt out), respect their choice.
+        env.setdefault("NODE_USE_SYSTEM_CA", "1")
+
+        ca_certs = os.environ.get("BIG_QA_CA_CERTS")
+        if ca_certs:
+            env["NODE_EXTRA_CA_CERTS"] = ca_certs
+
+        # .NET CLI hardening for non-interactive use. We run `dotnet restore` / `dotnet test`
+        # through a subprocess that captures stdout, and in that mode the default .NET behaviour
+        # can make the command *appear to hang*:
+        #   - MSBUILDDISABLENODEREUSE=1: MSBuild normally leaves persistent worker nodes running
+        #     after a build for reuse. Those nodes inherit the captured stdout pipe and don't exit,
+        #     so the parent's communicate() blocks forever even though `dotnet restore` itself has
+        #     finished. Disabling node reuse makes the workers exit, closing the pipe.
+        #   - DOTNET_CLI_TELEMETRY_OPTOUT / NOLOGO / SKIP_FIRST_TIME_EXPERIENCE: skip the one-time
+        #     first-run experience and banners, which add latency and can stall on a captured stdin.
+        # These are harmless no-ops for the npm/pip/maven phases. setdefault so an operator can
+        # override any of them on the Flask process.
+        env.setdefault("MSBUILDDISABLENODEREUSE", "1")
+        env.setdefault("DOTNET_CLI_TELEMETRY_OPTOUT", "1")
+        env.setdefault("DOTNET_NOLOGO", "1")
+        env.setdefault("DOTNET_SKIP_FIRST_TIME_EXPERIENCE", "1")
+
+        if os.environ.get("BIG_QA_INSECURE_TLS") == "1":
+            env["NODE_TLS_REJECT_UNAUTHORIZED"] = "0"
+            logging.warning(
+                "BIG_QA_INSECURE_TLS=1 is set — disabling TLS certificate verification "
+                "(NODE_TLS_REJECT_UNAUTHORIZED=0) for dependency installs. This accepts any "
+                "certificate and is vulnerable to MITM. Prefer NODE_USE_SYSTEM_CA or "
+                "BIG_QA_CA_CERTS=<path-to-corporate-ca.pem> instead."
+            )
+
+        return env
+
+    # Substrings that show up in a failed install's output when the cause is the network/
+    # proxy rather than a real dependency problem. Split into two buckets because the fix is
+    # different for each, and we want to point the user at the *right* one instead of a
+    # generic "check your connection".
+    _TLS_ERROR_MARKERS = (
+        "unable to get local issuer",
+        "self-signed certificate",
+        "self signed certificate",
+        "SELF_SIGNED_CERT_IN_CHAIN",
+        "unable to verify the first certificate",
+        "UNABLE_TO_VERIFY_LEAF_SIGNATURE",
+        "CERT_",
+        "certificate has expired",
+        "SSL certificate problem",
+    )
+    _BLOCKED_ERROR_MARKERS = (
+        "ETIMEDOUT",
+        "ECONNREFUSED",
+        "ECONNRESET",
+        "ENOTFOUND",
+        "getaddrinfo",
+        "Could not resolve host",
+        "Failed to connect",
+        "Connection timed out",
+        "network timeout",
+        "tunneling socket could not be established",
+        "407 Proxy Authentication",
+    )
+
+    @staticmethod
+    def _format_hint(lines):
+        """
+        Render message lines inside a bordered "Hint" box appended to an error message.
+
+        Centralised so every hint looks identical and the box-drawing isn't duplicated at each
+        call site. Returns a leading-blank-line-separated block so it reads as a distinct
+        section below the raw command output.
+        """
+        border = "-" * 70
+        body = "\n".join(lines)
+        return f"\n\n{border}\nHint:\n{body}\n{border}"
+
+    @staticmethod
+    def _diagnose_network_failure(output):
+        """
+        Turn a raw install failure into a short, actionable hint when the output looks like a
+        network/proxy problem — otherwise return "" (no hint, so real dependency errors aren't
+        buried under proxy boilerplate).
+
+        Why this exists: behind a corporate firewall the failure the user actually sees is a
+        wall of Node/pip/Maven stack trace ending in something like "self-signed certificate
+        in certificate chain" or "ETIMEDOUT". Those are network issues, not bugs in the
+        generated project, but they read like a crash. This maps the two common shapes to the
+        two fixes documented in SETUP-PROXY.md so the user knows which knob to turn.
+        """
+        text = output or ""
+
+        # TLS interception: the connection went through but presented a corporate certificate
+        # Node didn't trust. NODE_USE_SYSTEM_CA (already on by default) usually fixes it; if
+        # not, the operator points us at the CA bundle.
+        if any(m in text for m in EnvironmentSetup._TLS_ERROR_MARKERS):
+            return EnvironmentSetup._format_hint([
+                "This looks like a TLS/certificate problem from a corporate proxy, not a",
+                "problem with your project. The app already sets NODE_USE_SYSTEM_CA=1; if it",
+                "still fails, point it at your company CA bundle:",
+                "    set BIG_QA_CA_CERTS=C:\\path\\to\\corporate-ca.pem   (then restart the app)",
+                "See SETUP-PROXY.md (section 'TLS / certificate errors') for details.",
+            ])
+
+        # Host blocked / unreachable: no certificate was even exchanged. No CA setting can fix
+        # this — the user needs a proxy, an internal mirror, or pre-cached browsers.
+        if any(m in text for m in EnvironmentSetup._BLOCKED_ERROR_MARKERS):
+            return EnvironmentSetup._format_hint([
+                "This looks like the firewall is blocking the download host (no connection",
+                "could be made). A certificate setting will NOT help here. Options:",
+                "  * Route through your corporate proxy:  set HTTPS_PROXY=http://proxy:8080",
+                "  * Use an internal mirror:              set PLAYWRIGHT_DOWNLOAD_HOST=...",
+                "  * Use pre-downloaded browsers offline: set PLAYWRIGHT_BROWSERS_PATH=...",
+                "Set these on the app's environment, then restart it.",
+                "See SETUP-PROXY.md (section 'Firewall blocks the download') for details.",
+            ])
+
+        return ""
+
+    @staticmethod
+    def _run_command(cmd, cwd, timeout=1800, env=None):
         try:
             proc = subprocess.Popen(
                 cmd,
@@ -50,7 +203,10 @@ class EnvironmentSetup:
                 shell=True,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
-                universal_newlines=True
+                universal_newlines=True,
+                # env=None makes Popen inherit the parent environment unchanged (the original
+                # behaviour); callers that need the Playwright TLS/CA vars pass _download_env().
+                env=env,
             )
             stdout, _ = proc.communicate(timeout=timeout)
             if proc.returncode != 0:
@@ -104,6 +260,12 @@ class EnvironmentSetup:
         if not phases:
             return False, f"Unknown package manager {package_manager}"
 
+        # Build the install environment once (adds the Playwright TLS/CA settings needed
+        # behind a corporate proxy) and reuse it for every phase. Computing it here rather
+        # than inside _run_command keeps the warning-on-insecure-TLS log to one line per
+        # install instead of one per phase.
+        run_env = EnvironmentSetup._download_env()
+
         # Run each phase in order, surfacing its label before kicking off the subprocess.
         # We bail on the first failure so the UI gets a meaningful "this exact step failed"
         # error rather than a wall of multi-step shell output.
@@ -115,9 +277,13 @@ class EnvironmentSetup:
                     # A buggy status callback must never abort the install; just log and continue.
                     logging.exception("status_cb raised while announcing phase %r", label)
             logging.info(f"Install phase '{label}' in {project_path}: {cmd}")
-            ok, output = EnvironmentSetup._run_command(cmd, project_path)
+            ok, output = EnvironmentSetup._run_command(cmd, project_path, env=run_env)
             if not ok:
-                return False, f"{label}\n{output}"
+                # Append a proxy/firewall hint when the failure looks network-related, so the
+                # user gets "here's the fix" instead of just a raw stack trace. Returns "" for
+                # genuine dependency errors, leaving those untouched.
+                hint = EnvironmentSetup._diagnose_network_failure(output)
+                return False, f"{label}\n{output}{hint}"
 
         return True, "All dependencies installed."
 

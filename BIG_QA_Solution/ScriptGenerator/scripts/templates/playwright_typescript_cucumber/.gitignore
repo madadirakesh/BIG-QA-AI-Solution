@@ -1,0 +1,20 @@
+# ─── Node ───────────────────────────────────────────────────────────────────
+node_modules/
+dist/
+npm-debug.log*
+yarn-error.log*
+
+# ─── Test artefacts ─────────────────────────────────────────────────────────
+Results/
+results/
+*.log
+
+# ─── IDE / OS ───────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ─── Local environment override (the committed .env ships as the template) ──
+.env.local

@@ -10,6 +10,27 @@ import time
 active_processes = {} # pid -> process object
 
 
+def _runtime_env_with_ca():
+    """
+    Base environment for test-run subprocesses.
+
+    Reuses EnvironmentSetup._download_env() so running tests (and the runtime
+    `npx playwright install` that the generated TypeScript hooks.ts triggers in its
+    BeforeAll) gets the SAME TLS/CA + proxy settings as project creation does. Without this,
+    creation would succeed behind a corporate proxy but the first test run would fail on the
+    same certificate error we already solved once — see
+    ProjectBootstrapper/environment_setup.py for the single source of that config.
+
+    Falls back to a plain os.environ copy if that module can't be imported for any reason, so
+    test execution never hard-fails on an import hiccup.
+    """
+    try:
+        from ProjectBootstrapper.environment_setup import EnvironmentSetup
+        return EnvironmentSetup._download_env()
+    except Exception:
+        return os.environ.copy()
+
+
 class ScriptRunnerService:
     @staticmethod
     def _call_ai_sync_json(prompt: str) -> dict:
@@ -59,8 +80,10 @@ class ScriptRunnerService:
                 print(f"DEBUG: Running step {i+1}: {cmd}")
                 yield f"event: progress\ndata: {json.dumps({'msg': f'[Step {i+1}/{len(commands)}]: {cmd}', 'type': 'step_start', 'step': i+1})}\n\n"
                 
-                # Automatically detect and use venv if present
-                env_vars = os.environ.copy()
+                # Automatically detect and use venv if present.
+                # Start from _runtime_env_with_ca() (not a bare os.environ copy) so a test run
+                # behind a corporate proxy inherits the same TLS/CA + proxy settings as install.
+                env_vars = _runtime_env_with_ca()
                 venv_bin = os.path.join(full_path, "venv", "Scripts" if os.name == 'nt' else "bin")
                 if os.path.exists(venv_bin):
                     env_vars["PATH"] = venv_bin + os.pathsep + env_vars.get("PATH", "")
@@ -143,8 +166,10 @@ class ScriptRunnerService:
                 print(f"Running command: {cmd} in {full_path}")
                 yield f"event: progress\ndata: {json.dumps({'msg': f'[Attempt {attempts+1}/{max_retries+1}] Running: {cmd}', 'type': 'step_start', 'step': attempts+1})}\n\n"
                 
-                # Automatically detect and use venv if present
-                env_vars = os.environ.copy()
+                # Automatically detect and use venv if present.
+                # Start from _runtime_env_with_ca() (not a bare os.environ copy) so a test run
+                # behind a corporate proxy inherits the same TLS/CA + proxy settings as install.
+                env_vars = _runtime_env_with_ca()
                 venv_bin = os.path.join(full_path, "venv", "Scripts" if os.name == 'nt' else "bin")
                 if os.path.exists(venv_bin):
                     env_vars["PATH"] = venv_bin + os.pathsep + env_vars.get("PATH", "")
@@ -318,7 +343,8 @@ class ScriptRunnerService:
                 if fallback_cmd:
                     yield f"event: progress\ndata: {json.dumps({'msg': f'[Fallback] Running command: {fallback_cmd}', 'type': 'step_start', 'step': attempts+1})}\n\n"
                     try:
-                        env_vars = os.environ.copy()
+                        # Same TLS/CA + proxy-aware base env as the primary run path above.
+                        env_vars = _runtime_env_with_ca()
                         is_windows = os.name == 'nt'
                         if is_windows:
                             process = subprocess.Popen(fallback_cmd, cwd=full_path, shell=True, env=env_vars, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1, universal_newlines=True, encoding='utf-8', errors='replace')

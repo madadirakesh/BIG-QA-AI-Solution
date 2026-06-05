@@ -1,0 +1,11 @@
+# Pinned dependencies for reproducible installs (Python 3.12). Support libraries are frozen to
+# specific releases so `pip install -r requirements.txt` resolves the same set every time. The
+# Playwright version is chosen at scaffold time from the version profile dropdown (Stable/Latest)
+# and substituted into {{PLAYWRIGHT_VERSION}} below. To bump a pinned lib: change it, run, commit if green.
+behave==1.2.6
+behave-html-formatter==0.9.10
+playwright=={{PLAYWRIGHT_VERSION}}
+pytest==8.3.4
+pytest-playwright==0.6.2
+pytest-html==4.1.1
+python-dotenv==1.0.1

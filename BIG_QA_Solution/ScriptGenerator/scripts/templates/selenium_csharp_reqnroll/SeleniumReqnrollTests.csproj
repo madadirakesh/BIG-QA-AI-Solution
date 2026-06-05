@@ -1,0 +1,39 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Fixed project file name (not renamed to the user's project) — the same convention the Java
+    template uses for pom.xml. `dotnet restore` / `dotnet test` find the .csproj by glob, so the
+    name does not need to match the directory.
+
+    Reqnroll's NuGet package ships an MSBuild integration that auto-discovers every *.feature file
+    in this project and generates the code-behind at build time, so there is no manual codegen step.
+    Selenium 4.6+ includes Selenium Manager, which downloads the matching browser driver on first
+    run — no WebDriverManager / driver binaries to manage.
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
+    <PackageReference Include="Reqnroll.NUnit" Version="{{REQNROLL_VERSION}}" />
+    <PackageReference Include="NUnit" Version="4.2.2" />
+    <PackageReference Include="NUnit3TestAdapter" Version="4.6.0" />
+    <PackageReference Include="Selenium.WebDriver" Version="{{SELENIUM_VERSION}}" />
+    <PackageReference Include="Selenium.Support" Version="{{SELENIUM_VERSION}}" />
+    <PackageReference Include="DotNetEnv" Version="3.1.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Copy .env next to the test assembly so ConfigReader finds it regardless of the working
+         directory `dotnet test` runs from. -->
+    <None Update=".env">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
+</Project>

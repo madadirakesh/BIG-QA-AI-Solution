@@ -1,0 +1,25 @@
+# ─── Python ─────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+
+# ─── Virtual environment ────────────────────────────────────────────────────
+venv/
+.venv/
+env/
+
+# ─── Test artefacts ─────────────────────────────────────────────────────────
+Results/
+allure-results/
+*.log
+
+# ─── IDE / OS ───────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ─── Local environment override (the committed .env ships as the template) ──
+.env.local
