@@ -747,18 +747,126 @@
             margin-right: 4px;
         }
 
+        /* ── Redesigned Action Dock ─────────────────────────────────────── */
         .actions {
-            display: grid;
-            grid-template-columns: 1fr 1fr 1fr;
+            display: flex;
             gap: 6px;
             padding: 8px 10px;
-            background: rgba(15, 23, 42, 0.85);
+            background: rgba(15, 23, 42, 0.9);
             border-top: 1px solid var(--glass-border);
             flex-shrink: 0;
         }
 
         [data-theme="light"] .actions {
-            background: rgba(255, 255, 255, 0.9);
+            background: rgba(255, 255, 255, 0.95);
+        }
+
+        .action-dock-btn {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 4px;
+            padding: 7px 4px;
+            border-radius: 10px;
+            border: 1px solid rgba(255, 255, 255, 0.07);
+            cursor: pointer;
+            font-family: 'Outfit', sans-serif;
+            font-size: 0.65rem;
+            font-weight: 600;
+            letter-spacing: 0.2px;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            color: rgba(255, 255, 255, 0.7);
+            background: rgba(255, 255, 255, 0.04);
+            min-width: 0;
+        }
+
+        .action-dock-btn:hover {
+            transform: translateY(-2px);
+            border-color: rgba(255, 255, 255, 0.18);
+            color: #fff;
+        }
+
+        .action-dock-btn:active {
+            transform: translateY(0) scale(0.95);
+        }
+
+        .action-dock-icon {
+            width: 20px;
+            height: 20px;
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+        }
+
+        /* Per-button color themes */
+        .adb-clear  { background: rgba(239, 68, 68, 0.15); border-color: rgba(239, 68, 68, 0.25); }
+        .adb-clear:hover  { background: rgba(239, 68, 68, 0.22); border-color: rgba(239, 68, 68, 0.5); box-shadow: 0 4px 14px rgba(239, 68, 68, 0.25); }
+        .adb-clear .action-dock-icon  { background: rgba(239, 68, 68, 0.25); color: #f87171; }
+
+        .adb-excel  { background: rgba(16, 185, 129, 0.12); border-color: rgba(16, 185, 129, 0.25); }
+        .adb-excel:hover  { background: rgba(16, 185, 129, 0.2); border-color: rgba(16, 185, 129, 0.5); box-shadow: 0 4px 14px rgba(16, 185, 129, 0.2); }
+        .adb-excel .action-dock-icon  { background: rgba(16, 185, 129, 0.25); color: #34d399; }
+
+        .adb-db     { background: rgba(155, 89, 182, 0.12); border-color: rgba(155, 89, 182, 0.25); }
+        .adb-db:hover     { background: rgba(155, 89, 182, 0.2); border-color: rgba(155, 89, 182, 0.5); box-shadow: 0 4px 14px rgba(155, 89, 182, 0.25); }
+        .adb-db .action-dock-icon     { background: rgba(155, 89, 182, 0.3); color: #c084fc; }
+
+        .adb-merge  { background: rgba(245, 158, 11, 0.12); border-color: rgba(245, 158, 11, 0.25); }
+        .adb-merge:hover  { background: rgba(245, 158, 11, 0.2); border-color: rgba(245, 158, 11, 0.5); box-shadow: 0 4px 14px rgba(245, 158, 11, 0.2); }
+        .adb-merge .action-dock-icon  { background: rgba(245, 158, 11, 0.25); color: #fbbf24; }
+
+        .adb-genpo  { background: linear-gradient(135deg, rgba(0,120,212,0.25), rgba(0,188,242,0.2)); border-color: rgba(0, 188, 242, 0.4); color: #fff; flex: 1.35; }
+        .adb-genpo:hover  { background: linear-gradient(135deg, rgba(0,120,212,0.38), rgba(0,188,242,0.32)); border-color: rgba(0, 188, 242, 0.7); box-shadow: 0 4px 18px rgba(0, 188, 242, 0.3); }
+        .adb-genpo .action-dock-icon  { background: rgba(0, 188, 242, 0.3); color: #00bcf2; }
+
+        /* Queue section icon-only buttons */
+        .queue-icon-btn {
+            width: 26px;
+            height: 26px;
+            padding: 0;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 7px;
+            border: 1px solid rgba(255,255,255,0.1);
+            background: rgba(255,255,255,0.04);
+            color: var(--text-secondary);
+            cursor: pointer;
+            transition: all 0.18s ease;
+            flex-shrink: 0;
+        }
+
+        .queue-icon-btn:hover {
+            transform: translateY(-1px);
+            color: var(--text-primary);
+        }
+
+        .queue-icon-btn:active {
+            transform: scale(0.92);
+        }
+
+        .queue-icon-btn.qib-grid:hover {
+            background: rgba(99, 102, 241, 0.18);
+            border-color: rgba(99, 102, 241, 0.5);
+            color: #818cf8;
+            box-shadow: 0 0 8px rgba(99, 102, 241, 0.3);
+        }
+
+        .queue-icon-btn.qib-add:hover {
+            background: rgba(0, 188, 242, 0.18);
+            border-color: rgba(0, 188, 242, 0.5);
+            color: #00bcf2;
+            box-shadow: 0 0 8px rgba(0, 188, 242, 0.3);
+        }
+
+        /* Wave animation for active capture button */
+        @keyframes wave-pulse {
+            0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.6), 0 4px 14px rgba(239, 68, 68, 0.3); }
+            50%       { box-shadow: 0 0 0 6px rgba(239, 68, 68, 0), 0 4px 14px rgba(239, 68, 68, 0.15); }
         }
 
         .modal {
@@ -1684,6 +1792,8 @@
         [data-theme="light"] .diff-col-header-gutter {
             background: rgba(0, 0, 0, 0.04);
         }
+
+
     </style>
 </head>
 
@@ -1796,11 +1906,16 @@
             <div
                 style="display:flex; justify-content:space-between; align-items:center; margin-bottom:5px; flex-shrink:0; gap: 8px;">
                 <label style="margin:0; font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.5px;">Captured Elements Queue</label>
-                <div style="display: flex; align-items: center; gap: 6px; margin-left: auto;">
-                    <button class="btn" onclick="showAddManualModal()" style="padding: 3px 8px; font-size: 0.68rem; background: rgba(0, 188, 242, 0.12); border: 1px solid var(--accent-secondary); color: var(--accent-secondary); border-radius: 4px;" title="Add Custom Element Manually">
-                        <i class="fas fa-plus"></i> Add Custom
+                <div style="display: flex; align-items: center; gap: 5px; margin-left: auto;">
+                    <!-- Full View: icon-only grid button -->
+                    <button class="queue-icon-btn qib-grid" onclick="showFullViewModal()" title="Open Full Grid View">
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
                     </button>
-                    <span id="elemCountBadge" style="font-size:0.68rem;color:var(--text-secondary);">0 elements</span>
+                    <!-- Add Custom: icon-only plus button -->
+                    <button class="queue-icon-btn qib-add" onclick="showAddManualModal()" title="Add Custom Element Manually">
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                    </button>
+                    <span id="elemCountBadge" style="font-size:0.65rem;color:var(--text-secondary); padding: 2px 7px; background: rgba(255,255,255,0.06); border-radius: 20px; border: 1px solid rgba(255,255,255,0.08);">0 elements</span>
                 </div>
             </div>
 
@@ -1888,29 +2003,42 @@
             <span id="lastActionStatus" style="color:rgba(255,255,255,0.3);">Ready</span>
         </div>
 
-        <!-- Action buttons — inside .container so they are always pinned and visible -->
-        <div class="actions" style="flex-shrink:0; margin: 0 -12px; grid-template-columns: repeat(3, 1fr); gap: 6px; padding: 8px 10px; border-radius: 0;">
-            <button class="btn btn-outline" style="min-width: unset; font-size: 0.75rem; padding: 6px;"
-                onclick="clearQueue()">
-                <i class="fas fa-trash"></i> Clear
+        <!-- Action Dock — icon-first card buttons -->
+        <div class="actions" style="flex-shrink:0; margin: 0 -12px; border-radius: 0; padding: 8px 10px;">
+            <!-- Clear -->
+            <button class="action-dock-btn adb-clear" onclick="clearQueue()" title="Clear all captured elements">
+                <span class="action-dock-icon">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                </span>
+                Clear
             </button>
-            <button class="btn btn-outline"
-                style="border-color: #10ac84; color: #10ac84; min-width: unset; font-size: 0.75rem; padding: 6px;"
-                onclick="exportToExcel()">
-                <i class="fas fa-file-excel"></i> Excel
+            <!-- Excel -->
+            <button class="action-dock-btn adb-excel" onclick="exportToExcel()" title="Export locators to Excel">
+                <span class="action-dock-icon">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="16" y2="17"/></svg>
+                </span>
+                Excel
             </button>
-            <button class="btn btn-outline"
-                style="border-color: #9b59b6; color: #9b59b6; min-width: unset; font-size: 0.75rem; padding: 6px;"
-                onclick="showDbModal()">
-                <i class="fas fa-database"></i> DB
+            <!-- DB -->
+            <button class="action-dock-btn adb-db" onclick="showDbModal()" title="Save to database">
+                <span class="action-dock-icon">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/><path d="M3 12c0 1.66 4 3 9 3s9-1.34 9-3"/></svg>
+                </span>
+                DB
             </button>
-            <button class="btn btn-primary"
-                style="background: #f39c12; grid-column: span 1; font-size: 0.75rem; padding: 6px;" onclick="smartMerge()">
-                <i class="fas fa-code-branch"></i> Merge
+            <!-- Merge -->
+            <button class="action-dock-btn adb-merge" onclick="smartMerge()" title="Smart merge into existing Page Object">
+                <span class="action-dock-icon">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="6" y1="20" x2="6" y2="4"/><line x1="12" y1="20" x2="12" y2="14"/><path d="M6 4l6 6 6-4"/></svg>
+                </span>
+                Merge
             </button>
-            <button class="btn btn-primary" style="grid-column: span 2; font-size: 0.75rem; padding: 6px;"
-                onclick="generateCode()">
-                <i class="fas fa-file-code"></i> Gen New PO
+            <!-- Gen PO — primary CTA -->
+            <button class="action-dock-btn adb-genpo" onclick="generateCode()" title="Generate new Page Object file">
+                <span class="action-dock-icon">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><polyline points="10 15 8 17 10 19"/><polyline points="14 15 16 17 14 19"/></svg>
+                </span>
+                Gen PO
             </button>
         </div>
     </div>
@@ -2047,6 +2175,8 @@
     </div>
 
     <!-- Smart Merge now opens in a dedicated popup window -->
+
+
 
     <!-- CodeMirror Core and Language Modes -->
     <script src="libs/codemirror.min.js"></script>
@@ -2702,6 +2832,13 @@
                     valEl.style.color = count === 1 ? 'var(--success)' : (count === 0 ? 'var(--danger)' : 'var(--warning)');
                 }
             }
+            
+            // Also update Grid View badge if visible
+            const gridBadge = document.getElementById(`grid-match-badge-${idx}`);
+            if (gridBadge) {
+                gridBadge.textContent = count === 1 ? 'Unique' : (count != null ? `${count} matches` : '? matches');
+                gridBadge.style.color = count === 1 ? 'var(--success)' : (count === 0 ? 'var(--danger)' : 'var(--warning)');
+            }
         }
 
         function toggleAlts(idx) {
@@ -2948,7 +3085,8 @@
                     lang: document.getElementById('langSelect').value,
                     target_url: document.getElementById('targetUrl') ? document.getElementById('targetUrl').value : ''
                 };
-                pyBridge.callPython("preview_code", JSON.stringify(payload));
+                // Open dedicated Gen PO popup window (replaces in-page modal)
+                pyBridge.callPython("open_po_window", JSON.stringify(payload));
             }
         }
 
@@ -3618,6 +3756,69 @@
                 dot.className = `status-dot ${isCapturing ? 'green' : 'idle'}`;
                 lbl.textContent = isCapturing ? 'Capturing' : 'Idle';
             }
+        };
+
+        // ─── Captured Locators Grid View Implementation ──────────────────
+        function showFullViewModal() {
+            if (pyBridge) {
+                pyBridge.callPython("open_grid_window", JSON.stringify({
+                    locators: capturedElements,
+                    tool: document.getElementById('toolSelect').value,
+                    lang: document.getElementById('langSelect').value
+                }));
+            }
+        }
+
+        // ─── Grid Window Real-time Synchronization Handlers ──────────────
+        window.updateElementFromGrid = function(idx, field, value) {
+            if (capturedElements[idx]) {
+                capturedElements[idx][field] = value;
+                if (field === 'nameHint') {
+                    capturedElements[idx].name = value;
+                }
+                renderSingleItem(idx);
+            }
+        };
+
+        window.deleteElementFromGrid = function(idx) {
+            if (idx >= 0 && idx < capturedElements.length) {
+                capturedElements.splice(idx, 1);
+                renderQueue();
+            }
+        };
+
+        window.swapAltFromGrid = function(elemIdx, altIdx) {
+            const el = capturedElements[elemIdx];
+            if (!el || !el.alternatives || altIdx >= el.alternatives.length) return;
+            const chosen = el.alternatives[altIdx];
+
+            const current = { type: el.type, value: el.value, count: el.count };
+            el.type = chosen.type;
+            el.value = chosen.value;
+            el.count = chosen.count;
+            el.alternatives[altIdx] = current;
+
+            renderSingleItem(elemIdx);
+        };
+
+        window.bulkDeleteFromGrid = function(idxs) {
+            // Sort in descending order to avoid index shift splicing
+            const sortedIdxs = idxs.sort((a, b) => b - a);
+            sortedIdxs.forEach(idx => {
+                if (idx >= 0 && idx < capturedElements.length) {
+                    capturedElements.splice(idx, 1);
+                }
+            });
+            renderQueue();
+        };
+
+        window.bulkSetActionFromGrid = function(idxs, action) {
+            idxs.forEach(idx => {
+                if (capturedElements[idx]) {
+                    capturedElements[idx].action = action;
+                }
+            });
+            renderQueue();
         };
 
         // ─── Init bridge status ───────────────────────────────────────────
