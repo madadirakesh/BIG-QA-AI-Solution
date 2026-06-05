@@ -652,8 +652,19 @@ def save_project_input():
 @login_required()
 def launch_element_locator():
     try:
+        project_path = request.args.get('project_path', '')
+        language = request.args.get('language', '')
+        framework = request.args.get('framework', '')
+        tool = request.args.get('tool', '')
+        app_url = request.args.get('app_url', '')
+
         locator_path = os.path.join(os.path.dirname(__file__), '..', 'ElementLocator', 'launcher.py')
-        subprocess.Popen([sys.executable, locator_path], shell=(sys.platform == 'win32'))
+        cmd = [sys.executable, locator_path]
+        if project_path:
+            cmd.extend([project_path, language, framework, tool, app_url])
+
+        subprocess.Popen(cmd, shell=(sys.platform == 'win32'))
+        print(f"[App] Launching command: {cmd}")
         return jsonify({'status': 'success', 'message': 'Element Locator Studio launched.'})
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500
