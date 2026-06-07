@@ -279,12 +279,7 @@ async function launchElementLocator(fromProject = false) {
         }
         console.log("[launchElementLocator] requesting:", url);
 
-        // If nothing was resolved, surface it to the user with a visible alert
-        // so we can see why on the next click without needing DevTools.
-        if (!projectLoc && !language && !framework && !tool) {
-            const lines = Object.keys(_diag).map(k => `${k}: ${JSON.stringify(_diag[k])}`).join('\n');
-            alert("Launch Element Locator: no project context was found.\n\nDiagnostic snapshot:\n\n" + lines);
-        }
+
 
         const response = await fetch(url);
         if (response.ok) {
