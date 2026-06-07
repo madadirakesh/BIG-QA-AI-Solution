@@ -4,20 +4,20 @@
         return; // Prevent hijacking the dashboard's QWebChannel
     }
 
-    // Initialize QWebChannel for communication with Python backend
-    if (typeof qt !== 'undefined' && typeof QWebChannel !== 'undefined') {
-        new QWebChannel(qt.webChannelTransport, function (channel) {
-            window.pybridge = channel.objects.pybridge;
-            console.log("QWebChannel connected.");
-        });
-    } else {
-        console.error("QWebChannel or qt is not defined. The bridge will not work.");
-    }
-
     if (!window.desktopInspectorInitialized) {
         window.desktopInspectorInitialized = true;
-    window.desktopInspectorActive = false;
-    window.currentHighlightedElement = null;
+        window.desktopInspectorActive = false;
+        window.currentHighlightedElement = null;
+
+        // Initialize QWebChannel for communication with Python backend
+        if (typeof qt !== 'undefined' && typeof QWebChannel !== 'undefined') {
+            new QWebChannel(qt.webChannelTransport, function (channel) {
+                window.pybridge = channel.objects.pybridge;
+                console.log("QWebChannel connected.");
+            });
+        } else {
+            console.error("QWebChannel or qt is not defined. The bridge will not work.");
+        }
 
     // ─── Highlight Box ────────────────────────────────────────────────────────
     let highlightBox = document.getElementById('pyqt-highlight-box');

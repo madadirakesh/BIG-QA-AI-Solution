@@ -92,17 +92,19 @@ class BrowserController(QObject):
         channel.registerObject("pybridge", self.pybridge)
         page.setWebChannel(channel)
 
-        # Inject scripts into this tab's profile
+        # Inject scripts into this tab's profile (only once per default profile)
         profile = page.profile()
-        scripts = profile.scripts()
-        script = QWebEngineScript()
-        code = self._qwebchannel_js + "\n" + self._inspector_js
-        script.setSourceCode(code)
-        script.setName(f"inspector_{id(view)}")
-        script.setWorldId(QWebEngineScript.ScriptWorldId.MainWorld)
-        script.setInjectionPoint(QWebEngineScript.InjectionPoint.DocumentReady)
-        script.setRunsOnSubFrames(True)
-        scripts.insert(script)
+        if not getattr(self, "_scripts_registered", False):
+            scripts = profile.scripts()
+            script = QWebEngineScript()
+            code = self._qwebchannel_js + "\n" + self._inspector_js
+            script.setSourceCode(code)
+            script.setName("desktop_inspector")
+            script.setWorldId(QWebEngineScript.ScriptWorldId.MainWorld)
+            script.setInjectionPoint(QWebEngineScript.InjectionPoint.DocumentReady)
+            script.setRunsOnSubFrames(True)
+            scripts.insert(script)
+            self._scripts_registered = True
 
         # Connect signals
         view.loadFinished.connect(lambda ok, v=view: self._on_load_finished(ok, v))
@@ -188,11 +190,12 @@ class BrowserController(QObject):
             view.page().runJavaScript("if (typeof window.activateDesktopInspector === 'function') { window.activateDesktopInspector(); }")
 
     def _poll_capture_buffer(self):
-        for inst in self.browser_instances:
-            view = inst['view']
-            view.page().runJavaScript("if (typeof window._drainCaptureBuffer === 'function') { window._drainCaptureBuffer(); }", self._on_drain_result)
+        # Only poll the currently active tab to optimize performance and prevent background tab overhead
+        active_view = self.tabs.currentWidget()
+        if active_view:
+            active_view.page().runJavaScript("if (typeof window._drainCaptureBuffer === 'function') { window._drainCaptureBuffer(); }", self._on_drain_result)
             if self.is_capturing:
-                view.page().runJavaScript("if (typeof window.activateDesktopInspector === 'function' && !window.desktopInspectorActive) { window.activateDesktopInspector(); }")
+                active_view.page().runJavaScript("if (typeof window.activateDesktopInspector === 'function' && !window.desktopInspectorActive) { window.activateDesktopInspector(); }")
 
     def _on_drain_result(self, result):
         if result and result != "[]":
@@ -225,8 +228,22 @@ class BrowserController(QObject):
             
         if current_view:
             url_str = url_str.strip()
+            # Replace localhost with 127.0.0.1 to avoid macOS loopback IPv6 DNS resolution delays
+            if "localhost" in url_str:
+                url_str = url_str.replace("localhost", "127.0.0.1")
+
             if not url_str.startswith("http"):
-                url_str = "https://" + url_str
+                # Detect local addresses to prevent hanging on HTTPS handshake
+                is_local = (
+                    "127.0.0.1" in url_str 
+                    or "::1" in url_str 
+                    or url_str.startswith("192.168.") 
+                    or url_str.startswith("10.")
+                )
+                if is_local:
+                    url_str = "http://" + url_str
+                else:
+                    url_str = "https://" + url_str
             current_view.setUrl(QUrl(url_str))
 
     def start_capturing(self):
