@@ -231,12 +231,13 @@ async function launchElementLocator(fromProject = false) {
                 return;
             }
             if (!projectBaseUrl) {
-                if (typeof showToast === 'function') {
-                    showToast("app url not configured", "warning");
+                let proceed = false;
+                if (typeof showConfirm === 'function') {
+                    proceed = await showConfirm("App URL Warning", "app url not configured. Do you want to continue?", "⚠️", "Continue", "background:var(--accent-primary);color:white;");
                 } else {
-                    alert("app url not configured");
+                    proceed = confirm("app url not configured. Do you want to continue?");
                 }
-                return;
+                if (!proceed) return;
             }
         }
 
