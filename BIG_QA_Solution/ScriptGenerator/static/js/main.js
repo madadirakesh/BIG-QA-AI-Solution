@@ -178,7 +178,7 @@ function escapeHtml(unsafe) {
         .replace(/'/g, "&#039;");
 }
 
-async function launchElementLocator() {
+async function launchElementLocator(fromProject = false) {
     try {
         const projectSelect = document.getElementById('projectSelect');
         const selectedOption = projectSelect ? projectSelect.options[projectSelect.selectedIndex] : null;
@@ -220,6 +220,25 @@ async function launchElementLocator() {
         }
 
         const projectBaseUrl = clean(document.getElementById('projectBaseUrl') && document.getElementById('projectBaseUrl').value);
+
+        if (fromProject) {
+            if (!projectLoc) {
+                if (typeof showToast === 'function') {
+                    showToast("Please select or locate a project first", "warning");
+                } else {
+                    alert("Please select or locate a project first");
+                }
+                return;
+            }
+            if (!projectBaseUrl) {
+                if (typeof showToast === 'function') {
+                    showToast("app url not configured", "warning");
+                } else {
+                    alert("app url not configured");
+                }
+                return;
+            }
+        }
 
         // Diagnostic snapshot of every input the function consulted.
         const _diag = {
