@@ -1,0 +1,8 @@
+{
+  "_comment": "Selenium + C# + Reqnroll BDD template. Mirrors the Selenium/Java/Cucumber layout (ConfigReader + DriverFactory + Hooks + PageObjects + StepDefinitions + a runnable login sample) but in C# using Reqnroll (the maintained SpecFlow successor) on NUnit, Selenium 4 (with the built-in Selenium Manager, so no WebDriverManager needed), and DotNetEnv for .env config. The seeder (deploy_team_templates.py) ingests this directory verbatim and creates a ProjectTemplates row keyed by (tool, language, framework). The UI offers this as Selenium / C# / Reqnroll / NuGet.",
+  "tool": "Selenium",
+  "language": "C#",
+  "framework": "Reqnroll",
+  "description": "Enterprise Selenium C# Reqnroll BDD Template (NUnit + Selenium 4 + DotNetEnv)",
+  "default_run_commands": "dotnet test"
+}

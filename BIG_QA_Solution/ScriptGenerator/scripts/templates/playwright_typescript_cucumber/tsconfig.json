@@ -1,0 +1,28 @@
+{
+  "compilerOptions": {
+    /* Modern but Forgiving Standards */
+    "target": "ESNext",
+    "module": "node16",
+    "moduleResolution": "node16",
+    "lib": ["ESNext", "DOM"],
+    
+    "rootDir": ".",
+    "outDir": "./dist",
+    
+    /* Interoperability & Legacy Bridges */
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "forceConsistentCasingInFileNames": true,
+    "strict": true,
+    "noImplicitAny": false
+  },
+  "include": [
+    "test/**/*.ts",
+    "cucumber.js"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist"
+  ]
+}

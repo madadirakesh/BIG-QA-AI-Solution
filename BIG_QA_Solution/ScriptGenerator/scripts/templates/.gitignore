@@ -1,0 +1,7 @@
+# The repository's root .gitignore excludes `.env` everywhere (developer secrets must never be
+# committed). Template `.env` files are the exception: they are committed CONFIG, not secrets —
+# they hold only {{BASE_URL}} / {{USERNAME}} / {{PASSWORD}} placeholders that the seeder ingests
+# and BootstrapperEngine.generate_project fills in per project. They MUST ship so a fresh clone
+# can seed complete templates. Re-include them here (a .gitignore in this directory overrides the
+# root one for paths beneath it).
+!.env

@@ -394,6 +394,20 @@
                     </div>
                 </div>
 
+                <!-- Hidden automatically when the chosen stack has no version choice. -->
+                <div class="form-row" id="bsVersionProfileRow">
+                    <div class="form-col">
+                        <div class="form-group">
+                            <label><i class="fas fa-layer-group"></i> Version Profile <span style="color:#e74c3c">*</span></label>
+                            <select id="bsVersionProfile" class="form-control" onchange="clearFieldError('bsVersionProfile')">
+                                <!-- Dynamic -->
+                            </select>
+                            <small class="help-text">Validated dependency versions for this stack.</small>
+                            <small class="error-text" id="bsVersionProfileError"></small>
+                        </div>
+                    </div>
+                </div>
+
                 <div class="form-row">
                     <div class="form-col">
                         <div class="form-group">
@@ -1094,13 +1108,32 @@ function toggleProjectMethod() {
 
 function openBootstrapperModal() {
     document.getElementById('bootstrapperModal').style.display = 'block';
+    // Always start from a clean slate. closeBootstrapperModal() already resets on the way out,
+    // but doing it here too is cheap and protects against the first ever open (where close has
+    // never run) and any future code path that might bypass close.
+    resetBootstrapperPanels();
+    resetBootstrapperForm();
+}
+
+/**
+ * Reset the modal's *panels* (as opposed to the form fields): kill any running poll/elapsed
+ * timers, show the form panel, and hide the loading + result + file-tree panels (clearing the
+ * tree DOM). Split out from resetBootstrapperForm() so both open and close fully reset the modal.
+ *
+ * Stopping the timers here is the important bit: if the user closes the modal (× / Close & Refresh)
+ * while a job is still polling, the interval would otherwise keep running in the background and
+ * could flip the modal back to the result panel the next time it's opened — making the form look
+ * "stuck" on the previous run instead of clean.
+ */
+function resetBootstrapperPanels() {
+    stopBsTimers();
     document.getElementById('bootstrapperForm').style.display = 'block';
     document.getElementById('bsLoading').style.display = 'none';
     document.getElementById('bsResult').style.display = 'none';
-    // Always start from a clean slate. closeBootstrapperModal() already calls reset on the
-    // way out, but doing it here too is cheap and protects against the first ever open
-    // (where close has never run) and any future code path that might bypass close.
-    resetBootstrapperForm();
+    const treeContainer = document.getElementById('bsTreeContainer');
+    if (treeContainer) treeContainer.style.display = 'none';
+    const fileTree = document.getElementById('bsFileTree');
+    if (fileTree) fileTree.innerHTML = '';
 }
 
 /**
@@ -1134,7 +1167,7 @@ function resetBootstrapperForm() {
     updateBsOptions();
 
     // Validation state — red borders and inline messages.
-    clearFieldErrors(['bsProjectName', 'bsProjectPath', 'bsUrl']);
+    clearFieldErrors(['bsProjectName', 'bsProjectPath', 'bsUrl', 'bsVersionProfile']);
 
     // Path preview at the bottom of the Save Location row.
     updatePathPreview();
@@ -1154,25 +1187,40 @@ function resetBootstrapperForm() {
  * Returns true if every rule passes, false otherwise (and the user sees red highlights).
  */
 function validateBootstrapForm(data) {
-    return validateForm(
-        {
-            bsProjectName: { required: true, message: 'Project Name is required.' },
-            bsProjectPath: { required: true, message: 'Please choose a save location using the Browse button.' },
-            bsUrl: { pattern: /^https?:\/\/\S+/i, message: 'URL must start with http:// or https://' }
-        },
-        {
-            bsProjectName: data.projectName,
-            bsProjectPath: data.projectPath,
-            bsUrl: data.url
-        }
-    );
+    const schema = {
+        bsProjectName: { required: true, message: 'Project Name is required.' },
+        bsProjectPath: { required: true, message: 'Please choose a save location using the Browse button.' },
+        bsUrl: { pattern: /^https?:\/\/\S+/i, message: 'URL must start with http:// or https://' }
+    };
+    const values = {
+        bsProjectName: data.projectName,
+        bsProjectPath: data.projectPath,
+        bsUrl: data.url
+    };
+    // Version Profile is required only when its dropdown is shown (stacks that have profiles).
+    const vpRow = document.getElementById('bsVersionProfileRow');
+    if (vpRow && vpRow.style.display !== 'none') {
+        schema.bsVersionProfile = { required: true, message: 'Please select a version profile.' };
+        values.bsVersionProfile = data.versionProfile;
+    }
+    return validateForm(schema, values);
 }
 
 function closeBootstrapperModal() {
     document.getElementById('bootstrapperModal').style.display = 'none';
-    // Wipe form state so the next time the user opens "Create New Automation Project" they
-    // get a fresh form — not stale values from the previous successful (or failed) run.
+    // Full reset on the way out so the next "Create New Automation Project" opens completely
+    // clean — stop any running timers/poll, restore the form panel (hide loading/result/tree),
+    // and wipe every field. Covers Cancel, the × button, and "Close & Refresh" on both success
+    // and failure.
+    resetBootstrapperPanels();
     resetBootstrapperForm();
+    // If a project was just created, reload so the "Select Project from DB" dropdown (rendered
+    // server-side from ProjectDetails) picks up the new row. This is what the "Close & Refresh"
+    // button promises. Skipped on a plain cancel, where bsProjectCreated stays false.
+    if (bsProjectCreated) {
+        bsProjectCreated = false;
+        location.reload();
+    }
 }
 
 function browseBsDirectory() {
@@ -1232,6 +1280,34 @@ function updateBsOptions() {
         fwSelect.add(new Option("Cucumber (JS)", "Cucumber"));
         pmSelect.add(new Option("NPM (package.json)", "NPM"));
     }
+
+    updateVersionProfiles();
+}
+
+// Fills the Version Profile dropdown from the catalog; hides the row when the stack has none.
+function updateVersionProfiles() {
+    const row = document.getElementById('bsVersionProfileRow');
+    const select = document.getElementById('bsVersionProfile');
+    const params = new URLSearchParams({
+        tool: document.getElementById('bsTool').value,
+        language: document.getElementById('bsLanguage').value,
+        framework: document.getElementById('bsFramework').value
+    });
+    fetch('/api/version-profiles?' + params)
+        .then(r => r.json())
+        .then(data => {
+            const profiles = data.profiles || [];
+            select.innerHTML = "";
+            clearFieldError('bsVersionProfile');
+            // Placeholder so nothing is pre-selected — the user must choose explicitly.
+            const placeholder = new Option("-- Select a version --", "");
+            placeholder.disabled = true;
+            placeholder.selected = true;
+            select.add(placeholder);
+            profiles.forEach(p => select.add(new Option(p, p)));
+            row.style.display = profiles.length ? '' : 'none';
+        })
+        .catch(() => { row.style.display = 'none'; });
 }
 
 // ─── Bootstrapper progress: polling + elapsed-time counter ───
@@ -1242,6 +1318,12 @@ function updateBsOptions() {
 let bsPollInterval;
 let bsElapsedInterval;
 let bsElapsedStartMs;
+// Set true once a project finishes scaffolding (and is inserted into ProjectDetails by the
+// backend). Drives the page refresh in closeBootstrapperModal() so the new project shows up in
+// the "Select Project from DB" dropdown — that list is rendered server-side at page load, so it
+// can only pick up the new row on a reload. Stays false on a plain cancel, so cancelling the
+// form does NOT reload the page.
+let bsProjectCreated = false;
 
 function startBsElapsedTimer() {
     bsElapsedStartMs = Date.now();
@@ -1275,6 +1357,7 @@ function submitBootstrapper() {
         language: document.getElementById('bsLanguage').value,
         framework: document.getElementById('bsFramework').value,
         packageManager: document.getElementById('bsPackageManager').value,
+        versionProfile: document.getElementById('bsVersionProfile').value,
         url: document.getElementById('bsUrl').value,
         username: document.getElementById('bsUsername').value,
         password: document.getElementById('bsPassword').value
@@ -1319,6 +1402,9 @@ function pollBootstrapper(job_id) {
             .then(res => {
                 if(res.status === 'completed') {
                     stopBsTimers();
+                    // Mark success so closing the modal reloads the page and the new project
+                    // appears in the server-rendered project dropdown.
+                    bsProjectCreated = true;
                     document.getElementById('projectPath').value = res.target_dir;
                     detectProject(res.target_dir);
                     showBsResult(true, "Project Ready!", res.message, res.tree);

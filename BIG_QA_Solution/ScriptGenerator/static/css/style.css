@@ -473,6 +473,21 @@ select.input-valid {
     box-sizing: border-box;
 }
 
+html, body {
+    margin: 0;
+    padding: 0;
+}
+
+/* Thin scrollbar (default colors) */
+* {
+    scrollbar-width: thin;
+}
+
+*::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
 body {
     font-family: 'Outfit', 'Inter', -apple-system, sans-serif;
     background: linear-gradient(135deg, var(--bg-primary) 0%, #020617 100%);
@@ -577,6 +592,8 @@ a:hover {
     align-items: center;
     justify-content: center;
     position: relative;
+    min-height: 100vh;
+    overflow: hidden;
 }
 
 /* Abstract Background Shapes for Login */
