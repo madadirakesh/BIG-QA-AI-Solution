@@ -1,0 +1,1043 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Captured Locators Grid View</title>
+    
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    
+    <style>
+        :root {
+            --bg-primary: #0f172a;
+            --bg-secondary: #1e293b;
+            --bg-overlay: rgba(30, 41, 59, 0.7);
+            --bg-card: rgba(30, 41, 59, 0.4);
+            
+            --text-primary: #f8fafc;
+            --text-secondary: #94a3b8;
+            
+            --accent-primary: #0078d4;
+            --accent-secondary: #00bcf2;
+            --accent-glow: rgba(0, 188, 242, 0.35);
+            
+            --success: #10b981;
+            --warning: #f59e0b;
+            --danger: #ef4444;
+            --info: #3b82f6;
+            
+            --glass-border: rgba(255, 255, 255, 0.08);
+            --glass-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.35);
+            --transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: 'Inter', -apple-system, sans-serif;
+        }
+
+        body {
+            background: linear-gradient(135deg, var(--bg-primary) 0%, #020617 100%);
+            color: var(--text-primary);
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            padding: 20px;
+        }
+
+        /* Customize Scrollbar using standard CSS properties */
+        * {
+            scrollbar-width: thin;
+            scrollbar-color: rgba(255, 255, 255, 0.15) rgba(0, 0, 0, 0.1);
+        }
+
+        /* WebKit scrollbar fallback */
+        @supports not (scrollbar-color: auto) {
+            ::-webkit-scrollbar {
+                width: 8px;
+                height: 8px;
+            }
+            ::-webkit-scrollbar-track {
+                background: rgba(0, 0, 0, 0.1);
+            }
+            ::-webkit-scrollbar-thumb {
+                background: rgba(255, 255, 255, 0.12);
+                border-radius: 4px;
+            }
+            ::-webkit-scrollbar-thumb:hover {
+                background: rgba(255, 255, 255, 0.2);
+            }
+        }
+
+        /* Inline SVG Icon General Rule */
+        .icon {
+            display: inline-block;
+            width: 14px;
+            height: 14px;
+            stroke-width: 2;
+            stroke: currentColor;
+            fill: none;
+            vertical-align: middle;
+            transition: var(--transition);
+        }
+
+        .icon-lg {
+            width: 18px;
+            height: 18px;
+        }
+
+        .icon-md {
+            width: 16px;
+            height: 16px;
+        }
+
+        /* Spinner Rotation Animation */
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .spinner {
+            animation: spin 0.8s linear infinite;
+            display: inline-block;
+        }
+
+        /* Highlight Pulse Animation */
+        @keyframes rowHighlightPulse {
+            0% { background-color: rgba(59, 130, 246, 0.15); box-shadow: inset 4px 0 0 0 #3b82f6; }
+            100% { background-color: transparent; box-shadow: none; }
+        }
+        .row-pulse {
+            animation: rowHighlightPulse 1.2s ease-out;
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding-bottom: 12px;
+            border-bottom: 1px solid var(--glass-border);
+            flex-shrink: 0;
+        }
+
+        .header h3 {
+            font-family: 'Outfit', sans-serif;
+            font-size: 1.25rem;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .grid-header-stats {
+            display: flex;
+            gap: 16px;
+            margin-top: 4px;
+            font-size: 0.78rem;
+            color: var(--text-secondary);
+        }
+
+        .grid-header-stats span strong {
+            color: var(--text-primary);
+        }
+
+        /* Search & Filters */
+        .grid-search-container {
+            display: flex;
+            gap: 10px;
+            margin: 12px 0;
+            align-items: center;
+            flex-shrink: 0;
+            flex-wrap: wrap;
+        }
+
+        .search-box-wrapper {
+            position: relative;
+            flex: 1;
+            display: flex;
+            align-items: center;
+        }
+
+        .search-box-wrapper .svg-search {
+            position: absolute;
+            left: 12px;
+            color: var(--text-secondary);
+            pointer-events: none;
+        }
+
+        .grid-search-input {
+            width: 100%;
+            padding: 8px 12px 8px 34px;
+            font-size: 0.82rem;
+            background: rgba(0, 0, 0, 0.2);
+            border: 1px solid var(--glass-border);
+            border-radius: 8px;
+            color: var(--text-primary);
+            outline: none;
+            transition: var(--transition);
+        }
+
+        .grid-search-input:focus {
+            border-color: var(--accent-secondary);
+            box-shadow: 0 0 0 2px var(--accent-glow);
+        }
+
+        .grid-select {
+            background: rgba(0, 0, 0, 0.3);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            color: var(--text-primary);
+            padding: 8px 12px;
+            font-size: 0.8rem;
+            outline: none;
+            cursor: pointer;
+            width: 140px;
+            transition: var(--transition);
+        }
+
+        .grid-select:focus, .grid-select:hover {
+            border-color: rgba(255, 255, 255, 0.25);
+            background: rgba(0, 0, 0, 0.4);
+        }
+
+        .grid-select option {
+            background: var(--bg-secondary);
+            color: var(--text-primary);
+        }
+
+        /* Table Area */
+        .grid-table-wrapper {
+            flex: 1;
+            overflow: auto;
+            border: 1px solid var(--glass-border);
+            border-radius: 10px;
+            background: rgba(0, 0, 0, 0.15);
+            margin-bottom: 12px;
+        }
+
+        .grid-table {
+            width: 100%;
+            min-width: 900px;
+            border-collapse: collapse;
+            font-size: 0.82rem;
+            text-align: left;
+        }
+
+        .grid-table th {
+            position: sticky;
+            top: 0;
+            background: #151e2e;
+            color: var(--text-secondary);
+            font-weight: 600;
+            text-transform: uppercase;
+            font-size: 0.7rem;
+            letter-spacing: 0.5px;
+            padding: 12px;
+            border-bottom: 2px solid var(--glass-border);
+            z-index: 10;
+        }
+
+        .grid-table td {
+            padding: 8px 12px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            vertical-align: middle;
+            transition: var(--transition);
+        }
+
+        .grid-table tr {
+            transition: var(--transition);
+        }
+
+        .grid-table tr:hover {
+            background: rgba(255, 255, 255, 0.02);
+            box-shadow: inset 4px 0 0 0 var(--accent-secondary);
+        }
+
+        .grid-input-edit {
+            background: transparent;
+            border: none;
+            border-bottom: 1px dashed rgba(255, 255, 255, 0.2);
+            color: var(--text-primary);
+            padding: 4px 0;
+            width: 100%;
+            font-size: 0.82rem;
+            outline: none;
+            transition: var(--transition);
+        }
+
+        .grid-input-edit:focus {
+            border-bottom-style: solid;
+            border-bottom-color: var(--accent-secondary);
+            text-shadow: 0 0 8px rgba(0, 188, 242, 0.3);
+        }
+
+        .grid-input-edit.monospace {
+            font-family: 'Fira Code', 'Cascadia Code', 'Consolas', monospace;
+            font-size: 0.78rem;
+            color: var(--accent-secondary);
+        }
+
+        /* Checkbox */
+        .grid-checkbox {
+            cursor: pointer;
+            width: 14px;
+            height: 14px;
+            accent-color: var(--accent-secondary);
+            transition: var(--transition);
+        }
+
+        .grid-checkbox:hover {
+            transform: scale(1.1);
+        }
+
+        /* Action Buttons */
+        .action-icon-btn {
+            background: transparent;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            color: var(--text-secondary);
+            border-radius: 6px;
+            width: 28px;
+            height: 28px;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            transition: var(--transition);
+        }
+
+        .action-icon-btn:hover {
+            background: rgba(255, 255, 255, 0.06);
+            color: var(--text-primary);
+            border-color: rgba(255, 255, 255, 0.2);
+            transform: translateY(-1px);
+        }
+
+        .action-icon-btn:active {
+            transform: scale(0.92);
+        }
+
+        .action-icon-btn.btn-highlight:hover { color: #3b82f6; border-color: #3b82f6; background: rgba(59, 130, 246, 0.1); }
+        .action-icon-btn.btn-copy:hover { color: #10b981; border-color: #10b981; background: rgba(16, 185, 129, 0.1); }
+        .action-icon-btn.btn-ai:hover { color: #f59e0b; border-color: #f59e0b; background: rgba(245, 158, 11, 0.1); }
+        .action-icon-btn.btn-alts:hover { color: #6366f1; border-color: #6366f1; background: rgba(99, 102, 241, 0.1); }
+        .action-icon-btn.btn-delete:hover { color: #ef4444; border-color: #ef4444; background: rgba(239, 68, 68, 0.1); }
+
+        /* Status Badge Pill */
+        .match-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 0.72rem;
+            font-weight: 600;
+            padding: 4px 10px;
+            border-radius: 12px;
+            text-align: center;
+            cursor: pointer;
+            background: rgba(15, 23, 42, 0.6);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            transition: var(--transition);
+        }
+
+        .match-badge:hover {
+            border-color: rgba(255, 255, 255, 0.2);
+            background: rgba(15, 23, 42, 0.85);
+            transform: translateY(-0.5px);
+        }
+
+        .badge-dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            display: inline-block;
+        }
+
+        /* Alternatives sub-row */
+        .grid-alts-row {
+            background: rgba(0, 0, 0, 0.2);
+        }
+
+        .grid-alts-container {
+            padding: 10px 24px;
+            border-left: 2px solid var(--accent-primary);
+        }
+
+        .btn {
+            cursor: pointer;
+            border: none;
+            border-radius: 8px;
+            padding: 8px 18px;
+            font-family: 'Outfit', sans-serif;
+            font-weight: 600;
+            font-size: 0.82rem;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            transition: var(--transition);
+        }
+
+        .btn:hover {
+            transform: translateY(-1px);
+        }
+
+        .btn:active {
+            transform: scale(0.95);
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary)) !important;
+            color: white !important;
+            box-shadow: 0 4px 14px var(--accent-glow);
+        }
+
+        .btn-primary:hover {
+            box-shadow: 0 6px 20px var(--accent-glow);
+            filter: brightness(1.05);
+        }
+
+        .btn-outline {
+            background: transparent;
+            border: 1px solid var(--glass-border);
+            color: var(--text-secondary);
+        }
+
+        .btn-outline:hover {
+            background: rgba(255, 255, 255, 0.05);
+            color: var(--text-primary);
+            border-color: rgba(255, 255, 255, 0.25);
+        }
+
+        /* Footer Toolbar */
+        .grid-footer {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding-top: 12px;
+            border-top: 1px solid var(--glass-border);
+            gap: 12px;
+            flex-wrap: wrap;
+            flex-shrink: 0;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="header">
+        <div>
+            <h3>
+                <!-- SVG Table Icon -->
+                <svg class="icon icon-lg" viewBox="0 0 24 24" fill="none" stroke="var(--accent-secondary)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="3" y1="9" x2="21" y2="9"></line><line x1="3" y1="15" x2="21" y2="15"></line><line x1="9" y1="3" x2="9" y2="21"></line><line x1="15" y1="3" x2="15" y2="21"></line></svg>
+                Captured Locators Grid View
+            </h3>
+            <div class="grid-header-stats">
+                <span>Total Locators: <strong id="gridStatTotal">0</strong></span>
+                <span style="color: var(--success);">Unique: <strong id="gridStatUnique" style="color: var(--success);">0</strong></span>
+                <span style="color: var(--warning);">Duplicate/Matches: <strong id="gridStatDuplicate" style="color: var(--warning);">0</strong></span>
+            </div>
+        </div>
+        <!-- Close Button with SVG Times Icon -->
+        <button class="action-icon-btn" onclick="closeGridWindow()" title="Close Grid View" style="width: 32px; height: 32px; border-radius: 8px;">
+            <svg class="icon icon-md" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+        </button>
+    </div>
+
+    <!-- Search & Filters -->
+    <div class="grid-search-container">
+        <div class="search-box-wrapper">
+            <!-- SVG Search Icon -->
+            <svg class="icon svg-search" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+            <input type="text" id="gridSearchInput" class="grid-search-input" placeholder="Search locators by name or value..." oninput="filterGrid()">
+        </div>
+        
+        <select id="gridFilterType" class="grid-select" onchange="filterGrid()" style="width: 130px;">
+            <option value="">All Types</option>
+            <option value="XPath">XPath</option>
+            <option value="CSS">CSS</option>
+            <option value="ID">ID</option>
+            <option value="getBy">Playwright</option>
+        </select>
+
+        <select id="gridFilterStatus" class="grid-select" onchange="filterGrid()" style="width: 140px;">
+            <option value="">All Statuses</option>
+            <option value="unique">Unique Only</option>
+            <option value="duplicate">Duplicate Only</option>
+            <option value="unverified">Unverified Only</option>
+        </select>
+    </div>
+
+    <!-- Table Area -->
+    <div class="grid-table-wrapper">
+        <table class="grid-table">
+            <thead>
+                <tr>
+                    <th style="width: 45px; text-align: center;">
+                        <input type="checkbox" id="gridSelectAll" class="grid-checkbox" onchange="toggleSelectAllGrid(this.checked)">
+                    </th>
+                    <th style="width: 50px; text-align: center;">#</th>
+                    <th style="width: 200px;">Element Name</th>
+                    <th style="width: 150px;">Locator Type</th>
+                    <th>Locator Value</th>
+                    <th style="width: 160px;">Default Action</th>
+                    <th style="width: 120px; text-align: center;">Validation</th>
+                    <th style="width: 180px; text-align: center;">Operations</th>
+                </tr>
+            </thead>
+            <tbody id="gridTableBody">
+                <tr>
+                    <td colspan="8" style="text-align:center;color:var(--text-secondary);padding:40px 20px;">Loading captured elements...</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Footer Toolbar -->
+    <div class="grid-footer">
+        <div style="display:flex; align-items:center; gap:12px; flex-wrap: wrap;">
+            <span id="gridSelectedCount" style="color:var(--text-secondary); font-weight: 500;">0 selected</span>
+            <button class="btn btn-outline" style="padding:6px 12px; font-size:0.75rem; border-color:var(--danger); color:var(--danger);" onclick="bulkDeleteGrid()">
+                <!-- SVG Trash Icon -->
+                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:2px;"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                Delete Selected
+            </button>
+            <select id="gridBulkAction" class="grid-select" style="width: 150px; padding: 6px 10px; font-size:0.75rem;" onchange="bulkSetActionGrid(this.value)">
+                <option value="" disabled selected>Set Action...</option>
+                <option value="Click">Click</option>
+                <option value="Type">Type</option>
+                <option value="Clear">Clear</option>
+                <option value="Hover">Hover</option>
+                <option value="DoubleClick">DoubleClick</option>
+                <option value="RightClick">ContextClick</option>
+                <option value="GetText">GetText</option>
+                <option value="IsDisplayed">IsDisplayed</option>
+                <option value="WaitForVisible">WaitForVisible</option>
+                <option value="ScrollIntoView">ScrollIntoView</option>
+                <option value="SelectByVisibleText">Select</option>
+                <option value="Check">Check</option>
+                <option value="Uncheck">Uncheck</option>
+            </select>
+        </div>
+        <div style="display: flex; gap: 8px;">
+            <button class="btn btn-outline" style="border-color: #10ac84; color: #10ac84;" onclick="exportToExcelGrid()">
+                <!-- SVG File Excel Icon -->
+                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="8" y1="13" x2="16" y2="13"></line><line x1="8" y1="17" x2="16" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+                Export Excel
+            </button>
+            <button class="btn btn-outline" style="border-color: #9b59b6; color: #9b59b6;" onclick="showDbModalGrid()">
+                <!-- SVG Database Icon -->
+                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"></ellipse><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"></path><path d="M3 12c0 1.66 4 3 9 3s9-1.34 9-3"></path></svg>
+                Save to DB
+            </button>
+            <button class="btn btn-primary" onclick="closeGridWindow()">
+                <!-- SVG Check Icon -->
+                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                Done
+            </button>
+        </div>
+    </div>
+
+    <script src="qrc:///qtwebchannel/qwebchannel.js"></script>
+    <script>
+        let pyBridge = null;
+        let capturedElements = [];
+        let selectedGridRows = new Set();
+        let expandedGridAlts = new Set();
+        let pendingActions = [];
+        let _selectedTool = 'Playwright';
+        let _selectedLang = 'TypeScript';
+
+        // Bridge Action Queue Manager
+        function pushPendingAction(action, payload) {
+            pendingActions.push({ action: action, payload: payload });
+        }
+
+        // Pull queued actions from Python loop
+        function getPendingAction() {
+            if (pendingActions.length > 0) {
+                return JSON.stringify(pendingActions.shift());
+            }
+            return null;
+        }
+
+        // Initialize WebChannel
+        function initBridge() {
+            if (typeof qt !== 'undefined' && qt.webChannelTransport && typeof qt.webChannelTransport.send === 'function') {
+                new QWebChannel(qt.webChannelTransport, function (channel) {
+                    pyBridge = channel.objects.pyBridge;
+                    pushPendingAction("grid_window_ready", "");
+                });
+            } else {
+                setTimeout(initBridge, 100);
+            }
+        }
+        initBridge();
+
+        // Data receiver from Python
+        window.loadInitialGridData = function(data) {
+            console.log("[GridWindow] loadInitialGridData called with elements: " + (data.elements ? data.elements.length : 0));
+            capturedElements = data.elements || [];
+            _selectedTool = data.tool || 'Playwright';
+            _selectedLang = data.lang || 'TypeScript';
+            
+            selectedGridRows.clear();
+            expandedGridAlts.clear();
+            document.getElementById('gridSelectAll').checked = false;
+            
+            renderGridTable();
+        };
+
+        // Render standard locator grid rows
+        function renderGridTable() {
+            const tbody = document.getElementById('gridTableBody');
+            const searchText = document.getElementById('gridSearchInput').value.toLowerCase();
+            const filterType = document.getElementById('gridFilterType').value;
+            const filterStatus = document.getElementById('gridFilterStatus').value;
+            
+            if (!capturedElements || capturedElements.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="8" style="text-align:center;color:var(--text-secondary);padding:40px 20px;">No elements captured yet. Click elements in the browser to capture.</td></tr>`;
+                updateGridStats(0, 0, 0);
+                updateGridSelectionCount();
+                return;
+            }
+
+            let totalCount = capturedElements.length;
+            let uniqueCount = 0;
+            let duplicateCount = 0;
+            
+            capturedElements.forEach(el => {
+                if (el.count === 1) uniqueCount++;
+                else if (el.count > 1 || el.count === 0) duplicateCount++;
+            });
+            updateGridStats(totalCount, uniqueCount, duplicateCount);
+
+            tbody.innerHTML = '';
+
+            capturedElements.forEach((el, idx) => {
+                // Apply Search Filter
+                const nameMatch = (el.nameHint || 'element').toLowerCase().includes(searchText);
+                const valueMatch = (el.value || '').toLowerCase().includes(searchText);
+                if (searchText && !nameMatch && !valueMatch) return;
+
+                // Apply Type Filter
+                if (filterType) {
+                    if (filterType === 'getBy') {
+                        if (!el.type.startsWith('getBy')) return;
+                    } else if (el.type !== filterType) return;
+                }
+
+                // Apply Status Filter
+                if (filterStatus) {
+                    if (filterStatus === 'unique' && el.count !== 1) return;
+                    if (filterStatus === 'duplicate' && (el.count === null || el.count <= 1)) return;
+                    if (filterStatus === 'unverified' && el.count !== null) return;
+                }
+
+                const isChecked = selectedGridRows.has(idx);
+                const count = el.count;
+                const dotColor = count === 1 ? 'var(--success)' : (count === 0 ? 'var(--danger)' : 'var(--warning)');
+                const badgeText = count === 1 ? 'Unique' : (count != null ? `${count} matches` : '? matches');
+                const alts = el.alternatives || [];
+                const hasAlts = alts.length > 0;
+
+                const tr = document.createElement('tr');
+                tr.id = `grid-row-${idx}`;
+                tr.innerHTML = `
+                    <td style="text-align: center; vertical-align: middle;">
+                        <input type="checkbox" class="grid-checkbox row-select-checkbox" data-idx="${idx}" ${isChecked ? 'checked' : ''} onchange="toggleSelectGridRow(${idx}, this.checked)">
+                    </td>
+                    <td style="text-align: center; color: var(--text-secondary); vertical-align: middle;">#${idx + 1}</td>
+                    <td>
+                        <input type="text" class="grid-input-edit" value="${el.nameHint || 'element'}" oninput="updateGridItemName(${idx}, this.value)" placeholder="element name">
+                    </td>
+                    <td>
+                        <select class="grid-select" style="width: 100%; padding: 4px 6px;" onchange="updateGridItemType(${idx}, this.value)">
+                            <option value="XPath" ${el.type === 'XPath' ? 'selected' : ''}>XPath</option>
+                            <option value="CSS" ${el.type === 'CSS' ? 'selected' : ''}>CSS</option>
+                            <option value="ID" ${el.type === 'ID' ? 'selected' : ''}>ID</option>
+                            <option value="getByRole" ${el.type === 'getByRole' ? 'selected' : ''}>getByRole</option>
+                            <option value="getByText" ${el.type === 'getByText' ? 'selected' : ''}>getByText</option>
+                            <option value="getByPlaceholder" ${el.type === 'getByPlaceholder' ? 'selected' : ''}>getByPlaceholder</option>
+                            <option value="getByLabel" ${el.type === 'getByLabel' ? 'selected' : ''}>getByLabel</option>
+                            <option value="getByTestId" ${el.type === 'getByTestId' ? 'selected' : ''}>getByTestId</option>
+                        </select>
+                    </td>
+                    <td>
+                        <input type="text" class="grid-input-edit monospace" value="${el.value || ''}" oninput="updateGridItemValue(${idx}, this.value)" placeholder="locator value" title="${el.value || ''}">
+                    </td>
+                    <td>
+                        <select class="grid-select" style="width: 100%; padding: 4px 6px;" onchange="updateGridItemAction(${idx}, this.value)">
+                            <option value="Click" ${el.action === 'Click' ? 'selected' : ''}>Click</option>
+                            <option value="Type" ${el.action === 'Type' ? 'selected' : ''}>Type</option>
+                            <option value="Clear" ${el.action === 'Clear' ? 'selected' : ''}>Clear</option>
+                            <option value="Hover" ${el.action === 'Hover' ? 'selected' : ''}>Hover</option>
+                            <option value="DoubleClick" ${el.action === 'DoubleClick' ? 'selected' : ''}>DoubleClick</option>
+                            <option value="RightClick" ${el.action === 'RightClick' ? 'selected' : ''}>ContextClick</option>
+                            <option value="GetText" ${el.action === 'GetText' ? 'selected' : ''}>GetText</option>
+                            <option value="IsDisplayed" ${el.action === 'IsDisplayed' ? 'selected' : ''}>IsDisplayed</option>
+                            <option value="WaitForVisible" ${el.action === 'WaitForVisible' ? 'selected' : ''}>WaitForVisible</option>
+                            <option value="ScrollIntoView" ${el.action === 'ScrollIntoView' ? 'selected' : ''}>ScrollIntoView</option>
+                            <option value="SelectByVisibleText" ${el.action === 'SelectByVisibleText' ? 'selected' : ''}>Select</option>
+                            <option value="Check" ${el.action === 'Check' ? 'selected' : ''}>Check</option>
+                            <option value="Uncheck" ${el.action === 'Uncheck' ? 'selected' : ''}>Uncheck</option>
+                        </select>
+                    </td>
+                    <td style="text-align: center; vertical-align: middle;">
+                        <!-- Styled match badge pill with dot indicator -->
+                        <span id="grid-match-badge-${idx}" class="match-badge" onclick="verifyGridLocator(${idx})" title="Click to re-verify">
+                            <span class="badge-dot" style="background:${dotColor};"></span>
+                            <span>${badgeText}</span>
+                        </span>
+                    </td>
+                    <td style="text-align: center; vertical-align: middle;">
+                        <div style="display:flex; gap:6px; justify-content:center;">
+                            <!-- Operations using clean inline SVGs -->
+                            <button class="action-icon-btn btn-highlight" onclick="highlightGridItem(${idx})" title="Highlight in Browser">
+                                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                            </button>
+                            <button class="action-icon-btn btn-copy" onclick="copyGridLocator(${idx}, this)" title="Copy Value">
+                                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                            </button>
+                            <button class="action-icon-btn btn-ai" onclick="generateGridAILocators(${idx})" title="AI Suggest Alternatives">
+                                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 4 5 5"></path><path d="m3 20 12-12 5 5-12 12z"></path><path d="m19 2-1 2-2-1 2-1z"></path><path d="m14 1-1 1.5-1.5-1 1.5-1z"></path></svg>
+                            </button>
+                            <button class="action-icon-btn btn-alts" onclick="toggleGridAlts(${idx})" title="Show Alternatives" style="background:${expandedGridAlts.has(idx) ? 'rgba(99,102,241,0.15)' : ''}; border-color:${expandedGridAlts.has(idx) ? '#6366f1' : ''}; color:${expandedGridAlts.has(idx) ? '#6366f1' : ''};">
+                                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"></polygon><polyline points="2 17 12 22 22 17"></polyline><polyline points="2 12 12 17 22 12"></polyline></svg>
+                            </button>
+                            <button class="action-icon-btn btn-delete" onclick="deleteGridItem(${idx})" title="Delete Element">
+                                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
+                            </button>
+                        </div>
+                    </td>
+                `;
+                tbody.appendChild(tr);
+
+                // Alternatives Row if Expanded
+                if (expandedGridAlts.has(idx)) {
+                    const altTr = document.createElement('tr');
+                    altTr.className = 'grid-alts-row';
+                    
+                    const altsHtml = hasAlts ? alts.map((l, i) => {
+                        const c = l.count ?? '?';
+                        const col = c === 1 ? '#10b981' : c > 1 ? '#f59e0b' : '#ef4444';
+                        return `
+                            <div style="display:flex; align-items:center; gap:8px; padding:6px 0; border-bottom:1px solid rgba(255,255,255,0.04);">
+                                <span style="font-size:0.65rem; padding:1px 5px; border-radius:3px; background:rgba(255,255,255,0.06); color:${col}; min-width:18px; text-align:center;">${c}</span>
+                                <span style="font-size:0.7rem; color:var(--text-secondary); min-width:80px;">${l.type}</span>
+                                <span style="font-size:0.7rem; font-family:monospace; color:var(--text-primary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1;" title="${l.value}">${l.value}</span>
+                                <button onclick="selectAlternativeByIndexGrid(${idx}, ${i})" class="btn" style="font-size:0.65rem; padding:2px 8px; border-radius:4px; background:rgba(99,102,241,0.15); border:1px solid var(--accent-secondary); color:var(--accent-secondary); cursor:pointer; height:20px;">Use</button>
+                            </div>
+                        `;
+                    }).join('') : `<div style="font-size:0.75rem; color:var(--text-secondary); font-style:italic; padding:6px 0;">No alternatives found. Click the AI wand icon to search.</div>`;
+
+                    altTr.innerHTML = `
+                        <td></td>
+                        <td colspan="7">
+                            <div class="grid-alts-container">
+                                <div style="font-size:0.7rem; color:var(--text-secondary); margin-bottom:6px; font-weight:600; display:flex; align-items:center; gap:6px;">
+                                    <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"></polygon><polyline points="2 17 12 22 22 17"></polyline><polyline points="2 12 12 17 22 12"></polyline></svg>
+                                    Alternatives List
+                                </div>
+                                ${altsHtml}
+                            </div>
+                        </td>
+                    `;
+                    tbody.appendChild(altTr);
+                }
+            });
+
+            updateGridSelectionCount();
+        }
+
+        function updateGridStats(total, unique, duplicate) {
+            document.getElementById('gridStatTotal').textContent = total;
+            document.getElementById('gridStatUnique').textContent = unique;
+            document.getElementById('gridStatDuplicate').textContent = duplicate;
+        }
+
+        function filterGrid() {
+            renderGridTable();
+        }
+
+        function toggleSelectGridRow(idx, checked) {
+            if (checked) {
+                selectedGridRows.add(idx);
+            } else {
+                selectedGridRows.delete(idx);
+            }
+            updateGridSelectionCount();
+            
+            const allCheckbox = document.getElementById('gridSelectAll');
+            const rowCheckboxes = document.querySelectorAll('.row-select-checkbox');
+            const checkedRows = document.querySelectorAll('.row-select-checkbox:checked');
+            if (rowCheckboxes.length > 0) {
+                allCheckbox.checked = checkedRows.length === rowCheckboxes.length;
+            }
+        }
+
+        function toggleSelectAllGrid(checked) {
+            const rowCheckboxes = document.querySelectorAll('.row-select-checkbox');
+            rowCheckboxes.forEach(cb => {
+                const idx = parseInt(cb.getAttribute('data-idx'));
+                cb.checked = checked;
+                if (checked) {
+                    selectedGridRows.add(idx);
+                } else {
+                    selectedGridRows.delete(idx);
+                }
+            });
+            updateGridSelectionCount();
+        }
+
+        function updateGridSelectionCount() {
+            const count = selectedGridRows.size;
+            document.getElementById('gridSelectedCount').textContent = `${count} selected`;
+        }
+
+        function updateGridItemName(idx, value) {
+            if (capturedElements[idx]) {
+                capturedElements[idx].nameHint = value;
+                capturedElements[idx].name = value;
+                pushPendingAction("grid_edit", { idx: idx, field: 'nameHint', value: value });
+            }
+        }
+
+        function updateGridItemType(idx, type) {
+            if (capturedElements[idx]) {
+                capturedElements[idx].type = type;
+                pushPendingAction("grid_edit", { idx: idx, field: 'type', value: type });
+                verifyGridLocator(idx);
+            }
+        }
+
+        // Delay edits to avoid spamming python bridge on every keystroke
+        let editTimeout = null;
+        function updateGridItemValue(idx, value) {
+            if (capturedElements[idx]) {
+                capturedElements[idx].value = value;
+                if (editTimeout) clearTimeout(editTimeout);
+                editTimeout = setTimeout(() => {
+                    pushPendingAction("grid_edit", { idx: idx, field: 'value', value: value });
+                    verifyGridLocator(idx);
+                }, 400);
+            }
+        }
+
+        function updateGridItemAction(idx, action) {
+            if (capturedElements[idx]) {
+                capturedElements[idx].action = action;
+                pushPendingAction("grid_edit", { idx: idx, field: 'action', value: action });
+            }
+        }
+
+        // Verification triggers CSS spinner
+        function verifyGridLocator(idx) {
+            if (idx < 0 || idx >= capturedElements.length) return;
+            const badge = document.getElementById(`grid-match-badge-${idx}`);
+            if (badge) {
+                badge.innerHTML = `
+                    <svg class="icon svg-spinner spinner" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
+                        <circle cx="12" cy="12" r="10" stroke="rgba(255,255,255,0.15)"></circle>
+                        <path d="M12 2a10 10 0 0 1 10 10" stroke="currentColor"></path>
+                    </svg>
+                    <span>Verifying...</span>
+                `;
+                badge.style.color = 'var(--text-secondary)';
+            }
+            pushPendingAction("grid_verify", { idx: idx });
+        }
+
+        // Triggered by Python
+        window.updateGridMatchBadge = function(idx, count) {
+            if (capturedElements[idx]) {
+                capturedElements[idx].count = count;
+                const badge = document.getElementById(`grid-match-badge-${idx}`);
+                if (badge) {
+                    const dotColor = count === 1 ? 'var(--success)' : (count === 0 ? 'var(--danger)' : 'var(--warning)');
+                    const badgeText = count === 1 ? 'Unique' : `${count} match${count === 1 ? '' : 'es'}`;
+                    badge.innerHTML = `
+                        <span class="badge-dot" style="background:${dotColor};"></span>
+                        <span>${badgeText}</span>
+                    `;
+                    badge.style.color = ''; // reset color override
+                }
+                
+                // Recalculate Stats
+                let total = capturedElements.length;
+                let unique = 0;
+                let duplicate = 0;
+                capturedElements.forEach(el => {
+                    if (el.count === 1) unique++;
+                    else if (el.count > 1 || el.count === 0) duplicate++;
+                });
+                updateGridStats(total, unique, duplicate);
+            }
+        };
+
+        // Interactive Highlight Pulse
+        function highlightGridItem(idx) {
+            pushPendingAction("grid_highlight", { idx: idx });
+            
+            const row = document.getElementById(`grid-row-${idx}`);
+            if (row) {
+                row.classList.remove('row-pulse');
+                void row.offsetWidth; // Trigger reflow to restart animation
+                row.classList.add('row-pulse');
+            }
+        }
+
+        // Tactile Copy Feedback
+        function copyGridLocator(idx, btn) {
+            pushPendingAction("copy_locator", { idx: idx });
+            
+            // Visual feedback - swap to green success check
+            const originalHtml = btn.innerHTML;
+            btn.innerHTML = `<svg class="icon svg-check" viewBox="0 0 24 24" fill="none" stroke="var(--success)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>`;
+            btn.style.color = 'var(--success)';
+            btn.style.borderColor = 'var(--success)';
+            btn.style.backgroundColor = 'rgba(16, 185, 129, 0.15)';
+            
+            setTimeout(() => {
+                btn.innerHTML = originalHtml;
+                btn.style.color = '';
+                btn.style.borderColor = '';
+                btn.style.backgroundColor = '';
+            }, 1500);
+        }
+
+        // AI spin spinner
+        function generateGridAILocators(idx) {
+            const badge = document.getElementById(`grid-match-badge-${idx}`);
+            if (badge) {
+                badge.innerHTML = `
+                    <svg class="icon svg-spinner spinner" viewBox="0 0 24 24" fill="none" stroke="var(--warning)" stroke-width="2.5" stroke-linecap="round">
+                        <circle cx="12" cy="12" r="10" stroke="rgba(255,255,255,0.15)"></circle>
+                        <path d="M12 2a10 10 0 0 1 10 10" stroke="currentColor"></path>
+                    </svg>
+                    <span style="color:var(--warning);">AI...</span>
+                `;
+            }
+            pushPendingAction("grid_ai", { idx: idx });
+        }
+
+        // Triggered by Python on AI completion
+        window.applyAIGridResult = function(idx, result) {
+            const aiLocators = result.locators || [];
+            if (!capturedElements[idx] || aiLocators.length === 0) {
+                renderGridTable();
+                return;
+            }
+            const aiLoc = aiLocators[0];
+            capturedElements[idx].type = aiLoc.type;
+            capturedElements[idx].value = aiLoc.value;
+            capturedElements[idx].count = aiLoc.count;
+
+            // Merge alternatives
+            aiLocators.slice(1).forEach(l => {
+                if (!capturedElements[idx].alternatives.find(alt => alt.value === l.value)) {
+                    capturedElements[idx].alternatives.unshift(l);
+                }
+            });
+            renderGridTable();
+        };
+
+        window.applyAIGridError = function(idx, err) {
+            console.error("AI Error:", err.error);
+            renderGridTable();
+        };
+
+        function toggleGridAlts(idx) {
+            if (expandedGridAlts.has(idx)) {
+                expandedGridAlts.delete(idx);
+            } else {
+                expandedGridAlts.add(idx);
+            }
+            renderGridTable();
+        }
+
+        function deleteGridItem(idx) {
+            if (idx >= 0 && idx < capturedElements.length) {
+                capturedElements.splice(idx, 1);
+                selectedGridRows.delete(idx);
+                expandedGridAlts.delete(idx);
+
+                // Adjust keys
+                const newSelected = new Set();
+                selectedGridRows.forEach(v => {
+                    if (v > idx) newSelected.add(v - 1);
+                    else if (v < idx) newSelected.add(v);
+                });
+                selectedGridRows = newSelected;
+
+                const newExpanded = new Set();
+                expandedGridAlts.forEach(v => {
+                    if (v > idx) newExpanded.add(v - 1);
+                    else if (v < idx) newExpanded.add(v);
+                });
+                expandedGridAlts = newExpanded;
+
+                pushPendingAction("grid_delete", { idx: idx });
+                renderGridTable();
+            }
+        }
+
+        function selectAlternativeByIndexGrid(elemIdx, altIdx) {
+            const el = capturedElements[elemIdx];
+            if (!el || !el.alternatives || altIdx >= el.alternatives.length) return;
+            const chosen = el.alternatives[altIdx];
+
+            const current = { type: el.type, value: el.value, count: el.count };
+            el.type = chosen.type;
+            el.value = chosen.value;
+            el.count = chosen.count;
+            el.alternatives[altIdx] = current;
+
+            pushPendingAction("grid_swap_alt", { elemIdx: elemIdx, altIdx: altIdx });
+            renderGridTable();
+        }
+
+        function bulkDeleteGrid() {
+            if (selectedGridRows.size === 0) return;
+            const idxs = Array.from(selectedGridRows).sort((a, b) => b - a);
+            idxs.forEach(idx => {
+                capturedElements.splice(idx, 1);
+            });
+            pushPendingAction("grid_bulk_delete", { idxs: Array.from(selectedGridRows) });
+            selectedGridRows.clear();
+            expandedGridAlts.clear();
+            document.getElementById('gridSelectAll').checked = false;
+            renderGridTable();
+        }
+
+        function bulkSetActionGrid(action) {
+            if (selectedGridRows.size === 0) {
+                document.getElementById('gridBulkAction').value = '';
+                return;
+            }
+            selectedGridRows.forEach(idx => {
+                if (capturedElements[idx]) {
+                    capturedElements[idx].action = action;
+                }
+            });
+            pushPendingAction("grid_bulk_set_action", { idxs: Array.from(selectedGridRows), action: action });
+            document.getElementById('gridBulkAction').value = '';
+            renderGridTable();
+        }
+
+        function exportToExcelGrid() {
+            pushPendingAction("grid_export_excel", "");
+        }
+
+        function showDbModalGrid() {
+            pushPendingAction("grid_store_db", "");
+        }
+
+        function closeGridWindow() {
+            pushPendingAction("close_grid_window", "");
+        }
+    </script>
+</body>
+</html>

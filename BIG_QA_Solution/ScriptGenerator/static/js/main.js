@@ -178,45 +178,108 @@ function escapeHtml(unsafe) {
         .replace(/'/g, "&#039;");
 }
 
-async function launchElementLocator() {
+async function launchElementLocator(fromProject = false) {
     try {
         const projectSelect = document.getElementById('projectSelect');
         const selectedOption = projectSelect ? projectSelect.options[projectSelect.selectedIndex] : null;
         const projectPathInput = document.getElementById('projectPath');
-        
+
+        // Treat the literal string "None" / "null" / "undefined" / empty as missing.
+        // These can show up when Jinja renders a NULL DB value, when a dataset
+        // attribute is unset, or when an element's innerText hasn't been populated yet.
+        const clean = (v) => {
+            if (v === null || v === undefined) return "";
+            const s = String(v).trim();
+            if (!s) return "";
+            const low = s.toLowerCase();
+            if (low === "none" || low === "null" || low === "undefined" || low === "n/a") return "";
+            return s;
+        };
+
         let projectName = "";
         let language = "";
         let framework = "";
         let projectLoc = "";
         let tool = "";
 
-        if (projectPathInput && projectPathInput.value) {
-            projectName = projectPathInput.value.split(/[\\/]/).pop() || "Locally Detected";
-            language = document.getElementById('detLanguage') ? document.getElementById('detLanguage').innerText : "Unknown";
-            framework = document.getElementById('detFramework') ? document.getElementById('detFramework').innerText : "Unknown";
-            tool = document.getElementById('detTool') ? document.getElementById('detTool').innerText : "Unknown";
-            projectLoc = projectPathInput.value;
-        } else if (selectedOption && selectedOption.value) {
-            projectName = selectedOption.value;
-            language = selectedOption.dataset.lang;
-            framework = selectedOption.dataset.fw;
-            projectLoc = selectedOption.dataset.path;
-            tool = selectedOption.dataset.tool;
+        if (projectPathInput && clean(projectPathInput.value)) {
+            projectLoc = clean(projectPathInput.value);
+            projectName = projectLoc.split(/[\\/]/).pop() || "Locally Detected";
+            language  = clean(document.getElementById('detLanguage')  && document.getElementById('detLanguage').innerText);
+            framework = clean(document.getElementById('detFramework') && document.getElementById('detFramework').innerText);
+            tool      = clean(document.getElementById('detTool')      && document.getElementById('detTool').innerText);
         }
 
-        const projectBaseUrl = document.getElementById('projectBaseUrl') ? document.getElementById('projectBaseUrl').value : '';
+        // Fallback / supplement: pull anything still missing from the selected DB option.
+        if (selectedOption && selectedOption.value) {
+            if (!projectName) projectName = clean(selectedOption.value);
+            if (!language)   language   = clean(selectedOption.dataset.lang);
+            if (!framework)  framework  = clean(selectedOption.dataset.fw);
+            if (!projectLoc) projectLoc = clean(selectedOption.dataset.path);
+            if (!tool)       tool       = clean(selectedOption.dataset.tool);
+        }
+
+        const projectBaseUrl = clean(document.getElementById('projectBaseUrl') && document.getElementById('projectBaseUrl').value);
+
+        if (fromProject) {
+            if (!projectLoc) {
+                if (typeof showToast === 'function') {
+                    showToast("Please select or locate a project first", "warning");
+                } else {
+                    alert("Please select or locate a project first");
+                }
+                return;
+            }
+            if (!projectBaseUrl) {
+                let proceed = false;
+                if (typeof showConfirm === 'function') {
+                    proceed = await showConfirm("App URL Warning", "app url not configured. Do you want to continue?", "⚠️", "Continue", "background:var(--accent-primary);color:white;");
+                } else {
+                    proceed = confirm("app url not configured. Do you want to continue?");
+                }
+                if (!proceed) return;
+            }
+        }
+
+        // Diagnostic snapshot of every input the function consulted.
+        const _diag = {
+            'projectSelect exists':      !!projectSelect,
+            'projectSelect.selectedIndex': projectSelect ? projectSelect.selectedIndex : 'n/a',
+            'selectedOption exists':     !!selectedOption,
+            'selectedOption.value':      selectedOption ? selectedOption.value : 'n/a',
+            'dataset.path':              selectedOption ? selectedOption.dataset.path : 'n/a',
+            'dataset.lang':              selectedOption ? selectedOption.dataset.lang : 'n/a',
+            'dataset.fw':                selectedOption ? selectedOption.dataset.fw : 'n/a',
+            'dataset.tool':              selectedOption ? selectedOption.dataset.tool : 'n/a',
+            'projectPath input value':   projectPathInput ? projectPathInput.value : 'n/a',
+            'detLanguage innerText':     document.getElementById('detLanguage')  ? document.getElementById('detLanguage').innerText  : 'n/a',
+            'detFramework innerText':    document.getElementById('detFramework') ? document.getElementById('detFramework').innerText : 'n/a',
+            'detTool innerText':         document.getElementById('detTool')      ? document.getElementById('detTool').innerText      : 'n/a',
+            'projectBaseUrl value':      document.getElementById('projectBaseUrl') ? document.getElementById('projectBaseUrl').value : 'n/a',
+            '---resolved---': '---',
+            'projectName': projectName,
+            'projectLoc':  projectLoc,
+            'language':    language,
+            'framework':   framework,
+            'tool':        tool,
+            'projectBaseUrl (clean)': projectBaseUrl
+        };
+        console.log("[launchElementLocator] raw + resolved:", _diag);
 
         let url = '/qa/launch-element-locator';
         const params = new URLSearchParams();
-        if (projectLoc) params.append('project_path', projectLoc);
-        if (language) params.append('language', language);
-        if (framework) params.append('framework', framework);
-        if (tool) params.append('tool', tool);
+        if (projectLoc)     params.append('project_path', projectLoc);
+        if (language)       params.append('language', language);
+        if (framework)      params.append('framework', framework);
+        if (tool)           params.append('tool', tool);
         if (projectBaseUrl) params.append('app_url', projectBaseUrl);
 
         if (params.toString()) {
             url += '?' + params.toString();
         }
+        console.log("[launchElementLocator] requesting:", url);
+
+
 
         const response = await fetch(url);
         if (response.ok) {

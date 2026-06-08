@@ -58,13 +58,18 @@ class BrowserController(QObject):
             QTabBar::tab { background: #0f172a; color: #94a3b8; padding: 8px 16px; border: 1px solid #1e293b; border-bottom: none; border-top-left-radius: 4px; border-top-right-radius: 4px; }
             QTabBar::tab:selected { background: #1e293b; color: #ffffff; font-weight: bold; }
             QTabBar::tab:hover:!selected { background: #1e293b; }
-            QTabBar::close-button { image: none; }
+            QTabBar::close-button { subcontrol-position: right; padding: 2px; }
+            QTabBar::close-button:hover { background: rgba(239,68,68,0.25); border-radius: 3px; }
         """)
 
         # Shared Python bridge
         self.pybridge = PyBridge()
         self.browser_instances = []
         self.is_capturing = False
+
+        # Dashboard QWebEngineView reference — set by LocatorStudio after UI setup
+        # so we can push URL-change notifications back to the dashboard panel.
+        self._dashboard_view = None
 
         self._inspector_js = self._get_inspector_js()
         self._qwebchannel_js = self._get_qwebchannel_js()
@@ -87,21 +92,25 @@ class BrowserController(QObject):
         channel.registerObject("pybridge", self.pybridge)
         page.setWebChannel(channel)
 
-        # Inject scripts into this tab's profile
+        # Inject scripts into this tab's profile (only once per default profile)
         profile = page.profile()
-        scripts = profile.scripts()
-        script = QWebEngineScript()
-        code = self._qwebchannel_js + "\n" + self._inspector_js
-        script.setSourceCode(code)
-        script.setName(f"inspector_{id(view)}")
-        script.setWorldId(QWebEngineScript.ScriptWorldId.MainWorld)
-        script.setInjectionPoint(QWebEngineScript.InjectionPoint.DocumentReady)
-        script.setRunsOnSubFrames(True)
-        scripts.insert(script)
+        if not getattr(self, "_scripts_registered", False):
+            scripts = profile.scripts()
+            script = QWebEngineScript()
+            code = self._qwebchannel_js + "\n" + self._inspector_js
+            script.setSourceCode(code)
+            script.setName("desktop_inspector")
+            script.setWorldId(QWebEngineScript.ScriptWorldId.MainWorld)
+            script.setInjectionPoint(QWebEngineScript.InjectionPoint.DocumentReady)
+            script.setRunsOnSubFrames(True)
+            scripts.insert(script)
+            self._scripts_registered = True
 
         # Connect signals
         view.loadFinished.connect(lambda ok, v=view: self._on_load_finished(ok, v))
         page.newWindowRequested.connect(self._on_new_window_requested)
+        # Fix #7: propagate URL changes (back/forward/redirect) to the dashboard URL bar
+        view.urlChanged.connect(lambda url, v=view: self._on_url_changed(url, v))
 
         self.browser_instances.append({
             'view': view,
@@ -143,6 +152,21 @@ class BrowserController(QObject):
         # Tell Chromium to fulfill the popup request by routing it into our new tab's page
         request.openIn(new_view.page())
 
+    def _on_url_changed(self, url, view):
+        """Push the new URL to the dashboard URL bar whenever the active tab navigates."""
+        # Only push for the currently visible tab to avoid confusing the user
+        if view != self.tabs.currentWidget():
+            return
+        url_str = url.toString()
+        if url_str in ('', 'about:blank'):
+            return
+        if self._dashboard_view:
+            import json
+            safe_url = json.dumps(url_str)
+            self._dashboard_view.page().runJavaScript(
+                f"if (typeof window.onBrowserUrlChanged === 'function') window.onBrowserUrlChanged({safe_url});"
+            )
+
     def _on_load_finished(self, ok, view):
         if not ok: return
         
@@ -166,11 +190,12 @@ class BrowserController(QObject):
             view.page().runJavaScript("if (typeof window.activateDesktopInspector === 'function') { window.activateDesktopInspector(); }")
 
     def _poll_capture_buffer(self):
-        for inst in self.browser_instances:
-            view = inst['view']
-            view.page().runJavaScript("if (typeof window._drainCaptureBuffer === 'function') { window._drainCaptureBuffer(); }", self._on_drain_result)
+        # Only poll the currently active tab to optimize performance and prevent background tab overhead
+        active_view = self.tabs.currentWidget()
+        if active_view:
+            active_view.page().runJavaScript("if (typeof window._drainCaptureBuffer === 'function') { window._drainCaptureBuffer(); }", self._on_drain_result)
             if self.is_capturing:
-                view.page().runJavaScript("if (typeof window.activateDesktopInspector === 'function' && !window.desktopInspectorActive) { window.activateDesktopInspector(); }")
+                active_view.page().runJavaScript("if (typeof window.activateDesktopInspector === 'function' && !window.desktopInspectorActive) { window.activateDesktopInspector(); }")
 
     def _on_drain_result(self, result):
         if result and result != "[]":
@@ -203,8 +228,22 @@ class BrowserController(QObject):
             
         if current_view:
             url_str = url_str.strip()
+            # Replace localhost with 127.0.0.1 to avoid macOS loopback IPv6 DNS resolution delays
+            if "localhost" in url_str:
+                url_str = url_str.replace("localhost", "127.0.0.1")
+
             if not url_str.startswith("http"):
-                url_str = "https://" + url_str
+                # Detect local addresses to prevent hanging on HTTPS handshake
+                is_local = (
+                    "127.0.0.1" in url_str 
+                    or "::1" in url_str 
+                    or url_str.startswith("192.168.") 
+                    or url_str.startswith("10.")
+                )
+                if is_local:
+                    url_str = "http://" + url_str
+                else:
+                    url_str = "https://" + url_str
             current_view.setUrl(QUrl(url_str))
 
     def start_capturing(self):

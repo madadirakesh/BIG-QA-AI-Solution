@@ -1,0 +1,605 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gen PO — Page Object Editor</title>
+
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <!-- CodeMirror -->
+    <link rel="stylesheet" href="libs/codemirror.min.css">
+    <link rel="stylesheet" href="libs/material-darker.min.css">
+
+    <style>
+        :root {
+            --bg-primary:       #0f172a;
+            --bg-secondary:     #1e293b;
+            --text-primary:     #f8fafc;
+            --text-secondary:   #94a3b8;
+            --accent-primary:   #0078d4;
+            --accent-secondary: #00bcf2;
+            --accent-glow:      rgba(0, 188, 242, 0.35);
+            --success:          #10b981;
+            --warning:          #f59e0b;
+            --danger:           #ef4444;
+            --glass-border:     rgba(255, 255, 255, 0.08);
+            --transition:       all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Inter', -apple-system, sans-serif; }
+
+        body {
+            background: linear-gradient(135deg, var(--bg-primary) 0%, #020617 100%);
+            color: var(--text-primary);
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        /* ── Scrollbars ── */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 10px; }
+        ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.2); }
+
+        /* ── Header ── */
+        .po-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 12px 20px;
+            background: rgba(15, 23, 42, 0.9);
+            border-bottom: 1px solid var(--glass-border);
+            flex-shrink: 0;
+            gap: 12px;
+        }
+
+        .po-header-left {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+        }
+
+        .po-logo {
+            font-family: 'Outfit', sans-serif;
+            font-weight: 700;
+            font-size: 1.05rem;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            letter-spacing: -0.3px;
+        }
+
+        .po-logo-icon {
+            width: 32px;
+            height: 32px;
+            border-radius: 9px;
+            background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 4px 12px rgba(0, 188, 242, 0.3);
+            flex-shrink: 0;
+        }
+
+        .po-meta {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .po-badge {
+            font-size: 0.7rem;
+            padding: 3px 10px;
+            border-radius: 20px;
+            font-family: 'Outfit', sans-serif;
+            font-weight: 600;
+            letter-spacing: 0.3px;
+            border: 1px solid;
+        }
+
+        .po-badge-lang {
+            background: rgba(0, 188, 242, 0.12);
+            border-color: rgba(0, 188, 242, 0.3);
+            color: #00bcf2;
+        }
+
+        .po-badge-tool {
+            background: rgba(99, 102, 241, 0.12);
+            border-color: rgba(99, 102, 241, 0.3);
+            color: #818cf8;
+        }
+
+        .po-badge-file {
+            background: rgba(16, 185, 129, 0.1);
+            border-color: rgba(16, 185, 129, 0.25);
+            color: #34d399;
+            font-family: 'Fira Code', monospace;
+            font-weight: 400;
+            max-width: 300px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            cursor: help;
+        }
+
+        .po-header-actions {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-shrink: 0;
+        }
+
+        /* ── Toolbar (line count, lang) ── */
+        .po-toolbar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 6px 20px;
+            background: rgba(9, 13, 24, 0.85);
+            border-bottom: 1px solid rgba(255,255,255,0.04);
+            flex-shrink: 0;
+            font-size: 0.7rem;
+            color: var(--text-secondary);
+        }
+
+        .po-toolbar-left { display: flex; align-items: center; gap: 14px; }
+        .po-toolbar-right { display: flex; align-items: center; gap: 10px; }
+
+        .toolbar-stat {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .toolbar-stat i { font-size: 0.65rem; opacity: 0.6; }
+
+        /* ── Editor area ── */
+        .po-editor-wrap {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            min-height: 0;
+            background: #090d16;
+            position: relative;
+        }
+
+        #poCodeTextarea {
+            flex: 1;
+            border: none;
+            background: transparent;
+            padding: 16px 20px;
+            font-size: 0.85rem;
+            line-height: 1.6;
+            color: #e2e8f0;
+            resize: none;
+            outline: none;
+            font-family: 'Fira Code', 'Cascadia Code', 'Consolas', monospace;
+            width: 100%;
+            box-sizing: border-box;
+            margin: 0;
+        }
+
+        /* CodeMirror overrides */
+        .CodeMirror {
+            flex: 1;
+            height: 100% !important;
+            font-family: 'Fira Code', 'Cascadia Code', 'Consolas', monospace;
+            font-size: 0.84rem !important;
+            background: #090d16 !important;
+            color: #e2e8f0 !important;
+            line-height: 1.6 !important;
+        }
+
+        .CodeMirror-scroll { height: 100% !important; }
+
+        .CodeMirror-gutters {
+            background: #060911 !important;
+            border-right: 1px solid rgba(255,255,255,0.05) !important;
+        }
+
+        .CodeMirror-linenumber { color: #3d4f6e !important; }
+
+        .CodeMirror-cursor {
+            border-left: 2px solid var(--accent-secondary) !important;
+        }
+
+        .CodeMirror-selected {
+            background: rgba(0, 188, 242, 0.15) !important;
+        }
+
+        /* ── Footer ── */
+        .po-footer {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 10px 20px;
+            background: rgba(9, 13, 24, 0.95);
+            border-top: 1px solid var(--glass-border);
+            flex-shrink: 0;
+            gap: 12px;
+        }
+
+        .po-footer-left {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+        }
+
+        .po-footer-right {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        /* ── Buttons ── */
+        .btn {
+            cursor: pointer;
+            border: none;
+            border-radius: 8px;
+            padding: 7px 16px;
+            font-family: 'Outfit', sans-serif;
+            font-weight: 600;
+            font-size: 0.82rem;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 7px;
+            transition: var(--transition);
+            transform: translateY(0);
+        }
+
+        .btn:hover { transform: translateY(-1.5px); }
+        .btn:active { transform: translateY(0.5px) scale(0.97); }
+
+        .btn-primary {
+            background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
+            color: white;
+            box-shadow: 0 4px 14px var(--accent-glow);
+        }
+
+        .btn-primary:hover {
+            box-shadow: 0 6px 20px var(--accent-glow);
+            filter: brightness(1.08);
+        }
+
+        .btn-outline {
+            background: transparent;
+            border: 1px solid var(--glass-border);
+            color: var(--text-secondary);
+        }
+
+        .btn-outline:hover {
+            background: rgba(255,255,255,0.06);
+            color: var(--text-primary);
+            border-color: rgba(255,255,255,0.18);
+        }
+
+        .btn-success {
+            background: rgba(16, 185, 129, 0.15);
+            border: 1px solid rgba(16, 185, 129, 0.3);
+            color: #34d399;
+        }
+
+        .btn-success:hover {
+            background: rgba(16, 185, 129, 0.25);
+            border-color: rgba(16, 185, 129, 0.55);
+            box-shadow: 0 4px 14px rgba(16, 185, 129, 0.2);
+        }
+
+        /* ── Copy flash feedback ── */
+        @keyframes copy-flash {
+            0%   { background: rgba(16, 185, 129, 0.3); }
+            100% { background: transparent; }
+        }
+
+        .copy-flash { animation: copy-flash 0.7s ease-out; }
+
+        /* ── Loading overlay ── */
+        #loadingOverlay {
+            position: absolute;
+            inset: 0;
+            background: rgba(9, 13, 24, 0.85);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 14px;
+            z-index: 10;
+        }
+
+        .spinner {
+            width: 36px;
+            height: 36px;
+            border: 3px solid rgba(0, 188, 242, 0.15);
+            border-top-color: var(--accent-secondary);
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        #loadingOverlay p {
+            font-family: 'Outfit', sans-serif;
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+        }
+
+        /* ── Status dot ── */
+        .status-dot {
+            width: 7px; height: 7px; border-radius: 50%;
+            display: inline-block; margin-right: 3px;
+        }
+        .status-dot.connected   { background: var(--success); box-shadow: 0 0 5px var(--success); }
+        .status-dot.connecting  { background: var(--warning); }
+        .status-dot.error       { background: var(--danger); }
+    </style>
+</head>
+<body>
+
+    <!-- ── Header ── -->
+    <div class="po-header">
+        <div class="po-header-left">
+            <div class="po-logo">
+                <div class="po-logo-icon">
+                    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                        <polyline points="14 2 14 8 20 8"/>
+                        <polyline points="10 15 8 17 10 19"/>
+                        <polyline points="14 15 16 17 14 19"/>
+                    </svg>
+                </div>
+                Gen PO
+            </div>
+            <div class="po-meta">
+                <span class="po-badge po-badge-lang" id="badgeLang">TypeScript</span>
+                <span class="po-badge po-badge-tool" id="badgeTool">Playwright</span>
+                <span class="po-badge po-badge-file" id="badgeFile" title="">MyPage.ts</span>
+            </div>
+        </div>
+        <div class="po-header-actions">
+            <span style="font-size:0.68rem; display:flex; align-items:center; gap:5px; color: var(--text-secondary);">
+                <span class="status-dot connecting" id="statusDot"></span>
+                <span id="statusText">Connecting…</span>
+            </span>
+        </div>
+    </div>
+
+    <!-- ── Toolbar ── -->
+    <div class="po-toolbar">
+        <div class="po-toolbar-left">
+            <span class="toolbar-stat"><i class="fas fa-align-left"></i> <span id="lineCount">0 lines</span></span>
+            <span class="toolbar-stat"><i class="fas fa-text-width"></i> <span id="charCount">0 chars</span></span>
+            <span class="toolbar-stat" id="elemCountStat" style="color: var(--accent-secondary);"><i class="fas fa-fingerprint"></i> <span id="elemCount">0 locators</span></span>
+        </div>
+        <div class="po-toolbar-right">
+            <span style="opacity:0.5;">Preview &amp; Edit before saving</span>
+        </div>
+    </div>
+
+    <!-- ── Editor ── -->
+    <div class="po-editor-wrap">
+        <div id="loadingOverlay">
+            <div class="spinner"></div>
+            <p>Generating Page Object…</p>
+        </div>
+        <textarea id="poCodeTextarea" spellcheck="false" placeholder="Generated code will appear here…"></textarea>
+    </div>
+
+    <!-- ── Footer ── -->
+    <div class="po-footer">
+        <div class="po-footer-left">
+            <i class="fas fa-info-circle" style="opacity:0.5;"></i>
+            <span>You can edit the code directly — changes are reflected when you Save.</span>
+        </div>
+        <div class="po-footer-right">
+            <button class="btn btn-outline" onclick="closeWindow()">
+                <i class="fas fa-times"></i> Close
+            </button>
+            <button class="btn btn-success" id="copyBtn" onclick="copyCode()">
+                <i class="fas fa-copy"></i> Copy
+            </button>
+            <button class="btn btn-primary" id="saveBtn" onclick="saveCode()">
+                <i class="fas fa-save"></i> Save to File
+            </button>
+        </div>
+    </div>
+
+    <!-- ── Scripts ── -->
+    <script src="libs/codemirror.min.js"></script>
+    <script src="libs/javascript.min.js"></script>
+    <script src="libs/python.min.js"></script>
+    <script src="libs/clike.min.js"></script>
+    <script src="qrc:///qtwebchannel/qwebchannel.js"></script>
+    <script>
+        // ── State ──────────────────────────────────────────────────────────
+        let pyBridge      = null;
+        let cmEditor      = null;
+        let _lang         = 'TypeScript';
+        let _tool         = 'Playwright';
+        let _filename     = 'MyPage';
+        let _elemCount    = 0;
+
+        // Polling action queue (same pattern as merge.html / grid.html)
+        let _pendingActions = [];
+
+        function getPendingAction() {
+            if (_pendingActions.length === 0) return null;
+            return JSON.stringify(_pendingActions.shift());
+        }
+
+        function pushPendingAction(action, payload) {
+            _pendingActions.push({ action, payload: JSON.stringify(payload) });
+        }
+
+        // ── Bridge ─────────────────────────────────────────────────────────
+        function initBridge() {
+            if (typeof qt !== 'undefined' && qt.webChannelTransport &&
+                typeof qt.webChannelTransport.send === 'function') {
+                new QWebChannel(qt.webChannelTransport, function(channel) {
+                    pyBridge = channel.objects.pyBridge;
+                    setStatus('connected', 'Connected');
+                    pyBridge.callPython('po_window_ready', '');
+                });
+            } else {
+                setTimeout(initBridge, 100);
+            }
+        }
+
+        function setStatus(cls, text) {
+            const dot = document.getElementById('statusDot');
+            const txt = document.getElementById('statusText');
+            dot.className = 'status-dot ' + cls;
+            txt.textContent = text;
+        }
+
+        // ── Data loading (called by Python via runJavaScript) ─────────────
+        window.loadInitialPOData = function(payload) {
+            _lang      = payload.lang      || 'TypeScript';
+            _tool      = payload.tool      || 'Playwright';
+            _filename  = payload.filename  || 'MyPage';
+            _elemCount = payload.elemCount || 0;
+            const code = payload.code      || '';
+
+            // Update badges
+            document.getElementById('badgeLang').textContent = _lang;
+            document.getElementById('badgeTool').textContent = _tool;
+            document.getElementById('elemCount').textContent = _elemCount + ' locators';
+
+            const ext = getExt(_lang);
+            const fileLabel = _filename + ext;
+            document.getElementById('badgeFile').textContent = fileLabel;
+            document.getElementById('badgeFile').title       = fileLabel;
+
+            // Populate editor
+            if (cmEditor) {
+                cmEditor.setValue(code);
+                cmEditor.setOption('mode', getLangMode(_lang));
+                cmEditor.refresh();
+            } else {
+                document.getElementById('poCodeTextarea').value = code;
+            }
+
+            updateStats();
+            hideLoading();
+        };
+
+        // ── Editor setup ───────────────────────────────────────────────────
+        function initEditor() {
+            if (typeof CodeMirror === 'undefined') return;
+            const ta = document.getElementById('poCodeTextarea');
+            if (!ta || cmEditor) return;
+
+            cmEditor = CodeMirror.fromTextArea(ta, {
+                lineNumbers:  true,
+                mode:         getLangMode(_lang),
+                theme:        'material-darker',
+                lineWrapping: false,
+                autofocus:    true,
+                extraKeys: {
+                    'Ctrl-S': saveCode,
+                    'Cmd-S':  saveCode,
+                    'Ctrl-C': copyCode
+                }
+            });
+            cmEditor.getWrapperElement().style.height = '100%';
+            cmEditor.getWrapperElement().style.display = 'flex';
+            cmEditor.getWrapperElement().style.flexDirection = 'column';
+            cmEditor.on('change', updateStats);
+        }
+
+        function getLangMode(lang) {
+            const l = (lang || '').toLowerCase();
+            if (l === 'python')     return 'text/x-python';
+            if (l === 'java')       return 'text/x-java';
+            if (l === 'c#')         return 'text/x-csharp';
+            if (l === 'javascript') return 'text/javascript';
+            return 'text/typescript';  // TypeScript default
+        }
+
+        function getExt(lang) {
+            const l = (lang || '').toLowerCase();
+            if (l === 'python')     return '.py';
+            if (l === 'java')       return '.java';
+            if (l === 'c#')         return '.cs';
+            if (l === 'javascript') return '.js';
+            return '.ts';
+        }
+
+        function updateStats() {
+            const code = getCode();
+            const lines = code ? code.split('\n').length : 0;
+            const chars = code ? code.length : 0;
+            document.getElementById('lineCount').textContent = lines + ' lines';
+            document.getElementById('charCount').textContent = chars + ' chars';
+        }
+
+        function getCode() {
+            return cmEditor ? cmEditor.getValue() : document.getElementById('poCodeTextarea').value;
+        }
+
+        function hideLoading() {
+            const ov = document.getElementById('loadingOverlay');
+            if (ov) ov.style.display = 'none';
+            if (cmEditor) setTimeout(() => cmEditor.refresh(), 50);
+        }
+
+        // ── Actions ────────────────────────────────────────────────────────
+        function copyCode() {
+            const code = getCode();
+            pushPendingAction('po_copy_code', { code });
+
+            const btn = document.getElementById('copyBtn');
+            const orig = btn.innerHTML;
+            btn.innerHTML = '<i class="fas fa-check"></i> Copied!';
+            btn.style.borderColor = 'rgba(16,185,129,0.6)';
+            btn.style.color = '#34d399';
+            btn.style.background = 'rgba(16,185,129,0.2)';
+
+            // Flash editor
+            const wrap = cmEditor ? cmEditor.getWrapperElement() : document.getElementById('poCodeTextarea');
+            wrap.classList.add('copy-flash');
+            setTimeout(() => { wrap.classList.remove('copy-flash'); }, 700);
+
+            setTimeout(() => {
+                btn.innerHTML = orig;
+                btn.style.borderColor = '';
+                btn.style.color = '';
+                btn.style.background = '';
+            }, 1800);
+        }
+
+        function saveCode() {
+            const code = getCode();
+            pushPendingAction('po_save_code', {
+                code:     code,
+                filename: _filename,
+                lang:     _lang
+            });
+        }
+
+        function closeWindow() {
+            pushPendingAction('close_po_window', {});
+        }
+
+        // ── Init ───────────────────────────────────────────────────────────
+        window.addEventListener('DOMContentLoaded', () => {
+            initEditor();
+            initBridge();
+        });
+
+        // Keyboard shortcut: Escape closes window
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') closeWindow();
+        });
+    </script>
+</body>
+</html>

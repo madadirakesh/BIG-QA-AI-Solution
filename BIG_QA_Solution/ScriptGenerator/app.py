@@ -672,12 +672,45 @@ def launch_element_locator():
         tool = request.args.get('tool', '')
         app_url = request.args.get('app_url', '')
 
-        locator_path = os.path.join(os.path.dirname(__file__), '..', 'ElementLocator', 'launcher.py')
+        # Diagnostic: log exactly what the endpoint received from JS
+        print(f"[App] launch-element-locator query string: {request.query_string!r}", flush=True)
+        print(f"[App] launch-element-locator parsed args: project_path={project_path!r}, language={language!r}, framework={framework!r}, tool={tool!r}, app_url={app_url!r}", flush=True)
+
+        # Treat the literal string "None" / "null" / "undefined" as missing — these
+        # can come from Jinja rendering a NULL DB value, or JS reading an undefined
+        # dataset attribute and coercing it to a string.
+        def _sanitize(v):
+            if v is None:
+                return ''
+            s = str(v).strip()
+            if s.lower() in ('none', 'null', 'undefined', 'n/a'):
+                return ''
+            return s
+
+        project_path = _sanitize(project_path)
+        language = _sanitize(language)
+        framework = _sanitize(framework)
+        tool = _sanitize(tool)
+        app_url = _sanitize(app_url)
+
+        locator_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'ElementLocator', 'launcher.py'))
         cmd = [sys.executable, locator_path]
         if project_path:
             cmd.extend([project_path, language, framework, tool, app_url])
 
-        subprocess.Popen(cmd, shell=(sys.platform == 'win32'))
+        # NOTE: Do NOT use shell=True here. On Windows, shell=True with a list of
+        # arguments causes the extra args to be lost/mangled by cmd.exe, so the
+        # launched studio receives no parameters. Launching python.exe directly
+        # via CreateProcess passes argv through cleanly.
+        popen_kwargs = {}
+        if sys.platform == 'win32':
+            popen_kwargs['creationflags'] = (
+                subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.DETACHED_PROCESS
+            )
+        else:
+            popen_kwargs['start_new_session'] = True
+
+        subprocess.Popen(cmd, **popen_kwargs)
         print(f"[App] Launching command: {cmd}")
         return jsonify({'status': 'success', 'message': 'Element Locator Studio launched.'})
     except Exception as e:

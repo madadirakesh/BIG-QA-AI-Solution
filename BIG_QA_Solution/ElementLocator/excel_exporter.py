@@ -8,14 +8,25 @@ class ExcelExporter:
         locators is a list of dicts: [{"name": "...", "type": "...", "action": "...", "value": "..."}, ...]
         """
         try:
-            from openpyxl import Workbook
-            wb = Workbook()
-            ws = wb.active
-            ws.title = "Page Objects"
-
-            # Headers
-            headers = ["Element Name", "Locator Type", "Action", "Locator Value"]
-            ws.append(headers)
+            from openpyxl import Workbook, load_workbook
+            
+            if os.path.exists(filepath):
+                try:
+                    wb = load_workbook(filepath)
+                    ws = wb.active
+                except Exception as load_err:
+                    print(f"Could not load existing Excel, creating new: {load_err}")
+                    wb = Workbook()
+                    ws = wb.active
+                    ws.title = "Page Objects"
+                    headers = ["Element Name", "Locator Type", "Action", "Locator Value"]
+                    ws.append(headers)
+            else:
+                wb = Workbook()
+                ws = wb.active
+                ws.title = "Page Objects"
+                headers = ["Element Name", "Locator Type", "Action", "Locator Value"]
+                ws.append(headers)
 
             # Data
             for loc in locators:

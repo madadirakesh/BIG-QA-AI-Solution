@@ -12,9 +12,9 @@ import threading
 from pathlib import Path
 from datetime import datetime
 
-from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
+from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                              QHBoxLayout, QSplitter, QFileDialog, QMessageBox)
-from PyQt6.QtCore import Qt, QUrl, pyqtSlot, QObject, pyqtSignal, QTimer
+from PyQt6.QtCore import Qt, QUrl, pyqtSlot, QObject, pyqtSignal, QTimer, QFile, QIODevice, QTextStream
 from PyQt6.QtWebEngineWidgets import QWebEngineView
 from PyQt6.QtWebChannel import QWebChannel
 
@@ -50,6 +50,37 @@ logging.basicConfig(
     level=logging.ERROR,
     format='%(asctime)s - %(levelname)s - %(message)s'
 )
+
+def _ensure_qwebchannel_js():
+    """Materialise Qt's bundled qwebchannel.js to ui/libs/qwebchannel.js.
+
+    dashboard.html includes <script src="libs/qwebchannel.js"> synchronously
+    during HTML parsing. If the file is missing, the dashboard's initBridge()
+    throws "ReferenceError: QWebChannel is not defined" and pyBridge stays
+    null — which breaks every JS->Python action (capture toggle, AI requests,
+    code preview, smart merge, etc.).
+
+    BrowserController also injects qwebchannel.js into the default profile,
+    but at InjectionPoint.DocumentReady — too late for inline scripts that
+    run during HTML parse. So we drop the file on disk instead.
+    """
+    libs_dir = BASE_DIR / "ui" / "libs"
+    target = libs_dir / "qwebchannel.js"
+    if target.exists():
+        return
+    libs_dir.mkdir(parents=True, exist_ok=True)
+    f = QFile(":/qtwebchannel/qwebchannel.js")
+    if not f.open(QIODevice.OpenModeFlag.ReadOnly):
+        print(f"[Studio] WARNING: could not read :/qtwebchannel/qwebchannel.js from Qt resources; dashboard bridge will be broken", flush=True)
+        return
+    try:
+        stream = QTextStream(f)
+        content = stream.readAll()
+    finally:
+        f.close()
+    target.write_text(content, encoding="utf-8")
+    print(f"[Studio] Wrote qwebchannel.js to {target}", flush=True)
+
 
 def find_existing_page_objects(project_path, language):
     if not project_path or not os.path.exists(project_path):
@@ -114,6 +145,7 @@ class StudioBridge(QObject):
     mergePreviewReady = pyqtSignal(str) # Send Merge preview to JS
     codePreviewReady = pyqtSignal(str) # Send Generated Code to JS
     liveVerificationResult = pyqtSignal(str) # Send verification result to JS
+    urlChanged = pyqtSignal(str)           # Push browser URL changes to JS
     commandReceived = pyqtSignal(str, str) # From JS: action, payload
 
     @pyqtSlot(str, str)
@@ -136,6 +168,439 @@ class MergeBridge(QObject):
     def callPython(self, action, payload_str):
         if self._window is not None:
             self._window._handle_command(action, payload_str)
+
+
+class GridBridge(QObject):
+    """
+    Dedicated, isolated QObject bridge for the spacious Captured Locators Grid View.
+    Allows reliable communication between JS in grid.html and python.
+    """
+    gridActionReceived = pyqtSignal(str, str)
+
+    def __init__(self):
+        super().__init__()
+        self._window = None
+
+    @pyqtSlot(str, str)
+    def callPython(self, action, payload_str):
+        if self._window is not None:
+            self._window._handle_command(action, payload_str)
+
+
+class GridWindow(QMainWindow):
+    def __init__(self, parent, locators, tool, lang):
+        super().__init__(parent)
+        self.setWindowTitle("Captured Locators Grid View")
+        self.locators = locators
+        self.tool = tool
+        self.lang = lang
+        self._parent_studio = parent
+
+        # Spacious size suitable for large screen editing, centered
+        screen = QApplication.primaryScreen().availableGeometry()
+        win_w = min(1180, int(screen.width() * 0.75))
+        win_h = int(screen.height() * 0.82)
+        win_x = screen.x() + (screen.width() - win_w) // 2
+        win_y = screen.y() + (screen.height() - win_h) // 2
+        self.setGeometry(win_x, win_y, win_w, win_h)
+        self.setMinimumSize(950, 600)
+
+        central_widget = QWidget()
+        layout = QVBoxLayout(central_widget)
+        layout.setContentsMargins(0, 0, 0, 0)
+
+        self.view = QWebEngineView()
+        self.page_obj = WebPage(self.view)
+        self.view.setPage(self.page_obj)
+
+        self._bridge = GridBridge()
+        self._bridge._window = self
+        self.channel = QWebChannel()
+        self.channel.registerObject("pyBridge", self._bridge)
+        self.view.page().setWebChannel(self.channel)
+
+        self.view.loadFinished.connect(self._on_load_finished)
+
+        grid_path = BASE_DIR / "ui" / "grid.html"
+        self.view.setUrl(QUrl.fromLocalFile(str(grid_path)))
+
+        layout.addWidget(self.view)
+        self.setCentralWidget(central_widget)
+
+        # Polling action queue timer
+        self._poll_timer = QTimer(self)
+        self._poll_timer.timeout.connect(self._poll_js_action)
+
+        QTimer.singleShot(150, self.force_foreground)
+
+    def _on_load_finished(self, ok):
+        print(f"[GridWindow] loadFinished ok={ok}, locators={len(self.locators)}")
+        if ok:
+            QTimer.singleShot(500, self._push_data_to_js)
+            self._poll_timer.start(150)
+
+    def _push_data_to_js(self):
+        try:
+            payload = {
+                "elements": self.locators,
+                "tool":     self.tool,
+                "lang":     self.lang
+            }
+            payload_json = json.dumps(payload)
+            self.view.page().runJavaScript(
+                f"(function(){{ try{{ loadInitialGridData({payload_json}); return 'ok'; }}"
+                f" catch(e){{ return 'ERR:'+e.toString(); }} }})()"
+            )
+        except Exception as e:
+            print(f"[GridWindow] _push_data_to_js ERROR: {e}")
+            logging.error(f"Error in _push_data_to_js: {e}")
+
+    def _poll_js_action(self):
+        try:
+            self.view.page().runJavaScript(
+                "typeof getPendingAction === 'function' ? getPendingAction() : null",
+                self._on_js_action
+            )
+        except Exception:
+            pass
+
+    def _on_js_action(self, result):
+        if not result:
+            return
+        try:
+            data = json.loads(result)
+            action  = data.get("action", "")
+            payload = data.get("payload", "")
+            if action:
+                self._handle_command(action, payload)
+        except Exception as e:
+            print(f"[GridWindow] _on_js_action parse error: {e}")
+
+    def force_foreground(self):
+        self.raise_()
+        self.activateWindow()
+
+    def closeEvent(self, event):
+        self._poll_timer.stop()
+        super().closeEvent(event)
+        # Notify the parent window dashboard to refresh the sidebar queue view
+        self._parent_studio.dashboard_view.page().runJavaScript("renderQueue();")
+        if hasattr(self._parent_studio, "grid_window"):
+            self._parent_studio.grid_window = None
+
+    def update_data(self, locators, tool, lang):
+        self.locators = locators
+        self.tool = tool
+        self.lang = lang
+        self._push_data_to_js()
+
+    def _handle_command(self, action, payload):
+        try:
+            print(f"[GridWindow] Command: {action}")
+            if action == "grid_window_ready":
+                self._push_data_to_js()
+
+            elif action == "close_grid_window":
+                self.close()
+
+            elif action == "grid_edit":
+                idx = payload.get("idx")
+                field = payload.get("field")
+                value = payload.get("value")
+                # Keep Python-side locators in sync so highlight/verify/AI use current data
+                if isinstance(idx, int) and 0 <= idx < len(self.locators):
+                    self.locators[idx][field] = value
+                    if field == 'nameHint':
+                        self.locators[idx]['name'] = value
+                # Forward to main dashboard
+                safe_val = json.dumps(value)
+                js = f"updateElementFromGrid({idx}, '{field}', {safe_val});"
+                self._parent_studio.dashboard_view.page().runJavaScript(js)
+
+            elif action == "grid_highlight":
+                idx = payload.get("idx")
+                if idx >= 0 and idx < len(self.locators):
+                    loc = self.locators[idx]
+                    self._parent_studio.browser_ctrl.highlight_element(loc.get("type"), loc.get("value"))
+
+            elif action == "grid_verify":
+                idx = payload.get("idx")
+                if idx >= 0 and idx < len(self.locators):
+                    loc = self.locators[idx]
+                    l_type = loc.get("type")
+                    l_val = loc.get("value")
+                    
+                    def on_res(res):
+                        count = res if isinstance(res, int) else 0
+                        # Return verification results back to both Grid Window and main Dashboard
+                        self.view.page().runJavaScript(f"updateGridMatchBadge({idx}, {count});")
+                        self._parent_studio.dashboard_view.page().runJavaScript(f"updateItemMatchBadge({idx}, {count});")
+                    
+                    safe_val = json.dumps(l_val)
+                    js = f"window.verifyLiveLocator('{l_type}', {safe_val});"
+                    self._parent_studio.browser_ctrl.view.page().runJavaScript(js, on_res)
+
+            elif action == "grid_delete":
+                idx = payload.get("idx")
+                # Mirror deletion in Python-side locators
+                if isinstance(idx, int) and 0 <= idx < len(self.locators):
+                    self.locators.pop(idx)
+                js = f"deleteElementFromGrid({idx});"
+                self._parent_studio.dashboard_view.page().runJavaScript(js)
+
+            elif action == "grid_swap_alt":
+                elem_idx = payload.get("elemIdx")
+                alt_idx = payload.get("altIdx")
+                # Mirror swap in Python-side locators
+                if isinstance(elem_idx, int) and 0 <= elem_idx < len(self.locators):
+                    el = self.locators[elem_idx]
+                    alts = el.get("alternatives", [])
+                    if isinstance(alt_idx, int) and 0 <= alt_idx < len(alts):
+                        chosen = alts[alt_idx]
+                        current = {"type": el.get("type"), "value": el.get("value"), "count": el.get("count")}
+                        el["type"] = chosen.get("type")
+                        el["value"] = chosen.get("value")
+                        el["count"] = chosen.get("count")
+                        alts[alt_idx] = current
+                js = f"swapAltFromGrid({elem_idx}, {alt_idx});"
+                self._parent_studio.dashboard_view.page().runJavaScript(js)
+
+            elif action == "grid_bulk_delete":
+                idxs = payload.get("idxs", [])
+                # Mirror bulk deletion in Python-side locators (descending to avoid index shift)
+                for i in sorted(idxs, reverse=True):
+                    if isinstance(i, int) and 0 <= i < len(self.locators):
+                        self.locators.pop(i)
+                safe_idxs = json.dumps(idxs)
+                js = f"bulkDeleteFromGrid({safe_idxs});"
+                self._parent_studio.dashboard_view.page().runJavaScript(js)
+
+            elif action == "grid_bulk_set_action":
+                idxs = payload.get("idxs", [])
+                val_action = payload.get("action")
+                safe_idxs = json.dumps(idxs)
+                js = f"bulkSetActionFromGrid({safe_idxs}, '{val_action}');"
+                self._parent_studio.dashboard_view.page().runJavaScript(js)
+
+            elif action == "grid_ai":
+                idx = payload.get("idx")
+                if idx >= 0 and idx < len(self.locators):
+                    loc = self.locators[idx]
+                    
+                    # Call Python AI generation in thread
+                    def runner():
+                        try:
+                            ai_locators = self._parent_studio.ai_service.generate_unique_xpath(
+                                loc.get("nameHint", "element"),
+                                loc.get("outerHtml", ""),
+                                self.tool
+                            )
+                            # Return result back to Grid and main window
+                            result = {"elemIdx": idx, "locators": ai_locators}
+                            res_json = json.dumps(result)
+                            self.view.page().runJavaScript(f"applyAIGridResult({idx}, {res_json});")
+                            self._parent_studio.dashboard_view.page().runJavaScript(f"applyAIResult({idx}, {json.dumps(ai_locators)});")
+                        except Exception as e:
+                            logging.error(f"AI XPath generation failed: {e}")
+                            err = json.dumps({"elemIdx": idx, "locators": [], "error": str(e)})
+                            self.view.page().runJavaScript(f"applyAIGridError({idx}, {err});")
+                            
+                    threading.Thread(target=runner, daemon=True).start()
+
+            elif action == "copy_locator":
+                idx = payload.get("idx")
+                if isinstance(idx, int) and 0 <= idx < len(self.locators):
+                    text = self.locators[idx].get("value", "")
+                    QApplication.clipboard().setText(text)
+
+            elif action == "grid_export_excel":
+                self._parent_studio._handle_js_command("export_to_excel", json.dumps({"locators": self.locators}))
+
+            elif action == "grid_store_db":
+                self._parent_studio.dashboard_view.page().runJavaScript("showDbModal();")
+
+        except Exception as e:
+            print(f"[GridWindow] _handle_command ERROR: {e}")
+            logging.error(f"Error handling GridWindow command {action}: {e}")
+
+class POBridge(QObject):
+    """
+    Dedicated, isolated QObject bridge for the Gen PO popup window.
+    Same pattern as MergeBridge — button events are polled, not signalled.
+    """
+    def __init__(self):
+        super().__init__()
+        self._window = None
+
+    @pyqtSlot(str, str)
+    def callPython(self, action, payload_str):
+        if self._window is not None:
+            self._window._handle_command(action, payload_str)
+
+
+class POWindow(QMainWindow):
+    """Dedicated full-screen Page Object code editor popup window."""
+
+    def __init__(self, parent, code, tool, lang, filename, elem_count):
+        super().__init__(parent)
+        self.setWindowTitle("Gen PO — Page Object Editor")
+        self._code       = code
+        self._tool       = tool
+        self._lang       = lang
+        self._filename   = filename
+        self._elem_count = elem_count
+        self._parent_studio = parent
+
+        # Size: centred, slightly narrower than merge window
+        screen = QApplication.primaryScreen().availableGeometry()
+        win_w = min(1200, int(screen.width() * 0.72))
+        win_h = int(screen.height() * 0.86)
+        win_x = screen.x() + (screen.width()  - win_w) // 2
+        win_y = screen.y() + (screen.height() - win_h) // 2
+        self.setGeometry(win_x, win_y, win_w, win_h)
+        self.setMinimumSize(800, 580)
+
+        central = QWidget()
+        layout  = QVBoxLayout(central)
+        layout.setContentsMargins(0, 0, 0, 0)
+
+        self.view     = QWebEngineView()
+        self.page_obj = WebPage(self.view)
+        self.view.setPage(self.page_obj)
+
+        self._bridge         = POBridge()
+        self._bridge._window = self
+        self.channel         = QWebChannel()
+        self.channel.registerObject("pyBridge", self._bridge)
+        self.view.page().setWebChannel(self.channel)
+
+        self.view.loadFinished.connect(self._on_load_finished)
+
+        po_path = BASE_DIR / "ui" / "po.html"
+        self.view.setUrl(QUrl.fromLocalFile(str(po_path)))
+
+        layout.addWidget(self.view)
+        self.setCentralWidget(central)
+
+        self._poll_timer = QTimer(self)
+        self._poll_timer.timeout.connect(self._poll_js_action)
+
+        QTimer.singleShot(150, self.force_foreground)
+
+    # ── Lifecycle ──────────────────────────────────────────────────────────
+    def _on_load_finished(self, ok):
+        print(f"[POWindow] loadFinished ok={ok}")
+        if ok:
+            QTimer.singleShot(500, self._push_data_to_js)
+            self._poll_timer.start(200)
+
+    def _push_data_to_js(self):
+        try:
+            payload = {
+                "code":       self._code,
+                "tool":       self._tool,
+                "lang":       self._lang,
+                "filename":   self._filename,
+                "elemCount":  self._elem_count
+            }
+            payload_json = json.dumps(payload)
+            self.view.page().runJavaScript(
+                f"(function(){{ try{{ loadInitialPOData({payload_json}); return 'ok'; }}"
+                f" catch(e){{ return 'ERR:'+e.toString(); }} }})()"
+            )
+        except Exception as e:
+            print(f"[POWindow] _push_data_to_js ERROR: {e}")
+            logging.error(f"Error in POWindow._push_data_to_js: {e}")
+
+    # ── Polling ────────────────────────────────────────────────────────────
+    def _poll_js_action(self):
+        try:
+            self.view.page().runJavaScript(
+                "typeof getPendingAction === 'function' ? getPendingAction() : null",
+                self._on_js_action
+            )
+        except Exception:
+            pass
+
+    def _on_js_action(self, result):
+        if not result:
+            return
+        try:
+            data    = json.loads(result)
+            action  = data.get("action", "")
+            payload = data.get("payload", "")
+            if action:
+                self._handle_command(action, payload)
+        except Exception as e:
+            print(f"[POWindow] _on_js_action parse error: {e}")
+
+    # ── Window helpers ─────────────────────────────────────────────────────
+    def force_foreground(self):
+        self.raise_()
+        self.activateWindow()
+        if platform.system() == "Windows":
+            self.setWindowFlags(self.windowFlags() | Qt.WindowType.WindowStaysOnTopHint)
+            self.show()
+            self.setWindowFlags(self.windowFlags() & ~Qt.WindowType.WindowStaysOnTopHint)
+            self.show()
+
+    def closeEvent(self, event):
+        self._poll_timer.stop()
+        super().closeEvent(event)
+        if hasattr(self._parent_studio, "po_window"):
+            self._parent_studio.po_window = None
+
+    def update_data(self, code, tool, lang, filename, elem_count):
+        """Refresh the window with new generated code (re-use existing window)."""
+        self._code       = code
+        self._tool       = tool
+        self._lang       = lang
+        self._filename   = filename
+        self._elem_count = elem_count
+        self._push_data_to_js()
+
+    # ── Command handler ────────────────────────────────────────────────────
+    def _handle_command(self, action, payload_str):
+        try:
+            payload = json.loads(payload_str) if payload_str else {}
+            print(f"[POWindow] Command: {action}")
+
+            if action == "po_window_ready":
+                self._push_data_to_js()
+
+            elif action == "po_copy_code":
+                code = payload.get("code", "")
+                QApplication.clipboard().setText(code)
+
+            elif action == "po_save_code":
+                content  = payload.get("code", "")
+                filename = payload.get("filename", self._filename or "MyPage")
+                lang     = payload.get("lang",     self._lang     or "TypeScript")
+
+                ext_map = {"Java": ".java", "Python": ".py", "C#": ".cs",
+                           "JavaScript": ".js", "TypeScript": ".ts"}
+                ext = ext_map.get(lang, ".txt")
+
+                fname, _ = QFileDialog.getSaveFileName(
+                    self, "Save Page Object",
+                    f"{filename}{ext}",
+                    f"{lang} File (*{ext});;All Files (*)"
+                )
+                if fname:
+                    try:
+                        with open(fname, "w", encoding="utf-8") as f:
+                            f.write(content)
+                        QMessageBox.information(self, "Saved", f"Page Object saved to:\n{fname}")
+                    except Exception as e:
+                        QMessageBox.critical(self, "Error", f"Could not save file: {e}")
+
+            elif action == "close_po_window":
+                self.close()
+
+        except Exception as e:
+            print(f"[POWindow] _handle_command ERROR ({action}): {e}")
+            logging.error(f"Error handling POWindow command {action}: {e}")
+
 
 
 class MergeWindow(QMainWindow):
@@ -416,6 +881,66 @@ class MergeWindow(QMainWindow):
                     except Exception as e:
                         QMessageBox.critical(self, "Merge Error", f"Failed to read file: {e}")
 
+            elif action == "refresh_merge_preview":
+                locators = payload.get("locators", [])
+                tool     = payload.get("tool", self.tool)
+                lang     = payload.get("lang", self.lang)
+                file_path = payload.get("file_path", "")
+                bypass_style = payload.get("bypass_style", self.bypass_style)
+
+                title_cl = "".join(
+                    c for c in self._parent_studio.browser_ctrl.view.page().title()
+                    if c.isalnum()
+                )
+                if not title_cl:
+                    title_cl = "MyPage"
+
+                new_code = None
+                merged_code = None
+                current_code = ""
+
+                if file_path:
+                    try:
+                        with open(file_path, "r", encoding="utf-8") as f:
+                            current_code = f.read()
+                    except Exception as e:
+                        print(f"Error reading file for preview: {e}")
+
+                if not bypass_style and self._parent_studio.project_path:
+                    existing_pos = find_existing_page_objects(self._parent_studio.project_path, lang)
+                    if existing_pos:
+                        sample_codes = []
+                        for path in existing_pos[:2]:
+                            try:
+                                with open(path, "r", encoding="utf-8") as f:
+                                    sample_codes.append(f.read())
+                            except Exception:
+                                pass
+                        if sample_codes and self._parent_studio.ai_api_key:
+                            combined_samples = "\n\n--- NEXT SAMPLE ---\n\n".join(sample_codes)
+                            new_code = self._parent_studio.ai_service.generate_styled_page_object(
+                                tool, lang, title_cl, locators, combined_samples
+                            )
+                            if file_path:
+                                merged_code = self._parent_studio.ai_service.merge_locators_with_style(
+                                    tool, lang, current_code, locators
+                                )
+
+                if not new_code:
+                    new_code = CodeGenerator.generate_class_content(tool, lang, title_cl, locators)
+                if file_path and not merged_code:
+                    merged_code = MergeEngine.merge_locators(current_code, locators, tool, lang)
+
+                result_json = json.dumps({
+                    "target_file":   file_path,
+                    "new_code":      new_code,
+                    "merged_code":   merged_code,
+                    "original_code": current_code
+                })
+                self.view.page().runJavaScript(
+                    f"(function(){{ try{{ loadMergedFile({result_json}); }} catch(e){{ console.error('loadMergedFile error:',e); }} }})()"
+                )
+
             elif action == "smart_merge_confirm":
                 file_path   = payload.get("file_path")
                 merged_code = payload.get("merged_code")
@@ -442,6 +967,12 @@ class LocatorStudio(QMainWindow):
         # Minimum size ensures all panels are usable; app always starts maximized
         self.setMinimumSize(1200, 700)
         self.resize(1600, 900)   # fallback size
+
+        # Make sure ui/libs/qwebchannel.js exists on disk before the dashboard
+        # loads — otherwise the dashboard's <script src> 404s and pyBridge is
+        # never connected, breaking the capture button (and every other
+        # JS->Python action).
+        _ensure_qwebchannel_js()
         
         # Cache project context with normalization
         def clean_val(v):
@@ -465,6 +996,8 @@ class LocatorStudio(QMainWindow):
         self.browser_ctrl = BrowserController()
         self.bridge = StudioBridge()
         self.merge_window = None
+        self.grid_window  = None
+        self.po_window    = None
         
         # Setup AI Service
         self.ai_tool = os.getenv("AI_TOOL", "GEMINI").strip().upper()
@@ -482,12 +1015,25 @@ class LocatorStudio(QMainWindow):
             
         self.ai_service = AIService(self.ai_tool, self.ai_model, self.ai_api_key, self.ai_api_url)
         
+        # Track whether the project context has been pushed to the dashboard
+        # so we don't push it twice (once via loadFinished, once via
+        # dashboard_ready). MUST be initialised BEFORE _setup_ui() — that's
+        # the call that wires loadFinished, which can fire and read this attr.
+        self._context_pushed = False
+
         # UI Setup
-        self._setup_ui()
+        # Order matters: connect the bridge signal FIRST so any early
+        # dashboard_ready callback from JS is not lost, then build the UI
+        # (which loads dashboard.html asynchronously).
         self._setup_bridge()
-        
+        self._setup_ui()
+
         # Connect Browser Signals
         self.browser_ctrl.pybridge.locatorsReceived.connect(self._on_elements_captured)
+
+        # Fix #7: wire the dashboard view into the browser controller so it can
+        # call window.onBrowserUrlChanged() when the user navigates back/forward.
+        self.browser_ctrl._dashboard_view = self.dashboard_view
         
         # Force foreground on Windows/OS after launch
         QTimer.singleShot(150, self.force_foreground)
@@ -520,9 +1066,14 @@ class LocatorStudio(QMainWindow):
         self.channel.registerObject("pyBridge", self.bridge)
         self.dashboard_view.page().setWebChannel(self.channel)
         
+        # Push project context once the dashboard page is fully loaded.
+        # This is more reliable than waiting for a JS->Python dashboard_ready
+        # callback (which can race with WebChannel initialisation).
+        self.dashboard_view.loadFinished.connect(self._on_dashboard_load_finished)
+
         dashboard_path = BASE_DIR / "ui" / "dashboard.html"
         self.dashboard_view.setUrl(QUrl.fromLocalFile(str(dashboard_path)))
-        
+
         # Right Panel: Browser View (The Website being inspected)
         self.browser_view = self.browser_ctrl.get_ui_component()
         
@@ -548,7 +1099,60 @@ class LocatorStudio(QMainWindow):
         self.bridge.commandReceived.connect(self._handle_js_command)
 
     def _on_dashboard_load_finished(self, ok):
-        pass
+        """Push project context once the dashboard HTML has finished loading.
+
+        We can't push immediately on loadFinished because the inline <script>
+        block in dashboard.html (which defines setProjectContext) may not have
+        executed yet on slower machines — give it a short delay, then push.
+        """
+        if not ok:
+            print("[Studio] dashboard.html failed to load", flush=True)
+            return
+        print(f"[Studio] dashboard.html loaded; will push context in 250ms", flush=True)
+        QTimer.singleShot(250, self._push_project_context)
+
+    def _push_project_context(self):
+        """Send tool/lang/url/name to the dashboard JS and auto-navigate the
+        right-pane browser to the project URL. Safe to call multiple times —
+        it only fires once thanks to the _context_pushed guard."""
+        if self._context_pushed:
+            return
+        self._context_pushed = True
+
+        tool_val    = self.project_tool or ""
+        lang_val    = self.project_lang or ""
+        app_url_val = self.app_url or ""
+        proj_name   = self.project_name or ""
+
+        print(f"[Studio] Pushing project context to dashboard: tool={tool_val!r}, lang={lang_val!r}, url={app_url_val!r}, name={proj_name!r}", flush=True)
+
+        # Wrap in try/catch so we get an actual error message back if
+        # setProjectContext throws. runJavaScript's callback receives None
+        # on uncaught JS exceptions, which would otherwise hide the cause.
+        js_payload = (
+            f"(function(){{"
+            f"  try {{"
+            f"    if (typeof setProjectContext !== 'function') return 'setProjectContext-missing';"
+            f"    setProjectContext({json.dumps(tool_val)}, {json.dumps(lang_val)}, {json.dumps(app_url_val)}, {json.dumps(proj_name)});"
+            f"    return 'ok';"
+            f"  }} catch (e) {{"
+            f"    return 'ERR: ' + (e && e.message ? e.message : String(e));"
+            f"  }}"
+            f"}})()"
+        )
+
+        def _cb(result):
+            print(f"[Studio] setProjectContext result: {result!r}", flush=True)
+            if result == 'setProjectContext-missing':
+                # Retry once after 500ms — page JS may still be parsing.
+                self._context_pushed = False
+                QTimer.singleShot(500, self._push_project_context)
+
+        self.dashboard_view.page().runJavaScript(js_payload, _cb)
+
+        if app_url_val.strip():
+            print(f"[Studio] Loading URL in browser pane: {app_url_val}", flush=True)
+            self.browser_ctrl.load_url(app_url_val)
 
     def _on_elements_captured(self, data):
         """Elements captured from browser_controller -> send to Dashboard UI"""
@@ -561,16 +1165,10 @@ class LocatorStudio(QMainWindow):
             payload = json.loads(payload_str) if payload_str else {}
             
             if action == "dashboard_ready":
-                tool_val = self.project_tool or ""
-                lang_val = self.project_lang or ""
-                app_url_val = self.app_url or ""
-                proj_name = self.project_name or ""
-                
-                js_code = f"if (typeof setProjectContext === 'function') {{ setProjectContext({json.dumps(tool_val)}, {json.dumps(lang_val)}, {json.dumps(app_url_val)}, {json.dumps(proj_name)}); }}"
-                self.dashboard_view.page().runJavaScript(js_code)
-                
-                if app_url_val.strip():
-                    self.browser_ctrl.load_url(app_url_val)
+                # The JS side has confirmed the bridge is up — push context
+                # via the shared helper (which is idempotent).
+                print("[Studio] dashboard_ready received from JS", flush=True)
+                self._push_project_context()
             
             elif action == "launch_url":
                 url = payload.get("url")
@@ -626,6 +1224,9 @@ class LocatorStudio(QMainWindow):
                 self.browser_ctrl.view.page().runJavaScript(js)
                 
             elif action == "preview_code":
+                # Legacy fallback — also accepted from the dashboard
+                # but we now prefer open_po_window which opens the dedicated window.
+                # Re-route to open_po_window.
                 locators = payload.get("locators", [])
                 tool = payload.get("tool", "Playwright")
                 lang = payload.get("lang", "TypeScript")
@@ -661,7 +1262,7 @@ class LocatorStudio(QMainWindow):
                     title_cl = "".join(c for c in self.browser_ctrl.view.page().title() if c.isalnum())
                     if not title_cl: title_cl = "MyPage"
                     
-                    content = None
+                    code = None
                     if not bypass_style and self.project_path:
                         existing_pos = find_existing_page_objects(self.project_path, lang)
                         if existing_pos:
@@ -674,19 +1275,22 @@ class LocatorStudio(QMainWindow):
                                     pass
                             if sample_codes and self.ai_api_key:
                                 combined_samples = "\n\n--- NEXT SAMPLE ---\n\n".join(sample_codes)
-                                content = self.ai_service.generate_styled_page_object(
+                                code = self.ai_service.generate_styled_page_object(
                                     tool, lang, title_cl, locators, combined_samples
                                 )
                     
-                    if not content:
-                        content = CodeGenerator.generate_class_content(tool, lang, title_cl, locators)
+                    if not code:
+                        code = CodeGenerator.generate_class_content(tool, lang, title_cl, locators)
                     
-                    response = {
-                        "code": content,
-                        "default_filename": title_cl,
-                        "lang": lang
-                    }
-                    self.bridge.codePreviewReady.emit(json.dumps(response))
+                    # Open dedicated Gen PO popup window
+                    if not hasattr(self, 'po_window') or self.po_window is None:
+                        self.po_window = POWindow(self, code, tool, lang, title_cl, len(locators))
+                    else:
+                        self.po_window.update_data(code, tool, lang, title_cl, len(locators))
+
+                    self.po_window.show()
+                    self.po_window.raise_()
+                    self.po_window.activateWindow()
 
             elif action == "save_generated_code":
                 content = payload.get("code", "")
@@ -695,13 +1299,29 @@ class LocatorStudio(QMainWindow):
                 
                 ext_map = {"Java": ".java", "Python": ".py", "C#": ".cs", "JavaScript": ".js", "TypeScript": ".ts"}
                 ext = ext_map.get(lang, ".txt")
+
+                # Issue #13: Windows associates .ts with MPEG-TS video.
+                # For TypeScript, add a .txt alternative in the dialog filter so users
+                # can save as plain text and open safely in their code editor.
+                if lang == "TypeScript":
+                    file_filter = "TypeScript Files (*.ts);;Text Files (*.txt);;All Files (*)"
+                else:
+                    file_filter = f"{lang} File (*{ext});;All Files (*)"
                 
-                fname, _ = QFileDialog.getSaveFileName(self, "Save Page Object", f"{default_filename}{ext}", f"{lang} File (*{ext});;All Files (*)")
+                fname, _ = QFileDialog.getSaveFileName(self, "Save Page Object", f"{default_filename}{ext}", file_filter)
                 if fname:
                     try:
                         with open(fname, "w", encoding="utf-8") as f:
                             f.write(content)
-                        QMessageBox.information(self, "Success", "File saved successfully!")
+                        if lang == "TypeScript" and fname.endswith(".ts"):
+                            QMessageBox.information(
+                                self, "File Saved",
+                                f"File saved successfully!\n\nPath: {fname}\n\n"
+                                "⚠️ Note: Windows may open .ts files in a media player.\n"
+                                "Right-click → Open With → your code editor (VS Code, Notepad++, etc.)"
+                            )
+                        else:
+                            QMessageBox.information(self, "Success", "File saved successfully!")
                     except Exception as e:
                         QMessageBox.critical(self, "Error", f"Could not save file: {e}")
 
@@ -793,6 +1413,25 @@ class LocatorStudio(QMainWindow):
                 except Exception as e:
                     QMessageBox.critical(self, "DB Error", str(e))
 
+            elif action == "open_po_window":
+                locators = payload.get("locators", [])
+                tool     = payload.get("tool", "Playwright")
+                lang     = payload.get("lang", "TypeScript")
+
+                title_cl = "".join(c for c in self.browser_ctrl.view.page().title() if c.isalnum())
+                if not title_cl: title_cl = "MyPage"
+
+                code = CodeGenerator.generate_class_content(tool, lang, title_cl, locators)
+
+                if not hasattr(self, 'po_window') or self.po_window is None:
+                    self.po_window = POWindow(self, code, tool, lang, title_cl, len(locators))
+                else:
+                    self.po_window.update_data(code, tool, lang, title_cl, len(locators))
+
+                self.po_window.show()
+                self.po_window.raise_()
+                self.po_window.activateWindow()
+
             elif action == "open_merge_window":
                 locators = payload.get("locators", [])
                 tool = payload.get("tool", "Playwright")
@@ -834,6 +1473,20 @@ class LocatorStudio(QMainWindow):
                     self.merge_window.show()
                     self.merge_window.raise_()
                     self.merge_window.activateWindow()
+
+            elif action == "open_grid_window":
+                locators = payload.get("locators", [])
+                tool = payload.get("tool", "Playwright")
+                lang = payload.get("lang", "TypeScript")
+                
+                if not hasattr(self, 'grid_window') or self.grid_window is None:
+                    self.grid_window = GridWindow(self, locators, tool, lang)
+                else:
+                    self.grid_window.update_data(locators, tool, lang)
+
+                self.grid_window.show()
+                self.grid_window.raise_()
+                self.grid_window.activateWindow()
 
             elif action == "request_ai_locators":
                 if not self.ai_api_key:

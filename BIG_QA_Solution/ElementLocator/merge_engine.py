@@ -4,6 +4,39 @@ from code_generator import CodeGenerator
 
 class MergeEngine:
     @staticmethod
+    def filter_duplicate_locators(content: str, new_locators: list, tool: str, lang: str) -> list:
+        import re
+        unique_locs = []
+        for loc in new_locators:
+            raw_name = loc.get("_final_name") or loc.get("name") or loc.get("nameHint") or "element"
+            snake_name = CodeGenerator.clean_name(raw_name, 'element', snake_case=True)
+            camel_name = CodeGenerator.clean_name(raw_name, 'element', snake_case=False)
+            val = loc.get('value', '')
+            escaped_val = CodeGenerator.escape_quotes(val)
+
+            # Heuristics:
+            # 1. Exact value exists in code
+            if val and (val in content or escaped_val in content):
+                continue
+
+            # 2. Variable name is already declared
+            if lang.lower() == "python":
+                pattern = rf"\bself\.{snake_name}\b|\b{snake_name}\s*="
+                if re.search(pattern, content):
+                    continue
+            elif lang.lower() in ["java", "c#"]:
+                pattern = rf"\bWebElement\s+{camel_name}\b|\bLocator\s+{camel_name}\b|\bprivate\s+\w+\s+{camel_name}\b"
+                if re.search(pattern, content):
+                    continue
+            elif lang.lower() in ["javascript", "typescript"]:
+                pattern = rf"\breadonly\s+{camel_name}\b|\bthis\.{camel_name}\b"
+                if re.search(pattern, content):
+                    continue
+
+            unique_locs.append(loc)
+        return unique_locs
+
+    @staticmethod
     def merge_locators(target_content: str, new_locators: list, tool: str, lang: str) -> str:
         """
         Smart-merges new locators and their action methods into existing Page Object code.
@@ -11,15 +44,19 @@ class MergeEngine:
         if not target_content.strip():
             return target_content
         
+        filtered_locators = MergeEngine.filter_duplicate_locators(target_content, new_locators, tool, lang)
+        if not filtered_locators:
+            return target_content
+        
         lang_lower = lang.lower()
         if lang_lower == "java":
-            return MergeEngine._merge_java(target_content, new_locators, tool)
+            return MergeEngine._merge_java(target_content, filtered_locators, tool)
         elif lang_lower == "python":
-            return MergeEngine._merge_python(target_content, new_locators, tool)
+            return MergeEngine._merge_python(target_content, filtered_locators, tool)
         elif lang_lower in ["javascript", "typescript"]:
-            return MergeEngine._merge_js_ts(target_content, new_locators, tool)
+            return MergeEngine._merge_js_ts(target_content, filtered_locators, tool)
         elif lang_lower == "c#":
-            return MergeEngine._merge_csharp(target_content, new_locators, tool)
+            return MergeEngine._merge_csharp(target_content, filtered_locators, tool)
         
         return target_content
 
