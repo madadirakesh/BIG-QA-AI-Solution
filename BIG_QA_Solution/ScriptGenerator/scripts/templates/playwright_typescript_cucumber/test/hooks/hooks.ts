@@ -1,8 +1,20 @@
-import { Before, After, Status, BeforeAll, AfterAll, IWorld } from "@cucumber/cucumber";
+import { Before, After, Status, BeforeAll, AfterAll, IWorld, setDefaultTimeout } from "@cucumber/cucumber";
 import { chromium, firefox, webkit, Browser, BrowserContext, Page } from "@playwright/test";
 const fs = require('fs-extra');
 import * as path from "path";
 import { execSync } from "child_process";
+
+// Raise the per-step/hook timeout from Cucumber.js's 5000ms default to 60s.
+//
+// Why this lives here and not in cucumber.config.js: the test runner (test-runner.js) invokes
+// cucumber-js directly without a --config flag, and Cucumber.js only auto-loads a config file
+// named cucumber.js/.cjs/.mjs/.json/.yaml — NOT cucumber.config.js. So the `timeout` set in
+// cucumber.config.js is silently ignored and the 5000ms default wins, which is too short for a
+// real browser launch + page navigation and produces spurious step-timeout failures.
+//
+// setDefaultTimeout() is applied while the support code is loaded (before any scenario runs), so
+// it takes effect regardless of how cucumber-js is invoked — runner, --config, or plain CLI.
+setDefaultTimeout(60 * 1000);
 
 // ICustomWorld is the Cucumber "World" object \u2014 the `this` available inside every step.
 // We export it so generated step-definition files can type their callbacks as

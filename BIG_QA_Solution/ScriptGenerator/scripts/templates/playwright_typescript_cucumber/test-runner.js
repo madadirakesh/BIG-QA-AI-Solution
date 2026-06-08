@@ -10,7 +10,12 @@ process.env.RESULT_DIR = resultDir;
 let testExitCode = 0;
 
 try {
-  execSync(`npx cucumber-js "test/features/**/*.feature" --require-module ts-node/register --require "test/hooks/**/*.ts" --require "test/stepDefinitions/**/*.ts" --require "test/pageObjects/**/*.ts" --require "test/utils/configReader.ts" --format json:${resultDir}/cucumber_report.json${tagArgs}`, { stdio: 'inherit' });
+  // Module loading (ts-node), support-code discovery (hooks/steps/pageObjects/configReader),
+  // feature paths, the per-step timeout, and the progress-bar format all come from the
+  // auto-detected cucumber.js config. Here we only add what is run-specific: the timestamped
+  // JSON report path (consumed by reports.ts via RESULT_DIR) and any tag filters the caller
+  // passed through (e.g. `npm test -- --tags "@smoke"`).
+  execSync(`npx cucumber-js --format json:${resultDir}/cucumber_report.json${tagArgs}`, { stdio: 'inherit' });
 } catch (error) {
   testExitCode = 1;
 }
