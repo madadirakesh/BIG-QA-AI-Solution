@@ -1,8 +1,9 @@
 Feature: Login Functionality
 
-  # Sample feature so the user has a starting point. Step definitions are intentionally NOT
-  # included in this template — they are generated later by the Script Developer wizard (AI),
-  # which is why the smoke test is skipped for Java + Cucumber projects at creation time.
+  # Sample feature with a matching, runnable step-definition class (stepDefinitions/LoginSteps.java,
+  # backed by pageObjects/LoginPage.java) so `mvn test` passes out of the box. The steps are
+  # lenient (navigate to APP_URL, verify the page loaded) and meant to be replaced by the Script
+  # Developer wizard (AI) or your own real tests.
   Scenario: Verify Successful Login
     Given I launch the application
     When I enter valid Username and Password

@@ -205,9 +205,10 @@ def _build_directory_tree(path):
         pass
     return tree
 
-def _bootstrapper_worker(job_id, p_name, p_path, tool, lang, fw, pm, url, user, pwd):
+def _bootstrapper_worker(job_id, p_name, p_path, tool, lang, fw, pm, url, user, pwd, version_profile=None):
     try:
-        success, res = BootstrapperEngine.generate_project(p_name, p_path, tool, lang, fw, pm, url, user, pwd)
+        success, res = BootstrapperEngine.generate_project(p_name, p_path, tool, lang, fw, pm, url, user, pwd,
+                                                           version_profile=version_profile)
         if not success:
             bootstrapper_jobs[job_id] = {"status": "error", "message": f"Scaffolding failed: {res}"}
             return
@@ -530,6 +531,8 @@ def bootstrap_project():
     url = data.get('url', '').strip()
     user = data.get('username', '').strip()
     pwd = data.get('password', '').strip()
+    # Optional version-profile label; None -> engine uses the template's default profile.
+    version_profile = (data.get('versionProfile') or '').strip() or None
 
     if not p_name or not p_path:
         return jsonify({"status": "error", "message": "Project name and path are required."}), 400
@@ -541,11 +544,22 @@ def bootstrap_project():
     job_id = str(uuid.uuid4())
     bootstrapper_jobs[job_id] = {"status": "processing", "message": "Initializing process..."}
 
-    threading.Thread(target=_bootstrapper_worker, 
-                     args=(job_id, p_name, p_path, tool, lang, fw, pm, url, user, pwd), 
+    threading.Thread(target=_bootstrapper_worker,
+                     args=(job_id, p_name, p_path, tool, lang, fw, pm, url, user, pwd, version_profile),
                      daemon=True).start()
 
     return jsonify({"status": "processing", "job_id": job_id})
+
+@app.route('/api/version-profiles', methods=['GET'])
+@login_required()
+def version_profiles():
+    # Feeds the modal dropdown; empty list -> no version choice for this template.
+    from ProjectBootstrapper.versions_catalog import profiles_for
+    tool = request.args.get('tool', '')
+    lang = request.args.get('language', '')
+    fw = request.args.get('framework', '')
+    profiles = profiles_for(tool, lang, fw)
+    return jsonify({"profiles": [p["label"] for p in profiles]})
 
 @app.route('/api/bootstrap-status/<job_id>', methods=['GET'])
 @login_required()

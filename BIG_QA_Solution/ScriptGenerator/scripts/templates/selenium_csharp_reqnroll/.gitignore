@@ -1,0 +1,32 @@
+# ─── .NET build output ──────────────────────────────────────────────────────
+bin/
+obj/
+[Bb]uild/
+project.lock.json
+project.fragment.lock.json
+artifacts/
+
+# ─── Reqnroll generated code-behind ─────────────────────────────────────────
+*.feature.cs
+
+# ─── IDE: Visual Studio / Rider / VS Code ───────────────────────────────────
+.vs/
+.idea/
+*.user
+*.suo
+.vscode/
+
+# ─── Test artefacts ─────────────────────────────────────────────────────────
+Results/
+TestResults/
+*.trx
+*.log
+
+# ─── OS noise ───────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ─── Local environment (contains credentials) ──────────────────────────────
+# .env ships as the committed template; .env.local is per-developer and ignored.
+.env.local
