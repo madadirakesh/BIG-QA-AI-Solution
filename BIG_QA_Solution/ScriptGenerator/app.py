@@ -1531,7 +1531,27 @@ def generate_bdd_code():
                     if existing_steps:
                         # Truncate to avoid massive context payloads, but usually steps are manageable
                         steps_text = "\n".join(existing_steps)[:20000]
-                        support_content += f"\nEXISTING STEP DEFINITIONS (STYLE & DUPLICATE REFERENCE - Match styling and DO NOT duplicate):\n{steps_text}\n"
+                        support_content += (
+                            "\nEXISTING STEP DEFINITIONS (STRICT DUPLICATE-PREVENTION REFERENCE):\n"
+                            "The following step definition files ALREADY EXIST in the project. Use them as the\n"
+                            "authoritative reference for coding style, naming, imports, and patterns.\n\n"
+                            "STRICT RULES (MUST be followed exactly):\n"
+                            "1. DO NOT generate, re-create, or re-emit a step definition for ANY step whose\n"
+                            "   definition already exists below. Match by the step's regex/expression pattern\n"
+                            "   AND its meaning - if an existing definition already matches a Gherkin step\n"
+                            "   (Given/When/Then/And/But/Or), that step is ALREADY IMPLEMENTED. Skip it entirely.\n"
+                            "2. Treat parameterized steps as matching: a step like \"I enter \\\"admin\\\"\" is covered\n"
+                            "   by an existing definition with a string/regex parameter. Do NOT create a new one.\n"
+                            "3. ONLY generate step definitions for steps that have NO matching existing definition.\n"
+                            "   If every step in a scenario is already defined, produce NO new step definition code\n"
+                            "   for that scenario.\n"
+                            "4. NEVER redefine, override, or duplicate an existing step - doing so causes\n"
+                            "   'Ambiguous'/'DuplicateStepException' errors at runtime.\n"
+                            "5. Reuse the existing definitions and page-object methods they call; do not invent\n"
+                            "   parallel implementations.\n"
+                            "6. Import all required packages while generating the step definition files \n"
+                            f"{steps_text}\n"
+                        )
             except Exception as e:
                 app.logger.warning(f"Error scanning existing steps: {e}")
 

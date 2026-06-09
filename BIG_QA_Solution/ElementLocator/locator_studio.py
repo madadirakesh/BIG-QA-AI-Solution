@@ -2,6 +2,7 @@ import sys
 import os
 import platform
 import json
+import re
 
 # Bypass GPU driver negotiation on Windows (safe — software rasterizer takes over as renderer)
 if platform.system() == "Windows":
@@ -82,10 +83,18 @@ def _ensure_qwebchannel_js():
     print(f"[Studio] Wrote qwebchannel.js to {target}", flush=True)
 
 
-def find_existing_page_objects(project_path, language):
+def find_existing_page_objects(project_path, language, limit=5):
+    """
+    Recursively scan the project for existing Page Object source files and return
+    them ranked best-first.
+
+    The result is DETERMINISTIC and quality-ranked so that callers (which usually
+    take the first 1-2 files as an AI style reference) always get the most
+    representative page objects, producing consistent styling across runs.
+    """
     if not project_path or not os.path.exists(project_path):
         return []
-        
+
     ext_map = {
         "java": ".java",
         "python": ".py",
@@ -96,29 +105,85 @@ def find_existing_page_objects(project_path, language):
     target_ext = ext_map.get(language.lower(), "")
     if not target_ext:
         return []
-        
-    page_objects = []
-    # Recursively scan files
+
+    EXCLUDE_DIRS = {
+        '.venv', 'venv', 'env', '.env', '.git', '.idea', '.vscode',
+        '__pycache__', 'node_modules', 'target', 'bin', 'obj', 'dist',
+        'build', '.pytest_cache', 'site-packages'
+    }
+    # Cap how many files we actually open/read so a huge repo can't stall the scan.
+    MAX_FILES_TO_READ = 80
+
+    candidates = []  # (score, path)
+    files_read = 0
     for root, dirs, files in os.walk(project_path):
-        # Exclude directories we shouldn't scan
-        dirs[:] = [d for d in dirs if d not in ('.venv', '.git', '.idea', '__pycache__', 'node_modules', 'target', 'bin', 'obj')]
-        
+        # Prune unwanted directories in-place
+        dirs[:] = [d for d in dirs if d.lower() not in EXCLUDE_DIRS]
+
+        # Match on folder-name SEGMENTS relative to the project, NOT a substring of
+        # the absolute path. This avoids the bug where an ancestor folder (or the
+        # project path itself) containing "page"/"pom" makes every file match.
+        try:
+            rel_root = os.path.relpath(root, project_path)
+        except ValueError:
+            rel_root = root
+        root_segments = {s.lower() for s in rel_root.replace("\\", "/").split("/") if s and s != "."}
+        folder_is_po = any(("page" in seg or "pom" in seg) for seg in root_segments)
+
         for file in files:
-            file_lower = file.lower()
             if not file.endswith(target_ext):
                 continue
-            is_page_object = False
-            if "page" in file_lower or "pom" in file_lower:
-                is_page_object = True
-            elif "page" in root.lower() or "pom" in root.lower():
-                is_page_object = True
-                
-            if is_page_object:
-                page_objects.append(os.path.join(root, file))
-                if len(page_objects) >= 5: # Limit to 5 files to avoid scanning too many
-                    return page_objects
-                    
-    return page_objects
+            file_lower = file.lower()
+            stem = file_lower[:-len(target_ext)]
+            name_is_po = "page" in file_lower or "pom" in file_lower
+
+            # Only consider files that look like page objects by name or location.
+            if not (name_is_po or folder_is_po):
+                continue
+
+            if files_read >= MAX_FILES_TO_READ:
+                continue
+
+            full_path = os.path.join(root, file)
+            try:
+                with open(full_path, "r", encoding="utf-8", errors="ignore") as fh:
+                    content = fh.read(60000)  # first ~60KB is plenty to judge style
+            except Exception:
+                continue
+            files_read += 1
+
+            content_lower = content.lower()
+            # Skip files that aren't real classes/modules (empty stubs, data files).
+            if "class " not in content_lower and "export" not in content_lower and "def " not in content_lower:
+                continue
+
+            score = 0
+            if name_is_po:
+                score += 50
+            if stem.endswith(("page", "pageobject", "pom", "_po")):
+                score += 20
+            # A concrete page object that actually defines locators/elements is a
+            # far better style reference than an abstract/base class.
+            if any(k in content_lower for k in (
+                "by.", "locator", "find_element", "findelement", "page.locator",
+                "getby", "@findby", "css", "xpath"
+            )):
+                score += 15
+            # Base/abstract classes are still useful but less representative.
+            if any(k in stem for k in ("base", "abstract")):
+                score -= 12
+            # Prefer reasonably-sized files: not empty stubs, not giant god-classes.
+            line_count = content.count("\n") + 1
+            if 15 <= line_count <= 400:
+                score += 10
+            elif line_count < 5:
+                score -= 20
+
+            candidates.append((score, full_path))
+
+    # Highest score first; path as a stable tie-breaker for deterministic output.
+    candidates.sort(key=lambda x: (-x[0], x[1]))
+    return [path for _, path in candidates[:limit]]
 
 def find_matching_page_object(existing_pos, page_name):
     if not existing_pos or not page_name:
@@ -135,8 +200,78 @@ def find_matching_page_object(existing_pos, page_name):
         filename = os.path.basename(path).lower()
         if clean_name in filename:
             return path
-            
+
     return None
+
+
+def build_style_samples(project_path, language, max_files=2):
+    """
+    Discover existing page objects and return a single combined style-reference
+    string (the top `max_files` ranked page objects joined together), or "" when
+    nothing usable is found. Centralises the logic that every generate/merge path
+    used to duplicate.
+    """
+    if not project_path:
+        return ""
+    existing_pos = find_existing_page_objects(project_path, language)
+    if not existing_pos:
+        return ""
+    sample_codes = []
+    for path in existing_pos[:max_files]:
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                sample_codes.append(f.read())
+        except Exception:
+            pass
+    return "\n\n--- NEXT SAMPLE ---\n\n".join(sample_codes)
+
+
+def _lang_tokens(value):
+    """Canonicalise a language label into a set of comparable tokens so that
+    equivalent spellings ('TypeScript', 'Typescript', 'ts', 'JS / TS') are
+    treated as matching and don't spuriously trip the config-mismatch check."""
+    if not value:
+        return set()
+    tokens = set()
+    for raw in re.split(r'[^a-z0-9#+.]+', value.lower()):
+        if not raw:
+            continue
+        if raw in ("typescript", "ts", "tsx"):
+            tokens.add("ts")
+        elif raw in ("javascript", "js", "jsx", "node", "nodejs"):
+            tokens.add("js")
+        elif raw in ("python", "py"):
+            tokens.add("py")
+        elif raw in ("java",):
+            tokens.add("java")
+        elif raw in ("c#", "csharp", "cs", "dotnet", ".net", "net"):
+            tokens.add("cs")
+        else:
+            tokens.add(raw)
+    return tokens
+
+
+def _values_match(expected, actual):
+    """True if the two tool/language labels refer to the same thing. A missing
+    `expected` (no project context) never counts as a mismatch."""
+    if not expected:
+        return True
+    a, b = _lang_tokens(expected), _lang_tokens(actual)
+    if not a or not b:
+        return False
+    return bool(a & b)
+
+
+def config_changes(project_tool, project_lang, sel_tool, sel_lang):
+    """Return a list of human-readable mismatch descriptions between the project
+    context and the user-selected tool/language (empty list == fully compatible)."""
+    changed = []
+    if not _values_match(project_tool, sel_tool):
+        changed.append(f"Tool (Expected: {project_tool}, Got: {sel_tool})")
+    if not _values_match(project_lang, sel_lang):
+        changed.append(f"Language (Expected: {project_lang}, Got: {sel_lang})")
+    return changed
+
 
 class StudioBridge(QObject):
     """Bridge for communication between Python and the Dashboard UI"""
@@ -1233,11 +1368,7 @@ class LocatorStudio(QMainWindow):
                 current_url = payload.get("target_url", "")
                 
                 # Check for changes in configuration
-                changed = []
-                if self.project_tool and self.project_tool.lower() != tool.lower():
-                    changed.append(f"Tool (Expected: {self.project_tool}, Got: {tool})")
-                if self.project_lang and self.project_lang.lower() != lang.lower():
-                    changed.append(f"Language (Expected: {self.project_lang}, Got: {lang})")
+                changed = config_changes(self.project_tool, self.project_lang, tool, lang)
 
                 proceed = True
                 bypass_style = False
@@ -1418,10 +1549,47 @@ class LocatorStudio(QMainWindow):
                 tool     = payload.get("tool", "Playwright")
                 lang     = payload.get("lang", "TypeScript")
 
+                # Warn (and disable style inheritance) only on a genuine
+                # tool/language mismatch with the selected project.
+                changed = config_changes(self.project_tool, self.project_lang, tool, lang)
+                proceed = True
+                bypass_style = False
+                if changed:
+                    msg = "The following configuration has changed from the selected project:\n\n"
+                    msg += "\n".join(f"- {c}" for c in changed)
+                    msg += "\n\nIf you proceed, style inheritance will be disabled and the default fallback generation logic will be used. Do you want to continue?"
+                    res = QMessageBox.warning(
+                        self,
+                        "Configuration Mismatch Warning",
+                        msg,
+                        QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                        QMessageBox.StandardButton.No
+                    )
+                    if res == QMessageBox.StandardButton.No:
+                        proceed = False
+                    else:
+                        bypass_style = True
+
+                if not proceed:
+                    return
+
                 title_cl = "".join(c for c in self.browser_ctrl.view.page().title() if c.isalnum())
                 if not title_cl: title_cl = "MyPage"
 
-                code = CodeGenerator.generate_class_content(tool, lang, title_cl, locators)
+                # Scenario A: style inheritance from existing project page objects.
+                code = None
+                if not bypass_style and self.project_path:
+                    combined_samples = build_style_samples(self.project_path, lang)
+                    if combined_samples and self.ai_api_key:
+                        code = self.ai_service.generate_styled_page_object(
+                            tool, lang, title_cl, locators, combined_samples
+                        )
+                        if not code:
+                            print("[open_po_window] Styled generation returned empty; using fallback generator.", flush=True)
+
+                # Scenario B: fallback to the template generator.
+                if not code:
+                    code = CodeGenerator.generate_class_content(tool, lang, title_cl, locators)
 
                 if not hasattr(self, 'po_window') or self.po_window is None:
                     self.po_window = POWindow(self, code, tool, lang, title_cl, len(locators))
@@ -1437,12 +1605,8 @@ class LocatorStudio(QMainWindow):
                 tool = payload.get("tool", "Playwright")
                 lang = payload.get("lang", "TypeScript")
                 current_url = payload.get("target_url", "")
-                
-                changed = []
-                if self.project_tool and self.project_tool.lower() != tool.lower():
-                    changed.append(f"Tool (Expected: {self.project_tool}, Got: {tool})")
-                if self.project_lang and self.project_lang.lower() != lang.lower():
-                    changed.append(f"Language (Expected: {self.project_lang}, Got: {lang})")
+
+                changed = config_changes(self.project_tool, self.project_lang, tool, lang)
 
                 proceed = True
                 bypass_style = False

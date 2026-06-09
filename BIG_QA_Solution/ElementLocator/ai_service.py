@@ -233,9 +233,10 @@ class AIService:
                 f"{locators_str}\n\n"
                 f"── STRICT RULES ──────────────────────────────────────────────────────────────\n"
                 f"1. Match all imports, naming conventions (e.g. camelCase, snake_case), and class declaration style.\n"
-                f"2. Inherit from base classes if the sample code does so (e.g. BasePage).\n"
-                f"3. Replicate internal patterns (e.g. if the sample code uses wrapper methods/helper classes to perform clicks/actions, use them instead of raw driver calls).\n"
-                f"4. Do NOT include markdown blocks, text explanations, or notes. ONLY output the raw, complete source code. The very first character should be the import or class declaration and nothing else."
+                f"2. Add all required improts if missed any. \n"
+                f"3. Inherit from base classes if the sample code does so (e.g. BasePage).\n"
+                f"4. Replicate internal patterns (e.g. if the sample code uses wrapper methods/helper classes to perform clicks/actions, use them instead of raw driver calls).\n"
+                f"5. Do NOT include markdown blocks, text explanations, or notes. ONLY output the raw, complete source code. The very first character should be the import or class declaration and nothing else."
             )
 
             headers = {"Content-Type": "application/json"}
@@ -252,7 +253,7 @@ class AIService:
                 headers["Authorization"] = f"Bearer {self.api_key}"
                 payload = {"model": self.ai_model, "messages": [{"role": "user", "content": prompt}], "temperature": 0.0}
             elif self.ai_tool in ["CLAUDE", "ANTHROPIC"]:
-                headers["x-api-key"] = self.ai_key
+                headers["x-api-key"] = self.api_key
                 headers["anthropic-version"] = "2023-06-01"
                 payload = {"model": self.ai_model, "max_tokens": 4096, "messages": [{"role": "user", "content": prompt}]}
 
@@ -274,7 +275,7 @@ class AIService:
                     content = res_data.get("content", [])
                     if content:
                         text = content[0].get("text", "")
-                
+
                 # Strip code fences if the model included them
                 text_strip = text.strip()
                 if text_strip.startswith("```"):
@@ -320,7 +321,7 @@ class AIService:
             payload = {}
 
             if self.ai_tool in ["GEMINI", "GOOGLE"]:
-                url = f"{self.api_url}{self.ai_key}"
+                url = f"{self.api_url}{self.api_key}"
                 payload = {
                     "contents": [{"parts": [{"text": prompt}]}],
                     "generationConfig": {"temperature": 0.0}
@@ -351,7 +352,7 @@ class AIService:
                     content = res_data.get("content", [])
                     if content:
                         text = content[0].get("text", "")
-                
+
                 # Strip code fences
                 text_strip = text.strip()
                 if text_strip.startswith("```"):
