@@ -23,6 +23,9 @@ if str(PROJECT_BOOTSTRAPPER_DIR) not in sys.path:
 from ProjectBootstrapper.bootstrapper_engine import BootstrapperEngine
 from ProjectBootstrapper.environment_setup import EnvironmentSetup
 from db.app_db import fetch_data, insert_data, update_data, init_db, get_db
+# encrypt_for_app / decrypt_for_app protect the password stored in ProjectData with an app master
+# key (Flask .env). decrypt_for_app passes legacy plaintext rows through unchanged.
+from utils.crypto_util import encrypt_for_app, decrypt_for_app
 
 # Load environment variables early
 load_dotenv(BASE_DIR / ".env")
@@ -584,8 +587,9 @@ def bootstrap_status(job_id):
                 new_id_res = fetch_data("SELECT id FROM ProjectDetails WHERE project_path = ?", (full_project_path,))
                 if new_id_res:
                     p_id = new_id_res[0]['id']
+                    # Encrypt password before storing; baseurl/username are not secret.
                     insert_data("INSERT INTO ProjectData (baseurl, username, password, project_details_id) VALUES (?, ?, ?, ?)",
-                                (meta.get('url'), meta.get('username'), meta.get('password'), p_id))
+                                (meta.get('url'), meta.get('username'), encrypt_for_app(meta.get('password')), p_id))
             except Exception as e:
                 import logging
                 logging.error(f"Database insertion failed: {e}")
@@ -852,7 +856,8 @@ def save_project_config():
         p_path = data.get('project_path', '').strip()
         baseurl = data.get('baseurl', '')
         username = data.get('username', '')
-        password = data.get('password', '')
+        # Encrypt the incoming (plaintext) password once for both the UPDATE and INSERT below.
+        password = encrypt_for_app(data.get('password', ''))
         lang = data.get('language', 'Unknown')
         fw = data.get('framework', 'Unknown')
         tool = data.get('tool', 'Unknown')
@@ -895,7 +900,10 @@ def get_project_config(project_id):
     try:
         data = fetch_data("SELECT baseurl, username, password FROM ProjectData WHERE project_details_id = ?", (project_id,))
         if data:
-            return jsonify({"status": "success", "data": data[0]})
+            row = dict(data[0])
+            # Decrypt for the form; legacy plaintext rows pass through unchanged.
+            row['password'] = decrypt_for_app(row.get('password'))
+            return jsonify({"status": "success", "data": row})
         return jsonify({"status": "success", "data": {"baseurl": "", "username": "", "password": ""}})
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500

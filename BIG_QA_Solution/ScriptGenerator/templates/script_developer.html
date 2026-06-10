@@ -259,16 +259,14 @@
                     <small class="text-secondary mt-1 d-block">You can modify the scenarios above before generating the script.</small>
                 </div>
 
-                <div class="form-actions row mt-4">
-                    <div class="col" style="padding-bottom:10px">
-                        <button type="button" class="btn btn-secondary" onclick="nextStep(1)"><i
-                                class="fas fa-arrow-left" style="padding-bottom: 10px"></i> Back</button>
-                    </div>
-
-                    <div class="col text-right">
-                        <button type="button" class="btn btn-primary" onclick="generateCode()">Generate Script <i
-                                class="fas fa-robot"></i></button>
-                    </div>
+                <!-- Flex row so Back (left) and Generate Script (right) sit on the same line.
+                     The .row/.col classes are Bootstrap-style but this app has no Bootstrap,
+                     so layout is set inline here. -->
+                <div class="form-actions mt-4" style="display:flex; justify-content:space-between; align-items:center; gap:12px;">
+                    <button type="button" class="btn btn-secondary" onclick="nextStep(1)"><i
+                            class="fas fa-arrow-left"></i> Back</button>
+                    <button type="button" class="btn btn-primary" onclick="generateCode()">Generate Script <i
+                            class="fas fa-robot"></i></button>
                 </div>
             </div>
         </div>
@@ -994,7 +992,7 @@ function refreshLocatorPages(e) {
             });
     } else {
         if(icon) icon.classList.remove('fa-spin');
-        alert("No project selected or manual path established to refresh locators.");
+        showToast("No project selected or manual path established to refresh locators.", 'warning');
     }
 }
 
@@ -1007,7 +1005,7 @@ function handleNextStep1() {
 
     const path = document.getElementById('projectPath').value;
     if (!path) {
-        alert("Please select or locate a project directory.");
+        showToast("Please select or locate a project directory.", 'warning');
         return;
     }
 
@@ -1046,12 +1044,12 @@ function handleNextStep1() {
             }
             nextStep(2);
         } else {
-            alert("Error saving config: " + res.message);
+            showToast("Error saving config: " + res.message, 'error');
         }
     })
     .catch(err => {
         if(btn) { btn.innerHTML = ogHtml; btn.disabled = false; }
-        alert("Network error saving configuration.");
+        showToast("Network error saving configuration.", 'error');
         console.error(err);
     });
 }
@@ -1452,13 +1450,21 @@ function renderTree(node) {
     return ul;
 }
 
-function cleanMissingProjects() {
-    if(!confirm("Scan database and remove projects that no longer exist on disk?")) return;
+// async so we can await the shared showConfirm() modal (base.html) instead of the
+// native confirm() popup. showConfirm() resolves true on confirm, false on cancel/Escape.
+async function cleanMissingProjects() {
+    const ok = await showConfirm(
+        "Clean Sync?",
+        "Scan database and remove projects that no longer exist on disk?",
+        "🧹",
+        "Remove"
+    );
+    if(!ok) return;
     fetch('/api/remove-missing-projects', {method: 'POST'})
         .then(r => r.json())
         .then(res => {
             if(res.status === 'success') {
-                alert("Clean sync complete. Removed: " + (res.removed.length ? res.removed.join(", ") : "None"));
+                showToast("Clean sync complete. Removed: " + (res.removed.length ? res.removed.join(", ") : "None"), 'success');
                 location.reload();
             }
         });
@@ -1597,7 +1603,7 @@ function validateScenarioFile(input) {
                 const content = e.target.result;
                 const scenarioMatches = content.match(/Scenario:|Scenario Outline:/gi);
                 if (scenarioMatches && scenarioMatches.length > 10) {
-                    alert(`Too many scenarios (${scenarioMatches.length}). Maximum limit is 10 scenarios per transaction.`);
+                    showToast(`Too many scenarios (${scenarioMatches.length}). Maximum limit is 10 scenarios per transaction.`, 'warning');
                     input.value = ""; // Clear file
                     editableSection.style.display = 'none';
                 } else {
@@ -1611,7 +1617,7 @@ function validateScenarioFile(input) {
         } else if (type === 'Excel') {
             editableSection.style.display = 'none';
             if(!file.name.endsWith('.xls') && !file.name.endsWith('.xlsx')) {
-                alert("Please upload a valid Excel file (.xlsx, .xls)");
+                showToast("Please upload a valid Excel file (.xlsx, .xls)", 'warning');
                 input.value = "";
             }
         }
@@ -1630,12 +1636,12 @@ function generateCode() {
     const scenarioFile = document.getElementById('scenarioFile').files[0];
 
     if (!targetPath) {
-        alert("Project Path missing. Please go back to step 1.");
+        showToast("Project Path missing. Please go back to step 1.", 'warning');
         return;
     }
 
     if(!scenarioFile) {
-        alert("Please upload your Scenario/Test Case file.");
+        showToast("Please upload your Scenario/Test Case file.", 'warning');
         return;
     }
 
@@ -1671,7 +1677,7 @@ function generateCode() {
     if(strategy === 'db') {
         const locatorsSelect = document.getElementById('locatorsDropdown');
         if (!locatorsSelect) {
-            alert("Internal Error: Locators dropdown not found.");
+            showToast("Internal Error: Locators dropdown not found.", 'error');
             return;
         }
         const selectedLocators = Array.from(locatorsSelect.selectedOptions).map(opt => opt.value);
@@ -1679,7 +1685,7 @@ function generateCode() {
              // Check if there are any valid options besides the default
              const hasOptions = Array.from(locatorsSelect.options).some(o => o.value !== "");
              if (hasOptions) {
-                alert("Please select at least one Page from DB Locators, or switch to Upload Page Objects.");
+                showToast("Please select at least one Page from DB Locators, or switch to Upload Page Objects.", 'warning');
                 return;
              }
         }
@@ -1707,13 +1713,13 @@ function generateCode() {
             generatedFilesData = res.files;
             renderCodeResults(res.files);
         } else {
-            alert("Generation failed: " + res.message);
+            showToast("Generation failed: " + res.message, 'error');
             nextStep(2);
         }
     })
     .catch(err => {
         document.getElementById('loadingStatus').style.display = 'none';
-        alert("Error: " + err.message);
+        showToast("Error: " + err.message, 'error');
         nextStep(2);
     });
 }
@@ -1822,7 +1828,7 @@ function saveFiles() {
     }));
 
     if (filesToSave.length === 0) {
-        alert("No files to save.");
+        showToast("No files to save.", 'warning');
         return;
     }
 
@@ -1852,8 +1858,17 @@ function saveSingleFile(idx, userSelectPath) {
     executeSave(pId, [fileToSave]);
 }
 
-function executeSave(projectId, filesArray) {
-    if(!confirm("Attempt to write to the file system? Existing classes will be safely merged/injected, and a DB Backup will be created.")) return;
+// async so we can await the shared showConfirm() modal (base.html). Callers
+// (saveAllFiles / saveSingleFile) fire-and-forget; the confirm gate lives here.
+async function executeSave(projectId, filesArray) {
+    const ok = await showConfirm(
+        "Commit to Disk?",
+        "Attempt to write to the file system? Existing classes will be safely merged/injected, and a DB Backup will be created.",
+        "💾",
+        "Commit",
+        "background:var(--accent-primary);color:white;"
+    );
+    if(!ok) return;
 
     fetch('/api/save-generated-files', {
         method: 'POST',
@@ -1866,7 +1881,7 @@ function executeSave(projectId, filesArray) {
     .then(r => r.json())
     .then(res => {
         if (res.status === 'success') {
-            alert("Files Successfully Committed to Disk!");
+            showToast("Files Successfully Committed to Disk!", 'success');
             if(res.backup_id) {
                 const rbBtn = document.getElementById('rollbackBtn');
                 if (rbBtn) {
@@ -1875,7 +1890,7 @@ function executeSave(projectId, filesArray) {
                 }
             }
         } else {
-            alert("Save failed: " + res.message);
+            showToast("Save failed: " + res.message, 'error');
         }
     });
 }
@@ -1915,12 +1930,12 @@ function openMergeDialog(idx) {
             const browseBtn = document.getElementById('browseMergeFileBtn');
             browseBtn.onclick = () => browseExistingFileForMerge(idx);
         } else {
-            alert("Error previewing merge: " + res.message);
+            showToast("Error previewing merge: " + res.message, 'error');
             closeMergeModal();
         }
     })
     .catch(err => {
-        alert("Error: " + err.message);
+        showToast("Error: " + err.message, 'error');
         closeMergeModal();
     });
 }
@@ -1944,14 +1959,14 @@ function browseExistingFileForMerge(idx) {
                 // User cancelled or dialog failed silently
                 console.log("Browse cancelled or failed.");
             } else {
-                alert("Could not load file content.");
+                showToast("Could not load file content.", 'error');
             }
         })
         .catch(err => {
             browseBtn.innerHTML = ogHtml;
             browseBtn.disabled = false;
             console.error("Error browsing file:", err);
-            alert("Error opening file dialog. Check console.");
+            showToast("Error opening file dialog. Check console.", 'error');
         });
 }
 
@@ -1989,7 +2004,7 @@ function confirmMergeSave(idx) {
         btn.innerHTML = '<i class="fas fa-save"></i> Save Merged File';
         
         if (res.status === 'success') {
-            alert("File Successfully Committed to Disk!");
+            showToast("File Successfully Committed to Disk!", 'success');
             if(res.backup_id) {
                 const rbBtn = document.getElementById('rollbackBtn');
                 if (rbBtn) {
@@ -1999,21 +2014,29 @@ function confirmMergeSave(idx) {
             }
             closeMergeModal();
         } else {
-            alert("Save failed: " + res.message);
+            showToast("Save failed: " + res.message, 'error');
         }
     })
     .catch(err => {
         btn.disabled = false;
         btn.innerHTML = '<i class="fas fa-save"></i> Save Merged File';
-        alert("Error: " + err.message);
+        showToast("Error: " + err.message, 'error');
     });
 }
 
-function rollbackFiles() {
+// async so we can await the shared showConfirm() modal (base.html). Destructive
+// restore, so the OK button keeps the default red (error) styling.
+async function rollbackFiles() {
     const backupId = document.getElementById('rollbackBtn').getAttribute('data-backup-id');
     if(!backupId) return;
 
-    if(!confirm("Are you sure you want to rollback? This will restore files to their previous state prior to generation injection.")) return;
+    const ok = await showConfirm(
+        "Rollback Files?",
+        "This will restore files to their previous state prior to generation injection.",
+        "↩️",
+        "Rollback"
+    );
+    if(!ok) return;
 
     fetch('/api/rollback-files', {
         method: 'POST',
@@ -2023,11 +2046,11 @@ function rollbackFiles() {
     .then(r => r.json())
     .then(res => {
         if(res.status === 'success') {
-            alert("Rollback successful! Files restored.");
+            showToast("Rollback successful! Files restored.", 'success');
             document.getElementById('rollbackBtn').disabled = true;
             document.getElementById('rollbackBtn').setAttribute('data-backup-id', '');
         } else {
-            alert("Rollback failed: " + res.message);
+            showToast("Rollback failed: " + res.message, 'error');
         }
     });
 }

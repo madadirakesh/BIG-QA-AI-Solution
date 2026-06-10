@@ -1,4 +1,6 @@
 using DotNetEnv;
+using System.Security.Cryptography;
+using System.Text;
 
 namespace SeleniumReqnrollTests.Utils;
 
@@ -46,7 +48,9 @@ public static class ConfigReader
         {
             throw new InvalidOperationException($"Property '{key}' not found in .env file");
         }
-        return value;
+        // Secrets (e.g. PASSWORD) are stored as "ENC:<token>"; decrypt at run time so callers
+        // always get plaintext. Non-encrypted values pass straight through.
+        return Decrypt(value);
     }
 
     /// <summary>Returns the value for <paramref name="key"/>, or <paramref name="fallback"/> if missing/blank.</summary>
@@ -54,7 +58,35 @@ public static class ConfigReader
     {
         EnsureLoaded();
         var value = Environment.GetEnvironmentVariable(key);
-        return string.IsNullOrWhiteSpace(value) ? fallback : value;
+        return string.IsNullOrWhiteSpace(value) ? fallback : Decrypt(value);
+    }
+
+    /// <summary>
+    /// Decrypt an "ENC:&lt;token&gt;" value produced by the scaffolder (AES-256-GCM). Token layout:
+    /// "ENC:" + base64( nonce(12) || ciphertext || gcmTag(16) ); the key is the base64 CRED_KEY in
+    /// this project's .env. Values without the ENC: prefix are returned unchanged. Uses the BCL's
+    /// AesGcm — no third-party dependency.
+    /// </summary>
+    private static string Decrypt(string value)
+    {
+        if (string.IsNullOrEmpty(value) || !value.StartsWith("ENC:"))
+        {
+            return value;
+        }
+        var keyB64 = Environment.GetEnvironmentVariable("CRED_KEY");
+        if (string.IsNullOrWhiteSpace(keyB64))
+        {
+            throw new InvalidOperationException("CRED_KEY not found in .env file; cannot decrypt secret");
+        }
+        var key = Convert.FromBase64String(keyB64);
+        var raw = Convert.FromBase64String(value.Substring(4));
+        var nonce = raw[..12];
+        var tag = raw[^16..];
+        var ciphertext = raw[12..^16];
+        var plaintext = new byte[ciphertext.Length];
+        using var aes = new AesGcm(key, 16);
+        aes.Decrypt(nonce, ciphertext, tag, plaintext);
+        return Encoding.UTF8.GetString(plaintext);
     }
 
     /// <summary>Convenience accessor for the most commonly read property.</summary>
