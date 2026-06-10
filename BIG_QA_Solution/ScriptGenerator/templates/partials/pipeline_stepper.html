@@ -1,0 +1,39 @@
+<div class="pipeline-stepper-container animate-fade-in">
+    <div class="pipeline-stepper">
+        <div class="pipeline-stepper-line-bg">
+            <div class="pipeline-stepper-line-progress" style="width: {% if active_step == 2 %}33.3%{% elif active_step == 3 %}66.6%{% elif active_step == 4 %}100%{% else %}0%{% endif %};"></div>
+        </div>
+        
+        <a href="{{ url_for('test_case_generator') }}" class="pipeline-step {% if active_step == 1 %}active{% elif active_step > 1 %}completed{% endif %}">
+            <div class="pipeline-icon-wrapper">
+                <i class="fas fa-file-alt"></i>
+                <div class="pipeline-step-number">1</div>
+            </div>
+            <div class="pipeline-step-label">Test Case Gen</div>
+        </a>
+        
+        <a href="{{ url_for('script_developer') }}" class="pipeline-step {% if active_step == 2 %}active{% elif active_step > 2 %}completed{% else %}inactive{% endif %}">
+            <div class="pipeline-icon-wrapper">
+                <i class="fas fa-code"></i>
+                <div class="pipeline-step-number">2</div>
+            </div>
+            <div class="pipeline-step-label">Script Gen</div>
+        </a>
+        
+        <a href="{{ url_for('script_runner') }}#execution" class="pipeline-step {% if active_step == 3 %}active{% elif active_step > 3 %}completed{% else %}inactive{% endif %}">
+            <div class="pipeline-icon-wrapper">
+                <i class="fas fa-play-circle"></i>
+                <div class="pipeline-step-number">3</div>
+            </div>
+            <div class="pipeline-step-label">Execution</div>
+        </a>
+        
+        <a href="{{ url_for('script_runner') }}#git" class="pipeline-step {% if active_step == 4 %}active{% elif active_step > 4 %}completed{% else %}inactive{% endif %}">
+            <div class="pipeline-icon-wrapper">
+                <i class="fas fa-code-branch"></i>
+                <div class="pipeline-step-number">4</div>
+            </div>
+            <div class="pipeline-step-label">Merge Coded</div>
+        </a>
+    </div>
+</div>

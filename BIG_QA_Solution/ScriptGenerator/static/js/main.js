@@ -357,3 +357,29 @@ function submitAIConfiguration() {
         console.error(err);
     });
 }
+
+function updateStepperActiveStep(step) {
+    const stepper = document.querySelector('.pipeline-stepper');
+    if (!stepper) return;
+    
+    const progressBar = stepper.querySelector('.pipeline-stepper-line-progress');
+    if (progressBar) {
+        if (step === 2) progressBar.style.width = '33.3%';
+        else if (step === 3) progressBar.style.width = '66.6%';
+        else if (step === 4) progressBar.style.width = '100%';
+        else progressBar.style.width = '0%';
+    }
+    
+    const steps = stepper.querySelectorAll('.pipeline-step');
+    steps.forEach((stepEl, index) => {
+        const stepNum = index + 1;
+        stepEl.classList.remove('active', 'completed', 'inactive');
+        if (stepNum === step) {
+            stepEl.classList.add('active');
+        } else if (stepNum < step) {
+            stepEl.classList.add('completed');
+        } else {
+            stepEl.classList.add('inactive');
+        }
+    });
+}
