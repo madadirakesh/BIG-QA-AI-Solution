@@ -83,6 +83,18 @@
         {% block login_content %}{% endblock %}
     {% endif %}
 
+    <!-- Global Lightbox Alert Dialog -->
+    <div class="confirm-backdrop" id="alertBackdrop">
+        <div class="confirm-dialog" style="max-width: 420px; text-align: center;">
+            <span class="confirm-icon" id="alertIcon" style="font-size: 2.5rem; display: block; margin-bottom: 15px; color: var(--accent-primary);">ℹ️</span>
+            <h4 id="alertTitle" style="font-size: 1.2rem; margin-bottom: 10px; font-weight: 600;">Notification</h4>
+            <p id="alertMessage" style="color: var(--text-secondary); font-size: 0.95rem; margin-bottom: 20px; line-height: 1.5;"></p>
+            <div class="confirm-actions" style="justify-content: center;">
+                <button class="btn btn-primary" id="alertOkBtn" style="min-width: 100px; height: 42px;" onclick="resolveAlert()">OK</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Global Toast Container -->
     <div class="toast-container" id="toastContainer"></div>
 
@@ -127,7 +139,32 @@
             document.getElementById('confirmBackdrop').classList.remove('active');
             if (_confirmResolve) { _confirmResolve(result); _confirmResolve = null; }
         }
-        document.addEventListener('keydown', e => { if (e.key === 'Escape') resolveConfirm(false); });
+        document.addEventListener('keydown', e => { 
+            if (e.key === 'Escape') {
+                resolveConfirm(false);
+                resolveAlert();
+            }
+            if (e.key === 'Enter') {
+                const activeAlert = document.getElementById('alertBackdrop');
+                if (activeAlert && activeAlert.classList.contains('active')) {
+                    resolveAlert();
+                }
+            }
+        });
+
+        // ── Global Lightbox Alert Override ─────────────────────────────
+        let _alertResolve = null;
+        window.alert = function(message, title = 'Notification', icon = 'ℹ️') {
+            document.getElementById('alertTitle').textContent = title;
+            document.getElementById('alertMessage').textContent = message;
+            document.getElementById('alertIcon').textContent = icon;
+            document.getElementById('alertBackdrop').classList.add('active');
+            return new Promise(resolve => { _alertResolve = resolve; });
+        };
+        function resolveAlert() {
+            document.getElementById('alertBackdrop').classList.remove('active');
+            if (_alertResolve) { _alertResolve(); _alertResolve = null; }
+        }
 
         // ── H4: Sidebar mobile toggle ──────────────────────────────────
         function toggleSidebar() {

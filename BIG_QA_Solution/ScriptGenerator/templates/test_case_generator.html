@@ -12,6 +12,10 @@
     <span class="sep">/</span>
     <span class="current">Test Case Generator</span>
 </div>
+
+{% set active_step = 1 %}
+{% include 'partials/pipeline_stepper.html' %}
+
 <div class="page-header">
     <h1><i class="fas fa-file-alt"></i> AI Test Case Generator</h1>
     <p>Convert business requirements into structured BDD scenarios or formatted manual test cases instantly.</p>
@@ -248,6 +252,15 @@
             </div>
         </div>
     </div>
+    <!-- Navigation Actions -->
+    <div class="navigation-actions d-flex justify-content-end gap-3 mt-4" style="display: flex; justify-content: flex-end; gap: 15px; margin-top: 25px; margin-bottom: 15px;">
+        <button type="button" class="btn btn-outline-primary" onclick="launchLocatorWithToast()">
+            <i class="fas fa-crosshairs"></i> Go To Element Locator
+        </button>
+        <a href="{{ url_for('script_developer') }}" class="btn btn-primary">
+            Go To Script Generator <i class="fas fa-arrow-right"></i>
+        </a>
+    </div>
 </div>
 
 <div id="loadingOverlay" class="loading-overlay" style="display: none;">
@@ -347,6 +360,15 @@
 {% block extra_js %}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
+    function launchLocatorWithToast() {
+        const toast = showToast('Launching BIG Locator Studio…', 'loading', 0);
+        launchElementLocator();
+        setTimeout(() => {
+            toast.remove();
+            showToast('Locator Studio launched successfully!', 'success', 4000);
+        }, 3000);
+    }
+
     let selectedOptValue = 0;
     let generatedFileDownloadName = 'test_cases.txt';
     let currentStep = 1;

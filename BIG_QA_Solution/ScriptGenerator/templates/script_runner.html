@@ -13,6 +13,10 @@
     <span class="sep">/</span>
     <span class="current">Script Runner</span>
 </div>
+
+{% set active_step = 3 %}
+{% include 'partials/pipeline_stepper.html' %}
+
 <div class="page-header">
     <h1><i class="fas fa-play-circle"></i> QA Script Execution</h1>
     <p>Run automated test suites and manage execution environments.</p>
@@ -739,6 +743,7 @@
     }
 
     function setMode(mode) {
+        if (currentMode === mode) return;
         currentMode = mode;
         const runConfigDiv = document.getElementById('runTestConfig');
         const seqConfigDiv = document.getElementById('seqConfig');
@@ -769,20 +774,28 @@
             if (document.getElementById('executionAction')) document.getElementById('executionAction').style.display = 'block';
             btnRun.style.background = 'var(--accent-primary)';
             log.innerHTML = `<div style="color: #94a3b8;">[System] Mode: Run Test Executions. Selected project will be executed using AI generation rules.</div>`;
+            updateStepperActiveStep(3);
+            if (window.location.hash !== '#execution') window.location.hash = 'execution';
         } else if (mode === 'seq') {
             if (seqConfigDiv) seqConfigDiv.style.display = 'block';
             if (document.getElementById('executionAction')) document.getElementById('executionAction').style.display = 'block';
             if (btnSeq) btnSeq.style.background = '#6366f1';
             log.innerHTML = `<div style="color: #94a3b8;">[System] Mode: Sequential Run. Enter the commands you want to run in sequence.</div>`;
+            updateStepperActiveStep(3);
+            if (window.location.hash !== '#execution') window.location.hash = 'execution';
         } else if (mode === 'git') {
             if (gitConfigDiv) gitConfigDiv.style.display = 'block';
             if (btnGit) btnGit.style.background = '#ea580c';
             log.innerHTML = `<div style="color: #cbd5e1;">[System] Version Control Mode activated. You can use Native Git buttons or Ask AI for assistance.</div>`;
+            updateStepperActiveStep(4);
+            if (window.location.hash !== '#git') window.location.hash = 'git';
         } else {
             cmdFooter.style.display = 'block';
             btnCmd.style.background = 'var(--accent-primary)';
             log.innerHTML = `<div style="color: #60a5fa;">[System] Embedded Command Prompt active. Type a command below.</div>`;
             document.getElementById('cmdInput').focus();
+            updateStepperActiveStep(3);
+            if (window.location.hash !== '#execution') window.location.hash = 'execution';
         }
     }
 
@@ -1232,5 +1245,24 @@
             }
         }
     }
+
+    function handleHashChange() {
+        const hash = window.location.hash;
+        if (hash === '#git') {
+            const sel = document.getElementById('runProject');
+            if (sel) {
+                if (sel.options.length > 1 && !sel.value) {
+                    sel.selectedIndex = 1;
+                }
+                onProjectSelect();
+                setMode('git');
+            }
+        } else if (hash === '#execution') {
+            setMode('run');
+        }
+    }
+
+    document.addEventListener('DOMContentLoaded', handleHashChange);
+    window.addEventListener('hashchange', handleHashChange);
 </script>
 {% endblock %}

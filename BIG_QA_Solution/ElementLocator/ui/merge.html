@@ -1093,7 +1093,49 @@
                     if (cmRight) cmRight.refresh();
                 }
             });
+    </script>
+    
+    <!-- Global Lightbox Alert Dialog -->
+    <div id="alertBackdrop" style="display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.7); backdrop-filter: blur(6px); z-index: 10000; align-items: center; justify-content: center; opacity: 0; transition: opacity 0.2s ease;">
+        <div style="background: var(--bg-secondary); border: 1px solid var(--glass-border); border-radius: var(--border-radius); padding: 2rem; max-width: 400px; width: 90%; box-shadow: var(--glass-shadow); text-align: center; transform: translateY(20px); transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);">
+            <span style="font-size: 2.5rem; display: block; margin-bottom: 15px; color: var(--accent-secondary);">ℹ️</span>
+            <h4 style="font-size: 1.15rem; margin-bottom: 10px; font-weight: 600; color: var(--text-primary);">Notification</h4>
+            <p id="alertMessage" style="color: var(--text-secondary); font-size: 0.9rem; margin-bottom: 20px; line-height: 1.5;"></p>
+            <div style="display: flex; justify-content: center;">
+                <button class="btn btn-primary" style="min-width: 100px; height: 38px;" onclick="resolveAlert()">OK</button>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        let _alertResolve = null;
+        window.alert = function(message) {
+            document.getElementById('alertMessage').textContent = message;
+            const backdrop = document.getElementById('alertBackdrop');
+            backdrop.style.display = 'flex';
+            setTimeout(() => {
+                backdrop.style.opacity = '1';
+                backdrop.firstElementChild.style.transform = 'translateY(0)';
+            }, 10);
+            return new Promise(resolve => { _alertResolve = resolve; });
+        };
+        function resolveAlert() {
+            const backdrop = document.getElementById('alertBackdrop');
+            backdrop.style.opacity = '0';
+            backdrop.firstElementChild.style.transform = 'translateY(20px)';
+            setTimeout(() => {
+                backdrop.style.display = 'none';
+                if (_alertResolve) { _alertResolve(); _alertResolve = null; }
+            }, 200);
         }
+        document.addEventListener('keydown', e => {
+            if (e.key === 'Escape' || e.key === 'Enter') {
+                const backdrop = document.getElementById('alertBackdrop');
+                if (backdrop && backdrop.style.display === 'flex') {
+                    resolveAlert();
+                }
+            }
+        });
     </script>
 </body>
 </html>
