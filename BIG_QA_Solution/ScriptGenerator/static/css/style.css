@@ -497,6 +497,12 @@ body {
     overflow-x: hidden;
 }
 
+/* Logged-in app: pin to viewport so only .content-wrapper scrolls */
+body.app-bg {
+    height: 100vh;
+    overflow: hidden;
+}
+
 /* Typography */
 h1, h2, h3, h4, h5, h6 {
     font-weight: 700;
@@ -623,24 +629,25 @@ a:hover {
 
 .login-container {
     width: 100%;
-    max-width: 420px;
+    max-width: 520px;
     padding: 20px;
 }
 
 .login-card {
-    padding: 2.5rem;
+    padding: 3rem 3.5rem;
 }
 
 .login-header {
     text-align: center;
-    margin-bottom: 2rem;
+    margin-bottom: 1rem;
 }
 
 .login-logo {
-    font-size: 3rem;
-    color: var(--accent-primary);
-    margin-bottom: 1rem;
-    display: inline-block;
+    height: 110px;
+    width: auto;
+    margin-bottom: 1.5rem;
+    /* Soft glow so the transparent logo reads cleanly on the dark card */
+    filter: drop-shadow(0 6px 16px rgba(0, 188, 242, 0.25));
 }
 
 .login-header h1 {
@@ -714,7 +721,7 @@ select option {
 /* App Layout */
 .app-layout {
     display: flex;
-    min-height: 100vh;
+    height: 100vh;
 }
 
 /* Sidebar */
@@ -730,11 +737,15 @@ select option {
 }
 
 .sidebar-header {
-    padding: 15px;
+    /* Same height as .top-header so both bottom borders form one line */
+    height: 70px;
+    box-sizing: border-box;
+    padding: 0 15px;
     border-bottom: 1px solid var(--glass-border);
     background: #004a80; /* Match BIG logo background exactly */
     display: flex;
     justify-content: center;
+    align-items: center;
 }
 
 .logo {
@@ -842,6 +853,8 @@ select option {
     margin-left: 260px;
     display: flex;
     flex-direction: column;
+    height: 100vh;
+    overflow: hidden;
 }
 
 .top-header {
@@ -849,12 +862,13 @@ select option {
     background: rgba(15, 23, 42, 0.8);
     backdrop-filter: blur(10px);
     border-bottom: 1px solid var(--glass-border);
-    padding: 15px 30px;
+    height: 70px;
+    box-sizing: border-box;
+    padding: 0 30px;
     display: flex;
     justify-content: space-between;
     align-items: center;
-    position: sticky;
-    top: 0;
+    flex-shrink: 0;
     z-index: 90;
 }
 
@@ -884,8 +898,13 @@ select option {
 .role-guest { background: rgba(148, 163, 184, 0.2); color: var(--text-secondary); }
 
 .content-wrapper {
-    padding: 30px;
     flex: 1;
+    overflow-y: auto;
+    width: 100%;
+}
+
+.content-inner {
+    padding: 30px;
     max-width: 1400px;
     width: 100%;
     margin: 0 auto;
@@ -1293,7 +1312,7 @@ select option {
    H5 — Login Flash Messages (in-flow)
    ======================================== */
 .login-flash {
-    margin-bottom: 1.25rem;
+    margin-bottom: 1rem;
 }
 .flash-messages-global {
     position: fixed;

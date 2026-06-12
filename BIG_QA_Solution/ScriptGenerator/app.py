@@ -78,6 +78,32 @@ def login_required(role=None):
         return decorated_function
     return wrapper
 
+# Endpoints reachable without login; everything else needs a session.
+PUBLIC_ENDPOINTS = {'login', 'logout', 'index', 'static'}
+
+@app.before_request
+def require_authentication():
+    # Central guard: enforce login for every route except the public ones.
+    endpoint = request.endpoint
+    if endpoint is None or endpoint in PUBLIC_ENDPOINTS:
+        return None
+    if 'user_id' not in session:
+        if request.path.startswith('/api/'):
+            return jsonify({'error': 'Authentication required'}), 401
+        flash('Please log in to access this page.', 'warning')
+        return redirect(url_for('login'))
+    return None
+
+@app.after_request
+def add_no_cache_headers(response):
+    # no-store stops the browser cache/bfcache from re-showing authenticated
+    # pages (and old login input) on the Back button after logout.
+    if not request.path.startswith('/static/'):
+        response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+        response.headers['Pragma'] = 'no-cache'
+        response.headers['Expires'] = '0'
+    return response
+
 @app.route('/')
 def index():
     if 'user_id' in session:
@@ -86,6 +112,12 @@ def index():
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
+    # Already signed in? Never show the login page again (e.g. the browser Back
+    # button after login). Without this, base.html still sees a live session and
+    # renders the dashboard chrome at the /login URL — the broken empty-dashboard
+    # state. Send authenticated users straight to their dashboard instead.
+    if 'user_id' in session:
+        return redirect(url_for('home'))
     if request.method == 'POST':
         email = request.form.get('email', '')
         password = request.form.get('password', '')
@@ -563,6 +595,32 @@ def version_profiles():
     fw = request.args.get('framework', '')
     profiles = profiles_for(tool, lang, fw)
     return jsonify({"profiles": [p["label"] for p in profiles]})
+
+@app.route('/api/preflight-dependencies', methods=['POST'])
+@login_required()
+def preflight_dependencies():
+    """Pre-creation dependency report for the create-project form.
+
+    Given the selected stack and version profile, return each required system tool with its
+    required-vs-detected version and an ok/missing/mismatch status, so the user can see (and
+    install) anything missing BEFORE submitting — instead of hitting a late, mid-install error
+    from verify_environment()/the install phases. Advisory only: this never blocks creation,
+    the form still lets the user proceed and install in parallel.
+    """
+    from ProjectBootstrapper.versions_catalog import resolve_versions
+    data = request.json or {}
+    tool = data.get('tool', '')
+    lang = data.get('language', '')
+    fw = data.get('framework', '')
+    # Empty string -> None so resolve_versions falls back to the stack's default profile.
+    label = (data.get('versionProfile') or '').strip() or None
+
+    # The resolved profile supplies the version a tool must match (e.g. {"java": "17"}); when the
+    # stack has no version choice this is {} and the report degrades to presence-only checks.
+    profile_versions = resolve_versions(tool, lang, fw, label)
+    deps = EnvironmentSetup.required_dependencies(tool, lang, fw, profile_versions)
+    all_ok = all(d['status'] == 'ok' for d in deps)
+    return jsonify({"dependencies": deps, "allOk": all_ok})
 
 @app.route('/api/bootstrap-status/<job_id>', methods=['GET'])
 @login_required()

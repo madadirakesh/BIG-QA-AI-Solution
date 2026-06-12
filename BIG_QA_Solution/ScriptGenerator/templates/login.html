@@ -6,7 +6,7 @@
 <div class="login-container">
     <div class="login-card glassmorphism">
         <div class="login-header">
-            <img src="{{ url_for('static', filename='images/big_logo_stacked_navy.png') }}" alt="BIG Logo" style="height: 120px; width: auto; margin-bottom: 1.5rem;">
+            <img src="{{ url_for('static', filename='images/big_logo_stacked_light.png') }}" alt="BIG Logo" class="login-logo">
             <h1>BIG AI QA Solution</h1>
             <p>Elegance in Automation by Bits In Glass</p>
         </div>
@@ -22,10 +22,10 @@
           {% endif %}
         {% endwith %}
         
-        <form method="POST" action="{{ url_for('login') }}" class="login-form" id="loginForm">
+        <form method="POST" action="{{ url_for('login') }}" class="login-form" id="loginForm" autocomplete="off" novalidate>
             <div class="form-group">
                 <label for="email"><i class="fas fa-envelope"></i> Email Address</label>
-                <input type="email" id="email" name="email" required placeholder="name@company.com">
+                <input type="email" id="email" name="email" required placeholder="name@company.com" autocomplete="off">
                 <div class="field-error" id="emailErr"></div>
             </div>
             
@@ -33,7 +33,7 @@
                 <label for="password"><i class="fas fa-lock"></i> Password</label>
                 <!-- H6: Password visibility toggle -->
                 <div class="password-wrapper">
-                    <input type="password" id="password" name="password" required placeholder="••••••••">
+                    <input type="password" id="password" name="password" required placeholder="••••••••" autocomplete="new-password">
                     <button type="button" class="pwd-toggle" id="pwdToggleLogin" onclick="togglePwd('password', this)" aria-label="Show/hide password">
                         <i class="fas fa-eye"></i>
                     </button>
@@ -65,7 +65,10 @@
         let valid = true;
 
         // M10: Field-level validation
-        if (!emailEl.value.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailEl.value)) {
+        if (!emailEl.value.trim()) {
+            setFieldError(emailEl, 'emailErr', 'Email address is required.');
+            valid = false;
+        } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailEl.value)) {
             setFieldError(emailEl, 'emailErr', 'Please enter a valid email address.');
             valid = false;
         } else {
@@ -79,7 +82,12 @@
             setFieldValid(pwdEl, 'pwdErr');
         }
 
-        if (!valid) { e.preventDefault(); return; }
+        if (!valid) {
+            e.preventDefault();
+            // Focus the first field flagged invalid so the user lands right on the problem
+            document.querySelector('.login-form .input-error')?.focus();
+            return;
+        }
 
         // Show loading state
         const btn = document.getElementById('loginBtn');

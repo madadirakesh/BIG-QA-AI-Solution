@@ -397,11 +397,25 @@
                     <div class="form-col">
                         <div class="form-group">
                             <label><i class="fas fa-layer-group"></i> Version Profile <span style="color:#e74c3c">*</span></label>
-                            <select id="bsVersionProfile" class="form-control" onchange="clearFieldError('bsVersionProfile')">
+                            <select id="bsVersionProfile" class="form-control" onchange="clearFieldError('bsVersionProfile'); refreshDependencyCheck()">
                                 <!-- Dynamic -->
                             </select>
                             <small class="help-text">Validated dependency versions for this stack.</small>
                             <small class="error-text" id="bsVersionProfileError"></small>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Pre-flight dependency check. Populated by refreshDependencyCheck() whenever the
+                     stack or version profile changes, so the user can see (and install) any missing
+                     or wrong-version system tool BEFORE creating the project — instead of hitting a
+                     late install error. Advisory only: it never disables the Generate button. -->
+                <div class="form-row" id="bsDepCheckRow" style="display:none;">
+                    <div class="form-col" style="flex:1 1 100%;">
+                        <div class="form-group">
+                            <label><i class="fas fa-clipboard-check"></i> Dependency Pre-check</label>
+                            <div id="bsDepCheckList" style="display:flex; flex-direction:column; gap:6px;"></div>
+                            <small class="help-text">Tools required for the selected stack &amp; version. Anything marked red/amber should be installed before running — you can still proceed and install in parallel.</small>
                         </div>
                     </div>
                 </div>
@@ -710,6 +724,12 @@
         .form-row { flex-direction: column; gap: 10px; }
     }
 
+    /* Tighten Create-Project modal spacing (beats the page-wide !important rules) */
+    #bootstrapperForm .form-row { margin-bottom: 1rem; }
+    #bootstrapperForm .form-col .form-group { margin-bottom: 0 !important; }
+    #bootstrapperForm > .form-group { margin-bottom: 1rem !important; }
+    #bootstrapperForm label { margin-bottom: 6px !important; }
+
     /* Missing Utilities for Horizontal Alignment */
     .d-flex { display: flex !important; }
     .align-items-center { align-items: center !important; }
@@ -813,7 +833,7 @@
         border-radius: 12px;
         padding: 40px !important;
         background: rgba(255, 255, 255, 0.03);
-        margin: 30px 0 !important;
+        margin: 4px 0 30px 0 !important;
         width: 100% !important;
     }
 
@@ -1304,8 +1324,87 @@ function updateVersionProfiles() {
             select.add(placeholder);
             profiles.forEach(p => select.add(new Option(p, p)));
             row.style.display = profiles.length ? '' : 'none';
+            // Stack just changed -> refresh the dependency pre-check. No profile is selected yet
+            // (the placeholder is), so version-pinned tools (e.g. JDK) show no required version
+            // until the user picks one; the per-profile refresh is wired on the select's onchange.
+            refreshDependencyCheck();
         })
         .catch(() => { row.style.display = 'none'; });
+}
+
+// ─── Pre-flight dependency check ───
+// Asks the backend which system tools the selected stack + version profile needs, then renders
+// a colour-coded status row per tool (green=ok, red=missing, amber=version mismatch) with the
+// required vs detected version and an install hint. Called automatically on every stack/version
+// change. Warn-only: a missing tool is highlighted but never blocks Generate.
+let bsDepCheckSeq = 0;  // monotonically increasing token; guards against a slow earlier response
+                        // overwriting the panel after a newer selection's response already landed.
+let bsLastDeps = [];
+function refreshDependencyCheck() {
+    const row = document.getElementById('bsDepCheckRow');
+    const list = document.getElementById('bsDepCheckList');
+    const payload = {
+        tool: document.getElementById('bsTool').value,
+        language: document.getElementById('bsLanguage').value,
+        framework: document.getElementById('bsFramework').value,
+        versionProfile: document.getElementById('bsVersionProfile').value
+    };
+    const seq = ++bsDepCheckSeq;
+    row.style.display = '';
+    list.innerHTML = '<span class="text-secondary" style="font-size:0.85rem;">'
+        + '<i class="fas fa-circle-notch fa-spin"></i> Checking installed dependencies...</span>';
+    fetch('/api/preflight-dependencies', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(payload)
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (seq !== bsDepCheckSeq) return;          // a newer request has superseded this one
+        renderDependencyCheck(data.dependencies || []);
+    })
+    .catch(() => {
+        if (seq !== bsDepCheckSeq) return;
+        // The check is advisory; on any failure just hide the panel rather than alarm the user.
+        row.style.display = 'none';
+        bsLastDeps = [];
+    });
+}
+
+function renderDependencyCheck(deps) {
+    bsLastDeps = deps;
+    const row = document.getElementById('bsDepCheckRow');
+    const list = document.getElementById('bsDepCheckList');
+    if (!deps.length) { row.style.display = 'none'; return; }
+
+    // status -> icon + colour: ok=green check, missing=red x, mismatch=amber warning.
+    const styleFor = {
+        ok:       { icon: 'fa-check-circle',         color: '#2ecc71' },
+        missing:  { icon: 'fa-times-circle',         color: '#e74c3c' },
+        mismatch: { icon: 'fa-exclamation-triangle', color: '#f1c40f' }
+    };
+
+    list.innerHTML = '';
+    deps.forEach(d => {
+        const s = styleFor[d.status] || styleFor.missing;
+        // Right-hand detail line: confirmation when ok, otherwise the required-vs-found gap + hint.
+        let detail;
+        if (d.status === 'ok') {
+            detail = d.detected ? ('v' + d.detected + ' detected') : 'Installed';
+        } else if (d.status === 'mismatch') {
+            detail = 'Needs ' + d.required + ' or newer, found v' + (d.detected || '?') + ' — ' + d.hint;
+        } else { // missing
+            detail = 'Not found' + (d.required ? (' (needs ' + d.required + ')') : '') + ' — ' + d.hint;
+        }
+        const item = document.createElement('div');
+        item.style.cssText = 'display:flex; align-items:flex-start; gap:8px; font-size:0.85rem;';
+        item.innerHTML =
+            '<i class="fas ' + s.icon + '" style="color:' + s.color + '; margin-top:2px;"></i>'
+            + '<span><b>' + d.name + '</b>'
+            + (d.required ? (' <span style="opacity:0.7;">(requires ' + d.required + '+)</span>') : '')
+            + '<br><span style="opacity:0.8;">' + detail + '</span></span>';
+        list.appendChild(item);
+    });
 }
 
 // ─── Bootstrapper progress: polling + elapsed-time counter ───
@@ -1347,7 +1446,7 @@ function stopBsTimers() {
     }
 }
 
-function submitBootstrapper() {
+async function submitBootstrapper() {
     const data = {
         projectName: document.getElementById('bsProjectName').value,
         projectPath: document.getElementById('bsProjectPath').value,
@@ -1365,6 +1464,19 @@ function submitBootstrapper() {
     // highlights bad fields in red and writes a message under each one.
     if (!validateBootstrapForm(data)) {
         return;
+    }
+
+    // Warn once if prerequisites are missing/outdated, but let the user proceed (install in parallel).
+    const blockers = bsLastDeps.filter(d => d.status === 'missing' || d.status === 'mismatch');
+    if (blockers.length) {
+        const ok = await showConfirm(
+            "Dependencies Not Ready",
+            "These prerequisites are missing or outdated: " + blockers.map(d => d.name).join(', ')
+                + ". You can still generate the project and install them later. Generate anyway?",
+            "⚠️",
+            "Generate Anyway"
+        );
+        if (!ok) return;
     }
 
     document.getElementById('bootstrapperForm').style.display = 'none';
