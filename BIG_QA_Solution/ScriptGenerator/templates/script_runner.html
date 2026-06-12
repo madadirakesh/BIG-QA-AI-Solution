@@ -119,12 +119,14 @@
                     {% for p in projects %}
                     <option value="{{ p.project_name }}" data-path="{{ p.project_path }}"
                         data-lang="{{ p.project_lang }}" data-fw="{{ p.project_fw }}" data-tool="{{ p.project_tool }}"
-                        data-cmds="{{ p.default_run_commands or '' }}">
+                        data-cmds="{{ p.default_run_commands or '' }}"
+                        {% if p.project_name == active_project_name %}selected{% endif %}>
                         {{ p.project_name }} ({{ p.project_lang }} / {{ p.project_tool }})
                     </option>
                     {% endfor %}
                 </select>
             </div>
+
 
             <div id="modeSelection"
                 style="display: none; margin-top: 25px; text-align: center; gap: 15px; justify-content: center; display: flex; flex-wrap: wrap;">
@@ -694,6 +696,12 @@
 {% block extra_js %}
 <script>
     let currentMode = null;
+
+    document.addEventListener('DOMContentLoaded', () => {
+        if (document.getElementById('runProject').value) {
+            onProjectSelect();
+        }
+    });
 
     function onProjectSelect() {
         const sel = document.getElementById('runProject');

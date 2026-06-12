@@ -38,6 +38,19 @@
                     <nav class="breadcrumb" aria-label="breadcrumb">{% block header_breadcrumb %}{% endblock %}</nav>
                 </div>
                 <div class="user-greeting">
+                    <!-- Global Active Project Selector -->
+                    {% if global_projects %}
+                    <div class="global-project-selector" style="margin-right: 15px; display: inline-flex; align-items: center; gap: 8px;" title="Set Global Active Project">
+                        <i class="fas fa-project-diagram" style="color: var(--primary);"></i>
+                        <select id="globalActiveProject" onchange="setGlobalActiveProject(this)" class="input-glass" style="padding: 4px 8px; font-size: 0.9rem; min-width: 150px; background: rgba(0,0,0,0.2); border-color: rgba(255,255,255,0.1);">
+                            <option value="">-- Select Active Project --</option>
+                            {% for proj in global_projects %}
+                                <option value="{{ proj.id }}" {% if proj.id|string == active_project_id|string %}selected{% endif %}>{{ proj.project_name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    {% endif %}
+                    
                     <!-- M8: AI Status Badge -->
                     <button class="ai-status-badge" id="aiStatusBadge" onclick="openConfigureAIModal()" title="Click to configure AI">
                         <i class="fas fa-robot"></i>
@@ -63,6 +76,7 @@
             </div>
         </main>
     </div>
+
 
     <!-- H8: Global Confirm Dialog -->
     <div class="confirm-backdrop" id="confirmBackdrop">
@@ -288,6 +302,44 @@
                 if (aiModal && aiModal.classList.contains('active')) closeConfigureAIModal();
             }
         });
+
+        // ── Global Active Project ─────────────────────────────────────
+        async function setGlobalActiveProject(selectElement) {
+            const projectId = selectElement.value;
+            const projectName = selectElement.options[selectElement.selectedIndex].text;
+            
+            try {
+                const response = await fetch('/api/set-active-project', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ project_id: projectId, project_name: projectId ? projectName : null })
+                });
+                const data = await response.json();
+                if (data.status === 'success') {
+                    showToast(data.message, 'success');
+                    // Sync any other project selectors on the page (e.g. Test Case Generator, Dashboard)
+                    const otherSelects = document.querySelectorAll('select[name="project_id"], select[name="project"], #runProject, #projectSelect');
+                    otherSelects.forEach(sel => {
+                        if (sel.id !== 'globalActiveProject') {
+                            // If the option exists in the other dropdown, select it
+                            for (let i = 0; i < sel.options.length; i++) {
+                                if (sel.options[i].value == projectId || sel.options[i].value === projectName) {
+                                    sel.selectedIndex = i;
+                                    // Trigger change event if needed
+                                    sel.dispatchEvent(new Event('change'));
+                                    break;
+                                }
+                            }
+                        }
+                    });
+                } else {
+                    showToast('Failed to set active project', 'error');
+                }
+            } catch (error) {
+                console.error(error);
+                showToast('Error setting active project', 'error');
+            }
+        }
     </script>
     {% block extra_js %}{% endblock %}
 </body>
