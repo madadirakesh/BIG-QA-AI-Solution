@@ -6,7 +6,7 @@ from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
 # We'll use the existing AI clients from backend if possible, or fallback to direct API call
-from api.backend import _get_openai_client, AI_MODEL, AI_TOOL, _get_gemini_client, API_KEY
+from api import backend
 
 async def run_mcp_git_prompt(prompt: str, project_path: str):
     """
@@ -48,17 +48,17 @@ async def run_mcp_git_prompt(prompt: str, project_path: str):
                 
                 # Use Gemini or OpenAI based on config
                 llm_response_text = ""
-                if AI_TOOL in ["GEMINI", "GOOGLE"]:
-                    client = _get_gemini_client()
+                if backend.AI_TOOL in ["GEMINI", "GOOGLE"]:
+                    client = backend._get_gemini_client()
                     resp = client.models.generate_content(
-                        model=AI_MODEL,
+                        model=backend.AI_MODEL,
                         contents=full_prompt
                     )
                     llm_response_text = resp.text
                 else:
-                    client = _get_openai_client()
+                    client = backend._get_openai_client()
                     resp = client.chat.completions.create(
-                        model=AI_MODEL,
+                        model=backend.AI_MODEL,
                         messages=[{"role": "user", "content": full_prompt}],
                         temperature=0
                     )
