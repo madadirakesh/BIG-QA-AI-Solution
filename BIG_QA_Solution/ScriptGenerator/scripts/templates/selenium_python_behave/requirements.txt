@@ -8,3 +8,5 @@ selenium=={{SELENIUM_VERSION}}
 webdriver-manager==4.0.2
 python-dotenv==1.0.1
 allure-behave==2.13.5
+# Decrypts the AES-GCM "ENC:" password from .env at run time (see features/environment.py).
+cryptography==44.0.0

@@ -12,6 +12,19 @@ try:
 except ModuleNotFoundError:
     from ProjectBootstrapper.versions_catalog import resolve_versions, FALLBACK_VERSIONS
 
+# Per-project credential encryption. generate_key() mints a random AES-256 key for THIS project
+# (written into its .env as CRED_KEY); encrypt_secret() stores the password as "ENC:<token>".
+# The generated project decrypts both itself at run time using its own CRED_KEY — see
+# utils.crypto_util for the token format and the per-language decrypt code in the templates.
+# Try the flat package import first, then the longer paths, matching how this app loads siblings.
+try:
+    from utils.crypto_util import encrypt_secret, generate_key
+except ModuleNotFoundError:
+    try:
+        from ScriptGenerator.utils.crypto_util import encrypt_secret, generate_key
+    except ModuleNotFoundError:
+        from BIG_QA_Solution.ScriptGenerator.utils.crypto_util import encrypt_secret, generate_key
+
 logger = logging.getLogger("ProjectBootstrapper")
 
 
@@ -100,6 +113,12 @@ class BootstrapperEngine:
             def _ver(key):
                 return versions.get(key) or FALLBACK_VERSIONS.get(key, "")
 
+            # Mint one AES-256 key for THIS project. It is written into the project's .env as
+            # CRED_KEY (via the {{CRED_KEY}} placeholder + the .env post-processing below) and is
+            # the same key used to encrypt the PASSWORD here — so the generated project can
+            # decrypt its own password at run time with no dependency on this app.
+            cred_key = generate_key()
+
             # 3. Process and write files
             for file_record in template_files:
                 rel_path = file_record['file_path']
@@ -129,7 +148,13 @@ class BootstrapperEngine:
                         content = content.replace("{{ARTIFACT_ID}}", _to_artifact_id(project_name))
                         content = content.replace("{{BASE_URL}}", BootstrapperEngine._sec_str(url or "https://example.com"))
                         content = content.replace("{{USERNAME}}", BootstrapperEngine._sec_str(username or "admin"))
-                        content = content.replace("{{PASSWORD}}", BootstrapperEngine._sec_str(password or "password123"))
+                        # CRED_KEY is this project's AES key (base64). It is not secret-escaped —
+                        # base64 is .env-safe — and the generated project reads it to decrypt below.
+                        content = content.replace("{{CRED_KEY}}", cred_key)
+                        # PASSWORD is stored encrypted-at-rest as "ENC:<token>"; the generated
+                        # project decrypts it at run time with CRED_KEY. The token is base64, so it
+                        # needs no _sec_str() escaping. {{PASSWORD}} only appears in .env templates.
+                        content = content.replace("{{PASSWORD}}", encrypt_secret(password or "password123", cred_key))
                         # Dependency-version placeholders ({{PLAYWRIGHT_VERSION}}, {{SELENIUM_VERSION}},
                         # {{TYPESCRIPT_VERSION}}, {{REQNROLL_VERSION}}, {{JAVA_VERSION}}, ...). Driven by
                         # the resolved version profile so a new version key added to versions_catalog
@@ -150,10 +175,15 @@ class BootstrapperEngine:
                     with open(env_file_path, 'r', encoding='utf-8') as f:
                         lines = f.readlines()
                     
+                    # PASSWORD is encrypted-at-rest (ENC:<token>) and CRED_KEY is the project key
+                    # that decrypts it; APP_URL/USER are not secret so they stay plaintext. Mirrors
+                    # the placeholder substitution above for the case where the template ships a
+                    # populated .env (or omits the CRED_KEY line — then it is appended here).
                     updates = {
                         'APP_URL': url or "https://example.com",
                         'USER': username or "admin",
-                        'PASSWORD': password or "password123"
+                        'CRED_KEY': cred_key,
+                        'PASSWORD': encrypt_secret(password or "password123", cred_key)
                     }
                     
                     new_lines = []

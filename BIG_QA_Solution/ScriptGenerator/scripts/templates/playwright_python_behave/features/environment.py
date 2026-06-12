@@ -4,7 +4,32 @@ from datetime import datetime
 from dotenv import load_dotenv
 from playwright.sync_api import sync_playwright
 
+
+def _decrypt_env_password():
+    """
+    If PASSWORD in the loaded .env is AES-GCM encrypted ("ENC:<token>"), decrypt it in place using
+    CRED_KEY so os.getenv("PASSWORD") returns plaintext everywhere (steps/pages read it directly).
+
+    Token layout: "ENC:" + base64(nonce(12) || ciphertext || gcmTag(16)); the key is the base64
+    CRED_KEY written into this project's .env at scaffold time. Values without the ENC: prefix are
+    left untouched. A decrypt failure is swallowed so a wrong/missing key surfaces as a failed
+    login (easy to debug) rather than crashing the test run at import time.
+    """
+    enc = os.environ.get("PASSWORD", "")
+    key_b64 = os.environ.get("CRED_KEY")
+    if not enc.startswith("ENC:") or not key_b64:
+        return
+    try:
+        from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+        raw = base64.b64decode(enc[4:])
+        nonce, ct_and_tag = raw[:12], raw[12:]
+        os.environ["PASSWORD"] = AESGCM(base64.b64decode(key_b64)).decrypt(nonce, ct_and_tag, None).decode("utf-8")
+    except Exception:
+        pass
+
+
 load_dotenv()
+_decrypt_env_password()
 
 
 def before_all(context):

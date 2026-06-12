@@ -15,7 +15,7 @@
     <!-- Font Awesome -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <!-- Custom CSS -->
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=1.4">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=1.9">
     {% block extra_css %}{% endblock %}
 </head>
 <body class="{% if not session.get('user_id') %}login-bg{% else %}app-bg{% endif %} dark-theme">
@@ -49,6 +49,7 @@
             </header>
             
             <div class="content-wrapper">
+                <div class="content-inner">
                 {% with messages = get_flashed_messages(with_categories=true) %}
                   {% if messages %}
                     <div class="flash-messages">
@@ -60,6 +61,7 @@
                 {% endwith %}
 
                 {% block content %}{% endblock %}
+                </div>
             </div>
         </main>
     </div>
@@ -77,18 +79,7 @@
         </div>
     </div>
     {% else %}
-        <!-- For Login Page -->
-        {% with messages = get_flashed_messages(with_categories=true) %}
-          {% if messages %}
-            <div class="flash-messages-global">
-              {% for category, message in messages %}
-                <div class="alert alert-{{ category }}">
-                  {{ message }}
-                </div>
-              {% endfor %}
-            </div>
-          {% endif %}
-        {% endwith %}
+        <!-- For Login Page — flash messages render inside the login card (see login.html) -->
         {% block login_content %}{% endblock %}
     {% endif %}
 

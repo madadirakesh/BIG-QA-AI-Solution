@@ -61,7 +61,7 @@ class ScriptRunnerService:
         project_path = meta.get('path', '') or meta.get('project_path', '')
         project_name = meta.get('name', '') or meta.get('project_name', '')
         full_path = os.path.join(project_path, project_name) if project_name not in project_path else project_path
-        
+
         language = meta.get('language') or meta.get('lang') or meta.get('project_lang', '')
         framework = meta.get('framework') or meta.get('fw') or meta.get('project_fw', '')
         tool = meta.get('tool') or meta.get('project_tool', '')

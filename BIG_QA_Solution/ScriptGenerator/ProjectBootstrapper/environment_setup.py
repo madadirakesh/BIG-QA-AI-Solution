@@ -1,6 +1,7 @@
 import subprocess
 import platform
 import os
+import re
 import logging
 
 class EnvironmentSetup:
@@ -40,6 +41,168 @@ class EnvironmentSetup:
         if missing:
             return False, missing
         return True, []
+
+    # ── Pre-flight dependency inspection ────────────────────────────────────────────────────
+    # Why this block exists: verify_environment() above answers only the yes/no question
+    # "is the tool on PATH?" and it runs *after* the create-project form is submitted — so a
+    # missing JDK or a wrong Java major only surfaces as a late, mid-install error. The methods
+    # below power a *pre-flight* panel rendered in the form itself. For the selected stack +
+    # version profile they report, per tool: the version we require, the version actually
+    # installed, and whether the two agree. The user can then fix anything flagged before
+    # clicking Generate. This is advisory only — nothing here blocks project creation.
+
+    @staticmethod
+    def _probe(check_cmd):
+        """Run a version-probe command and return (installed, combined_output).
+
+        `installed` is True when the command exists and exits 0. We merge stdout+stderr because
+        several tools (notably `java -version`) print their version banner to stderr, and we want
+        the version string regardless of which stream it lands on. On failure we still return any
+        partial output the process produced so the caller can attempt to parse a version from it.
+        """
+        try:
+            res = subprocess.run(check_cmd, shell=True, check=True,
+                                 stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+            return True, (res.stdout or b"").decode("utf-8", "ignore")
+        except subprocess.CalledProcessError as e:
+            out = e.output or b""
+            return False, out.decode("utf-8", "ignore") if isinstance(out, (bytes, bytearray)) else str(out)
+        except FileNotFoundError:
+            # Only reachable if a future caller passes shell=False; with shell=True a missing
+            # binary surfaces as a non-zero exit (CalledProcessError) instead.
+            return False, ""
+
+    @staticmethod
+    def _java_major(version):
+        """Map a Java version string to its major number for compatibility comparison.
+
+        JDK compatibility is keyed on the major version, but the version string format changed
+        across releases: modern JDKs report "17.0.1" / "11.0.20" (major = first segment) while
+        legacy JDKs report "1.8.0_xyz" (major = second segment, i.e. 8). Returns None when no
+        leading number can be parsed.
+        """
+        if not version:
+            return None
+        parts = re.findall(r"\d+", version)
+        if not parts:
+            return None
+        first = int(parts[0])
+        # The "1.x" scheme (1.8 == Java 8) only applies to the pre-9 line.
+        if first == 1 and len(parts) > 1:
+            return int(parts[1])
+        return first
+
+    @classmethod
+    def _dependency_specs(cls, language):
+        """Describe the system tools the developer must have on PATH for the given language.
+
+        Package-manager-installed libraries (Playwright browsers, npm/pip/NuGet packages) are
+        downloaded automatically during setup, so they are deliberately NOT listed here — only
+        the prerequisites the user has to install themselves.
+
+        Each spec:
+          key         : stable id for the frontend
+          name        : human label shown in the panel
+          check_cmd   : command whose success means "installed" and whose output carries the version
+          version_re  : regex with one capture group extracting the version from check_cmd output
+          profile_key : if set, the required version is read from the resolved version profile
+                        under this key (e.g. "java" -> JDK 11 vs 17); None -> no version requirement
+          compare     : how to compare detected vs required ("java_major"); None -> presence only
+          hint        : install / fix guidance, shown when the tool is missing or mismatched
+        """
+        if language == "Java":
+            return [
+                {"key": "java", "name": "Java (JDK)", "check_cmd": "java -version",
+                 "version_re": r'version "([\d._]+)"', "profile_key": "java",
+                 "compare": "java_major",
+                 "hint": "Install a matching JDK from https://adoptium.net and ensure 'java' is on PATH."},
+                {"key": "maven", "name": "Apache Maven", "check_cmd": "mvn -version",
+                 "version_re": r"Apache Maven ([\d.]+)", "profile_key": None, "compare": None,
+                 "hint": "Install Maven from https://maven.apache.org/install.html and add 'mvn' to PATH."},
+            ]
+        if language == "Python":
+            py_cmd = "python --version" if cls.is_windows() else "python3.12 --version"
+            pip_cmd = "pip --version" if cls.is_windows() else "pip3.12 --version"
+            return [
+                {"key": "python", "name": "Python 3.12", "check_cmd": py_cmd,
+                 "version_re": r"Python ([\d.]+)", "profile_key": None, "compare": None,
+                 "hint": "Install Python 3.12 from https://www.python.org/downloads/."},
+                {"key": "pip", "name": "Pip 3.12", "check_cmd": pip_cmd,
+                 "version_re": r"pip ([\d.]+)", "profile_key": None, "compare": None,
+                 "hint": "Ships with Python 3.12; if missing run 'python3.12 -m ensurepip --upgrade'."},
+            ]
+        if language in ["JS / TS", "JavaScript", "TypeScript", "Typescript"]:
+            return [
+                {"key": "node", "name": "Node.js", "check_cmd": "node -v",
+                 "version_re": r"v?([\d.]+)", "profile_key": None, "compare": None,
+                 "hint": "Install Node.js LTS from https://nodejs.org (npm is bundled with it)."},
+                {"key": "npm", "name": "npm", "check_cmd": "npm -v",
+                 "version_re": r"([\d.]+)", "profile_key": None, "compare": None,
+                 "hint": "Bundled with Node.js — reinstall Node.js if 'npm' is not found."},
+            ]
+        if language == "C#":
+            return [
+                {"key": "dotnet", "name": ".NET SDK", "check_cmd": "dotnet --version",
+                 "version_re": r"([\d.]+)", "profile_key": None, "compare": None,
+                 "hint": "Install the .NET SDK from https://dotnet.microsoft.com/download."},
+            ]
+        return []
+
+    @classmethod
+    def required_dependencies(cls, tool, language, framework, profile_versions=None):
+        """Build the pre-flight dependency report for the selected stack.
+
+        Returns a list of dicts (one per required system tool), each carrying the required vs
+        detected version and a status of:
+          ok       — installed, and (where a version is required) the version matches
+          missing  — not installed / not on PATH
+          mismatch — installed, but a different version than the chosen profile requires
+
+        `profile_versions` is the resolved version-profile dict from versions_catalog (e.g.
+        {"java": "17", ...}); it supplies the required version for any spec with a profile_key.
+        `tool`/`framework` are accepted for forward flexibility (e.g. tool-specific prerequisites)
+        even though the current specs key only off language.
+        """
+        profile_versions = profile_versions or {}
+        results = []
+        for spec in cls._dependency_specs(language):
+            installed, output = cls._probe(spec["check_cmd"])
+
+            detected = None
+            if installed and spec.get("version_re"):
+                match = re.search(spec["version_re"], output)
+                if match:
+                    detected = match.group(1)
+
+            # A version is only "required" when the chosen profile actually pins this tool.
+            required = None
+            pkey = spec.get("profile_key")
+            if pkey and profile_versions.get(pkey):
+                required = profile_versions[pkey]
+
+            if not installed:
+                status = "missing"
+            elif required and spec.get("compare") == "java_major" and detected:
+                # Required version is a minimum; a newer JDK is fine. Flag only if older.
+                det_major = cls._java_major(detected)
+                req_major = cls._java_major(required)
+                if det_major is not None and req_major is not None and det_major < req_major:
+                    status = "mismatch"
+                else:
+                    status = "ok"
+            else:
+                status = "ok"
+
+            results.append({
+                "key": spec["key"],
+                "name": spec["name"],
+                "required": required,
+                "detected": detected,
+                "installed": installed,
+                "status": status,
+                "hint": spec["hint"],
+            })
+        return results
 
     @staticmethod
     def _download_env():

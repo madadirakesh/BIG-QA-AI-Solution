@@ -9,3 +9,5 @@ pytest==8.3.4
 pytest-playwright==0.6.2
 pytest-html==4.1.1
 python-dotenv==1.0.1
+# Decrypts the AES-GCM "ENC:" password from .env at run time (see features/environment.py).
+cryptography==44.0.0
