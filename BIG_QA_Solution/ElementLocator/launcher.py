@@ -40,6 +40,9 @@ def main():
         framework = sys.argv[3] if len(sys.argv) > 3 else None
         tool = sys.argv[4] if len(sys.argv) > 4 else None
         app_url = sys.argv[5] if len(sys.argv) > 5 else None
+        # Session auth: server URL + token used to heartbeat back and self-close on logout.
+        auth_server = sys.argv[6] if len(sys.argv) > 6 else None
+        auth_token = sys.argv[7] if len(sys.argv) > 7 else None
 
         print(f"[Launcher] Args received - path: {project_path}, lang: {language}, fw: {framework}, tool: {tool}, url: {app_url}", flush=True)
 
@@ -48,7 +51,9 @@ def main():
             language=language,
             framework=framework,
             tool=tool,
-            app_url=app_url
+            app_url=app_url,
+            auth_server=auth_server,
+            auth_token=auth_token
         )
         # Always launch maximized so all panels and buttons are fully visible
         studio.showMaximized()
