@@ -92,6 +92,41 @@ class EnvironmentSetup:
             return int(parts[1])
         return first
 
+    @staticmethod
+    def infer_required_versions(filename, content, out):
+        # content is lower-cased; keys (java/python/dotnet/node) match the spec profile_keys.
+        if filename == 'pom.xml':
+            m = re.search(r'<(?:java\.version|maven\.compiler\.(?:release|source|target))>\s*([\d._]+)', content)
+            if m:
+                out['java'] = m.group(1)
+        elif filename.endswith('.csproj'):
+            m = re.search(r'<targetframework>[^<]*?net(?:coreapp)?([\d]+\.[\d]+)', content)
+            if m:
+                out['dotnet'] = m.group(1)
+        elif filename == 'pyproject.toml':
+            m = re.search(r'requires-python\s*=\s*["\'][^"\']*?([\d]+\.[\d]+)', content)
+            if m:
+                out['python'] = m.group(1)
+        elif filename == 'runtime.txt':
+            m = re.search(r'python-([\d]+\.[\d]+)', content)
+            if m:
+                out['python'] = m.group(1)
+        elif filename == 'package.json':
+            m = re.search(r'"node"\s*:\s*"[^"]*?([\d]+(?:\.[\d]+)*)', content)
+            if m:
+                out['node'] = m.group(1)
+
+    @staticmethod
+    def _version_tuple(version):
+        """Numeric segments of a version string as an int tuple, for ordered comparison.
+
+        Strips any comparator/range prefix (">=3.12", "^18.0.0", "net8.0", "v20.11.1"). Returns
+        () when nothing parses, so the caller falls back to a presence-only check.
+        """
+        if not version:
+            return ()
+        return tuple(int(p) for p in re.findall(r"\d+", version))
+
     @classmethod
     def _dependency_specs(cls, language):
         """Describe the system tools the developer must have on PATH for the given language.
@@ -124,17 +159,17 @@ class EnvironmentSetup:
             py_cmd = "python --version" if cls.is_windows() else "python3.12 --version"
             pip_cmd = "pip --version" if cls.is_windows() else "pip3.12 --version"
             return [
-                {"key": "python", "name": "Python 3.12", "check_cmd": py_cmd,
-                 "version_re": r"Python ([\d.]+)", "profile_key": None, "compare": None,
-                 "hint": "Install Python 3.12 from https://www.python.org/downloads/."},
-                {"key": "pip", "name": "Pip 3.12", "check_cmd": pip_cmd,
+                {"key": "python", "name": "Python", "check_cmd": py_cmd,
+                 "version_re": r"Python ([\d.]+)", "profile_key": "python", "compare": "min_version",
+                 "hint": "Install Python from https://www.python.org/downloads/."},
+                {"key": "pip", "name": "Pip", "check_cmd": pip_cmd,
                  "version_re": r"pip ([\d.]+)", "profile_key": None, "compare": None,
-                 "hint": "Ships with Python 3.12; if missing run 'python3.12 -m ensurepip --upgrade'."},
+                 "hint": "Ships with Python; if missing run 'python -m ensurepip --upgrade'."},
             ]
         if language in ["JS / TS", "JavaScript", "TypeScript", "Typescript"]:
             return [
                 {"key": "node", "name": "Node.js", "check_cmd": "node -v",
-                 "version_re": r"v?([\d.]+)", "profile_key": None, "compare": None,
+                 "version_re": r"v?([\d.]+)", "profile_key": "node", "compare": "min_version",
                  "hint": "Install Node.js LTS from https://nodejs.org (npm is bundled with it)."},
                 {"key": "npm", "name": "npm", "check_cmd": "npm -v",
                  "version_re": r"([\d.]+)", "profile_key": None, "compare": None,
@@ -143,7 +178,7 @@ class EnvironmentSetup:
         if language == "C#":
             return [
                 {"key": "dotnet", "name": ".NET SDK", "check_cmd": "dotnet --version",
-                 "version_re": r"([\d.]+)", "profile_key": None, "compare": None,
+                 "version_re": r"([\d.]+)", "profile_key": "dotnet", "compare": "min_version",
                  "hint": "Install the .NET SDK from https://dotnet.microsoft.com/download."},
             ]
         return []
@@ -180,13 +215,22 @@ class EnvironmentSetup:
             if pkey and profile_versions.get(pkey):
                 required = profile_versions[pkey]
 
+            compare = spec.get("compare")
             if not installed:
                 status = "missing"
-            elif required and spec.get("compare") == "java_major" and detected:
+            elif required and compare == "java_major" and detected:
                 # Required version is a minimum; a newer JDK is fine. Flag only if older.
                 det_major = cls._java_major(detected)
                 req_major = cls._java_major(required)
                 if det_major is not None and req_major is not None and det_major < req_major:
+                    status = "mismatch"
+                else:
+                    status = "ok"
+            elif required and compare == "min_version" and detected:
+                # Generic minimum-version gate; required is a floor, newer is fine.
+                det_tuple = cls._version_tuple(detected)
+                req_tuple = cls._version_tuple(required)
+                if det_tuple and req_tuple and det_tuple < req_tuple:
                     status = "mismatch"
                 else:
                     status = "ok"

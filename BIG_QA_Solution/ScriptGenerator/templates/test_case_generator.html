@@ -171,9 +171,14 @@
                         <select id="projectSelect" class="form-select bg-dark text-light border-secondary" style="background-color: rgba(0,0,0,0.2) !important;" onchange="handleProjectSelection()">
                             <option value="">-- Skip Project Selection --</option>
                             {% for p in projects %}
-                            <option value="{{ p.id }}">{{ p.project_name }}</option>
+                            <option value="{{ p.id }}" data-path="{{ p.project_path }}">{{ p.project_name }}</option>
                             {% endfor %}
                         </select>
+
+                        <div id="tcgDepCheckRow" style="display:none; margin-top:14px; border-top:1px solid var(--glass-border); padding-top:12px;">
+                            <p class="mb-2"><strong><i class="fas fa-clipboard-check"></i> Dependency Pre-check</strong></p>
+                            <div id="tcgDepCheckList" style="display:flex; flex-direction:column; gap:6px;"></div>
+                        </div>
                     </div>
 
                     <div id="reqOptionsContainer" style="display: none; border-top: 1px solid var(--glass-border); padding-top: 15px;">
@@ -385,14 +390,24 @@
     }
 
     async function handleProjectSelection() {
-        const projectId = document.getElementById('projectSelect').value;
+        const sel = document.getElementById('projectSelect');
+        const projectId = sel.value;
         const reqOptionsContainer = document.getElementById('reqOptionsContainer');
         if (reqOptionsContainer) {
             reqOptionsContainer.style.display = projectId ? 'block' : 'none';
         }
 
+        // Pre-flight dependency check for the chosen project (same shared check as Script Developer).
+        const depRow = document.getElementById('tcgDepCheckRow');
+        const projectPath = sel.options[sel.selectedIndex] && sel.options[sel.selectedIndex].getAttribute('data-path');
+        if (projectId && projectPath) {
+            checkProjectDependencies(projectPath, depRow, document.getElementById('tcgDepCheckList'));
+        } else if (depRow) {
+            depRow.style.display = 'none';
+        }
+
         const isNew = document.getElementById('newReqYes').checked;
-        
+
         if (isNew || !projectId) return;
 
         const select = document.getElementById('savedReqSelect');

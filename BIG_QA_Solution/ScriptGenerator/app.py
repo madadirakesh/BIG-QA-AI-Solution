@@ -652,6 +652,9 @@ def preflight_dependencies():
     # The resolved profile supplies the version a tool must match (e.g. {"java": "17"}); when the
     # stack has no version choice this is {} and the report degrades to presence-only checks.
     profile_versions = resolve_versions(tool, lang, fw, label)
+    required_versions = data.get('requiredVersions') or {}
+    if required_versions:
+        profile_versions = {**profile_versions, **required_versions}
     deps = EnvironmentSetup.required_dependencies(tool, lang, fw, profile_versions)
     all_ok = all(d['status'] == 'ok' for d in deps)
     return jsonify({"dependencies": deps, "allOk": all_ok})
@@ -730,7 +733,7 @@ def test_case_generator():
     if session.get('user_role', '').lower() not in ['qa', 'admin']:
         flash('Not authorized', 'error')
         return redirect(url_for('home'))
-    projects = fetch_data("SELECT id, project_name FROM ProjectDetails ORDER BY project_name ASC")
+    projects = fetch_data("SELECT id, project_name, project_path FROM ProjectDetails ORDER BY project_name ASC")
     return render_template('test_case_generator.html', projects=projects)
 
 @app.route('/api/project-inputs/<int:project_id>', methods=['GET'])
@@ -871,6 +874,7 @@ def detect_project():
         feature_path = "none"
         page_path = "none"
         step_path = "none"
+        required_versions = {}  # inferred runtime versions, keyed java/python/dotnet/node
 
         for root, dirs, files in os.walk(path):
             if any(skip in root for skip in ['node_modules', '.git', 'venv', 'target', 'bin']):
@@ -898,10 +902,13 @@ def detect_project():
                 if ext not in extensions_found:
                     extensions_found.append(ext)
 
-                if file in ['pom.xml', 'package.json', 'requirements.txt', 'build.gradle'] or file.endswith('.csproj'):
+                if file in ['pom.xml', 'package.json', 'requirements.txt', 'build.gradle',
+                            'pyproject.toml', 'runtime.txt'] or file.endswith('.csproj'):
                     try:
                         with open(os.path.join(root, file), 'r', errors='ignore') as f:
                             content = f.read().lower()
+
+                            EnvironmentSetup.infer_required_versions(file, content, required_versions)
 
                             # Tool checks...
                             if 'selenium' in content: tool='Selenium'
@@ -943,13 +950,14 @@ def detect_project():
             language = 'C#'
 
         return jsonify({
-            "tool": tool, 
-            "language": language, 
-            "framework": framework, 
+            "tool": tool,
+            "language": language,
+            "framework": framework,
             "packager": packager,
             "feature_path": feature_path,
             "page_path": page_path,
-            "step_path": step_path
+            "step_path": step_path,
+            "required_versions": required_versions
         })
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500
