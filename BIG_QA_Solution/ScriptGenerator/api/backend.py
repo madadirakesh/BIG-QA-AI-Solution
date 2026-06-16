@@ -38,21 +38,34 @@ API_KEY     = os.getenv("API_KEY", "")
 
 DEFAULT_AI_PROVIDER = os.getenv("AI_PROVIDER", "openai").lower()
 
+def reload_env():
+    global AI_TOOL, AI_MODEL, API_KEY, DEFAULT_AI_PROVIDER
+    load_dotenv(dotenv_path=env_path, override=True)
+    AI_TOOL     = os.getenv("AI_TOOL", "GEMINI").upper()
+    AI_MODEL    = os.getenv("AI_MODEL", "gemini-2.5-flash")
+    API_KEY     = os.getenv("API_KEY", "")
+    DEFAULT_AI_PROVIDER = os.getenv("AI_PROVIDER", "openai").lower()
+
 # Initialize API clients
 _openai_client = None
+_openai_client_key = None
 
 def _get_openai_client():
-    global _openai_client
-    if _openai_client is None:
+    global _openai_client, _openai_client_key
+    reload_env()
+    if _openai_client is None or _openai_client_key != API_KEY:
         try:
             import openai
             _openai_client = openai.OpenAI(api_key=API_KEY)
+            _openai_client_key = API_KEY
         except (ImportError, AttributeError):
             # Fallback for older versions or missing package
             _openai_client = None
+            _openai_client_key = None
     return _openai_client
 
 def _get_gemini_client():
+    reload_env()
     try:
         from google import genai
         if not API_KEY:
@@ -161,6 +174,7 @@ def reload_prompts():
 
 @app.get("/health")
 async def health_check():
+    reload_env()
     return {
         "status":            "healthy",
         "service":           "AI QA Backend",
@@ -231,6 +245,7 @@ async def call_gemini(prompt: str, expect_json: bool = True) -> str:
 
 
 async def call_anthropic(prompt: str, expect_json: bool = True) -> str:
+    reload_env()
     def _call():
         try:
             import anthropic
@@ -264,6 +279,7 @@ async def call_anthropic(prompt: str, expect_json: bool = True) -> str:
 
 async def call_ai(prompt: str, provider: str = "", expect_json: bool = True, retries: int = 3) -> str:
     """Calls the configured AI provider with retry logic and logging."""
+    reload_env()
     for attempt in range(retries):
         try:
             logger.info(f"AI Call attempt {attempt + 1}/{retries} using {AI_TOOL}")

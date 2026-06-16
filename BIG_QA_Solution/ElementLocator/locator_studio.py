@@ -725,9 +725,9 @@ class POWindow(QMainWindow):
                     try:
                         with open(fname, "w", encoding="utf-8") as f:
                             f.write(content)
-                        QMessageBox.information(self, "Saved", f"Page Object saved to:\n{fname}")
+                        self.view.page().runJavaScript(f"showLightboxAlert({json.dumps(f'Page Object saved to:\n{fname}')});")
                     except Exception as e:
-                        QMessageBox.critical(self, "Error", f"Could not save file: {e}")
+                        self.view.page().runJavaScript(f"showLightboxAlert({json.dumps(f'Could not save file: {e}')});")
 
             elif action == "close_po_window":
                 self.close()
@@ -1014,7 +1014,7 @@ class MergeWindow(QMainWindow):
                             f" catch(e){{ console.error('loadMergedFile error:',e); }} }})()"
                         )
                     except Exception as e:
-                        QMessageBox.critical(self, "Merge Error", f"Failed to read file: {e}")
+                        self.view.page().runJavaScript(f"showLightboxAlert({json.dumps(f'Failed to read file: {e}')});")
 
             elif action == "refresh_merge_preview":
                 locators = payload.get("locators", [])
@@ -1083,12 +1083,12 @@ class MergeWindow(QMainWindow):
                     try:
                         with open(file_path, "w", encoding="utf-8") as f:
                             f.write(merged_code)
-                        QMessageBox.information(self, "Success", "File merged and saved successfully!")
-                        QTimer.singleShot(100, self.close)
+                        self.view.page().runJavaScript(f"showLightboxAlert('File merged and saved successfully!');")
+                        QTimer.singleShot(1500, self.close)
                         if hasattr(self._parent_studio, "merge_window"):
                             self._parent_studio.merge_window = None
                     except Exception as e:
-                        QMessageBox.critical(self, "Error", f"Failed to save merged file: {e}")
+                        self.view.page().runJavaScript(f"showLightboxAlert({json.dumps(f'Failed to save merged file: {e}')});")
 
         except Exception as e:
             print(f"[MergeWindow] _handle_command ERROR ({action}): {e}")
@@ -1247,6 +1247,19 @@ class LocatorStudio(QMainWindow):
             self.setWindowFlags(self.windowFlags() & ~Qt.WindowType.WindowStaysOnTopHint)
             self.show()
 
+    def show_lightbox_alert(self, message):
+        """Show a lightbox alert in the active/visible HTML view."""
+        # Find which view is currently visible and active
+        target_view = self.dashboard_view
+        if self.grid_window and self.grid_window.isVisible():
+            target_view = self.grid_window.view
+        elif self.po_window and self.po_window.isVisible():
+            target_view = self.po_window.view
+        elif self.merge_window and self.merge_window.isVisible():
+            target_view = self.merge_window.view
+            
+        target_view.page().runJavaScript(f"showLightboxAlert({json.dumps(message)});")
+
     def _setup_ui(self):
         central_widget = QWidget()
         layout = QHBoxLayout(central_widget)
@@ -1404,7 +1417,7 @@ class LocatorStudio(QMainWindow):
 
             elif action == "show_message":
                 msg = payload.get("message", "")
-                QMessageBox.warning(self, "Locator Studio", msg)
+                self.show_lightbox_alert(msg)
 
             elif action == "verify_locator":
                 l_type = payload.get("type")
@@ -1510,16 +1523,15 @@ class LocatorStudio(QMainWindow):
                         with open(fname, "w", encoding="utf-8") as f:
                             f.write(content)
                         if lang == "TypeScript" and fname.endswith(".ts"):
-                            QMessageBox.information(
-                                self, "File Saved",
+                            self.show_lightbox_alert(
                                 f"File saved successfully!\n\nPath: {fname}\n\n"
                                 "⚠️ Note: Windows may open .ts files in a media player.\n"
                                 "Right-click → Open With → your code editor (VS Code, Notepad++, etc.)"
                             )
                         else:
-                            QMessageBox.information(self, "Success", "File saved successfully!")
+                            self.show_lightbox_alert("File saved successfully!")
                     except Exception as e:
-                        QMessageBox.critical(self, "Error", f"Could not save file: {e}")
+                        self.show_lightbox_alert(f"Could not save file: {e}")
 
             elif action == "export_to_excel":
                 locators = payload.get("locators", [])
@@ -1530,9 +1542,9 @@ class LocatorStudio(QMainWindow):
                 if fname:
                     success = ExcelExporter.export_to_excel(locators, fname)
                     if success:
-                        QMessageBox.information(self, "Success", "Excel file saved successfully!")
+                        self.show_lightbox_alert("Excel file saved successfully!")
                     else:
-                        QMessageBox.critical(self, "Error", "Failed to export to Excel.")
+                        self.show_lightbox_alert("Failed to export to Excel.")
 
             elif action == "store_in_db":
                 project_name = payload.get("project")
@@ -1605,9 +1617,9 @@ class LocatorStudio(QMainWindow):
                             
                     conn.commit()
                     conn.close()
-                    QMessageBox.information(self, "Success", f"Successfully stored {inserted} locators in DB.")
+                    self.show_lightbox_alert(f"Successfully stored {inserted} locators in DB.")
                 except Exception as e:
-                    QMessageBox.critical(self, "DB Error", str(e))
+                    self.show_lightbox_alert(f"DB Error: {e}")
 
             elif action == "open_po_window":
                 locators = payload.get("locators", [])
@@ -1620,20 +1632,23 @@ class LocatorStudio(QMainWindow):
                 proceed = True
                 bypass_style = False
                 if changed:
-                    msg = "The following configuration has changed from the selected project:\n\n"
-                    msg += "\n".join(f"- {c}" for c in changed)
-                    msg += "\n\nIf you proceed, style inheritance will be disabled and the default fallback generation logic will be used. Do you want to continue?"
-                    res = QMessageBox.warning(
-                        self,
-                        "Configuration Mismatch Warning",
-                        msg,
-                        QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                        QMessageBox.StandardButton.No
-                    )
-                    if res == QMessageBox.StandardButton.No:
-                        proceed = False
-                    else:
+                    if payload.get("bypass_style", False):
                         bypass_style = True
+                    else:
+                        msg = "The following configuration has changed from the selected project:\n\n"
+                        msg += "\n".join(f"- {c}" for c in changed)
+                        msg += "\n\nIf you proceed, style inheritance will be disabled and the default fallback generation logic will be used. Do you want to continue?"
+                        res = QMessageBox.warning(
+                            self,
+                            "Configuration Mismatch Warning",
+                            msg,
+                            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                            QMessageBox.StandardButton.No
+                        )
+                        if res == QMessageBox.StandardButton.No:
+                            proceed = False
+                        else:
+                            bypass_style = True
 
                 if not proceed:
                     return
@@ -1676,21 +1691,24 @@ class LocatorStudio(QMainWindow):
                 proceed = True
                 bypass_style = False
                 if changed:
-                    msg = "The following configuration has changed from the selected project:\n\n"
-                    msg += "\n".join(f"- {c}" for c in changed)
-                    msg += "\n\nIf you proceed, style inheritance will be disabled and the default fallback merge logic will be used. Do you want to continue?"
-                    
-                    res = QMessageBox.warning(
-                        self, 
-                        "Configuration Mismatch Warning", 
-                        msg, 
-                        QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                        QMessageBox.StandardButton.No
-                    )
-                    if res == QMessageBox.StandardButton.No:
-                        proceed = False
-                    else:
+                    if payload.get("bypass_style", False):
                         bypass_style = True
+                    else:
+                        msg = "The following configuration has changed from the selected project:\n\n"
+                        msg += "\n".join(f"- {c}" for c in changed)
+                        msg += "\n\nIf you proceed, style inheritance will be disabled and the default fallback merge logic will be used. Do you want to continue?"
+                        
+                        res = QMessageBox.warning(
+                            self, 
+                            "Configuration Mismatch Warning", 
+                            msg, 
+                            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                            QMessageBox.StandardButton.No
+                        )
+                        if res == QMessageBox.StandardButton.No:
+                            proceed = False
+                        else:
+                            bypass_style = True
 
                 if proceed:
                     if not hasattr(self, 'merge_window') or self.merge_window is None:

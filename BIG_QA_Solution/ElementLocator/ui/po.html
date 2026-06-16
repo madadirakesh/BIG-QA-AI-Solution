@@ -28,6 +28,8 @@
             --warning:          #f59e0b;
             --danger:           #ef4444;
             --glass-border:     rgba(255, 255, 255, 0.08);
+            --glass-shadow:     0 8px 32px 0 rgba(0, 0, 0, 0.35);
+            --border-radius:    12px;
             --transition:       all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
         }
 
@@ -598,8 +600,77 @@
 
         // Keyboard shortcut: Escape closes window
         document.addEventListener('keydown', (e) => {
-            if (e.key === 'Escape') closeWindow();
+            const backdrop = document.getElementById('alertBackdrop');
+            if (backdrop && backdrop.style.display === 'flex') {
+                // Let the lightbox consume the escape key first
+                if (e.key === 'Escape') {
+                    window.resolveAlert(false);
+                    e.stopPropagation();
+                }
+            } else {
+                if (e.key === 'Escape') closeWindow();
+            }
+        });
+
+        // ─── Global Lightbox Alert Dialog controller ─────────────────
+        let _alertResolve = null;
+
+        window.showAlert = function(message, title = "Notification", icon = "ℹ️") {
+            document.getElementById('alertMessage').textContent = message;
+            document.getElementById('alertTitle').textContent = title;
+            document.getElementById('alertIcon').textContent = icon;
+            
+            const backdrop = document.getElementById('alertBackdrop');
+            backdrop.style.display = 'flex';
+            setTimeout(() => {
+                backdrop.style.opacity = '1';
+                backdrop.firstElementChild.style.transform = 'translateY(0)';
+            }, 10);
+            return new Promise(resolve => { _alertResolve = resolve; });
+        };
+
+        window.showLightboxAlert = function(message) {
+            window.showAlert(message);
+        };
+
+        window.alert = function(message) {
+            return window.showAlert(message);
+        };
+
+        window.resolveAlert = function(val) {
+            const backdrop = document.getElementById('alertBackdrop');
+            if (!backdrop) return;
+            backdrop.style.opacity = '0';
+            backdrop.firstElementChild.style.transform = 'translateY(20px)';
+            setTimeout(() => {
+                backdrop.style.display = 'none';
+                if (_alertResolve) {
+                    _alertResolve(val);
+                    _alertResolve = null;
+                }
+            }, 200);
+        };
+
+        document.addEventListener('keydown', e => {
+            const backdrop = document.getElementById('alertBackdrop');
+            if (backdrop && backdrop.style.display === 'flex') {
+                if (e.key === 'Enter') {
+                    window.resolveAlert(true);
+                }
+            }
         });
     </script>
+
+    <!-- Global Lightbox Alert Dialog -->
+    <div id="alertBackdrop" style="display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.7); backdrop-filter: blur(6px); z-index: 10000; align-items: center; justify-content: center; opacity: 0; transition: opacity 0.2s ease;">
+        <div style="background: var(--bg-secondary); border: 1px solid var(--glass-border); border-radius: var(--border-radius); padding: 2rem; max-width: 450px; width: 90%; box-shadow: var(--glass-shadow); text-align: center; transform: translateY(20px); transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);">
+            <span id="alertIcon" style="font-size: 2.5rem; display: block; margin-bottom: 15px; color: var(--accent-secondary);">ℹ️</span>
+            <h4 id="alertTitle" style="font-size: 1.15rem; margin-bottom: 10px; font-weight: 600; color: var(--text-primary);">Notification</h4>
+            <p id="alertMessage" style="color: var(--text-secondary); font-size: 0.9rem; margin-bottom: 20px; line-height: 1.5; white-space: pre-wrap; text-align: center; word-break: break-word;"></p>
+            <div style="display: flex; justify-content: center;">
+                <button class="btn btn-primary" style="min-width: 100px; height: 38px;" onclick="window.resolveAlert(true)">OK</button>
+            </div>
+        </div>
+    </div>
 </body>
 </html>
