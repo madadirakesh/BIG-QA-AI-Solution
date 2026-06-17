@@ -63,7 +63,8 @@
                             <option value="">-- Select Project from DB --</option>
                             {% for p in projects %}
                             <option value="{{ p.project_name }}" data-id="{{ p.id }}" data-lang="{{ p.project_lang }}" data-fw="{{ p.project_fw }}"
-                                data-path="{{ p.project_path }}" data-tool="{{p.project_tool}}" data-packager="{{ p.package_manager }}">
+                                data-path="{{ p.project_path }}" data-tool="{{p.project_tool}}" data-packager="{{ p.package_manager }}"
+                                {% if p.project_name == active_project_name %}selected{% endif %}>
                                 {{ p.project_name }} ({{ p.project_tool }} / {{ p.project_lang }} / {{ p.project_fw }})
                             </option>
                             {% endfor %}
@@ -93,6 +94,7 @@
                         <p class="mb-2"><strong>ProjectBuilder:</strong> <span id="detPackager" style="color:var(--accent-primary);"></span></p>
                     </div>
                 </div>
+
 
             <div id="newProjectSection" style="display: none;">
                 <div class="project-creator-card glassmorphism">
@@ -877,6 +879,12 @@
 
 {% block extra_js %}
 <script>
+document.addEventListener('DOMContentLoaded', () => {
+    if (document.getElementById('projectSelect').value) {
+        handleProjectSelect();
+    }
+});
+
 function handleProjectSelect() {
     const select = document.getElementById('projectSelect');
     const selectedOpt = select.options[select.selectedIndex];

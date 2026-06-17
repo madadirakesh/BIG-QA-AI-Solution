@@ -171,7 +171,7 @@
                         <select id="projectSelect" class="form-select bg-dark text-light border-secondary" style="background-color: rgba(0,0,0,0.2) !important;" onchange="handleProjectSelection()">
                             <option value="">-- Skip Project Selection --</option>
                             {% for p in projects %}
-                            <option value="{{ p.id }}">{{ p.project_name }}</option>
+                            <option value="{{ p.id }}" {% if p.id|string == active_project_id|string %}selected{% endif %}>{{ p.project_name }}</option>
                             {% endfor %}
                         </select>
                     </div>
@@ -188,7 +188,8 @@
                                 <label class="form-check-label" for="newReqNo">No</label>
                             </div>
                         </div>
-    
+
+
                         <div id="newReqSection" class="mt-2">
                             <label>Requirement Name</label>
                             <div class="d-flex gap-2">
@@ -383,6 +384,13 @@
             handleProjectSelection();
         }
     }
+
+    // Auto-trigger if already selected on page load
+    document.addEventListener('DOMContentLoaded', () => {
+        if (document.getElementById('projectSelect').value) {
+            handleProjectSelection();
+        }
+    });
 
     async function handleProjectSelection() {
         const projectId = document.getElementById('projectSelect').value;

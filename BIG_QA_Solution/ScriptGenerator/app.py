@@ -59,9 +59,19 @@ def close_connection(exception):
 
 @app.context_processor
 def inject_user():
+
+    projects = []
+    if session.get('user_id'):
+        try:
+            projects = fetch_data("SELECT id, project_name FROM ProjectDetails ORDER BY project_name ASC")
+        except Exception:
+            pass
     return dict(
         user_name=session.get('user_name', 'Guest'),
-        user_role=session.get('user_role', 'guest').lower()
+        user_role=session.get('user_role', 'guest').lower(),
+        global_projects=projects,
+        active_project_id=session.get('active_project_id'),
+        active_project_name=session.get('active_project_name')
     )
 
 def login_required(role=None):
@@ -177,6 +187,23 @@ def logout():
 @login_required()
 def home():
     return render_template('home.html')
+
+@app.route('/api/set-active-project', methods=['POST'])
+@login_required()
+def set_active_project():
+    data = request.json
+    project_id = data.get('project_id')
+    project_name = data.get('project_name')
+    
+    if project_id:
+        session['active_project_id'] = project_id
+        session['active_project_name'] = project_name
+        return jsonify({"status": "success", "message": f"Active project set to {project_name}"})
+    else:
+        # Clear it if passed empty
+        session.pop('active_project_id', None)
+        session.pop('active_project_name', None)
+        return jsonify({"status": "success", "message": "Active project cleared"})
 
 @app.route('/configurations')
 @login_required()
