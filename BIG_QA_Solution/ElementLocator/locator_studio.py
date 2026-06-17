@@ -281,6 +281,7 @@ class StudioBridge(QObject):
     codePreviewReady = pyqtSignal(str) # Send Generated Code to JS
     liveVerificationResult = pyqtSignal(str) # Send verification result to JS
     urlChanged = pyqtSignal(str)           # Push browser URL changes to JS
+    windowOpened = pyqtSignal(str)         # Notify JS a new window/tab opened (JSON: {url, title})
     commandReceived = pyqtSignal(str, str) # From JS: action, payload
 
     @pyqtSlot(str, str)
@@ -725,7 +726,8 @@ class POWindow(QMainWindow):
                     try:
                         with open(fname, "w", encoding="utf-8") as f:
                             f.write(content)
-                        self.view.page().runJavaScript(f"showLightboxAlert({json.dumps(f'Page Object saved to:\n{fname}')});")
+                        saved_msg = f"Page Object saved to:\n{fname}"
+                        self.view.page().runJavaScript(f"showLightboxAlert({json.dumps(saved_msg)});")
                     except Exception as e:
                         self.view.page().runJavaScript(f"showLightboxAlert({json.dumps(f'Could not save file: {e}')});")
 
@@ -1165,6 +1167,8 @@ class LocatorStudio(QMainWindow):
 
         # Connect Browser Signals
         self.browser_ctrl.pybridge.locatorsReceived.connect(self._on_elements_captured)
+        # New window/tab opened by an action -> let the dashboard add a switch step
+        self.browser_ctrl.windowOpened.connect(self._on_window_opened)
 
         # Fix #7: wire the dashboard view into the browser controller so it can
         # call window.onBrowserUrlChanged() when the user navigates back/forward.
@@ -1306,6 +1310,14 @@ class LocatorStudio(QMainWindow):
         """Elements captured from browser_controller -> send to Dashboard UI"""
         json_data = json.dumps(data)
         self.bridge.locatorsReceived.emit(json_data)
+
+    def _on_window_opened(self, url, title):
+        """A new window/tab was opened by an action -> tell the dashboard so it
+        can add a (de-duplicated) 'switch to window' step."""
+        try:
+            self.bridge.windowOpened.emit(json.dumps({"url": url, "title": title}))
+        except Exception as e:
+            print(f"[Studio] _on_window_opened error: {e}", flush=True)
 
     def _handle_js_command(self, action, payload_str):
         """Handle actions requested by the Dashboard UI"""

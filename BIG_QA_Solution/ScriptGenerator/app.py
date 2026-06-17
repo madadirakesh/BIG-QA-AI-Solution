@@ -772,8 +772,23 @@ def launch_element_locator():
         else:
             popen_kwargs['start_new_session'] = True
 
+        # IMPORTANT: A DETACHED_PROCESS child inherits NO valid standard handles.
+        # The locator studio prints diagnostics on startup (the very first
+        # print() runs before any try/except), and writing to an invalid stdout
+        # raises OSError, killing the process instantly — i.e. the studio
+        # "crashes" the moment it is launched. Give the child real handles by
+        # redirecting stdout/stderr to a log file (also useful for diagnostics)
+        # and feeding it a null stdin.
+        log_path = os.path.join(os.path.dirname(locator_path), 'element_locator.log')
+        log_file = open(log_path, 'a', buffering=1, encoding='utf-8', errors='replace')
+        popen_kwargs['stdout'] = log_file
+        popen_kwargs['stderr'] = subprocess.STDOUT
+        popen_kwargs['stdin'] = subprocess.DEVNULL
+
         subprocess.Popen(cmd, **popen_kwargs)
-        print(f"[App] Launching command: {cmd}")
+        # Parent keeps no need for the handle; the child has inherited its own copy.
+        log_file.close()
+        print(f"[App] Launching command: {cmd} (logging to {log_path})")
         return jsonify({'status': 'success', 'message': 'Element Locator Studio launched.'})
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500

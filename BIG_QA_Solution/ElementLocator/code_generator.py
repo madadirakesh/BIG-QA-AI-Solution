@@ -44,6 +44,8 @@ class CodeGenerator:
                 lines.append("        this.page = page;")
                 if locators:
                     for loc in locators:
+                        if loc.get("action") == "SwitchToWindow":
+                            continue   # window switch has no DOM locator field
                         name = loc.get("_final_name")
                         val = CodeGenerator.escape_quotes(loc.get("value", ""))
                         lines.append(f"        this.{name} = this.page.locator(\"{val}\");")
@@ -51,6 +53,8 @@ class CodeGenerator:
 
             if locators:
                 for loc in locators:
+                    if loc.get("action") == "SwitchToWindow":
+                        continue   # window switch has no DOM locator field
                     name = loc.get("_final_name")
                     val = CodeGenerator.escape_quotes(loc.get("value", ""))
                     l_type = loc.get("type", "XPath")
@@ -78,6 +82,8 @@ class CodeGenerator:
                 lines.append("    pass\n")
             else:
                 for loc in locators:
+                    if loc.get("action") == "SwitchToWindow":
+                        continue   # window switch has no DOM locator field
                     name = loc.get("_final_name")
                     val = CodeGenerator.escape_quotes(loc.get("value", ""))
                     category = loc.get("category", "Ok")
@@ -109,6 +115,8 @@ class CodeGenerator:
                 lines.append("        _page = page;")
                 if locators:
                     for loc in locators:
+                        if loc.get("action") == "SwitchToWindow":
+                            continue   # window switch has no DOM locator field
                         name = loc.get("_final_name")
                         val = CodeGenerator.escape_quotes(loc.get("value", ""))
                         lines.append(f"        this._{name} = page.Locator(\"{val}\");")
@@ -116,6 +124,8 @@ class CodeGenerator:
 
             if locators:
                 for loc in locators:
+                    if loc.get("action") == "SwitchToWindow":
+                        continue   # window switch has no DOM locator field
                     name = loc.get("_final_name")
                     val = CodeGenerator.escape_quotes(loc.get("value", ""))
                     l_type = loc.get("type", "XPath")
@@ -124,7 +134,7 @@ class CodeGenerator:
                     if tool.lower() == "selenium":
                         lines.append(f"    // Priority: {category}")
                         how_str = CodeGenerator._csharp_how(l_type)
-                        lines.append(f"    [FindsBy({how_str} = \"{val}\")]")
+                        lines.append(f"    [FindsBy({how_str}, Using = \"{val}\")]")
                         lines.append(f"    public IWebElement {name} {{ get; set; }}\n")
                     elif tool.lower() == "playwright":
                         lines.append(f"    // Priority: {category}")
@@ -160,6 +170,8 @@ class CodeGenerator:
                     lines.append("    readonly page: Page;")
                 if locators:
                     for loc in locators:
+                        if loc.get("action") == "SwitchToWindow":
+                            continue   # window switch has no DOM locator field
                         name = loc.get("_final_name")
                         if is_pw:
                             lines.append(f"    readonly {name}: Locator;")
@@ -178,6 +190,8 @@ class CodeGenerator:
 
             if locators:
                 for loc in locators:
+                    if loc.get("action") == "SwitchToWindow":
+                        continue   # window switch has no DOM locator field
                     name = loc.get("_final_name")
                     val = CodeGenerator.escape_quotes(loc.get("value", ""))
                     l_type = loc.get("type", "XPath")  # MUST read per-locator
@@ -296,6 +310,10 @@ class CodeGenerator:
                 res.append(f"    public void {m_name}(WebDriver driver) {{\n        new org.openqa.selenium.interactions.Actions(driver).contextClick({el_name}).perform();\n    }}\n")
             elif action == "WaitForVisible":
                 res.append(f"    public void {m_name}(WebDriver driver, int timeoutSeconds) {{\n        new org.openqa.selenium.support.ui.WebDriverWait(driver, java.time.Duration.ofSeconds(timeoutSeconds)).until(org.openqa.selenium.support.ui.ExpectedConditions.visibilityOf({el_name}));\n    }}\n")
+            elif action == "SwitchToFrame":
+                res.append(f"    public void {m_name}(WebDriver driver) {{\n        driver.switchTo().frame({el_name});\n    }}\n")
+            elif action == "SwitchToWindow":
+                res.append(f"    public void {m_name}(WebDriver driver) {{\n        String currentHandle = driver.getWindowHandle();\n        for (String handle : driver.getWindowHandles()) {{\n            if (!handle.equals(currentHandle)) {{\n                driver.switchTo().window(handle);\n                break;\n            }}\n        }}\n    }}\n")
         elif tool.lower() == "playwright":
             if action == "Click":
                 res.append(f"    public void {m_name}() {{\n        {el_name}.click();\n    }}\n")
@@ -317,6 +335,12 @@ class CodeGenerator:
                 res.append(f"    public void {m_name}() {{\n        {el_name}.click(new Locator.ClickOptions().setButton(com.microsoft.playwright.options.MouseButton.RIGHT));\n    }}\n")
             elif action == "WaitForVisible":
                 res.append(f"    public void {m_name}() {{\n        {el_name}.waitFor(new Locator.WaitForOptions().setState(com.microsoft.playwright.options.WaitForSelectorState.VISIBLE));\n    }}\n")
+            elif action == "SwitchToFrame":
+                # Playwright: the iframe Locator exposes the frame's contents via contentFrame().
+                res.append(f"    public FrameLocator {m_name}() {{\n        return {el_name}.contentFrame();\n    }}\n")
+            elif action == "SwitchToWindow":
+                # Playwright: a new window/tab is a Page in the same BrowserContext.
+                res.append(f"    public Page {m_name}() {{\n        java.util.List<Page> pages = page.context().pages();\n        return pages.get(pages.size() - 1);\n    }}\n")
         return "".join(res)
 
     @staticmethod
@@ -344,6 +368,10 @@ class CodeGenerator:
                 res.append(f"    def {m_name}(self):\n        self.page.locator(self.{el_name}).click(button='right')\n\n")
             elif action == "WaitForVisible":
                 res.append(f"    def {m_name}(self):\n        self.page.locator(self.{el_name}).wait_for(state='visible')\n\n")
+            elif action == "SwitchToFrame":
+                res.append(f"    def {m_name}(self):\n        return self.page.locator(self.{el_name}).content_frame\n\n")
+            elif action == "SwitchToWindow":
+                res.append(f"    def {m_name}(self):\n        pages = self.page.context.pages\n        return pages[-1]\n\n")
         else:
             if action == "Click":
                 res.append(f"    def {m_name}(self, driver):\n        driver.find_element('xpath', self.{el_name}).click()\n\n")
@@ -365,6 +393,10 @@ class CodeGenerator:
                 res.append(f"    def {m_name}(self, driver):\n        from selenium.webdriver.common.action_chains import ActionChains\n        el = driver.find_element('xpath', self.{el_name})\n        ActionChains(driver).context_click(el).perform()\n\n")
             elif action == "WaitForVisible":
                 res.append(f"    def {m_name}(self, driver, timeout=10):\n        from selenium.webdriver.support.ui import WebDriverWait\n        from selenium.webdriver.support import expected_conditions as EC\n        WebDriverWait(driver, timeout).until(EC.visibility_of_element_located(('xpath', self.{el_name})))\n\n")
+            elif action == "SwitchToFrame":
+                res.append(f"    def {m_name}(self, driver):\n        driver.switch_to.frame(driver.find_element('xpath', self.{el_name}))\n\n")
+            elif action == "SwitchToWindow":
+                res.append(f"    def {m_name}(self, driver):\n        current_handle = driver.current_window_handle\n        for handle in driver.window_handles:\n            if handle != current_handle:\n                driver.switch_to.window(handle)\n                break\n\n")
         return "".join(res)
 
     @staticmethod
@@ -392,6 +424,10 @@ class CodeGenerator:
                 res.append(f"    public void {m_name}(IWebDriver driver) {{\n        new OpenQA.Selenium.Interactions.Actions(driver).ContextClick({el_name}).Perform();\n    }}\n\n")
             elif action == "WaitForVisible":
                 res.append(f"    public void {m_name}(IWebDriver driver, int timeoutSeconds) {{\n        new OpenQA.Selenium.Support.UI.WebDriverWait(driver, System.TimeSpan.FromSeconds(timeoutSeconds)).Until(d => {el_name}.Displayed);\n    }}\n\n")
+            elif action == "SwitchToFrame":
+                res.append(f"    public void {m_name}(IWebDriver driver) {{\n        driver.SwitchTo().Frame({el_name});\n    }}\n\n")
+            elif action == "SwitchToWindow":
+                res.append(f"    public void {m_name}(IWebDriver driver) {{\n        var currentHandle = driver.CurrentWindowHandle;\n        foreach (var handle in driver.WindowHandles) {{\n            if (handle != currentHandle) {{\n                driver.SwitchTo().Window(handle);\n                break;\n            }}\n        }}\n    }}\n\n")
         elif tool.lower() == "playwright":
             m_name += "Async"
             el_ref = f"_{el_name}"
@@ -415,6 +451,10 @@ class CodeGenerator:
                 res.append(f"    public async Task {m_name}() {{\n        await {el_ref}.ClickAsync(new LocatorClickOptions {{ Button = MouseButton.Right }});\n    }}\n\n")
             elif action == "WaitForVisible":
                 res.append(f"    public async Task {m_name}() {{\n        await {el_ref}.WaitForAsync(new LocatorWaitForOptions {{ State = WaitForSelectorState.Visible }});\n    }}\n\n")
+            elif action == "SwitchToFrame":
+                res.append(f"    public IFrameLocator {m_name}() {{\n        return {el_ref}.ContentFrame;\n    }}\n\n")
+            elif action == "SwitchToWindow":
+                res.append(f"    public IPage {m_name}() {{\n        var pages = _page.Context.Pages;\n        return pages[pages.Count - 1];\n    }}\n\n")
         return "".join(res)
 
     @staticmethod
@@ -442,6 +482,10 @@ class CodeGenerator:
                 res.append(f"    async {m_name}() {{\n        await this.{el_name}.click({{ button: 'right' }});\n    }}\n\n")
             elif action == "WaitForVisible":
                 res.append(f"    async {m_name}() {{\n        await this.{el_name}.waitFor({{ state: 'visible' }});\n    }}\n\n")
+            elif action == "SwitchToFrame":
+                res.append(f"    {m_name}() {{\n        return this.{el_name}.contentFrame();\n    }}\n\n")
+            elif action == "SwitchToWindow":
+                res.append(f"    {m_name}() {{\n        const pages = this.page.context().pages();\n        return pages[pages.length - 1];\n    }}\n\n")
         else:
             if action == "Click":
                 res.append(f"    async {m_name}(driver) {{\n        await driver.findElement(By.xpath(this.{el_name})).click();\n    }}\n\n")
@@ -463,4 +507,8 @@ class CodeGenerator:
                 res.append(f"    async {m_name}(driver) {{\n        const el = await driver.findElement(By.xpath(this.{el_name}));\n        await driver.actions().click(el, 2).perform();\n    }}\n\n")
             elif action == "WaitForVisible":
                 res.append(f"    async {m_name}(driver, timeoutMs = 10000) {{\n        const el = await driver.findElement(By.xpath(this.{el_name}));\n        await driver.wait(until.elementIsVisible(el), timeoutMs);\n    }}\n\n")
+            elif action == "SwitchToFrame":
+                res.append(f"    async {m_name}(driver) {{\n        await driver.switchTo().frame(await driver.findElement(By.xpath(this.{el_name})));\n    }}\n\n")
+            elif action == "SwitchToWindow":
+                res.append(f"    async {m_name}(driver) {{\n        const currentHandle = await driver.getWindowHandle();\n        const handles = await driver.getAllWindowHandles();\n        for (const handle of handles) {{\n            if (handle !== currentHandle) {{\n                await driver.switchTo().window(handle);\n                break;\n            }}\n        }}\n    }}\n\n")
         return "".join(res)
