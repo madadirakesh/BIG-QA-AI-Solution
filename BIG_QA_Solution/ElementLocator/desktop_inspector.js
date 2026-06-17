@@ -277,9 +277,13 @@
             const hasUnique = locators.some(l => l.count === 1);
             const inIframe = window !== window.top;
             const frameName = window.name || '';
+            // If the element lives inside one or more frames, capture a locator
+            // for each frame in the chain (outermost-first) so the consumer can
+            // switch into the right frame before acting on the element.
+            const frameChain = inIframe ? collectFrameChain() : [];
             const cid = Date.now() + '-' + Math.floor(Math.random() * 1000000);
-            
-            const payload = locators.map(l => ({ ...l, nameHint, outerHtml, pageTitle: pTitle, needsAI: !hasUnique, inIframe, frameName, cid }));
+
+            const payload = locators.map(l => ({ ...l, nameHint, outerHtml, pageTitle: pTitle, needsAI: !hasUnique, inIframe, frameName, frameChain, cid }));
 
             console.log("[Inspector] Locators:", payload.length, "| needsAI:", !hasUnique, "| iframe:", inIframe);
             try { sendPayload(payload); } catch(err){}
@@ -762,6 +766,113 @@
         }
 
         return list;
+    }
+
+    // =========================================================================
+    // FRAME LOCATOR ENGINE
+    // =========================================================================
+
+    /**
+     * Build locator candidates for a <frame>/<iframe> ELEMENT that lives in its
+     * owner (parent) document. Counts are evaluated against that parent document
+     * so uniqueness reflects the context in which the frame must be located.
+     */
+    function buildFrameElementLocators(frameEl) {
+        const ownerDoc = frameEl.ownerDocument;
+        const tag = frameEl.tagName.toLowerCase();   // 'iframe' or 'frame'
+        const list = [];
+
+        const cssEsc = (s) => (s || '').replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+        const xpCnt = (expr) => {
+            try { return ownerDoc.evaluate(expr, ownerDoc, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null).snapshotLength; }
+            catch (e) { return 0; }
+        };
+        const cssCnt = (sel) => {
+            try { return ownerDoc.querySelectorAll(sel).length; }
+            catch (e) { return 0; }
+        };
+        const add = (type, value, count) => {
+            if (value === undefined || value === null || value === '') return;
+            list.push({ type, value, count });
+        };
+
+        const id     = frameEl.getAttribute('id');
+        const name    = frameEl.getAttribute('name');
+        const titleA  = frameEl.getAttribute('title');
+        const src     = frameEl.getAttribute('src');
+        const cls     = (typeof frameEl.className === 'string') ? frameEl.className : '';
+
+        if (id && !isDynamic(id)) {
+            add('ID', id, cssCnt(`#${CSS.escape(id)}`));
+            add('XPath', `//${tag}[@id=${escapeXPath(id)}]`, xpCnt(`//${tag}[@id=${escapeXPath(id)}]`));
+        }
+        if (name) {
+            add('Name', name, cssCnt(`${tag}[name="${cssEsc(name)}"]`));
+            add('XPath', `//${tag}[@name=${escapeXPath(name)}]`, xpCnt(`//${tag}[@name=${escapeXPath(name)}]`));
+        }
+        if (titleA) {
+            add('XPath', `//${tag}[@title=${escapeXPath(titleA)}]`, xpCnt(`//${tag}[@title=${escapeXPath(titleA)}]`));
+        }
+        if (cls) {
+            cls.split(/\s+/).filter(c => c && !isDynamic(c) && !/^\d/.test(c) && c.length > 2).forEach(c => {
+                add('XPath', `//${tag}[contains(@class, ${escapeXPath(c)})]`, xpCnt(`//${tag}[contains(@class, ${escapeXPath(c)})]`));
+            });
+        }
+        if (src && src.length < 150 && !isDynamic(src)) {
+            add('XPath', `//${tag}[@src=${escapeXPath(src)}]`, xpCnt(`//${tag}[@src=${escapeXPath(src)}]`));
+        }
+
+        // Positional fallback — index among same-tag frames in the parent document.
+        try {
+            const sameTag = Array.from(ownerDoc.getElementsByTagName(tag));
+            const pos = sameTag.indexOf(frameEl) + 1;
+            if (pos > 0) add('XPath', `(//${tag})[${pos}]`, xpCnt(`(//${tag})[${pos}]`));
+        } catch (e) {}
+
+        // Sort: unique (count===1) first, then shorter expression.
+        list.sort((a, b) => {
+            if (a.count === 1 && b.count !== 1) return -1;
+            if (b.count === 1 && a.count !== 1) return 1;
+            return String(a.value).length - String(b.value).length;
+        });
+        return list;
+    }
+
+    /**
+     * Walk the frame chain from the current (capturing) frame up to the top
+     * window, collecting one locator descriptor per <iframe>/<frame> the element
+     * is nested inside. Ordered outermost-first so the frames can be entered in
+     * the correct sequence. Stops at a cross-origin boundary (where
+     * window.frameElement is not accessible).
+     */
+    function collectFrameChain() {
+        const chain = [];
+        try {
+            let win = window;
+            while (win && win !== win.top) {
+                let frameEl = null;
+                try { frameEl = win.frameElement; } catch (e) { frameEl = null; }
+                if (!frameEl) break;   // cross-origin boundary — cannot resolve a locator from here up
+
+                const cands = buildFrameElementLocators(frameEl);
+                const best = cands[0] || null;
+                const frameName = frameEl.getAttribute('name') || frameEl.getAttribute('id') || '';
+                // Stable dedup key: prefer the best locator, else the frame's name/id.
+                const frameKey = best ? (best.type + '::' + best.value)
+                                      : ('frame::' + (frameName || 'unknown'));
+
+                chain.unshift({   // unshift => outermost frame ends up first
+                    frameKey: frameKey,
+                    frameName: frameName,
+                    best: best,
+                    alternatives: cands.slice(1, 9),
+                    outerHtml: (frameEl.outerHTML || '').substring(0, 1000)
+                });
+
+                try { win = win.parent; } catch (e) { break; }
+            }
+        } catch (e) {}
+        return chain;
     }
 
 

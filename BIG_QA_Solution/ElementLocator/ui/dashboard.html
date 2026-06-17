@@ -2217,6 +2217,16 @@
                         addCapturedElement(data);
                     });
 
+                    // Listen for new windows/tabs opened by an action
+                    if (pyBridge.windowOpened) {
+                        pyBridge.windowOpened.connect(function (dataJson) {
+                            try {
+                                const d = JSON.parse(dataJson);
+                                addWindowSwitch(d.url, d.title);
+                            } catch (e) { }
+                        });
+                    }
+
                     // Listen for live verification results
                     if (pyBridge.liveVerificationResult) {
                         pyBridge.liveVerificationResult.connect(function (dataJson) {
@@ -2505,6 +2515,17 @@
                     bestLoc.pageTitle = el.pageTitle;
                     bestLoc.inIframe = el.inIframe;
                     bestLoc.frameName = el.frameName;
+                    // Preserve frame/window identity so de-duplication keeps working after a tool switch
+                    if (el.isFrame) {
+                        bestLoc.isFrame = true;
+                        bestLoc.frameKey = el.frameKey;
+                    }
+                    if (el.isWindow) {
+                        bestLoc.isWindow = true;
+                        bestLoc.windowKey = el.windowKey;
+                        bestLoc.windowUrl = el.windowUrl;
+                        bestLoc.windowTitle = el.windowTitle;
+                    }
                     bestLoc.cid = el.cid;
                     bestLoc.alternatives = ranked.filter(l => l.value !== bestLoc.value).slice(0, 8);
 
@@ -2760,6 +2781,8 @@
                                         <option value="SelectByVisibleText" ${el.action === 'SelectByVisibleText' ? 'selected' : ''}>Select</option>
                                         <option value="Check" ${el.action === 'Check' ? 'selected' : ''}>Check</option>
                                         <option value="Uncheck" ${el.action === 'Uncheck' ? 'selected' : ''}>Uncheck</option>
+                                        <option value="SwitchToFrame" ${el.action === 'SwitchToFrame' ? 'selected' : ''}>Switch To Frame</option>
+                                        <option value="SwitchToWindow" ${el.action === 'SwitchToWindow' ? 'selected' : ''}>Switch To Window</option>
                                     </optgroup>
                                 </select>
 
@@ -2861,7 +2884,7 @@
                                 <optgroup label="Basic"><option value="Click" ${el.action === 'Click' ? 'selected' : ''}>Click</option><option value="Type" ${el.action === 'Type' ? 'selected' : ''}>Type</option><option value="Clear" ${el.action === 'Clear' ? 'selected' : ''}>Clear</option></optgroup>
                                 <optgroup label="Mouse"><option value="Hover" ${el.action === 'Hover' ? 'selected' : ''}>Hover</option><option value="DoubleClick" ${el.action === 'DoubleClick' ? 'selected' : ''}>DoubleClick</option><option value="RightClick" ${el.action === 'RightClick' ? 'selected' : ''}>ContextClick</option></optgroup>
                                 <optgroup label="State / Data"><option value="GetText" ${el.action === 'GetText' ? 'selected' : ''}>GetText</option><option value="IsDisplayed" ${el.action === 'IsDisplayed' ? 'selected' : ''}>IsDisplayed</option><option value="WaitForVisible" ${el.action === 'WaitForVisible' ? 'selected' : ''}>WaitForVisible</option><option value="ScrollIntoView" ${el.action === 'ScrollIntoView' ? 'selected' : ''}>ScrollIntoView</option></optgroup>
-                                <optgroup label="Specifics"><option value="SelectByVisibleText" ${el.action === 'SelectByVisibleText' ? 'selected' : ''}>Select</option><option value="Check" ${el.action === 'Check' ? 'selected' : ''}>Check</option><option value="Uncheck" ${el.action === 'Uncheck' ? 'selected' : ''}>Uncheck</option></optgroup>
+                                <optgroup label="Specifics"><option value="SelectByVisibleText" ${el.action === 'SelectByVisibleText' ? 'selected' : ''}>Select</option><option value="Check" ${el.action === 'Check' ? 'selected' : ''}>Check</option><option value="Uncheck" ${el.action === 'Uncheck' ? 'selected' : ''}>Uncheck</option><option value="SwitchToFrame" ${el.action === 'SwitchToFrame' ? 'selected' : ''}>Switch To Frame</option><option value="SwitchToWindow" ${el.action === 'SwitchToWindow' ? 'selected' : ''}>Switch To Window</option></optgroup>
                             </select>
                             <div style="display:flex;gap:4px;flex-shrink:0;">
                                 <button class="action-icon-btn btn-highlight" onclick="highlightItem(${idx})" title="Highlight in Browser"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg></button>
@@ -2878,8 +2901,76 @@
             updateStatusBar();
         }
 
+        // Add a de-duplicated "switch to window" step when a new window/tab opens.
+        function addWindowSwitch(url, title) {
+            const windowKey = 'window::' + (url || title || '');
+            const alreadyCaptured = capturedElements.some(e => e.isWindow && e.windowKey === windowKey);
+            if (alreadyCaptured) return;   // don't add the same window twice
+
+            const base = (title || '').replace(/[^a-zA-Z0-9]/g, ' ').split(' ').filter(Boolean).slice(0, 4);
+            const nameHint = 'window' + (base.length ? base.map(w => w.charAt(0).toUpperCase() + w.slice(1)).join('') : 'New');
+            const windowEntry = {
+                type: 'Window',
+                value: title || url || 'New Window',
+                count: 1,
+                nameHint: nameHint,
+                name: nameHint,
+                action: 'SwitchToWindow',
+                isWindow: true,
+                windowKey: windowKey,
+                windowUrl: url || '',
+                windowTitle: title || '',
+                inIframe: false,
+                alternatives: []
+            };
+            capturedElements.push(windowEntry);
+            appendNewItem(capturedElements.length - 1);
+        }
+
         function addCapturedElement(locators) {
             if (!locators || locators.length === 0) return;
+
+            // ── Frame capture ───────────────────────────────────────────────
+            // If this element lives inside one or more frames, add a locator row
+            // for each frame (outermost-first) that has not already been captured.
+            // This lets generated scripts switch into the correct frame first.
+            const _meta = locators[0] || {};
+            if (_meta.inIframe && Array.isArray(_meta.frameChain)) {
+                const frameTool = document.getElementById('toolSelect').value;
+                _meta.frameChain.forEach(fr => {
+                    if (!fr || !fr.best) return;
+                    const alreadyCaptured = capturedElements.some(e => e.isFrame && e.frameKey === fr.frameKey);
+                    if (alreadyCaptured) return;   // don't capture the same frame twice
+
+                    // Selenium frame-switch generation locates by XPath, so prefer an
+                    // XPath candidate for Selenium; other tools keep the ranked best.
+                    const allFrameLocs = [fr.best, ...(fr.alternatives || [])];
+                    let chosen = fr.best;
+                    if (frameTool === 'Selenium') {
+                        chosen = allFrameLocs.find(l => l && l.type === 'XPath' && l.count === 1)
+                              || allFrameLocs.find(l => l && l.type === 'XPath')
+                              || fr.best;
+                    }
+
+                    const base = (fr.frameName || 'frame').replace(/[^a-zA-Z0-9]/g, ' ').split(' ').filter(Boolean);
+                    const frameNameHint = 'frame' + (base.length ? base.map(w => w.charAt(0).toUpperCase() + w.slice(1)).join('') : '');
+                    const frameEntry = {
+                        type: chosen.type,
+                        value: chosen.value,
+                        count: chosen.count,
+                        nameHint: frameNameHint,
+                        name: frameNameHint,
+                        action: 'SwitchToFrame',
+                        isFrame: true,
+                        frameKey: fr.frameKey,
+                        frameName: fr.frameName || '',
+                        inIframe: false,
+                        alternatives: allFrameLocs.filter(l => l && l.value !== chosen.value).slice(0, 8)
+                    };
+                    capturedElements.push(frameEntry);
+                    appendNewItem(capturedElements.length - 1);
+                });
+            }
 
             const selectedTool = document.getElementById('toolSelect').value;
             const isPwNative = document.getElementById('pwNativeToggle').checked;

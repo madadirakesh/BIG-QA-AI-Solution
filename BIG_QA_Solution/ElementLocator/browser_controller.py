@@ -44,6 +44,10 @@ class SafeWebEnginePage(QWebEnginePage):
 
 
 class BrowserController(QObject):
+    # Emitted (url, title) when an action opens a new window/tab so the studio
+    # can offer a "switch to window" step.
+    windowOpened = pyqtSignal(str, str)
+
     def __init__(self, parent=None):
         super().__init__(parent)
         
@@ -148,9 +152,23 @@ class BrowserController(QObject):
         
         # Create a new tab immediately, but don't set its URL (Chromium will do it)
         new_view = self._create_new_tab(url="", title="Loading...")
-        
+
         # Tell Chromium to fulfill the popup request by routing it into our new tab's page
         request.openIn(new_view.page())
+
+        # Notify the studio that a new window opened (so it can add a
+        # "switch to window" step). Fire once the new tab has finished loading
+        # so we can report its final URL/title.
+        def _announce_window(ok, v=new_view):
+            try:
+                v.loadFinished.disconnect(_announce_window)
+            except Exception:
+                pass
+            try:
+                self.windowOpened.emit(v.url().toString(), v.title() or "")
+            except Exception:
+                pass
+        new_view.loadFinished.connect(_announce_window)
 
     def _on_url_changed(self, url, view):
         """Push the new URL to the dashboard URL bar whenever the active tab navigates."""
