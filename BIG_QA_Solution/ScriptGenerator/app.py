@@ -47,6 +47,11 @@ def install_prerequisites():
 # Global dictionary for background bootstrapper jobs
 bootstrapper_jobs = {}
 
+# Tracks the currently running Element Locator Studio subprocess.
+# Prevents launching a duplicate when the user accidentally clicks the
+# Launch button while a Studio session (e.g. Smart Merge) is already open.
+_locator_proc = None
+
 app = Flask(__name__)
 # In production, use os.environ.get('SECRET_KEY')
 app.secret_key = os.environ.get('FLASK_SECRET_KEY', os.urandom(24))
@@ -791,6 +796,7 @@ def save_project_input():
 @app.route('/qa/launch-element-locator', methods=['GET'])
 @login_required()
 def launch_element_locator():
+    global _locator_proc
     try:
         project_path = request.args.get('project_path', '')
         language = request.args.get('language', '')
@@ -801,6 +807,48 @@ def launch_element_locator():
         # Diagnostic: log exactly what the endpoint received from JS
         print(f"[App] launch-element-locator query string: {request.query_string!r}", flush=True)
         print(f"[App] launch-element-locator parsed args: project_path={project_path!r}, language={language!r}, framework={framework!r}, tool={tool!r}, app_url={app_url!r}", flush=True)
+
+        # ── Guard: prevent duplicate launches ─────────────────────────────
+        # If the previously launched process is still alive (poll() == None),
+        # or if we detect any running launcher.py process, do NOT spawn a second
+        # instance. This prevents accidental duplicate launches.
+        studio_running = False
+        if _locator_proc is not None and _locator_proc.poll() is None:
+            studio_running = True
+        else:
+            if sys.platform == 'win32':
+                try:
+                    # Try wmic first (CREATE_NO_WINDOW = 0x08000000 so no console window pops up)
+                    res = subprocess.run(
+                        ['wmic', 'process', 'where', "CommandLine like '%launcher.py%'", 'get', 'ProcessId'],
+                        capture_output=True, text=True, creationflags=0x08000000
+                    )
+                    lines = [l.strip() for l in res.stdout.splitlines() if l.strip()]
+                    if len(lines) > 1 and any(x.isdigit() for x in lines[1:]):
+                        studio_running = True
+                except Exception:
+                    # Fallback to powershell if wmic is disabled or unavailable
+                    try:
+                        res = subprocess.run(
+                            ['powershell', '-Command', "Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like '*launcher.py*' } | Select-Object -ExpandProperty ProcessId"],
+                            capture_output=True, text=True, creationflags=0x08000000
+                        )
+                        pids = [l.strip() for l in res.stdout.splitlines() if l.strip().isdigit()]
+                        if pids:
+                            studio_running = True
+                    except Exception:
+                        pass
+            else:
+                try:
+                    res = subprocess.run(['pgrep', '-f', 'ElementLocator/launcher.py'], capture_output=True)
+                    if res.returncode == 0:
+                        studio_running = True
+                except Exception:
+                    pass
+
+        if studio_running:
+            print("[App] launch-element-locator: Studio already running, ignoring duplicate launch.", flush=True)
+            return jsonify({'status': 'already_running', 'message': 'Element Locator Studio is already open.'})
 
         # Treat the literal string "None" / "null" / "undefined" as missing — these
         # can come from Jinja rendering a NULL DB value, or JS reading an undefined
@@ -855,7 +903,7 @@ def launch_element_locator():
         popen_kwargs['stderr'] = subprocess.STDOUT
         popen_kwargs['stdin'] = subprocess.DEVNULL
 
-        subprocess.Popen(cmd, **popen_kwargs)
+        _locator_proc = subprocess.Popen(cmd, **popen_kwargs)
         # Parent keeps no need for the handle; the child has inherited its own copy.
         log_file.close()
         print(f"[App] Launching command: {cmd} (logging to {log_path})")
