@@ -3,6 +3,16 @@ import os
 
 DB_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "local_database.db")
 
+
+def _seed_admin_password():
+    # Store the default admin password hashed. Plaintext fallback only if the
+    # util can't be imported (standalone run); login still upgrades it on first use.
+    try:
+        from utils.password_util import hash_password
+        return hash_password('admin123')
+    except Exception:
+        return 'admin123'
+
 def get_db():
     try:
         from flask import g, has_app_context
@@ -211,7 +221,7 @@ def init_db():
             if not cursor.fetchone():
                 cursor.execute(
                     "INSERT INTO users (name, email, role, password, verified) VALUES (?, ?, ?, ?, ?)",
-                    ('Admin', 'admin@big.com', 'admin', 'admin123', 1)
+                    ('Admin', 'admin@big.com', 'admin', _seed_admin_password(), 1)
                 )
             
             conn.commit()

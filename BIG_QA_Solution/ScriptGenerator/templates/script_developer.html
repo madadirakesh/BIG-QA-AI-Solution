@@ -92,6 +92,10 @@
                         <p class="mb-1"><strong>Language:</strong> <span id="detLanguage" style="color:var(--accent-primary);"></span></p>
                         <p class="mb-2"><strong>Framework:</strong> <span id="detFramework" style="color:var(--accent-primary);"></span></p>
                         <p class="mb-2"><strong>ProjectBuilder:</strong> <span id="detPackager" style="color:var(--accent-primary);"></span></p>
+                        <div id="detDepCheckRow" style="display:none; margin-top:14px; border-top:1px solid rgba(255,255,255,0.08); padding-top:12px;">
+                            <p class="mb-2"><strong><i class="fas fa-clipboard-check"></i> Dependency Pre-check</strong></p>
+                            <div id="detDepCheckList" style="display:flex; flex-direction:column; gap:6px;"></div>
+                        </div>
                     </div>
                 </div>
 
@@ -1350,78 +1354,17 @@ function updateVersionProfiles() {
         .catch(() => { row.style.display = 'none'; });
 }
 
-// ─── Pre-flight dependency check ───
-// Asks the backend which system tools the selected stack + version profile needs, then renders
-// a colour-coded status row per tool (green=ok, red=missing, amber=version mismatch) with the
-// required vs detected version and an install hint. Called automatically on every stack/version
-// change. Warn-only: a missing tool is highlighted but never blocks Generate.
-let bsDepCheckSeq = 0;  // monotonically increasing token; guards against a slow earlier response
-                        // overwriting the panel after a newer selection's response already landed.
+// New-project wrapper over the shared runDependencyCheck; keeps bsLastDeps for the blocker gate.
 let bsLastDeps = [];
 function refreshDependencyCheck() {
-    const row = document.getElementById('bsDepCheckRow');
-    const list = document.getElementById('bsDepCheckList');
-    const payload = {
+    runDependencyCheck({
         tool: document.getElementById('bsTool').value,
         language: document.getElementById('bsLanguage').value,
         framework: document.getElementById('bsFramework').value,
-        versionProfile: document.getElementById('bsVersionProfile').value
-    };
-    const seq = ++bsDepCheckSeq;
-    row.style.display = '';
-    list.innerHTML = '<span class="text-secondary" style="font-size:0.85rem;">'
-        + '<i class="fas fa-circle-notch fa-spin"></i> Checking installed dependencies...</span>';
-    fetch('/api/preflight-dependencies', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify(payload)
-    })
-    .then(r => r.json())
-    .then(data => {
-        if (seq !== bsDepCheckSeq) return;          // a newer request has superseded this one
-        renderDependencyCheck(data.dependencies || []);
-    })
-    .catch(() => {
-        if (seq !== bsDepCheckSeq) return;
-        // The check is advisory; on any failure just hide the panel rather than alarm the user.
-        row.style.display = 'none';
-        bsLastDeps = [];
-    });
-}
-
-function renderDependencyCheck(deps) {
-    bsLastDeps = deps;
-    const row = document.getElementById('bsDepCheckRow');
-    const list = document.getElementById('bsDepCheckList');
-    if (!deps.length) { row.style.display = 'none'; return; }
-
-    // status -> icon + colour: ok=green check, missing=red x, mismatch=amber warning.
-    const styleFor = {
-        ok:       { icon: 'fa-check-circle',         color: '#2ecc71' },
-        missing:  { icon: 'fa-times-circle',         color: '#e74c3c' },
-        mismatch: { icon: 'fa-exclamation-triangle', color: '#f1c40f' }
-    };
-
-    list.innerHTML = '';
-    deps.forEach(d => {
-        const s = styleFor[d.status] || styleFor.missing;
-        // Right-hand detail line: confirmation when ok, otherwise the required-vs-found gap + hint.
-        let detail;
-        if (d.status === 'ok') {
-            detail = d.detected ? ('v' + d.detected + ' detected') : 'Installed';
-        } else if (d.status === 'mismatch') {
-            detail = 'Needs ' + d.required + ' or newer, found v' + (d.detected || '?') + ' — ' + d.hint;
-        } else { // missing
-            detail = 'Not found' + (d.required ? (' (needs ' + d.required + ')') : '') + ' — ' + d.hint;
-        }
-        const item = document.createElement('div');
-        item.style.cssText = 'display:flex; align-items:flex-start; gap:8px; font-size:0.85rem;';
-        item.innerHTML =
-            '<i class="fas ' + s.icon + '" style="color:' + s.color + '; margin-top:2px;"></i>'
-            + '<span><b>' + d.name + '</b>'
-            + (d.required ? (' <span style="opacity:0.7;">(requires ' + d.required + '+)</span>') : '')
-            + '<br><span style="opacity:0.8;">' + detail + '</span></span>';
-        list.appendChild(item);
+        versionProfile: document.getElementById('bsVersionProfile').value,
+        rowEl: document.getElementById('bsDepCheckRow'),
+        listEl: document.getElementById('bsDepCheckList'),
+        onResult: deps => { bsLastDeps = deps; }
     });
 }
 
@@ -1660,8 +1603,18 @@ function detectProject(path) {
             document.getElementById('summaryFeature').innerText = data.feature_path || 'none';
             document.getElementById('summaryPage').innerText = data.page_path || 'none';
             document.getElementById('summaryStep').innerText = data.step_path || 'none';
-            
+
             document.getElementById('projectSummaryStep2').style.display = 'block';
+
+            // Pre-flight check for the opened project, graded against versions inferred from its files.
+            runDependencyCheck({
+                tool: data.tool,
+                language: data.language,
+                framework: data.framework,
+                requiredVersions: data.required_versions || {},
+                rowEl: document.getElementById('detDepCheckRow'),
+                listEl: document.getElementById('detDepCheckList')
+            });
         }
     })
     .catch(err => console.error("Project detection failed:", err));

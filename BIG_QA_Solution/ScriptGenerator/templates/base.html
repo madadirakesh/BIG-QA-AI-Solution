@@ -123,6 +123,8 @@
     <!-- Shared inline-validation helpers (setFieldError, clearFieldError, validateForm).
          Used by any modal/form in the app — see static/js/form_validation.js for usage. -->
     <script src="{{ url_for('static', filename='js/form_validation.js') }}"></script>
+    <!-- Shared pre-flight dependency check (runDependencyCheck) — see static/js/dependency_check.js -->
+    <script src="{{ url_for('static', filename='js/dependency_check.js') }}?v=1.0"></script>
     <script>
         // ── Toast utility ──────────────────────────────────────────────
         function showToast(message, type = 'info', duration = 4000) {

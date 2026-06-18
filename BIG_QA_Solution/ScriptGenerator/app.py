@@ -5,6 +5,7 @@ import subprocess
 import threading
 import webbrowser
 import uuid
+import secrets
 from datetime import datetime
 from pathlib import Path
 from flask import Flask, render_template, request, redirect, url_for, session, flash, jsonify, Response, stream_with_context
@@ -26,6 +27,7 @@ from db.app_db import fetch_data, insert_data, update_data, init_db, get_db
 # encrypt_for_app / decrypt_for_app protect the password stored in ProjectData with an app master
 # key (Flask .env). decrypt_for_app passes legacy plaintext rows through unchanged.
 from utils.crypto_util import encrypt_for_app, decrypt_for_app
+from utils.password_util import hash_password, verify_password, is_hashed
 
 # Load environment variables early
 load_dotenv(BASE_DIR / ".env")
@@ -89,7 +91,27 @@ def login_required(role=None):
     return wrapper
 
 # Endpoints reachable without login; everything else needs a session.
-PUBLIC_ENDPOINTS = {'login', 'logout', 'index', 'static'}
+# locator_heartbeat is public: the detached Locator Studio process has no
+# session cookie, so it authenticates with a one-time launch token instead.
+PUBLIC_ENDPOINTS = {'login', 'logout', 'index', 'static', 'locator_heartbeat'}
+
+# launch token -> user_id of whoever launched Locator Studio. The studio polls
+# the heartbeat with its token; we report active only while that user's session
+# is live. In-memory, so a web-app restart forgets all tokens and fails closed.
+LOCATOR_LAUNCH_TOKENS = {}
+
+# user_id -> threading.Event, set on logout to release that user's held
+# long-poll heartbeat so the Locator Studio closes immediately.
+LOCATOR_LOGOUT_EVENTS = {}
+_LOCATOR_EVENTS_LOCK = threading.Lock()
+
+def _locator_logout_event(user_id):
+    with _LOCATOR_EVENTS_LOCK:
+        ev = LOCATOR_LOGOUT_EVENTS.get(user_id)
+        if ev is None:
+            ev = threading.Event()
+            LOCATOR_LOGOUT_EVENTS[user_id] = ev
+        return ev
 
 @app.before_request
 def require_authentication():
@@ -142,14 +164,22 @@ def login():
             flash('Login failed! Unknown username or password.', 'error')
         else:
             user = user[0]
+            # Matches both hashed and legacy plaintext stored passwords.
+            password_ok = verify_password(user['password'], password)
             if user['verified'] == 0:
                 flash(f"Hi, {user['name']}! Your account is pending approval.", 'warning')
-            elif user['verified'] == 2 and user['password'] == password:
+            elif user['verified'] == 2 and password_ok:
                 flash("Account Disabled", 'error')
-            elif user['verified'] == 1 and user['password'] != password:
+            elif user['verified'] == 1 and not password_ok:
                 flash('Login failed! Invalid username or password.', 'error')
-            elif user['verified'] == 1 and user['password'] == password:
+            elif user['verified'] == 1 and password_ok:
                 # Login successful
+
+                # Upgrade legacy plaintext rows to a hash on successful login.
+                if not is_hashed(user['password']):
+                    update_data("UPDATE users SET password = ? WHERE id = ?",
+                                (hash_password(password), user['id']))
+
                 session['user_id'] = user['id']
                 session['user_name'] = user['name']
                 session['user_role'] = user['role']
@@ -179,6 +209,10 @@ def logout():
         current_time = datetime.now(local_tz)
         update_data("UPDATE SessionDetails SET SessionActive = ?, SessionTime = ? WHERE userid = ?",
                     (0, current_time, user_id))
+        # Drop this user's Locator Studio tokens so the next heartbeat fails closed.
+        for tok in [t for t, uid in LOCATOR_LAUNCH_TOKENS.items() if uid == user_id]:
+            LOCATOR_LAUNCH_TOKENS.pop(tok, None)
+        _locator_logout_event(user_id).set()
     session.clear()
     flash('You have been logged out!', 'info')
     return redirect(url_for('login'))
@@ -233,7 +267,7 @@ def add_user():
                     flash('User with this email already exists!', 'warning')
                 else:
                     insert_data("INSERT INTO users (name, email, role, password, verified) VALUES (?, ?, ?, ?, 1)",
-                                (name, email, role, password))
+                                (name, email, role, hash_password(password)))
                     flash(f'User {name} added successfully.', 'success')
                     return redirect(url_for('add_user'))
 
@@ -645,6 +679,9 @@ def preflight_dependencies():
     # The resolved profile supplies the version a tool must match (e.g. {"java": "17"}); when the
     # stack has no version choice this is {} and the report degrades to presence-only checks.
     profile_versions = resolve_versions(tool, lang, fw, label)
+    required_versions = data.get('requiredVersions') or {}
+    if required_versions:
+        profile_versions = {**profile_versions, **required_versions}
     deps = EnvironmentSetup.required_dependencies(tool, lang, fw, profile_versions)
     all_ok = all(d['status'] == 'ok' for d in deps)
     return jsonify({"dependencies": deps, "allOk": all_ok})
@@ -723,7 +760,7 @@ def test_case_generator():
     if session.get('user_role', '').lower() not in ['qa', 'admin']:
         flash('Not authorized', 'error')
         return redirect(url_for('home'))
-    projects = fetch_data("SELECT id, project_name FROM ProjectDetails ORDER BY project_name ASC")
+    projects = fetch_data("SELECT id, project_name, project_path FROM ProjectDetails ORDER BY project_name ASC")
     return render_template('test_case_generator.html', projects=projects)
 
 @app.route('/api/project-inputs/<int:project_id>', methods=['GET'])
@@ -783,9 +820,15 @@ def launch_element_locator():
         app_url = _sanitize(app_url)
 
         locator_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'ElementLocator', 'launcher.py'))
-        cmd = [sys.executable, locator_path]
-        if project_path:
-            cmd.extend([project_path, language, framework, tool, app_url])
+
+        token = secrets.token_urlsafe(32)
+        LOCATOR_LAUNCH_TOKENS[token] = session['user_id']
+        server_url = request.host_url.rstrip('/')
+
+        # Project args 1-5 passed positionally so server_url and token sit at argv 6 and 7.
+        cmd = [sys.executable, locator_path,
+               project_path, language, framework, tool, app_url,
+               server_url, token]
 
         # NOTE: Do NOT use shell=True here. On Windows, shell=True with a list of
         # arguments causes the extra args to be lost/mangled by cmd.exe, so the
@@ -820,6 +863,26 @@ def launch_element_locator():
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
+@app.route('/api/locator-heartbeat', methods=['GET'])
+def locator_heartbeat():
+    token = request.args.get('token', '')
+    user_id = LOCATOR_LAUNCH_TOKENS.get(token)
+    if not user_id:
+        return jsonify({'active': False})
+
+    ev = _locator_logout_event(user_id)
+    ev.clear()
+    keepalive_s, slice_s, waited = 25, 5, 0
+    while waited < keepalive_s:
+        rows = fetch_data("SELECT SessionActive FROM SessionDetails WHERE userid = ?", (user_id,))
+        active = bool(rows) and rows[0]['SessionActive'] == 1 and token in LOCATOR_LAUNCH_TOKENS
+        if not active:
+            return jsonify({'active': False})
+        if ev.wait(slice_s):
+            ev.clear()
+        waited += slice_s
+    return jsonify({'active': True})
+
 @app.route('/api/select-directory', methods=['GET'])
 @login_required()
 def select_directory():
@@ -853,6 +916,7 @@ def detect_project():
         feature_path = "none"
         page_path = "none"
         step_path = "none"
+        required_versions = {}  # inferred runtime versions, keyed java/python/dotnet/node
 
         for root, dirs, files in os.walk(path):
             if any(skip in root for skip in ['node_modules', '.git', 'venv', 'target', 'bin']):
@@ -880,10 +944,13 @@ def detect_project():
                 if ext not in extensions_found:
                     extensions_found.append(ext)
 
-                if file in ['pom.xml', 'package.json', 'requirements.txt', 'build.gradle'] or file.endswith('.csproj'):
+                if file in ['pom.xml', 'package.json', 'requirements.txt', 'build.gradle',
+                            'pyproject.toml', 'runtime.txt'] or file.endswith('.csproj'):
                     try:
                         with open(os.path.join(root, file), 'r', errors='ignore') as f:
                             content = f.read().lower()
+
+                            EnvironmentSetup.infer_required_versions(file, content, required_versions)
 
                             # Tool checks...
                             if 'selenium' in content: tool='Selenium'
@@ -925,13 +992,14 @@ def detect_project():
             language = 'C#'
 
         return jsonify({
-            "tool": tool, 
-            "language": language, 
-            "framework": framework, 
+            "tool": tool,
+            "language": language,
+            "framework": framework,
             "packager": packager,
             "feature_path": feature_path,
             "page_path": page_path,
-            "step_path": step_path
+            "step_path": step_path,
+            "required_versions": required_versions
         })
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500
@@ -1941,4 +2009,4 @@ if __name__ == '__main__':
         seed()
         launch_backend()
     
-    app.run(debug=True, use_reloader=False, port=5000)
+    app.run(debug=True, use_reloader=False, port=5000, threaded=True)

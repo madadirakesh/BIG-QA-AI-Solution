@@ -1097,8 +1097,60 @@ class MergeWindow(QMainWindow):
             logging.error(f"Error handling MergeWindow command {action}: {e}")
 
 
+class SessionWatcher(QObject):
+    """Long-polls the web app's heartbeat; emits sessionLost when the session ends."""
+    sessionLost = pyqtSignal()
+
+    def __init__(self, server_url, token, parent=None):
+        super().__init__(parent)
+        self.server_url = (server_url or "").rstrip('/')
+        self.token = token or ""
+        self._running = False
+        self._thread = None
+
+    def start(self):
+        self._running = True
+        self._thread = threading.Thread(target=self._loop, daemon=True)
+        self._thread.start()
+
+    def stop(self):
+        self._running = False
+
+    def _loop(self):
+        import time
+        import urllib.request
+        url = f"{self.server_url}/api/locator-heartbeat?token={self.token}"
+        fail_count = 0
+        while self._running:
+            reachable = True
+            started = time.monotonic()
+            try:
+                with urllib.request.urlopen(url, timeout=40) as resp:
+                    active = bool(json.loads(resp.read().decode('utf-8')).get('active'))
+            except Exception:
+                reachable = False
+                active = False
+            if not self._running:
+                return
+            if active:
+                fail_count = 0
+                elapsed = time.monotonic() - started
+                if elapsed < 2:
+                    time.sleep(2 - elapsed)
+                continue
+            if reachable:
+                self.sessionLost.emit()
+                return
+            fail_count += 1
+            if fail_count >= 2:
+                self.sessionLost.emit()
+                return
+            time.sleep(2)
+
+
 class LocatorStudio(QMainWindow):
-    def __init__(self, project_path=None, language=None, framework=None, tool=None, app_url=None):
+    def __init__(self, project_path=None, language=None, framework=None, tool=None, app_url=None,
+                 auth_server=None, auth_token=None):
         super().__init__()
         self.setWindowTitle("Locator Studio")
         # Minimum size ensures all panels are usable; app always starts maximized
@@ -1176,6 +1228,19 @@ class LocatorStudio(QMainWindow):
         
         # Force foreground on Windows/OS after launch
         QTimer.singleShot(150, self.force_foreground)
+
+        # Watch the launching web session; close the studio when it logs out / shuts down.
+        self.session_watcher = None
+        if auth_server and auth_token:
+            self.session_watcher = SessionWatcher(auth_server, auth_token, self)
+            self.session_watcher.sessionLost.connect(self._on_session_lost)
+            self.session_watcher.start()
+
+    def _on_session_lost(self):
+        if getattr(self, '_session_closing', False):
+            return
+        self._session_closing = True
+        QApplication.quit()
 
     def force_foreground(self):
         self.raise_()
