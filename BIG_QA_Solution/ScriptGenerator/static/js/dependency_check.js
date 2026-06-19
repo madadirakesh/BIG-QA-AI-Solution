@@ -74,23 +74,19 @@ function checkProjectDependencies(path, rowEl, listEl) {
     .catch(() => { rowEl.style.display = 'none'; });
 }
 
-function renderDependencyCheck(deps, rowEl, listEl) {
-    if (!deps.length) { rowEl.style.display = 'none'; return; }
-
-    listEl.innerHTML = '';
-
+// Build the pre-check markup (summary line + one row per dependency) as an HTML string, so the
+// inline panel and the confirm popup render prerequisites identically.
+function buildDependencyCheckHTML(deps) {
     // At-a-glance summary so a mismatch is noticeable without scanning every row.
     const unmet = deps.filter(d => d.status !== 'ok').length;
     const sum = unmet ? _DEP_STYLE.mismatch : _DEP_STYLE.ok;
-    const summary = document.createElement('div');
-    summary.style.cssText = 'display:flex; align-items:center; gap:8px; font-size:0.85rem; font-weight:600; margin-bottom:4px;';
-    summary.innerHTML =
-        '<i class="fas ' + sum.icon + '" style="color:' + sum.color + ';"></i>'
+    let html =
+        '<div style="display:flex; align-items:center; gap:8px; font-size:0.85rem; font-weight:600; margin-bottom:8px;">'
+        + '<i class="fas ' + sum.icon + '" style="color:' + sum.color + ';"></i>'
         + '<span>' + (unmet
             ? (unmet === 1 ? '1 prerequisite needs attention'
                            : unmet + ' prerequisites need attention')
-            : 'All prerequisites met') + '</span>';
-    listEl.appendChild(summary);
+            : 'All prerequisites met') + '</span></div>';
 
     deps.forEach(d => {
         const s = _DEP_STYLE[d.status] || _DEP_STYLE.missing;
@@ -102,13 +98,55 @@ function renderDependencyCheck(deps, rowEl, listEl) {
         } else {
             detail = 'Not found' + (d.required ? (' (needs ' + d.required + ')') : '') + ' — ' + d.hint;
         }
-        const item = document.createElement('div');
-        item.style.cssText = 'display:flex; align-items:flex-start; gap:8px; font-size:0.85rem;';
-        item.innerHTML =
-            '<i class="fas ' + s.icon + '" style="color:' + s.color + '; margin-top:2px;"></i>'
+        html +=
+            '<div style="display:flex; align-items:flex-start; gap:8px; font-size:0.85rem; margin-bottom:6px; text-align:left;">'
+            + '<i class="fas ' + s.icon + '" style="color:' + s.color + '; margin-top:2px;"></i>'
             + '<span><b>' + d.name + '</b>'
             + (d.required ? (' <span style="opacity:0.7;">(requires ' + d.required + '+)</span>') : '')
-            + '<br><span style="opacity:0.8;">' + detail + '</span></span>';
-        listEl.appendChild(item);
+            + '<br><span style="opacity:0.8;">' + detail + '</span></span></div>';
     });
+    return html;
+}
+
+function renderDependencyCheck(deps, rowEl, listEl) {
+    if (!deps.length) { rowEl.style.display = 'none'; return; }
+    listEl.innerHTML = buildDependencyCheckHTML(deps);
+}
+
+// Detect an existing project's stack from its path, run the preflight check, and surface any
+// missing/outdated prerequisites in the shared OK-only confirm popup (showConfirm). No inline
+// installation panel — used by the active-project selector. Stays silent when all is well.
+function validateProjectDependenciesPopup(path, title) {
+    if (!path) return Promise.resolve(true);
+    return fetch('/api/detect-project', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path: path })
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (!data || !data.language || !data.tool) return true;  // stack unknown — skip
+        return fetch('/api/preflight-dependencies', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                tool: data.tool,
+                language: data.language,
+                framework: data.framework,
+                requiredVersions: data.required_versions || {}
+            })
+        })
+        .then(r => r.json())
+        .then(res => {
+            const deps = res.dependencies || [];
+            if (!deps.filter(d => d.status !== 'ok').length) return true;  // all good — stay silent
+            if (typeof showConfirm === 'function') {
+                showConfirm(title || 'Dependency Pre-check', buildDependencyCheckHTML(deps),
+                            '⛔', 'OK', 'background:var(--primary);color:white;',
+                            { html: true, okOnly: true });
+            }
+            return false;
+        });
+    })
+    .catch(() => true);  // advisory: never block on a check failure
 }

@@ -15,7 +15,7 @@
     <!-- Font Awesome -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <!-- Custom CSS -->
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=1.9">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=2.1">
     {% block extra_css %}{% endblock %}
 </head>
 <body class="{% if not session.get('user_id') %}login-bg{% else %}app-bg{% endif %} dark-theme">
@@ -45,7 +45,7 @@
                         <select id="globalActiveProject" onchange="setGlobalActiveProject(this)" class="input-glass" style="padding: 4px 8px; font-size: 0.9rem; min-width: 150px; background: rgba(0,0,0,0.2); border-color: rgba(255,255,255,0.1);">
                             <option value="">-- Select Active Project --</option>
                             {% for proj in global_projects %}
-                                <option value="{{ proj.id }}" {% if proj.id|string == active_project_id|string %}selected{% endif %}>{{ proj.project_name }}</option>
+                                <option value="{{ proj.id }}" data-path="{{ proj.project_path }}" {% if proj.id|string == active_project_id|string %}selected{% endif %}>{{ proj.project_name }}</option>
                             {% endfor %}
                         </select>
                     </div>
@@ -124,7 +124,7 @@
          Used by any modal/form in the app — see static/js/form_validation.js for usage. -->
     <script src="{{ url_for('static', filename='js/form_validation.js') }}"></script>
     <!-- Shared pre-flight dependency check (runDependencyCheck) — see static/js/dependency_check.js -->
-    <script src="{{ url_for('static', filename='js/dependency_check.js') }}?v=1.0"></script>
+    <script src="{{ url_for('static', filename='js/dependency_check.js') }}?v=1.1"></script>
     <script>
         // ── Toast utility ──────────────────────────────────────────────
         function showToast(message, type = 'info', duration = 4000) {
@@ -142,12 +142,17 @@
 
         // ── H8: Confirm Dialog ─────────────────────────────────────────
         let _confirmResolve = null;
-        function showConfirm(title, message, icon = '⚠️', okLabel = 'Confirm', okStyle = 'background:var(--error);color:white;') {
+        // opts.html renders rich markup instead of plain text; opts.okOnly hides Cancel for
+        // acknowledgement-only popups (e.g. the dependency pre-check result).
+        function showConfirm(title, message, icon = '⚠️', okLabel = 'Confirm', okStyle = 'background:var(--error);color:white;', opts = {}) {
             document.getElementById('confirmTitle').textContent = title;
-            document.getElementById('confirmMessage').textContent = message;
+            const msgEl = document.getElementById('confirmMessage');
+            if (opts.html) msgEl.innerHTML = message; else msgEl.textContent = message;
             document.getElementById('confirmIcon').textContent = icon;
             document.getElementById('confirmOkBtn').setAttribute('style', okStyle);
             document.getElementById('confirmOkBtn').textContent = okLabel;
+            const cancelBtn = document.querySelector('#confirmBackdrop .confirm-actions .btn:not(#confirmOkBtn)');
+            if (cancelBtn) cancelBtn.style.display = opts.okOnly ? 'none' : '';
             document.getElementById('confirmBackdrop').classList.add('active');
             return new Promise(resolve => { _confirmResolve = resolve; });
         }
@@ -347,10 +352,22 @@
                 const data = await response.json();
                 if (data.status === 'success') {
                     showToast(data.message, 'success');
+                    // Validate the chosen project's prerequisites; warn via popup if any are missing.
+                    if (projectId) {
+                        const selOpt = selectElement.options[selectElement.selectedIndex];
+                        const projPath = selOpt ? selOpt.getAttribute('data-path') : '';
+                        validateProjectDependenciesPopup(projPath, 'Dependency Pre-check — ' + projectName);
+                    }
+                    // Keep both master selectors (header + home page) in sync by value, without
+                    // re-firing their change handlers — that would recurse into setGlobalActiveProject.
+                    ['globalActiveProject', 'homeActiveProject'].forEach(id => {
+                        const master = document.getElementById(id);
+                        if (master && master !== selectElement) master.value = projectId;
+                    });
                     // Sync any other project selectors on the page (e.g. Test Case Generator, Dashboard)
                     const otherSelects = document.querySelectorAll('select[name="project_id"], select[name="project"], #runProject, #projectSelect');
                     otherSelects.forEach(sel => {
-                        if (sel.id !== 'globalActiveProject') {
+                        if (sel !== selectElement) {
                             // If the option exists in the other dropdown, select it
                             for (let i = 0; i < sel.options.length; i++) {
                                 if (sel.options[i].value == projectId || sel.options[i].value === projectName) {
