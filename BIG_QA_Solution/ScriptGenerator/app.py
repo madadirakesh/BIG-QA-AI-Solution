@@ -1908,6 +1908,25 @@ def preview_merge():
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
+@app.route('/api/smart-merge', methods=['POST'])
+@login_required()
+def smart_merge():
+    try:
+        data = request.json
+        existing_content = data.get('existing_content', '')
+        generated_content = data.get('generated_content', '')
+        filename = data.get('filename', 'file.py')
+        
+        from utils.smart_merger import smart_merge_code
+        merged = smart_merge_code(existing_content, generated_content, filename)
+        
+        return jsonify({
+            'status': 'success',
+            'merged_content': merged
+        })
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
 @app.route('/api/save-merged-file', methods=['POST'])
 @login_required()
 def save_merged_file():
