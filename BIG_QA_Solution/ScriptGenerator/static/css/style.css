@@ -905,7 +905,7 @@ select option {
 
 .content-inner {
     padding: 30px;
-    max-width: 1400px;
+    max-width: 1700px;
     width: 100%;
     margin: 0 auto;
 }
@@ -1306,6 +1306,22 @@ select option {
     .status-grid {
         grid-template-columns: 1fr;
     }
+}
+
+/* ── Responsive: tighten header & spacing so nothing overflows on small screens ── */
+@media (max-width: 768px) {
+    .content-inner { padding: 16px; }
+    .top-header { padding: 0 16px 0 60px; gap: 8px; }
+    .user-greeting { gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+    .global-project-selector { margin-right: 8px !important; }
+    .global-project-selector select { min-width: 110px; max-width: 160px; }
+    .breadcrumb { display: none; }
+}
+@media (max-width: 560px) {
+    /* Drop the long username text and AI model label; the icons/role badge still identify state. */
+    .user-greeting > span:last-child { display: none; }
+    .ai-status-badge span { display: none; }
+    .global-project-selector select { min-width: 90px; max-width: 130px; }
 }
 
 /* ========================================

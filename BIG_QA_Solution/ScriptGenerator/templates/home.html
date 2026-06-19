@@ -73,11 +73,11 @@
             <span style="font-weight: 600;">Active Project Workspace</span>
         </div>
     </div>
-    <div style="padding: 1rem; display: flex; align-items: center; gap: 1rem;">
-        <select id="homeActiveProject" class="input-glass" style="flex-grow: 1; max-width: 400px; padding: 0.75rem; font-size: 1rem;" onchange="document.getElementById('globalActiveProject').value = this.value; setGlobalActiveProject(this);">
+    <div style="padding: 1rem; display: flex; align-items: center; gap: 1rem; flex-wrap: wrap;">
+        <select id="homeActiveProject" class="input-glass" style="flex: 1 1 240px; max-width: 400px; padding: 0.75rem; font-size: 1rem;" onchange="document.getElementById('globalActiveProject').value = this.value; setGlobalActiveProject(this);">
             <option value="">-- Select a Project --</option>
             {% for proj in global_projects %}
-                <option value="{{ proj.id }}" {% if proj.id|string == active_project_id|string %}selected{% endif %}>{{ proj.project_name }}</option>
+                <option value="{{ proj.id }}" data-path="{{ proj.project_path }}" {% if proj.id|string == active_project_id|string %}selected{% endif %}>{{ proj.project_name }}</option>
             {% endfor %}
         </select>
         <p style="color: var(--text-secondary); margin: 0; font-size: 0.9rem;">

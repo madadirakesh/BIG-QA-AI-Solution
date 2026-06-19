@@ -57,6 +57,15 @@ app = Flask(__name__)
 app.secret_key = os.environ.get('FLASK_SECRET_KEY', os.urandom(24))
 app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 31536000  # Cache static files for 1 year
 
+# New per process; changes when the dev reloader restarts the server, so the browser can auto-reload.
+LIVE_RELOAD_ID = uuid.uuid4().hex
+
+@app.route('/__version')
+def __version():
+    if not app.debug:
+        return ('', 404)  # dev-only; the client poller stops itself on a non-OK response
+    return jsonify({"id": LIVE_RELOAD_ID})
+
 @app.teardown_appcontext
 def close_connection(exception):
     from flask import g
@@ -70,7 +79,8 @@ def inject_user():
     projects = []
     if session.get('user_id'):
         try:
-            projects = fetch_data("SELECT id, project_name FROM ProjectDetails ORDER BY project_name ASC")
+            # project_path lets the active-project selector run the shared dependency pre-check
+            projects = fetch_data("SELECT id, project_name, project_path FROM ProjectDetails ORDER BY project_name ASC")
         except Exception:
             pass
     return dict(
@@ -1635,8 +1645,30 @@ def handle_prompt_function(filename, function_name):
             
         return jsonify({"status": "success", "message": "Prompt updated successfully"})
 
-def open_browser():
-    webbrowser.open_new('http://127.0.0.1:5000/')
+def open_browser(port=5000):
+    webbrowser.open_new(f'http://127.0.0.1:{port}/')
+
+def find_free_port(preferred=5000):
+    """Return a port to run on: the preferred one if free, otherwise an OS-assigned free port.
+
+    Avoids the 'Address already in use' crash when a previous instance is still running. The chosen
+    port is cached in BIG_QA_PORT so the reloader's child process reuses the same URL across restarts.
+    """
+    import socket
+    cached = os.environ.get('BIG_QA_PORT')
+    if cached:
+        return int(cached)
+    port = preferred
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        s.bind(('127.0.0.1', preferred))
+    except OSError:
+        s.bind(('127.0.0.1', 0))  # preferred busy — let the OS hand us a free one
+        port = s.getsockname()[1]
+    finally:
+        s.close()
+    os.environ['BIG_QA_PORT'] = str(port)
+    return port
 
 def launch_backend():
     """Launches the FastAPI backend service using uvicorn."""
@@ -2067,13 +2099,18 @@ def sample_app_login():
     return render_template('sample_login.html')
 
 if __name__ == '__main__':
+    port = find_free_port(5000)
+    app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 0  # serve fresh static files during dev
     # Only open the browser and launch backend once (prevents opening twice when Flask reloader is active)
     if not os.environ.get('WERKZEUG_RUN_MAIN'):
         if not check_and_initialize_db():
             sys.exit("Exiting: Database connection failed.")
-        threading.Timer(1.25, open_browser).start()
+        threading.Timer(1.25, lambda: open_browser(port)).start()
         #threading.Timer(1.25, seed).start()
         seed()
         launch_backend()
-    
-    app.run(debug=True, use_reloader=False, port=5000, threaded=True)
+
+    # Watch templates/static too so HTML/CSS/JS edits also restart the server (triggering the reload).
+    extra_files = [str(p) for sub in ('templates', 'static')
+                   for p in (BASE_DIR / sub).rglob('*') if p.is_file()]
+    app.run(debug=True, use_reloader=True, port=port, threaded=True, extra_files=extra_files)
