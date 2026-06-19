@@ -2693,7 +2693,9 @@
             }
             queue.innerHTML = '';
 
-            capturedElements.forEach((el, idx) => {
+            // Render in reverse chronological order so the latest captured elements are on top
+            for (let idx = capturedElements.length - 1; idx >= 0; idx--) {
+                const el = capturedElements[idx];
                 const count = el.count;
                 const badgeColor = count === 1 ? 'var(--success)' : (count === 0 ? 'var(--danger)' : 'var(--warning)');
                 const badgeText = count === 1 ? 'Unique' : `${count ?? '?'} matches`;
@@ -2815,7 +2817,7 @@
                     </div>
                 `;
                 queue.appendChild(item);
-            });
+            }
             updateStatusBar();
         }
 
@@ -2897,7 +2899,11 @@
                     </div>
                     ${alts.length > 0 ? `<div id="alts-${idx}" style="display:none;width:100%;margin-top:10px;padding-top:8px;border-top:1px solid rgba(255,255,255,0.08);"><div style="font-size:0.7rem;color:var(--text-secondary);margin-bottom:6px;"><i class="fas fa-layer-group"></i> All Locator Alternatives (${alts.length})</div>${altsHtml}</div>` : ''}
                 </div>`;
-            queue.appendChild(item);
+            if (queue.firstChild) {
+                queue.insertBefore(item, queue.firstChild);
+            } else {
+                queue.appendChild(item);
+            }
             updateStatusBar();
         }
 
