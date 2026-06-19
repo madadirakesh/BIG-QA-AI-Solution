@@ -722,6 +722,12 @@ class POWindow(QMainWindow):
                     f"{filename}{ext}",
                     f"{lang} File (*{ext});;All Files (*)"
                 )
+                self.raise_()
+                self.activateWindow()
+                # Clear any pending actions in JS to prevent click-through / event propagation
+                self.view.page().runJavaScript(
+                    "if (typeof _pendingAction !== 'undefined') { _pendingAction = null; _pendingPayload = null; }"
+                )
                 if fname:
                     try:
                         with open(fname, "w", encoding="utf-8") as f:
@@ -928,6 +934,13 @@ class MergeWindow(QMainWindow):
 
     def closeEvent(self, event):
         """Stop the polling timer when the window closes."""
+        # If a file-browse dialog is currently open, ignore any OS-initiated
+        # close events (macOS sends a closeEvent to the parent QMainWindow when
+        # a sheet-modal dialog is dismissed via Cancel / Escape).
+        if getattr(self, '_browse_in_progress', False):
+            print("[MergeWindow] Ignoring closeEvent — file browse in progress")
+            event.ignore()
+            return
         self._poll_timer.stop()
         super().closeEvent(event)
 
@@ -962,9 +975,50 @@ class MergeWindow(QMainWindow):
                 tool     = payload.get("tool", self.tool)
                 lang     = payload.get("lang", self.lang)
 
+                # ── Layer 1: Python-side flag ──────────────────────────────
+                # Guard closeEvent so any OS-level close event sent to this
+                # QMainWindow while the native file dialog is open is ignored.
+                self._browse_in_progress = True
+                self._poll_timer.stop()
+
+                # ── Layer 2: JS-side guard + disable Cancel button ─────────
+                # Runs synchronously in the renderer before QFileDialog blocks,
+                # so any phantom click on the HTML Cancel during the OS dialog
+                # is a no-op even if the web view receives stray mouse events.
+                self.view.page().runJavaScript(
+                    "window._browseActive = true;"
+                    " var cb = document.getElementById('merge-cancel-btn');"
+                    " if (cb) cb.disabled = true;"
+                )
+
+                # Use self as parent so the dialog is modal to this window, and focus
+                # naturally returns here when dismissed (especially important on macOS).
                 fname, _ = QFileDialog.getOpenFileName(
                     self, "Select existing Page Object file to merge with", "", "All Files (*)"
                 )
+
+                # Explicitly raise and activate the window to ensure it comes to foreground
+                # after the file dialog is dismissed.
+                self.raise_()
+                self.activateWindow()
+
+                # Delay clearing the browse guard and re-enabling the Cancel button by 500ms
+                # to prevent click-through and race conditions where the web view processes
+                # stray click/mouse-up events from the dismissed native dialog.
+                def _restart_poll(_result=None):
+                    self._poll_timer.start(250)
+
+                def _re_enable():
+                    self._browse_in_progress = False
+                    self.view.page().runJavaScript(
+                        "window._browseActive = false;"
+                        " var cb = document.getElementById('merge-cancel-btn');"
+                        " if (cb) cb.disabled = false;"
+                        " if (typeof _pendingAction !== 'undefined') { _pendingAction = null; _pendingPayload = null; }",
+                        _restart_poll
+                    )
+
+                QTimer.singleShot(500, _re_enable)
                 if fname:
                     try:
                         with open(fname, "r", encoding="utf-8") as f:

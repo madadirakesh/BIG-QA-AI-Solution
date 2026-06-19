@@ -658,7 +658,7 @@
             <span id="mergeAcceptStatus"><i class="fas fa-info-circle"></i> Both windows are fully editable! Make any adjustments on the right and click Save.</span>
         </div>
         <div style="display: flex; gap: 10px;">
-            <button class="btn btn-outline" onclick="closeWindow()">Cancel</button>
+            <button class="btn btn-outline" id="merge-cancel-btn" onclick="closeWindow()">Cancel</button>
             <button class="btn btn-primary" id="mergeConfirmBtn" onclick="confirmMerge()">
                 <i class="fas fa-save"></i> Save
             </button>
@@ -684,6 +684,10 @@
         let _selectedTool = 'Playwright';
         let _selectedLang = 'TypeScript';
         let _bypassStyle = false;
+        // Guard: true while the OS file-browse dialog is open.
+        // Prevents closeWindow() from acting on phantom clicks that the
+        // QWebEngineView may receive when the native dialog is dismissed.
+        window._browseActive = false;
 
         function initBridge() {
             console.log("JS: initBridge called. Checking qt and webChannelTransport...");
@@ -1053,6 +1057,13 @@
 
         function closeWindow() {
             console.log('JS: Cancel button clicked');
+            // If a file-browse dialog is currently open, ignore this call.
+            // The Python layer sets _browseActive=true before opening the
+            // OS dialog so that any phantom click routed here is a no-op.
+            if (window._browseActive) {
+                console.log('JS: closeWindow ignored — browse dialog is open');
+                return;
+            }
             _pendingAction  = 'close_merge_window';
             _pendingPayload = '';
         }
@@ -1093,6 +1104,7 @@
                     if (cmRight) cmRight.refresh();
                 }
             });
+        }
     </script>
     
     <!-- Global Lightbox Alert/Confirm Dialog -->

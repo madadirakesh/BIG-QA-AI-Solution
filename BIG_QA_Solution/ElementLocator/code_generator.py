@@ -38,6 +38,9 @@ class CodeGenerator:
                 lines.append(f"    public {page_name}(WebDriver driver) {{")
                 lines.append("        PageFactory.initElements(driver, this);")
                 lines.append("    }\n")
+                lines.append("    public void navigateTo(WebDriver driver, String url) {")
+                lines.append("        driver.get(url);")
+                lines.append("    }\n")
             elif tool.lower() == "playwright":
                 lines.append("    private final Page page;\n")
                 lines.append(f"    public {page_name}(Page page) {{")
@@ -49,6 +52,9 @@ class CodeGenerator:
                         name = loc.get("_final_name")
                         val = CodeGenerator.escape_quotes(loc.get("value", ""))
                         lines.append(f"        this.{name} = this.page.locator(\"{val}\");")
+                lines.append("    }\n")
+                lines.append("    public void navigateTo(String url) {")
+                lines.append("        this.page.navigate(url);")
                 lines.append("    }\n")
 
             if locators:
@@ -78,9 +84,16 @@ class CodeGenerator:
 
         elif language.lower() == "python":
             lines.append(f"class {page_name}:\n")
-            if not locators:
-                lines.append("    pass\n")
-            else:
+            if tool.lower() == "playwright":
+                lines.append("    def __init__(self, page):")
+                lines.append("        self.page = page\n")
+                lines.append("    def navigate_to(self, url):")
+                lines.append("        self.page.goto(url)\n")
+            elif tool.lower() == "selenium":
+                lines.append("    def navigate_to(self, driver, url):")
+                lines.append("        driver.get(url)\n")
+
+            if locators:
                 for loc in locators:
                     if loc.get("action") == "SwitchToWindow":
                         continue   # window switch has no DOM locator field
@@ -95,6 +108,9 @@ class CodeGenerator:
                     name = loc.get("_final_name")
                     action = loc.get("action", "Click")
                     lines.append(CodeGenerator._python_action(tool, name, action))
+            else:
+                if tool.lower() not in ["playwright", "selenium"]:
+                    lines.append("    pass\n")
 
         elif language.lower() == "c#":
             if tool.lower() == "selenium":
@@ -109,6 +125,9 @@ class CodeGenerator:
                 lines.append(f"    public {page_name}(IWebDriver driver) {{")
                 lines.append("        PageFactory.InitElements(driver, this);")
                 lines.append("    }\n")
+                lines.append("    public void NavigateTo(IWebDriver driver, string url) {")
+                lines.append("        driver.Navigate().GoToUrl(url);")
+                lines.append("    }\n")
             elif tool.lower() == "playwright":
                 lines.append("    private readonly IPage _page;\n")
                 lines.append(f"    public {page_name}(IPage page) {{")
@@ -120,6 +139,9 @@ class CodeGenerator:
                         name = loc.get("_final_name")
                         val = CodeGenerator.escape_quotes(loc.get("value", ""))
                         lines.append(f"        this._{name} = page.Locator(\"{val}\");")
+                lines.append("    }\n")
+                lines.append("    public async System.Threading.Tasks.Task NavigateToAsync(string url) {")
+                lines.append("        await _page.GotoAsync(url);")
                 lines.append("    }\n")
 
             if locators:
@@ -207,7 +229,21 @@ class CodeGenerator:
                     else:
                         lines.append(f"        this.{name} = \"{val}\";")
 
-            lines.append("    }")
+            lines.append("    }\n")
+            if is_pw:
+                if is_ts:
+                    lines.append("    async navigateTo(url: string) {")
+                else:
+                    lines.append("    async navigateTo(url) {")
+                lines.append("        await this.page.goto(url);")
+                lines.append("    }\n")
+            else:
+                if is_ts:
+                    lines.append("    async navigateTo(driver: any, url: string) {")
+                else:
+                    lines.append("    async navigateTo(driver, url) {")
+                lines.append("        await driver.get(url);")
+                lines.append("    }\n")
             lines.append("")
 
             if locators:

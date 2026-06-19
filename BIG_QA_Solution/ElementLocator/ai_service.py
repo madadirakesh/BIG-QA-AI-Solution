@@ -233,10 +233,11 @@ class AIService:
                 f"{locators_str}\n\n"
                 f"── STRICT RULES ──────────────────────────────────────────────────────────────\n"
                 f"1. Match all imports, naming conventions (e.g. camelCase, snake_case), and class declaration style.\n"
-                f"2. Add all required improts if missed any. \n"
+                f"2. Add all required imports if missed any. \n"
                 f"3. Inherit from base classes if the sample code does so (e.g. BasePage).\n"
                 f"4. Replicate internal patterns (e.g. if the sample code uses wrapper methods/helper classes to perform clicks/actions, use them instead of raw driver calls).\n"
-                f"5. Do NOT include markdown blocks, text explanations, or notes. ONLY output the raw, complete source code. The very first character should be the import or class declaration and nothing else."
+                f"5. Each locator specifies an 'action' property (e.g., 'Click', 'Type', 'Clear', 'GetText', 'IsDisplayed', 'WaitForVisible', 'Hover', 'SelectByVisibleText', 'Check', 'Uncheck'). You MUST generate a corresponding method for each locator that performs that exact action. For example, if the action is 'IsDisplayed', the method should return a boolean checking if the element is visible/displayed using the appropriate framework/tool API (e.g., .isVisible(), .isDisplayed(), or .Displayed). Do NOT just default to click methods.\n"
+                f"6. Do NOT include markdown blocks, text explanations, or notes. ONLY output the raw, complete source code. The very first character should be the import or class declaration and nothing else."
             )
 
             headers = {"Content-Type": "application/json"}
@@ -313,7 +314,8 @@ class AIService:
                 f"1. Do NOT delete or modify any existing attributes, methods, constructors, imports, or logic.\n"
                 f"2. Add the new locators/methods following the EXACT coding style, naming convention, and patterns of the existing code.\n"
                 f"3. If a locator or method with the same name already exists, update its value/locating logic or skip it if it is identical. Do not duplicate it.\n"
-                f"4. Return ONLY the raw merged file content. Do NOT include markdown blocks, text explanations, or notes."
+                f"4. Each locator specifies an 'action' property (e.g., 'Click', 'Type', 'Clear', 'GetText', 'IsDisplayed', 'WaitForVisible', 'Hover', 'SelectByVisibleText', 'Check', 'Uncheck'). You MUST generate a corresponding method for each locator that performs that exact action (e.g. if 'IsDisplayed', return visible check) matching the style reference. Do NOT default to click methods.\n"
+                f"5. Return ONLY the raw merged file content. Do NOT include markdown blocks, text explanations, or notes."
             )
 
             headers = {"Content-Type": "application/json"}
