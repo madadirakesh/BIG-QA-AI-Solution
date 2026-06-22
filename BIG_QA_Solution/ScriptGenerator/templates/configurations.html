@@ -44,6 +44,116 @@
         <h3>Configure Jira</h3>
         <p>Connect your Jira instance to easily import user stories and link test cases.</p>
     </a>
+
+    <!-- 4. Project Configuration -->
+    <a href="#" onclick="openProjectConfigModal(); return false;" class="dashboard-card glassmorphism hover-effect animate-slide-up delay-4">
+        <div class="card-icon" style="background: rgba(245,158,11,0.1); color: #f59e0b; border-color: rgba(245,158,11,0.2);"><i class="fas fa-project-diagram"></i></div>
+        <h3>Project Configuration</h3>
+        <p>Manage automation directory paths, Git credentials, and custom test execution commands.</p>
+    </a>
+</div>
+
+<!-- Project Configuration Modal -->
+<div id="configureProjectModal" class="confirm-backdrop" style="align-items:center;justify-content:center;display:none;z-index:1050;">
+    <div class="confirm-dialog" style="max-width:600px;max-height:85vh;overflow-y:auto;width:95%;">
+        <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--glass-border);padding-bottom:1rem;margin-bottom:1.5rem;">
+            <h3 style="margin:0;font-size:1.2rem;"><i class="fas fa-project-diagram" style="color:var(--accent-secondary);margin-right:8px;"></i>Project Configuration</h3>
+            <button onclick="closeProjectConfigModal()" style="background:none;border:none;color:var(--text-secondary);font-size:1.5rem;cursor:pointer;line-height:1;">&times;</button>
+        </div>
+
+        <!-- 1. New Project Toggle -->
+        <div class="form-group" style="margin-bottom:1.25rem;">
+            <label style="margin-bottom:6px;display:block;font-size:0.9rem;color:var(--text-secondary);">New Project</label>
+            <div class="switch-container">
+                <label class="switch">
+                    <input type="checkbox" id="newProjectToggle" onchange="onNewProjectToggleChange()" checked>
+                    <span class="slider"></span>
+                </label>
+                <span id="newProjectLabel" class="toggle-label-span">Yes</span>
+            </div>
+        </div>
+
+        <!-- 2. Project Name Input / Dropdown -->
+        <div class="form-group" style="margin-bottom:1.25rem;">
+            <label style="margin-bottom:6px;display:block;font-size:0.9rem;color:var(--text-secondary);">Project Name <span style="color:#ef4444;">*</span></label>
+            <input type="text" id="projectNameInput" placeholder="Enter project name" style="width:100%;padding:10px 12px;background:var(--bg-primary);border:1px solid var(--glass-border);border-radius:8px;color:var(--text-primary);font-family:inherit;">
+            <select id="projectNameSelect" onchange="onProjectSelectChange()" style="display:none;width:100%;padding:10px 12px;background:var(--bg-primary);border:1px solid var(--glass-border);border-radius:8px;color:var(--text-primary);font-family:inherit;">
+                <option value="">-- Choose Project --</option>
+            </select>
+        </div>
+
+        <!-- 3. Application URL -->
+        <div class="form-group" style="margin-bottom:1.25rem;">
+            <label for="appUrlInput" style="margin-bottom:6px;display:block;font-size:0.9rem;color:var(--text-secondary);">Application URL</label>
+            <input type="text" id="appUrlInput" placeholder="e.g. https://your-app.com" style="width:100%;padding:10px 12px;background:var(--bg-primary);border:1px solid var(--glass-border);border-radius:8px;color:var(--text-primary);font-family:inherit;">
+        </div>
+
+        <!-- 4. User Name -->
+        <div class="form-group" style="margin-bottom:1.25rem;">
+            <label for="appUsernameInput" style="margin-bottom:6px;display:block;font-size:0.9rem;color:var(--text-secondary);">User Name</label>
+            <input type="text" id="appUsernameInput" placeholder="Enter username" style="width:100%;padding:10px 12px;background:var(--bg-primary);border:1px solid var(--glass-border);border-radius:8px;color:var(--text-primary);font-family:inherit;">
+        </div>
+
+        <!-- 5. Password -->
+        <div class="form-group" style="margin-bottom:1.25rem;">
+            <label for="appPasswordInput" style="margin-bottom:6px;display:block;font-size:0.9rem;color:var(--text-secondary);">Password</label>
+            <div class="password-wrapper" style="position:relative;">
+                <input type="password" id="appPasswordInput" placeholder="Enter password" style="width:100%;padding:10px 12px;background:var(--bg-primary);border:1px solid var(--glass-border);border-radius:8px;color:var(--text-primary);font-family:inherit;">
+                <button class="pwd-toggle" onclick="togglePwdLocal('appPasswordInput', this)" type="button"><i class="fas fa-eye"></i></button>
+            </div>
+        </div>
+
+        <!-- 6. Git Repository URL -->
+        <div class="form-group" style="margin-bottom:1.25rem;">
+            <label for="gitUrlInput" style="margin-bottom:6px;display:block;font-size:0.9rem;color:var(--text-secondary);">Git Repository URL</label>
+            <input type="text" id="gitUrlInput" oninput="updateGitMandatoryStars()" placeholder="e.g. https://github.com/user/repo.git" style="width:100%;padding:10px 12px;background:var(--bg-primary);border:1px solid var(--glass-border);border-radius:8px;color:var(--text-primary);font-family:inherit;">
+        </div>
+
+        <!-- 7. Git Username -->
+        <div class="form-group" style="margin-bottom:1.25rem;">
+            <label for="gitUsernameInput" style="margin-bottom:6px;display:block;font-size:0.9rem;color:var(--text-secondary);">Git Username <span id="gitUserReqStar" style="display:none;color:#ef4444;">*</span></label>
+            <input type="text" id="gitUsernameInput" placeholder="Enter Git Username" style="width:100%;padding:10px 12px;background:var(--bg-primary);border:1px solid var(--glass-border);border-radius:8px;color:var(--text-primary);font-family:inherit;">
+        </div>
+
+        <!-- 8. Git PA Token -->
+        <div class="form-group" style="margin-bottom:1.25rem;">
+            <label for="gitTokenInput" style="margin-bottom:6px;display:block;font-size:0.9rem;color:var(--text-secondary);">Git PA Token <span id="gitTokenReqStar" style="display:none;color:#ef4444;">*</span></label>
+            <div class="password-wrapper" style="position:relative;">
+                <input type="password" id="gitTokenInput" placeholder="Enter Git Personal Access Token" style="width:100%;padding:10px 12px;background:var(--bg-primary);border:1px solid var(--glass-border);border-radius:8px;color:var(--text-primary);font-family:inherit;">
+                <button class="pwd-toggle" onclick="togglePwdLocal('gitTokenInput', this)" type="button"><i class="fas fa-eye"></i></button>
+            </div>
+        </div>
+
+        <!-- 9. Local Automation Directory Path -->
+        <div class="form-group" style="margin-bottom:1.25rem;">
+            <label for="projectPathInput" style="margin-bottom:6px;display:block;font-size:0.9rem;color:var(--text-secondary);">Local Automation Directory path <span style="color:#ef4444;">*</span></label>
+            <div style="display:flex;gap:8px;">
+                <input type="text" id="projectPathInput" placeholder="e.g. C:\automation\project" style="flex:1;padding:10px 12px;background:var(--bg-primary);border:1px solid var(--glass-border);border-radius:8px;color:var(--text-primary);font-family:inherit;">
+                <button type="button" onclick="browseProjectDirectory()" class="btn btn-secondary" style="white-space:nowrap;padding:10px 15px;"><i class="fas fa-folder-open"></i> Browse</button>
+            </div>
+        </div>
+
+        <!-- 10. Test Execution commands -->
+        <div class="form-group" style="margin-bottom:1.25rem;">
+            <label for="runCommandsInput" style="margin-bottom:6px;display:block;font-size:0.9rem;color:var(--text-secondary);">Test Execution commands</label>
+            <textarea id="runCommandsInput" placeholder="Enter execution commands (one per line)&#10;e.g. npm test" style="width:100%;height:100px;padding:10px 12px;background:var(--bg-primary);border:1px solid var(--glass-border);border-radius:8px;color:var(--text-primary);font-family:inherit;resize:vertical;"></textarea>
+        </div>
+
+        <!-- 11. Is the local directory configured with Git -->
+        <div class="form-group" style="margin-bottom:1.5rem;">
+            <label style="margin-bottom:6px;display:block;font-size:0.9rem;color:var(--text-secondary);">Is the local directory configured with git</label>
+            <div class="switch-container">
+                <label class="switch">
+                    <input type="checkbox" id="gitConfiguredToggle" onchange="onGitConfiguredToggleChange()">
+                    <span class="slider"></span>
+                </label>
+                <span id="gitConfiguredLabel" class="toggle-label-span">No</span>
+            </div>
+        </div>
+
+        <!-- Submit/Update Button -->
+        <button id="projectConfigSubmitBtn" onclick="submitProjectConfiguration()" class="btn btn-primary" style="width:100%;"><i class="fas fa-save"></i> Submit</button>
+    </div>
 </div>
 
 <!-- Configure Jira Modal -->
@@ -72,10 +182,304 @@
     </div>
 </div>
 
+<style>
+    /* Toggle Switch Styles */
+    .switch-container {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin-top: 4px;
+    }
+    .switch {
+        position: relative;
+        display: inline-block;
+        width: 50px;
+        height: 26px;
+    }
+    .switch input {
+        opacity: 0;
+        width: 0;
+        height: 0;
+    }
+    .slider {
+        position: absolute;
+        cursor: pointer;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background-color: rgba(255,255,255,0.1);
+        transition: .4s;
+        border-radius: 34px;
+        border: 1px solid var(--glass-border);
+    }
+    .slider:before {
+        position: absolute;
+        content: "";
+        height: 18px;
+        width: 18px;
+        left: 3px;
+        bottom: 3px;
+        background-color: white;
+        transition: .4s;
+        border-radius: 50%;
+    }
+    input:checked + .slider {
+        background-color: var(--accent-secondary, #00bcf2);
+    }
+    input:checked + .slider:before {
+        transform: translateX(24px);
+    }
+    .toggle-label-span {
+        font-size: 0.9rem;
+        color: var(--text-primary);
+        font-weight: 500;
+    }
+</style>
+
 <script>
+    function togglePwdLocal(id, btn) {
+        const input = document.getElementById(id);
+        const icon = btn.querySelector('i');
+        if (input.type === 'password') {
+            input.type = 'text';
+            icon.className = 'fas fa-eye-slash';
+        } else {
+            input.type = 'password';
+            icon.className = 'fas fa-eye';
+        }
+    }
+
+    function openProjectConfigModal() {
+        document.getElementById('newProjectToggle').checked = true;
+        onNewProjectToggleChange();
+        document.getElementById('configureProjectModal').style.display = 'flex';
+    }
+
+    function closeProjectConfigModal() {
+        document.getElementById('configureProjectModal').style.display = 'none';
+    }
+
+    function onNewProjectToggleChange() {
+        const toggle = document.getElementById('newProjectToggle');
+        const isNew = toggle.checked;
+        document.getElementById('newProjectLabel').innerText = isNew ? "Yes" : "No";
+        
+        const nameInput = document.getElementById('projectNameInput');
+        const nameSelect = document.getElementById('projectNameSelect');
+        const submitBtn = document.getElementById('projectConfigSubmitBtn');
+        
+        // Reset stars
+        updateGitMandatoryStars();
+
+        if (isNew) {
+            nameInput.style.display = 'block';
+            nameSelect.style.display = 'none';
+            submitBtn.innerHTML = '<i class="fas fa-save"></i> Submit';
+            clearProjectConfigForm();
+        } else {
+            nameInput.style.display = 'none';
+            nameSelect.style.display = 'block';
+            submitBtn.innerHTML = '<i class="fas fa-save"></i> Update';
+            loadProjectsList();
+        }
+    }
+
+    function onGitConfiguredToggleChange() {
+        const toggle = document.getElementById('gitConfiguredToggle');
+        document.getElementById('gitConfiguredLabel').innerText = toggle.checked ? "Yes" : "No";
+    }
+
+    function clearProjectConfigForm() {
+        document.getElementById('projectNameInput').value = '';
+        document.getElementById('projectNameSelect').value = '';
+        document.getElementById('appUrlInput').value = '';
+        document.getElementById('appUsernameInput').value = '';
+        document.getElementById('appPasswordInput').value = '';
+        document.getElementById('gitUrlInput').value = '';
+        document.getElementById('gitUsernameInput').value = '';
+        document.getElementById('gitTokenInput').value = '';
+        document.getElementById('projectPathInput').value = '';
+        document.getElementById('runCommandsInput').value = '';
+        document.getElementById('gitConfiguredToggle').checked = false;
+        document.getElementById('gitConfiguredLabel').innerText = "No";
+        updateGitMandatoryStars();
+    }
+
+    function updateGitMandatoryStars() {
+        const gitUrl = document.getElementById('gitUrlInput').value.trim();
+        const starUser = document.getElementById('gitUserReqStar');
+        const starToken = document.getElementById('gitTokenReqStar');
+        if (gitUrl) {
+            starUser.style.display = 'inline';
+            starToken.style.display = 'inline';
+        } else {
+            starUser.style.display = 'none';
+            starToken.style.display = 'none';
+        }
+    }
+
+    async function loadProjectsList(selectedId = null) {
+        try {
+            const r = await fetch('/api/projects');
+            const d = await r.json();
+            if (d.status === 'success') {
+                const select = document.getElementById('projectNameSelect');
+                select.innerHTML = '<option value="">-- Choose Project --</option>';
+                d.data.forEach(p => {
+                    const opt = document.createElement('option');
+                    opt.value = p.id;
+                    opt.innerText = p.project_name;
+                    select.appendChild(opt);
+                });
+                if (selectedId) {
+                    select.value = selectedId;
+                    onProjectSelectChange();
+                }
+            }
+        } catch (e) {
+            showToast('Failed to load projects list.', 'error');
+        }
+    }
+
+    async function onProjectSelectChange() {
+        const select = document.getElementById('projectNameSelect');
+        const projectId = select.value;
+        if (!projectId) {
+            clearProjectConfigForm();
+            return;
+        }
+        try {
+            const r = await fetch('/api/get-project-config/' + projectId);
+            const d = await r.json();
+            if (d.status === 'success') {
+                const data = d.data;
+                document.getElementById('appUrlInput').value = data.baseurl || '';
+                document.getElementById('appUsernameInput').value = data.app_username || '';
+                document.getElementById('appPasswordInput').value = data.app_password || '';
+                document.getElementById('gitUrlInput').value = data.git_repo_url || '';
+                document.getElementById('gitUsernameInput').value = data.git_username || '';
+                document.getElementById('gitTokenInput').value = data.git_pa_token || '';
+                document.getElementById('projectPathInput').value = data.project_path || '';
+                document.getElementById('runCommandsInput').value = data.run_commands || '';
+                
+                const gitConfigured = data.is_git_configured || false;
+                document.getElementById('gitConfiguredToggle').checked = gitConfigured;
+                document.getElementById('gitConfiguredLabel').innerText = gitConfigured ? "Yes" : "No";
+                
+                updateGitMandatoryStars();
+            } else {
+                showToast('Error loading project details: ' + d.message, 'error');
+            }
+        } catch (e) {
+            showToast('Failed to fetch project configuration.', 'error');
+        }
+    }
+
+    async function browseProjectDirectory() {
+        try {
+            const r = await fetch('/api/select-directory');
+            const d = await r.json();
+            if (d.path) {
+                document.getElementById('projectPathInput').value = d.path;
+            }
+        } catch (e) {
+            showToast('Failed to browse directory.', 'error');
+        }
+    }
+
+    async function submitProjectConfiguration() {
+        const isNew = document.getElementById('newProjectToggle').checked;
+        const projectName = isNew ? document.getElementById('projectNameInput').value.trim() : 
+                                     document.getElementById('projectNameSelect').options[document.getElementById('projectNameSelect').selectedIndex].text;
+        const projectId = isNew ? null : document.getElementById('projectNameSelect').value;
+        const projectPath = document.getElementById('projectPathInput').value.trim();
+        const baseurl = document.getElementById('appUrlInput').value.trim();
+        const appUsername = document.getElementById('appUsernameInput').value.trim();
+        const appPassword = document.getElementById('appPasswordInput').value.trim();
+        const gitRepoUrl = document.getElementById('gitUrlInput').value.trim();
+        const gitUsername = document.getElementById('gitUsernameInput').value.trim();
+        const gitPaToken = document.getElementById('gitTokenInput').value.trim();
+        const runCommands = document.getElementById('runCommandsInput').value.trim();
+        const isGitConfigured = document.getElementById('gitConfiguredToggle').checked;
+
+        if (isNew && !projectName) {
+            showToast('Project Name is required.', 'error');
+            return;
+        }
+        if (!isNew && !projectId) {
+            showToast('Please select a project to update.', 'error');
+            return;
+        }
+        if (!projectPath) {
+            showToast('Local Automation Directory path is required.', 'error');
+            return;
+        }
+        
+        if (gitRepoUrl) {
+            if (!gitRepoUrl.startsWith('http://') && !gitRepoUrl.startsWith('https://') && !gitRepoUrl.startsWith('git@') && !gitRepoUrl.startsWith('ssh://')) {
+                showToast('Invalid Git Repository URL format. Must start with http://, https://, git@, or ssh://', 'error');
+                return;
+            }
+            if (!gitUsername) {
+                showToast('Git Username is mandatory when Git URL is provided.', 'error');
+                return;
+            }
+            if (!gitPaToken) {
+                showToast('Git PA Token is mandatory when Git URL is provided.', 'error');
+                return;
+            }
+        } else {
+            if (gitUsername || gitPaToken) {
+                showToast('Git Repository URL is mandatory when Git Username or Git PA Token is provided.', 'error');
+                return;
+            }
+        }
+
+        const btn = document.getElementById('projectConfigSubmitBtn');
+        const originalText = btn.innerHTML;
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving...';
+
+        try {
+            const payload = {
+                is_new_project: isNew,
+                project_id: projectId ? parseInt(projectId) : null,
+                project_name: projectName,
+                project_path: projectPath,
+                baseurl: baseurl,
+                app_username: appUsername,
+                app_password: appPassword,
+                git_repo_url: gitRepoUrl,
+                git_username: gitUsername,
+                git_pa_token: gitPaToken,
+                run_commands: runCommands,
+                is_git_configured: isGitConfigured
+            };
+
+            const r = await fetch('/api/save-project-config', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            const d = await r.json();
+
+            if (d.status === 'success') {
+                showToast(isNew ? 'Project created successfully!' : 'Project updated successfully!', 'success');
+                closeProjectConfigModal();
+            } else {
+                showToast('Error: ' + d.message, 'error');
+            }
+        } catch (e) {
+            showToast('Failed to save project configuration.', 'error');
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = originalText;
+        }
+    }
+
     function openConfigureJiraModal() {
         document.getElementById('configureJiraModal').style.display = 'flex';
-        // Try to fetch existing Jira configuration
         fetch('/api/configure-jira').then(r => r.json()).then(d => {
             if (d.status === 'success') {
                 document.getElementById('jiraUrlInput').value = d.config.jira_server || '';

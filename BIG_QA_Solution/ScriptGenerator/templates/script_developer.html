@@ -350,8 +350,13 @@
                     <div class="form-col">
                         <div class="form-group">
                             <label><i class="fas fa-tag"></i> Project Name <span class="required-mark">*</span></label>
-                            <input type="text" id="bsProjectName" class="form-control" placeholder="e.g. MyWebTests" oninput="updatePathPreview(); clearFieldError('bsProjectName')">
+                            <select id="bsProjectName" class="form-control" onchange="handleBsProjectSelect()">
+                                <option value="">-- Choose Project --</option>
+                            </select>
                             <small class="error-text" id="bsProjectNameError"></small>
+                            <small class="help-text" style="margin-top: 8px;">
+                                <i class="fas fa-info-circle" style="color: var(--accent-primary); margin-right: 4px;"></i>if the project name not found, please configure the project in configurations module.
+                            </small>
                         </div>
                     </div>
                 </div>
@@ -1191,11 +1196,32 @@ function handleNextStep1() {
         return;
     }
 
+    const select = document.getElementById('projectSelect');
+    const selectedOpt = select.options[select.selectedIndex];
+    let projectName = "";
+    let projectId = null;
+    let isNewProject = true;
+
+    if (select.selectedIndex > 0) {
+        projectName = selectedOpt.value;
+        projectId = selectedOpt.getAttribute('data-id');
+        isNewProject = false;
+    } else {
+        const manualId = select.getAttribute('data-manual-id');
+        if (manualId) {
+            projectId = manualId;
+            isNewProject = false;
+        }
+    }
+
     const data = {
+        is_new_project: isNewProject,
+        project_id: projectId ? parseInt(projectId) : null,
+        project_name: projectName,
         project_path: path,
         baseurl: document.getElementById('projectBaseUrl').value,
-        username: document.getElementById('projectUsername').value,
-        password: document.getElementById('projectPassword').value,
+        app_username: document.getElementById('projectUsername').value,
+        app_password: document.getElementById('projectPassword').value,
         tool: document.getElementById('detTool').innerText,
         language: document.getElementById('detLanguage').innerText,
         framework: document.getElementById('detFramework').innerText,
@@ -1226,7 +1252,8 @@ function handleNextStep1() {
             }
             nextStep(2);
         } else {
-            showToast("Error saving config: " + res.message, 'error');
+            const errorMsg = res.message || res.error || res.detail || "Unknown error";
+            showToast("Error saving config: " + errorMsg, 'error');
         }
     })
     .catch(err => {
@@ -1286,13 +1313,64 @@ function toggleProjectMethod() {
     }
 }
 
-function openBootstrapperModal() {
+async function openBootstrapperModal() {
     document.getElementById('bootstrapperModal').style.display = 'block';
     // Always start from a clean slate. closeBootstrapperModal() already resets on the way out,
     // but doing it here too is cheap and protects against the first ever open (where close has
     // never run) and any future code path that might bypass close.
     resetBootstrapperPanels();
     resetBootstrapperForm();
+
+    // Load unconfigured projects dropdown dynamically
+    try {
+        const select = document.getElementById('bsProjectName');
+        select.innerHTML = '<option value="">-- Choose Project --</option>';
+        const r = await fetch('/api/unconfigured-projects');
+        const d = await r.json();
+        if (d.status === 'success') {
+            d.data.forEach(p => {
+                const opt = document.createElement('option');
+                opt.value = p.project_name;
+                opt.innerText = p.project_name;
+                opt.setAttribute('data-id', p.id);
+                select.appendChild(opt);
+            });
+        }
+    } catch (e) {
+        console.error('Failed to load unconfigured projects:', e);
+    }
+}
+
+async function handleBsProjectSelect() {
+    updatePathPreview();
+    clearFieldError('bsProjectName');
+    
+    // Clear URL/credentials fields first
+    document.getElementById('bsUrl').value = '';
+    document.getElementById('bsUsername').value = '';
+    document.getElementById('bsPassword').value = '';
+    clearFieldErrors(['bsUrl']);
+    
+    const select = document.getElementById('bsProjectName');
+    const selectedOpt = select.options[select.selectedIndex];
+    
+    if (selectedOpt && selectedOpt.value) {
+        const projectId = selectedOpt.getAttribute('data-id');
+        if (projectId) {
+            try {
+                const r = await fetch('/api/get-project-config/' + projectId);
+                const d = await r.json();
+                if (d.status === 'success') {
+                    const data = d.data;
+                    document.getElementById('bsUrl').value = data.baseurl || '';
+                    document.getElementById('bsUsername').value = data.app_username || '';
+                    document.getElementById('bsPassword').value = data.app_password || '';
+                }
+            } catch (e) {
+                console.error('Failed to fetch project credentials:', e);
+            }
+        }
+    }
 }
 
 /**

@@ -180,6 +180,17 @@ def init_db():
     );
     """
 
+    create_project_git_config_table = """
+    CREATE TABLE IF NOT EXISTS ProjectGitConfig (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        repo_url TEXT,
+        username TEXT,
+        access_token TEXT,
+        project_details_id INTEGER,
+        FOREIGN KEY(project_details_id) REFERENCES ProjectDetails(id)
+    );
+    """
+
     try:
         with get_db() as conn:
             cursor = conn.cursor()
@@ -192,6 +203,7 @@ def init_db():
             cursor.execute(create_template_files_table)
             cursor.execute(create_backupfiles_table)
             cursor.execute(create_project_inputs_table)
+            cursor.execute(create_project_git_config_table)
             
             # Indexes
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_locators_project_id ON Locators(project_id)")
@@ -206,6 +218,10 @@ def init_db():
             
             try:
                 cursor.execute("ALTER TABLE ProjectDetails ADD COLUMN project_type TEXT")
+            except Exception: pass
+
+            try:
+                cursor.execute("ALTER TABLE ProjectDetails ADD COLUMN run_commands TEXT")
             except Exception: pass
 
             try:

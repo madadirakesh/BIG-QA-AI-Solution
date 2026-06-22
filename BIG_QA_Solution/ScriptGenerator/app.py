@@ -709,7 +709,7 @@ def bootstrap_status(job_id):
         
     job = bootstrapper_jobs[job_id]
     
-    # Auto-insert into database immediately after scaffolding completes
+    # Auto-insert or update database immediately after scaffolding completes
     if job.get('status') in ['completed'] and 'db_inserted' not in job:
         meta = job.get('project_metadata', {})
         if meta:
@@ -717,19 +717,41 @@ def bootstrap_status(job_id):
                 # Ensure the project name is appended to the base path
                 full_project_path = os.path.join(meta['projectPath'], meta['projectName'])
                 
-                insert_data("INSERT INTO ProjectDetails (project_name, project_path, project_lang, project_fw, project_tool, package_manager, project_type) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                            (meta['projectName'], full_project_path, meta['language'], meta['framework'], meta['tool'], meta.get('packageManager'), 'New'))
+                # Check if there is an existing project with this name where path is not configured (N/A, empty or NULL)
+                existing_p = fetch_data(
+                    "SELECT id FROM ProjectDetails WHERE project_name = ? AND (project_path IS NULL OR project_path = '' OR project_path = 'N/A' OR LOWER(project_path) = 'n/a')",
+                    (meta['projectName'],)
+                )
                 
-                # Save Project Data (URL/Credentials)
-                new_id_res = fetch_data("SELECT id FROM ProjectDetails WHERE project_path = ?", (full_project_path,))
-                if new_id_res:
-                    p_id = new_id_res[0]['id']
-                    # Encrypt password before storing; baseurl/username are not secret.
-                    insert_data("INSERT INTO ProjectData (baseurl, username, password, project_details_id) VALUES (?, ?, ?, ?)",
-                                (meta.get('url'), meta.get('username'), encrypt_for_app(meta.get('password')), p_id))
+                if existing_p:
+                    p_id = existing_p[0]['id']
+                    update_data(
+                        "UPDATE ProjectDetails SET project_path=?, project_lang=?, project_fw=?, project_tool=?, package_manager=?, project_type=? WHERE id=?",
+                        (full_project_path, meta['language'], meta['framework'], meta['tool'], meta.get('packageManager'), 'New', p_id)
+                    )
+                else:
+                    insert_data("INSERT INTO ProjectDetails (project_name, project_path, project_lang, project_fw, project_tool, package_manager, project_type) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                                (meta['projectName'], full_project_path, meta['language'], meta['framework'], meta['tool'], meta.get('packageManager'), 'New'))
+                    
+                    # Save Project Data (URL/Credentials)
+                    new_id_res = fetch_data("SELECT id FROM ProjectDetails WHERE project_path = ?", (full_project_path,))
+                    if new_id_res:
+                        p_id = new_id_res[0]['id']
+                    else:
+                        p_id = None
+                
+                if p_id:
+                    # Update or insert ProjectData (URL/Credentials)
+                    existing_data = fetch_data("SELECT id FROM ProjectData WHERE project_details_id = ?", (p_id,))
+                    if existing_data:
+                        update_data("UPDATE ProjectData SET baseurl=?, username=?, password=? WHERE project_details_id=?",
+                                    (meta.get('url'), meta.get('username'), encrypt_for_app(meta.get('password')), p_id))
+                    else:
+                        insert_data("INSERT INTO ProjectData (baseurl, username, password, project_details_id) VALUES (?, ?, ?, ?)",
+                                    (meta.get('url'), meta.get('username'), encrypt_for_app(meta.get('password')), p_id))
             except Exception as e:
                 import logging
-                logging.error(f"Database insertion failed: {e}")
+                logging.error(f"Database insertion/update failed: {e}")
         job['db_inserted'] = True
 
     return jsonify(job)
@@ -817,6 +839,25 @@ def launch_element_locator():
         # Diagnostic: log exactly what the endpoint received from JS
         print(f"[App] launch-element-locator query string: {request.query_string!r}", flush=True)
         print(f"[App] launch-element-locator parsed args: project_path={project_path!r}, language={language!r}, framework={framework!r}, tool={tool!r}, app_url={app_url!r}", flush=True)
+
+        # Fallback to active project session details if parameters are missing
+        active_project_id = session.get('active_project_id')
+        if active_project_id:
+            pd = fetch_data("SELECT project_path, project_lang, project_fw, project_tool FROM ProjectDetails WHERE id = ?", (active_project_id,))
+            if pd:
+                row = pd[0]
+                if not project_path:
+                    project_path = row.get('project_path', '')
+                if not language:
+                    language = row.get('project_lang', '')
+                if not framework:
+                    framework = row.get('project_fw', '')
+                if not tool:
+                    tool = row.get('project_tool', '')
+            
+            pdata = fetch_data("SELECT baseurl FROM ProjectData WHERE project_details_id = ?", (active_project_id,))
+            if pdata and not app_url:
+                app_url = pdata[0].get('baseurl', '')
 
         # ── Guard: prevent duplicate launches ─────────────────────────────
         # If the previously launched process is still alive (poll() == None),
@@ -1062,75 +1103,277 @@ def detect_project():
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
+def is_valid_git_url(url):
+    if not url:
+        return False
+    url = url.strip()
+    if url.startswith("http://") or url.startswith("https://") or url.startswith("git@") or url.startswith("ssh://"):
+        return True
+    return False
+
+def detect_project_settings_helper(path):
+    if not path or not os.path.exists(path):
+        return "Unknown", "Unknown", "Unknown", "Unknown", "Existing"
+        
+    tool = "Unknown"
+    language = "Unknown"
+    framework = "Unknown"
+    packager = "Unknown"
+
+    packages = {
+        'pom.xml': 'Maven',
+        'build.gradle': 'Gradle',
+        'package.json': 'NPM',
+        'requirements.txt': 'Pip',
+    }
+
+    extensions_found = []
+
+    for root, dirs, files in os.walk(path):
+        if any(skip in root for skip in ['node_modules', '.git', 'venv', 'target', 'bin']):
+            continue
+        
+        for file in files:
+            ext = os.path.splitext(file)[1]
+            if ext not in extensions_found:
+                extensions_found.append(ext)
+
+            if file in ['pom.xml', 'package.json', 'requirements.txt', 'build.gradle', 'pyproject.toml', 'runtime.txt'] or file.endswith('.csproj'):
+                try:
+                    with open(os.path.join(root, file), 'r', errors='ignore') as f:
+                        content = f.read().lower()
+
+                        if 'selenium' in content: tool = 'Selenium'
+                        elif 'playwright' in content: tool = 'Playwright'
+
+                        if 'cucumber' in content: framework = 'Cucumber'
+                        elif 'testng' in content: framework = 'TestNg'
+                        elif 'junit' in content: framework = 'JUnit'
+                        elif 'jbehave' in content: framework = 'JBehave'
+                        elif 'pytest' in content: framework = 'Pytest'
+                        elif 'specflow' in content: framework = 'SpecFlow'
+                        elif 'nunit' in content: framework = 'NUnit'
+                        elif 'xunit' in content: framework = 'xUnit'
+                        elif 'mstest' in content: framework = 'MSTest'
+
+                        if file.endswith('.csproj'):
+                            packager = 'NuGet'
+                        elif file in packages:
+                            packager = packages[file]
+                except Exception:
+                    pass
+
+    if '.java' in extensions_found:
+        language = 'Java'
+    elif '.py' in extensions_found:
+        language = 'Python'
+    elif '.ts' in extensions_found:
+        language = 'TypeScript'
+    elif '.js' in extensions_found:
+        language = 'JavaScript'
+    elif '.cs' in extensions_found:
+        language = 'C#'
+
+    return tool, language, framework, packager, "Existing"
+
+@app.route('/api/projects', methods=['GET'])
+@login_required()
+def get_projects():
+    try:
+        projects = fetch_data("SELECT id, project_name, project_path FROM ProjectDetails ORDER BY project_name ASC")
+        return jsonify({"status": "success", "data": projects})
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+@app.route('/api/unconfigured-projects', methods=['GET'])
+@login_required()
+def get_unconfigured_projects():
+    try:
+        projects = fetch_data(
+            "SELECT id, project_name FROM ProjectDetails "
+            "WHERE project_path IS NULL OR project_path = '' OR project_path = 'N/A' OR LOWER(project_path) = 'n/a' "
+            "GROUP BY project_name ORDER BY project_name ASC"
+        )
+        return jsonify({"status": "success", "data": projects})
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
 @app.route('/api/save-project-config', methods=['POST'])
 @login_required()
 def save_project_config():
     try:
-        create_project_data_table = """
-        CREATE TABLE IF NOT EXISTS ProjectData (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            baseurl TEXT,
-            username TEXT,
-            password TEXT,
-            project_details_id INTEGER,
-            FOREIGN KEY(project_details_id) REFERENCES ProjectDetails(id)
-        );
-        """
-        update_data(create_project_data_table)
-        
         data = request.json
-        p_path = data.get('project_path', '').strip()
-        baseurl = data.get('baseurl', '')
-        username = data.get('username', '')
-        # Encrypt the incoming (plaintext) password once for both the UPDATE and INSERT below.
-        password = encrypt_for_app(data.get('password', ''))
-        lang = data.get('language', 'Unknown')
-        fw = data.get('framework', 'Unknown')
-        tool = data.get('tool', 'Unknown')
-        packager  = data.get('packager', 'Unknown')
-        
-        if not p_path:
-            return jsonify({"status": "error", "message": "Project path is required."}), 400
+        is_new_project = data.get('is_new_project', True)
+        project_id = data.get('project_id')
+        project_name = data.get('project_name', '').strip()
+        project_path = data.get('project_path', '').strip()
+        baseurl = data.get('baseurl', '').strip()
+        app_username = data.get('app_username', data.get('username', '')).strip()
+        app_password = data.get('app_password', data.get('password', '')).strip()
+        git_repo_url = data.get('git_repo_url', '').strip()
+        git_username = data.get('git_username', '').strip()
+        git_pa_token = data.get('git_pa_token', '').strip()
+        run_commands = data.get('run_commands', '').strip()
+        is_git_configured = data.get('is_git_configured', False)
+
+        if not project_path:
+            return jsonify({"status": "error", "message": "Local Automation Directory path is required."}), 400
+
+        # Auto-resolve if the project path already exists in the database
+        if project_path:
+            existing_path = fetch_data("SELECT id, project_name FROM ProjectDetails WHERE project_path = ?", (project_path,))
+            if existing_path:
+                is_new_project = False
+                project_id = existing_path[0]['id']
+                if not project_name:
+                    project_name = existing_path[0]['project_name']
+
+        # Auto-derive project name if not provided
+        if not project_name and project_path:
+            project_name = os.path.basename(os.path.normpath(project_path))
+            if not project_name:
+                project_name = "Local_Project"
+
+        # 1. Validation
+        if not project_name:
+            return jsonify({"status": "error", "message": "Project Name is required."}), 400
             
-        existing = fetch_data("SELECT id FROM ProjectDetails WHERE project_path = ?", (p_path,))
-        p_details_id = None
-        
-        if existing:
-            p_details_id = existing[0]['id']
+        # Duplicate project name check
+        if is_new_project:
+            existing = fetch_data("SELECT id FROM ProjectDetails WHERE project_name = ?", (project_name,))
+            if existing:
+                return jsonify({"status": "error", "message": f"Project Name '{project_name}' already exists."}), 400
         else:
-            p_name = os.path.basename(os.path.normpath(p_path))
-            if not p_name:
-                p_name = "Local_Project"
-            insert_data("INSERT INTO ProjectDetails (project_name, project_path, project_lang, project_fw, project_tool, package_manager, project_type) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                        (p_name, p_path, lang, fw, tool, packager, 'Existing'))
-            new_record = fetch_data("SELECT id FROM ProjectDetails WHERE project_path = ?", (p_path,))
-            if new_record:
-                p_details_id = new_record[0]['id']
+            if not project_id:
+                return jsonify({"status": "error", "message": "Project ID is required for update."}), 400
+            existing = fetch_data("SELECT id FROM ProjectDetails WHERE project_name = ? AND id != ?", (project_name, project_id))
+            if existing:
+                return jsonify({"status": "error", "message": f"Project Name '{project_name}' is already used by another project."}), 400
                 
-        if p_details_id:
-            pd_existing = fetch_data("SELECT id FROM ProjectData WHERE project_details_id = ?", (p_details_id,))
-            if pd_existing:
-                update_data("UPDATE ProjectData SET baseurl=?, username=?, password=? WHERE project_details_id=?", 
-                            (baseurl, username, password, p_details_id))
+        # Git username & token validation when Git URL is provided
+        if git_repo_url:
+            if not is_valid_git_url(git_repo_url):
+                return jsonify({"status": "error", "message": "Invalid Git Repository URL format. Must start with http://, https://, git@, or ssh://"}), 400
+            if not git_username:
+                return jsonify({"status": "error", "message": "Git Username is mandatory when Git Repository URL is provided."}), 400
+            if not git_pa_token:
+                return jsonify({"status": "error", "message": "Git PA Token is mandatory when Git Repository URL is provided."}), 400
+        else:
+            # Check if username or token are provided but git URL is NOT
+            if git_username or git_pa_token:
+                return jsonify({"status": "error", "message": "Git Repository URL is mandatory when Git Username or Git PA Token is provided."}), 400
+
+        # 2. Git Clone / Setup logic
+        if not is_git_configured:
+            if git_repo_url:
+                auth_config = {
+                    "repo_url": git_repo_url,
+                    "username": git_username,
+                    "access_token": git_pa_token
+                }
+                git_res = GitService.download_project_from_git(project_path, auth_config)
+                if not git_res["success"]:
+                    return jsonify({"status": "error", "message": f"Git clone/setup failed: {git_res['message']}"}), 500
             else:
-                insert_data("INSERT INTO ProjectData (baseurl, username, password, project_details_id) VALUES (?, ?, ?, ?)",
-                            (baseurl, username, password, p_details_id))
-                                
-        return jsonify({"status": "success", "project_id": p_details_id})
+                os.makedirs(project_path, exist_ok=True)
+        else:
+            os.makedirs(project_path, exist_ok=True)
+            if git_repo_url:
+                auth_config = {
+                    "repo_url": git_repo_url,
+                    "username": git_username,
+                    "access_token": git_pa_token
+                }
+                GitService.sync_git_config(project_path, auth_config)
+
+        # 3. Analyze the project settings
+        tool, language, framework, packager, project_type = detect_project_settings_helper(project_path)
+
+        # 4. Insert or Update ProjectDetails
+        if is_new_project:
+            insert_data(
+                "INSERT INTO ProjectDetails (project_name, project_path, project_lang, project_fw, project_tool, package_manager, project_type, run_commands) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (project_name, project_path, language, framework, tool, packager, 'Existing', run_commands)
+            )
+            new_p = fetch_data("SELECT id FROM ProjectDetails WHERE project_name = ?", (project_name,))
+            if new_p:
+                project_id = new_p[0]['id']
+            else:
+                return jsonify({"status": "error", "message": "Failed to create project record."}), 500
+        else:
+            update_data(
+                "UPDATE ProjectDetails SET project_name=?, project_path=?, project_lang=?, project_fw=?, project_tool=?, package_manager=?, run_commands=? WHERE id=?",
+                (project_name, project_path, language, framework, tool, packager, run_commands, project_id)
+            )
+
+        # 5. Insert or Update ProjectData
+        encrypted_password = encrypt_for_app(app_password)
+        pd_existing = fetch_data("SELECT id FROM ProjectData WHERE project_details_id = ?", (project_id,))
+        if pd_existing:
+            update_data(
+                "UPDATE ProjectData SET baseurl=?, username=?, password=? WHERE project_details_id=?",
+                (baseurl, app_username, encrypted_password, project_id)
+            )
+        else:
+            insert_data(
+                "INSERT INTO ProjectData (baseurl, username, password, project_details_id) VALUES (?, ?, ?, ?)",
+                (baseurl, app_username, encrypted_password, project_id)
+            )
+
+        # 6. Insert or Update ProjectGitConfig
+        pgc_existing = fetch_data("SELECT id FROM ProjectGitConfig WHERE project_details_id = ?", (project_id,))
+        if pgc_existing:
+            update_data(
+                "UPDATE ProjectGitConfig SET repo_url=?, username=?, access_token=? WHERE project_details_id=?",
+                (git_repo_url, git_username, git_pa_token, project_id)
+            )
+        else:
+            insert_data(
+                "INSERT INTO ProjectGitConfig (repo_url, username, access_token, project_details_id) VALUES (?, ?, ?, ?)",
+                (git_repo_url, git_username, git_pa_token, project_id)
+            )
+
+        return jsonify({"status": "success", "message": "Project configuration saved successfully.", "project_id": project_id})
     except Exception as e:
-        return jsonify({'status': 'error', 'message': str(e)}), 500
+        return jsonify({"status": "error", "message": str(e)}), 500
 
 @app.route('/api/get-project-config/<int:project_id>', methods=['GET'])
 @login_required()
 def get_project_config(project_id):
     try:
-        data = fetch_data("SELECT baseurl, username, password FROM ProjectData WHERE project_details_id = ?", (project_id,))
-        if data:
-            row = dict(data[0])
-            # Decrypt for the form; legacy plaintext rows pass through unchanged.
-            row['password'] = decrypt_for_app(row.get('password'))
-            return jsonify({"status": "success", "data": row})
-        return jsonify({"status": "success", "data": {"baseurl": "", "username": "", "password": ""}})
+        pd = fetch_data("SELECT * FROM ProjectDetails WHERE id = ?", (project_id,))
+        if not pd:
+            return jsonify({"status": "error", "message": "Project not found"}), 404
+        pd_row = dict(pd[0])
+        
+        pdata = fetch_data("SELECT baseurl, username, password FROM ProjectData WHERE project_details_id = ?", (project_id,))
+        pdata_row = dict(pdata[0]) if pdata else {"baseurl": "", "username": "", "password": ""}
+        pdata_row['password'] = decrypt_for_app(pdata_row.get('password'))
+        
+        git = fetch_data("SELECT repo_url, username, access_token FROM ProjectGitConfig WHERE project_details_id = ?", (project_id,))
+        git_row = dict(git[0]) if git else {"repo_url": "", "username": "", "access_token": ""}
+        
+        path = pd_row.get('project_path', '')
+        is_git_configured = False
+        if path and os.path.exists(path):
+            is_git_configured = os.path.exists(os.path.join(path, '.git'))
+            
+        return jsonify({
+            "status": "success",
+            "data": {
+                "project_name": pd_row.get('project_name', ''),
+                "project_path": pd_row.get('project_path', ''),
+                "run_commands": pd_row.get('run_commands', ''),
+                "baseurl": pdata_row.get('baseurl', ''),
+                "app_username": pdata_row.get('username', ''),
+                "app_password": pdata_row.get('password', ''),
+                "git_repo_url": git_row.get('repo_url', ''),
+                "git_username": git_row.get('username', ''),
+                "git_pa_token": git_row.get('access_token', ''),
+                "is_git_configured": is_git_configured
+            }
+        })
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
@@ -1362,17 +1605,37 @@ def script_runner_stop():
             else:
                 os.kill(pid, signal.SIGTERM)
         except: pass
-    return jsonify({"status": "success"})
 
-@app.route('/api/script-runner/execute-cmd', methods=['POST'])
+@app.route('/api/git/execute-command', methods=['POST'])
 @login_required()
-def script_runner_execute_cmd():
-    data = request.json
-    cmd = data.get('command', '')
-    project_path = data.get('project_path', '')
-    
-    result = ScriptRunnerService.execute_cmd(cmd, project_path)
-    return jsonify(result)
+def git_execute_command():
+    try:
+        data = request.json
+        cmd = data.get('command', '').strip()
+        project_path = data.get('project_path', '')
+        
+        if not cmd or not project_path:
+            return jsonify({"output": "Command and project_path are required"}), 400
+            
+        # Security check: only allow commands starting with 'git'
+        if not cmd.lower().startswith('git'):
+            return jsonify({"output": "Only Git commands are allowed."}), 400
+            
+        # Check if project exists in database
+        existing = fetch_data("SELECT id FROM ProjectDetails WHERE project_path = ?", (project_path,))
+        if not existing:
+            return jsonify({"output": "Project not found"}), 404
+            
+        import subprocess
+        result = subprocess.run(cmd, cwd=project_path, shell=True, capture_output=True, text=True, timeout=30)
+        output = result.stdout + result.stderr
+        return jsonify({"output": output})
+    except Exception as e:
+        return jsonify({"output": f"Error: {str(e)}"}), 500
+
+
+
+
 
 @app.route('/api/script-runner/report', methods=['GET'])
 @login_required()

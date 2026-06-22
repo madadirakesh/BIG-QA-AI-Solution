@@ -32,6 +32,8 @@ def _runtime_env_with_ca():
 
 
 class ScriptRunnerService:
+    MAX_HEALING_RETRIES = 3
+
     @staticmethod
     def _call_ai_sync_json(prompt: str) -> dict:
         try:
@@ -69,6 +71,15 @@ class ScriptRunnerService:
         start_time = time.time()
         print(f"DEBUG: Starting streaming in {full_path}")
         
+        # Import prompts for self-healing
+        parent_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        if parent_dir not in sys.path:
+            sys.path.insert(0, parent_dir)
+        from prompts.script_runner_prompts import (
+            get_diagnose_locator_error_prompt,
+            get_heal_locator_prompt
+        )
+        
         # Mode A: Custom Sequential Commands
         if custom_commands.strip():
             commands = [c.strip() for c in custom_commands.split('\n') if c.strip()]
@@ -77,37 +88,117 @@ class ScriptRunnerService:
             
             success = True
             for i, cmd in enumerate(commands):
-                print(f"DEBUG: Running step {i+1}: {cmd}")
-                yield f"event: progress\ndata: {json.dumps({'msg': f'[Step {i+1}/{len(commands)}]: {cmd}', 'type': 'step_start', 'step': i+1})}\n\n"
+                attempt = 0
+                max_retries = cls.MAX_HEALING_RETRIES
+                cmd_success = False
                 
-                # Automatically detect and use venv if present.
-                # Start from _runtime_env_with_ca() (not a bare os.environ copy) so a test run
-                # behind a corporate proxy inherits the same TLS/CA + proxy settings as install.
-                env_vars = _runtime_env_with_ca()
-                venv_bin = os.path.join(full_path, "venv", "Scripts" if os.name == 'nt' else "bin")
-                if os.path.exists(venv_bin):
-                    env_vars["PATH"] = venv_bin + os.pathsep + env_vars.get("PATH", "")
-                is_windows = os.name == 'nt'
-                if is_windows:
-                    process = subprocess.Popen(cmd, cwd=full_path, shell=True, env=env_vars, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1, universal_newlines=True, encoding='utf-8', errors='replace')
-                else:
-                    import shlex
-                    process = subprocess.Popen(shlex.split(cmd), cwd=full_path, shell=False, env=env_vars, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1, universal_newlines=True, encoding='utf-8', errors='replace')
-                active_processes[process.pid] = process
+                while attempt <= max_retries and not cmd_success:
+                    if attempt > 0:
+                        print(f"DEBUG: Re-running step {i+1} (Healing Attempt {attempt}/{max_retries}): {cmd}")
+                        yield f"event: progress\ndata: {json.dumps({'msg': f'[Self-Healing Attempt {attempt}/{max_retries}] Re-running: {cmd}', 'type': 'step_start', 'step': i+1})}\n\n"
+                    else:
+                        print(f"DEBUG: Running step {i+1}: {cmd}")
+                        yield f"event: progress\ndata: {json.dumps({'msg': f'[Step {i+1}/{len(commands)}]: {cmd}', 'type': 'step_start', 'step': i+1})}\n\n"
+                    
+                    # Automatically detect and use venv if present.
+                    # Start from _runtime_env_with_ca() so proxy CA certs are preserved.
+                    env_vars = _runtime_env_with_ca()
+                    venv_bin = os.path.join(full_path, "venv", "Scripts" if os.name == 'nt' else "bin")
+                    if os.path.exists(venv_bin):
+                        env_vars["PATH"] = venv_bin + os.pathsep + env_vars.get("PATH", "")
+                    
+                    is_windows = os.name == 'nt'
+                    if is_windows:
+                        process = subprocess.Popen(cmd, cwd=full_path, shell=True, env=env_vars, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1, universal_newlines=True, encoding='utf-8', errors='replace')
+                    else:
+                        import shlex
+                        process = subprocess.Popen(shlex.split(cmd), cwd=full_path, shell=False, env=env_vars, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1, universal_newlines=True, encoding='utf-8', errors='replace')
+                    active_processes[process.pid] = process
+                    
+                    cmd_output = ""
+                    for line in process.stdout:
+                        cmd_output += line
+                        yield f"event: log\ndata: {json.dumps({'msg': line.rstrip()})}\n\n"
+                    
+                    process.stdout.close()
+                    return_code = process.wait()
+                    
+                    if process.pid in active_processes:
+                        del active_processes[process.pid]
+                    
+                    if return_code == 0:
+                        cmd_success = True
+                        yield f"event: progress\ndata: {json.dumps({'msg': f'[Success] Step {i+1} completed', 'type': 'step_pass', 'step': i+1})}\n\n"
+                    else:
+                        # Check for self-healing possibilities if we haven't exhausted retries
+                        if attempt < max_retries:
+                            yield f"event: progress\ndata: {json.dumps({'msg': '[Self-Healing] Command failed. Diagnosing logs for element locator issues...', 'type': 'system'})}\n\n"
+                            
+                            # Diagnose if it's a locator error
+                            prompt_diag = get_diagnose_locator_error_prompt(cmd, cmd_output)
+                            diag_resp = cls._call_ai_sync_json(prompt_diag)
+                            
+                            is_locator_error = diag_resp.get("is_locator_error", False)
+                            file_to_fix = diag_resp.get("file_to_fix", "").strip()
+                            failed_locator = diag_resp.get("failed_locator", "").strip()
+                            reason = diag_resp.get("reason", "").strip()
+                            
+                            if is_locator_error and file_to_fix:
+                                file_target = os.path.join(full_path, file_to_fix)
+                                if os.path.exists(file_target):
+                                    # Create backup
+                                    backup_target = file_target + f".bak.healing.{attempt}"
+                                    try:
+                                        shutil.copy2(file_target, backup_target)
+                                    except Exception as backup_err:
+                                        print(f"Error creating backup: {backup_err}")
+                                        
+                                    log_msg = f"[Self-Healing] Diagnosed element locator failure in {file_to_fix}: '{failed_locator}' (Reason: {reason}). Backup created at {file_to_fix}.bak.healing.{attempt}"
+                                    yield f"event: progress\ndata: {json.dumps({'msg': log_msg, 'type': 'system'})}\n\n"
+                                    
+                                    try:
+                                        with open(file_target, 'r', encoding='utf-8') as f:
+                                            file_content = f.read()
+                                            
+                                        # Call AI to heal locator
+                                        prompt_fix = get_heal_locator_prompt(file_to_fix, file_content, failed_locator, cmd_output)
+                                        fix_resp = cls._call_ai_sync_json(prompt_fix)
+                                        healed_code = fix_resp.get("healed_content", "")
+                                        explanation = fix_resp.get("explanation", "")
+                                        
+                                        if healed_code:
+                                            with open(file_target, 'w', encoding='utf-8') as f:
+                                                f.write(healed_code)
+                                            log_msg = f"[Self-Healing] Corrected element locator: {explanation}. Retrying execution..."
+                                            yield f"event: progress\ndata: {json.dumps({'msg': log_msg, 'type': 'system'})}\n\n"
+                                            attempt += 1
+                                            continue
+                                        else:
+                                            log_msg = "[Self-Healing] AI did not return a locator fix. Stopping retry loop."
+                                            yield f"event: progress\ndata: {json.dumps({'msg': log_msg, 'type': 'system'})}\n\n"
+                                            break
+                                    except Exception as fix_err:
+                                        log_msg = f"[Self-Healing] Error applying locator fix: {fix_err}"
+                                        yield f"event: progress\ndata: {json.dumps({'msg': log_msg, 'type': 'system'})}\n\n"
+                                        break
+                                else:
+                                    log_msg = f"[Self-Healing] Target file '{file_to_fix}' not found. Cannot perform healing."
+                                    yield f"event: progress\ndata: {json.dumps({'msg': log_msg, 'type': 'system'})}\n\n"
+                                    break
+                            else:
+                                log_msg = "[Self-Healing] Error does not appear to be element locator-related. Cannot self-heal."
+                                yield f"event: progress\ndata: {json.dumps({'msg': log_msg, 'type': 'system'})}\n\n"
+                                yield f"event: progress\ndata: {json.dumps({'msg': f'[Error] Command failed with exit code {return_code}', 'type': 'step_fail', 'step': i+1})}\n\n"
+                                success = False
+                                break
+                        else:
+                            yield f"event: progress\ndata: {json.dumps({'msg': f'[Error] Command failed with exit code {return_code} after all retries.', 'type': 'step_fail', 'step': i+1})}\n\n"
+                            success = False
+                            break
                 
-                for line in process.stdout:
-                    yield f"event: log\ndata: {json.dumps({'msg': line.rstrip()})}\n\n"
-                
-                process.stdout.close()
-                return_code = process.wait()
-                del active_processes[process.pid]
-                
-                if return_code != 0:
-                    yield f"event: progress\ndata: {json.dumps({'msg': f'[Error] Command failed with exit code {return_code}', 'type': 'step_fail', 'step': i+1})}\n\n"
+                if not cmd_success:
                     success = False
                     break
-                else:
-                    yield f"event: progress\ndata: {json.dumps({'msg': f'[Success] Step {i+1} completed', 'type': 'step_pass', 'step': i+1})}\n\n"
 
             # Finalize
             if success and language and language.lower() == 'java':

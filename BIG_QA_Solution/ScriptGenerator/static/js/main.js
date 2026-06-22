@@ -219,6 +219,14 @@ async function launchElementLocator(fromProject = false) {
             if (!tool)       tool       = clean(selectedOption.dataset.tool);
         }
 
+        // Fallback / supplement: pull from globalActiveProject selector if present.
+        const globalSelect = document.getElementById('globalActiveProject');
+        const globalOpt = globalSelect ? globalSelect.options[globalSelect.selectedIndex] : null;
+        if (globalOpt && globalOpt.value) {
+            if (!projectLoc) projectLoc = clean(globalOpt.getAttribute('data-path'));
+            if (!projectName) projectName = clean(globalOpt.text);
+        }
+
         const projectBaseUrl = clean(document.getElementById('projectBaseUrl') && document.getElementById('projectBaseUrl').value);
 
         if (fromProject) {
@@ -238,6 +246,25 @@ async function launchElementLocator(fromProject = false) {
                     proceed = confirm("app url not configured. Do you want to continue?");
                 }
                 if (!proceed) return;
+            }
+        } else {
+            // Sidebar launch check
+            if (!projectLoc) {
+                let proceed = false;
+                if (typeof showConfirm === 'function') {
+                    proceed = await showConfirm("Active Project Warning", "Active project not selected. Do you want to continue?", "⚠️", "Continue", "background:var(--accent-primary);color:white;");
+                } else {
+                    proceed = confirm("Active project not selected. Do you want to continue?");
+                }
+                if (!proceed) {
+                    if (globalSelect) {
+                        globalSelect.focus();
+                        if (typeof showToast === 'function') {
+                            showToast("Please select an active project from the header dropdown", "info");
+                        }
+                    }
+                    return;
+                }
             }
         }
 
@@ -282,13 +309,27 @@ async function launchElementLocator(fromProject = false) {
 
 
         const response = await fetch(url);
-        if (response.ok) {
-            console.log("Element locator desktop app launched.");
+        const data = await response.json().catch(() => ({}));
+        if (response.ok && (data.status === 'success' || data.status === 'already_running')) {
+            if (typeof showToast === 'function') {
+                showToast(data.message || "Element Locator Studio launched.", "success");
+            } else {
+                console.log(data.message || "Element Locator Studio launched.");
+            }
         } else {
-            console.error("Failed to launch element locator.");
+            const errorMsg = data.message || "Failed to launch element locator.";
+            if (typeof showToast === 'function') {
+                showToast(errorMsg, "error");
+            } else {
+                alert(errorMsg);
+            }
+            console.error(errorMsg);
         }
     } catch (error) {
         console.error("Network error when launching element locator", error);
+        if (typeof showToast === 'function') {
+            showToast("Network error when launching element locator", "error");
+        }
     }
 }
 
