@@ -829,18 +829,24 @@ def launch_element_locator():
             if sys.platform == 'win32':
                 try:
                     # Try wmic first (CREATE_NO_WINDOW = 0x08000000 so no console window pops up)
+                    # NOTE: filter on Name='python.exe'/'pythonw.exe' so the wmic process
+                    # itself (whose command line contains the literal "launcher.py" from the
+                    # query) does NOT self-match and produce a false "already running" result.
                     res = subprocess.run(
-                        ['wmic', 'process', 'where', "CommandLine like '%launcher.py%'", 'get', 'ProcessId'],
+                        ['wmic', 'process', 'where',
+                         "CommandLine like '%launcher.py%' and (Name='python.exe' or Name='pythonw.exe')",
+                         'get', 'ProcessId'],
                         capture_output=True, text=True, creationflags=0x08000000
                     )
                     lines = [l.strip() for l in res.stdout.splitlines() if l.strip()]
                     if len(lines) > 1 and any(x.isdigit() for x in lines[1:]):
                         studio_running = True
                 except Exception:
-                    # Fallback to powershell if wmic is disabled or unavailable
+                    # Fallback to powershell if wmic is disabled or unavailable.
+                    # Same Name filter as above to avoid the powershell process self-matching.
                     try:
                         res = subprocess.run(
-                            ['powershell', '-Command', "Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like '*launcher.py*' } | Select-Object -ExpandProperty ProcessId"],
+                            ['powershell', '-Command', "Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like '*launcher.py*' -and $_.Name -like 'python*' } | Select-Object -ExpandProperty ProcessId"],
                             capture_output=True, text=True, creationflags=0x08000000
                         )
                         pids = [l.strip() for l in res.stdout.splitlines() if l.strip().isdigit()]
