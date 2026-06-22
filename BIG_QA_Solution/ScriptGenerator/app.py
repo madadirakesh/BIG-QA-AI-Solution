@@ -2372,6 +2372,16 @@ if __name__ == '__main__':
     app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 0  # serve fresh static files during dev
     # Only open the browser and launch backend once (prevents opening twice when Flask reloader is active)
     if not os.environ.get('WERKZEUG_RUN_MAIN'):
+        # Install python dependencies from root requirements.txt
+        req_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'requirements.txt'))
+        if os.path.exists(req_path):
+            print(f"Installing dependencies from {req_path}...", flush=True)
+            try:
+                subprocess.check_call([sys.executable, "-m", "pip", "install", "-r", req_path])
+                print("Dependencies installed successfully.", flush=True)
+            except Exception as e:
+                print(f"Failed to install dependencies: {e}", flush=True)
+
         if not check_and_initialize_db():
             sys.exit("Exiting: Database connection failed.")
         threading.Timer(1.25, lambda: open_browser(port)).start()

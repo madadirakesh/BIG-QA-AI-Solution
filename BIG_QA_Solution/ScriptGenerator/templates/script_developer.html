@@ -1104,8 +1104,8 @@ function handleProjectSelect() {
             .then(res => {
                 if (res.status === 'success' && res.data) {
                     document.getElementById('projectBaseUrl').value = res.data.baseurl || '';
-                    document.getElementById('projectUsername').value = res.data.username || '';
-                    document.getElementById('projectPassword').value = res.data.password || '';
+                    document.getElementById('projectUsername').value = res.data.app_username || '';
+                    document.getElementById('projectPassword').value = res.data.app_password || '';
                 }
             })
             .catch(err => console.error("Error fetching credentials:", err));
