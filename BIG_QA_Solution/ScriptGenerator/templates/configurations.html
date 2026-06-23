@@ -411,11 +411,15 @@
             showToast('Please select a project to update.', 'error');
             return;
         }
+        if (gitRepoUrl && !projectPath) {
+            showToast('Local Automation Directory path is mandatory when Git Repository URL is provided.', 'error');
+            return;
+        }
         if (!projectPath) {
             showToast('Local Automation Directory path is required.', 'error');
             return;
         }
-        
+
         if (gitRepoUrl) {
             if (!gitRepoUrl.startsWith('http://') && !gitRepoUrl.startsWith('https://') && !gitRepoUrl.startsWith('git@') && !gitRepoUrl.startsWith('ssh://')) {
                 showToast('Invalid Git Repository URL format. Must start with http://, https://, git@, or ssh://', 'error');

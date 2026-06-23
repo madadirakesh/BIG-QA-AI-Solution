@@ -50,8 +50,8 @@
             <div class="form-group mb-4">
                 <label>Method</label>
                 <div>
-                    <label class="mr-3" style="cursor: pointer;"><input type="radio" name="projectMethod" value="existing" checked onchange="toggleProjectMethod()"> Select Existing Project</label>
-                    <label style="cursor: pointer;"><input type="radio" name="projectMethod" value="new" onchange="toggleProjectMethod()"> Create New Project</label>
+                    <label class="mr-3" style="cursor: pointer;"><input type="radio" name="projectMethod" value="existing" checked onchange="toggleProjectMethod()"> Automation Project Exists</label>
+                    <label style="cursor: pointer;"><input type="radio" name="projectMethod" value="new" onchange="toggleProjectMethod()"> Build Framework From Scratch</label>
                 </div>
             </div>
 
@@ -1268,6 +1268,18 @@ function nextStep(step) {
     document.querySelectorAll('.wizard-content').forEach(c => c.classList.remove('active'));
     // Show target content
     document.getElementById('step-' + step).classList.add('active');
+
+    // Reset scroll to the top when switching steps. The Next / Generate Script buttons
+    // sit at the bottom, so without this the new section (e.g. "Generate Script") opens
+    // scrolled to the bottom where the click happened. NOTE: the page body is
+    // `overflow: hidden` and the actual scrollable element is `.content-wrapper`, so
+    // window.scrollTo() has no effect — we must reset the scroll container itself.
+    const scroller = document.querySelector('.content-wrapper');
+    if (scroller) {
+        scroller.scrollTop = 0;
+    } else {
+        window.scrollTo({ top: 0, behavior: 'auto' });
+    }
 
     // Update Indicators
     document.querySelectorAll('.step-p').forEach((s, idx) => {

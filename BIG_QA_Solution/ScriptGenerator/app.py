@@ -1223,6 +1223,9 @@ def save_project_config():
         run_commands = data.get('run_commands', '').strip()
         is_git_configured = data.get('is_git_configured', False)
 
+        if git_repo_url and not project_path:
+            return jsonify({"status": "error", "message": "Local Automation Directory path is mandatory when Git Repository URL is provided."}), 400
+
         if not project_path:
             return jsonify({"status": "error", "message": "Local Automation Directory path is required."}), 400
 
@@ -1293,14 +1296,54 @@ def save_project_config():
                 }
                 GitService.sync_git_config(project_path, auth_config)
 
-        # 3. Analyze the project settings
-        tool, language, framework, packager, project_type = detect_project_settings_helper(project_path)
+        # 3. Resolve the project stack settings (tool / language / framework / packager).
+        #
+        # Detection rules:
+        #   * Scan the folder ONLY when the Local Automation Directory path exists AND it
+        #     actually contains code. For a git-backed project the clone/sync above runs
+        #     synchronously, so by this point the cloned code is already saved on disk and
+        #     the scan reflects the real project.
+        #   * Never fabricate defaults. Whatever the scan cannot determine (or when there
+        #     is no code yet) falls back to the value provided in the payload, and then to
+        #     the value already stored in the DB (on update) - so we don't silently assign
+        #     Playwright / Cucumber / TypeScript / NPM to a project that isn't that stack.
+        def _provided(value):
+            value = (value or '').strip()
+            return '' if value.lower() in ('unknown', 'n/a', 'none') else value
+
+        def _dir_has_code(p):
+            if not p or not os.path.isdir(p):
+                return False
+            for root, dirs, files in os.walk(p):
+                dirs[:] = [d for d in dirs if d not in ('node_modules', '.git', 'venv', 'target', 'bin')]
+                if files:
+                    return True
+            return False
+
+        prov_tool = _provided(data.get('tool'))
+        prov_language = _provided(data.get('language'))
+        prov_framework = _provided(data.get('framework'))
+        prov_packager = _provided(data.get('packager'))
+
+        # Detect from the local code only once it is present; otherwise leave detection blank.
+        det_tool = det_language = det_framework = det_packager = ''
+        if _dir_has_code(project_path):
+            d_tool, d_language, d_framework, d_packager, _ = detect_project_settings_helper(project_path)
+            det_tool = _provided(d_tool)
+            det_language = _provided(d_language)
+            det_framework = _provided(d_framework)
+            det_packager = _provided(d_packager)
 
         # 4. Insert or Update ProjectDetails
         if is_new_project:
             insert_data(
                 "INSERT INTO ProjectDetails (project_name, project_path, project_lang, project_fw, project_tool, package_manager, project_type, run_commands) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                (project_name, project_path, language, framework, tool, packager, 'Existing', run_commands)
+                (project_name, project_path,
+                 det_language or prov_language,
+                 det_framework or prov_framework,
+                 det_tool or prov_tool,
+                 det_packager or prov_packager,
+                 'Existing', run_commands)
             )
             new_p = fetch_data("SELECT id FROM ProjectDetails WHERE project_name = ?", (project_name,))
             if new_p:
@@ -1308,9 +1351,20 @@ def save_project_config():
             else:
                 return jsonify({"status": "error", "message": "Failed to create project record."}), 500
         else:
+            # Detected code wins; then payload-provided values; finally keep whatever is
+            # already stored so an unresolved field is never blanked out on update.
+            existing_settings = fetch_data(
+                "SELECT project_lang, project_fw, project_tool, package_manager FROM ProjectDetails WHERE id = ?",
+                (project_id,)
+            )
+            cur = existing_settings[0] if existing_settings else {}
+            final_language = det_language or prov_language or (cur.get('project_lang') or '')
+            final_framework = det_framework or prov_framework or (cur.get('project_fw') or '')
+            final_tool = det_tool or prov_tool or (cur.get('project_tool') or '')
+            final_packager = det_packager or prov_packager or (cur.get('package_manager') or '')
             update_data(
                 "UPDATE ProjectDetails SET project_name=?, project_path=?, project_lang=?, project_fw=?, project_tool=?, package_manager=?, run_commands=? WHERE id=?",
-                (project_name, project_path, language, framework, tool, packager, run_commands, project_id)
+                (project_name, project_path, final_language, final_framework, final_tool, final_packager, run_commands, project_id)
             )
 
         # 5. Insert or Update ProjectData
