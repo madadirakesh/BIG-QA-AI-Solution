@@ -32,6 +32,25 @@ from utils.password_util import hash_password, verify_password, is_hashed
 # Load environment variables early
 load_dotenv(BASE_DIR / ".env")
 
+def get_flask_secret_key():
+    """Return a stable Flask session key, creating a local dev key when needed."""
+    configured_key = os.environ.get('FLASK_SECRET_KEY')
+    if configured_key:
+        return configured_key
+
+    env_path = BASE_DIR / ".env"
+    generated_key = secrets.token_hex(32)
+    try:
+        with env_path.open("a", encoding="utf-8") as env_file:
+            if env_path.exists() and env_path.stat().st_size > 0:
+                env_file.write("\n")
+            env_file.write(f"FLASK_SECRET_KEY={generated_key}\n")
+        os.environ['FLASK_SECRET_KEY'] = generated_key
+        return generated_key
+    except OSError:
+        # Last-resort fallback keeps the app bootable, but sessions will reset on reload.
+        return generated_key
+
 def install_prerequisites():
     req_file = ROOT_DIR / "requirements.txt"
     if req_file.exists():
@@ -53,8 +72,7 @@ bootstrapper_jobs = {}
 _locator_proc = None
 
 app = Flask(__name__)
-# In production, use os.environ.get('SECRET_KEY')
-app.secret_key = os.environ.get('FLASK_SECRET_KEY', os.urandom(24))
+app.secret_key = get_flask_secret_key()
 app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 31536000  # Cache static files for 1 year
 
 @app.teardown_appcontext
