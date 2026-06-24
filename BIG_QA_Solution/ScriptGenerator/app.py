@@ -1217,9 +1217,6 @@ def save_project_config():
         if git_repo_url and not project_path:
             return jsonify({"status": "error", "message": "Local Automation Directory path is mandatory when Git Repository URL is provided."}), 400
 
-        if not project_path:
-            return jsonify({"status": "error", "message": "Local Automation Directory path is required."}), 400
-
         # Auto-resolve if the project path already exists in the database
         if project_path:
             existing_path = fetch_data("SELECT id, project_name FROM ProjectDetails WHERE project_path = ?", (project_path,))
@@ -1275,10 +1272,11 @@ def save_project_config():
                 git_res = GitService.download_project_from_git(project_path, auth_config)
                 if not git_res["success"]:
                     return jsonify({"status": "error", "message": f"Git clone/setup failed: {git_res['message']}"}), 500
-            else:
+            elif project_path:
                 os.makedirs(project_path, exist_ok=True)
         else:
-            os.makedirs(project_path, exist_ok=True)
+            if project_path:
+                os.makedirs(project_path, exist_ok=True)
             if git_repo_url:
                 auth_config = {
                     "repo_url": git_repo_url,

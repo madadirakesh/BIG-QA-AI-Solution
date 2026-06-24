@@ -131,12 +131,13 @@
 
         <!-- 9. Local Automation Directory Path -->
         <div class="form-group" style="margin-bottom:1.25rem;">
-            <label for="projectPathInput" style="margin-bottom:6px;display:block;font-size:0.9rem;color:var(--text-secondary);">Local Automation Directory path <span style="color:#ef4444;">*</span></label>
+            <label for="projectPathInput" style="margin-bottom:6px;display:block;font-size:0.9rem;color:var(--text-secondary);">Local Automation Directory path <span id="projectPathReqStar" style="color:#ef4444;display:none;">*</span></label>
             <div style="display:flex;gap:8px;">
                 <input type="text" id="projectPathInput" oninput="clearProjectConfigFieldError('projectPathInput')" placeholder="e.g. C:\automation\project" style="flex:1;padding:10px 12px;background:var(--bg-primary);border:1px solid var(--glass-border);border-radius:8px;color:var(--text-primary);font-family:inherit;">
                 <button type="button" onclick="browseProjectDirectory()" class="btn btn-secondary" style="white-space:nowrap;padding:10px 15px;"><i class="fas fa-folder-open"></i> Browse</button>
             </div>
             <small class="error-text" id="projectPathInputError"></small>
+            <small class="help-text"><span style="color:#e74c3c">*</span> Do not configure this directory if automation framework needs to build from scratch</small>
         </div>
 
         <!-- 10. Test Execution commands -->
@@ -320,12 +321,12 @@
             schema.gitTokenInput = { required: true, message: 'Git PA Token is mandatory when Git URL is provided.' };
         }
 
-        schema.projectPathInput = {
-            required: true,
-            message: values.gitRepoUrl
-                ? 'Local Automation Directory path is mandatory when Git Repository URL is provided.'
-                : 'Local Automation Directory path is required.'
-        };
+        if (values.gitRepoUrl) {
+            schema.projectPathInput = {
+                required: true,
+                message: 'Local Automation Directory path is mandatory when Git Repository URL is provided.'
+            };
+        }
 
         const fieldValues = {
             projectNameInput: values.projectName,
@@ -398,12 +399,15 @@
         const gitUrl = document.getElementById('gitUrlInput').value.trim();
         const starUser = document.getElementById('gitUserReqStar');
         const starToken = document.getElementById('gitTokenReqStar');
+        const starPath = document.getElementById('projectPathReqStar');
         if (gitUrl) {
             starUser.style.display = 'inline';
             starToken.style.display = 'inline';
+            starPath.style.display = 'inline';
         } else {
             starUser.style.display = 'none';
             starToken.style.display = 'none';
+            starPath.style.display = 'none';
         }
     }
 
