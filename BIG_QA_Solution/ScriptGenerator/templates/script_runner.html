@@ -123,7 +123,7 @@
                     {% for p in projects %}
                     <option value="{{ p.project_name }}" data-path="{{ p.project_path }}"
                         data-lang="{{ p.project_lang }}" data-fw="{{ p.project_fw }}" data-tool="{{ p.project_tool }}"
-                        data-cmds="{{ p.default_run_commands or '' }}"
+                        data-cmds="{{ p.run_commands or p.default_run_commands or '' }}"
                         {% if p.project_name == active_project_name %}selected{% endif %}>
                         {{ p.project_name }} ({{ p.project_lang }} / {{ p.project_tool }})
                     </option>
@@ -139,49 +139,15 @@
 
             <div id="modeSelection"
                 style="display: none; margin-top: 25px; text-align: center; gap: 15px; justify-content: center; display: flex; flex-wrap: wrap;">
-                <button type="button" class="btn btn-primary" id="btnModeRun" onclick="setMode('run')"
-                    style="width: 150px;"><i class="fas fa-play"></i> Run Test</button>
                 <button type="button" class="btn btn-primary" id="btnModeSeq" onclick="setMode('seq')"
                     style="width: 180px; background: #6366f1; border-color: #4f46e5;"><i class="fas fa-list-ol"></i>
                     Sequential Run</button>
-                <button type="button" class="btn btn-secondary" id="btnModeCmd" onclick="setMode('cmd')"
-                    style="width: 180px; background: rgba(255,255,255,0.1); border-color: rgba(255,255,255,0.2);"><i
-                        class="fas fa-terminal"></i> Command Prompt</button>
                 <button type="button" class="btn btn-secondary" id="btnModeGit" onclick="setMode('git')"
                     style="width: 180px; background: #f97316; border-color: #ea580c; color: white;"><i
                         class="fab fa-git-alt"></i> Version Control</button>
             </div>
 
-            <div id="runTestConfig" style="display: none;">
 
-                <div class="form-row mt-3">
-                    <div class="form-col">
-                        <label>Environment</label>
-                        <select id="runEnv" class="form-control">
-                            <option value="dev">Development</option>
-                            <option value="qa">QA / Staging</option>
-                            <option value="prod">Production</option>
-                        </select>
-                    </div>
-                    <div class="form-col">
-                        <label>Browser</label>
-                        <select id="runBrowser" class="form-control">
-                            <option value="chrome">Chrome</option>
-                            <option value="firefox">Firefox</option>
-                            <option value="edge">Edge</option>
-                            <option value="webkit">Webkit (Playwright only)</option>
-                        </select>
-                    </div>
-                </div>
-
-                <div class="form-group mt-3">
-                    <label>Tags / Specific Tests (Optional)</label>
-                    <input type="text" id="runTags" class="form-control"
-                        placeholder="e.g. @smoke, @regression, tests/login.feature">
-                </div>
-
-            </div>
-        </div> <!-- End runTestConfig -->
 
         <div id="seqConfig" style="display: none;">
             <div class="form-group mt-3">
@@ -214,7 +180,7 @@
             </div>
             <div style="text-align: right; margin-bottom: 20px;">
                 <button type="button" class="btn btn-primary" onclick="saveGitConfig()"
-                    style="background: #ea580c; border: none;"><i class="fas fa-save"></i> Save Git Config</button>
+                    style="background: #ea580c; border: none;"><i class="fas fa-save"></i> Save/Update Git Config</button>
             </div>
 
             <hr style="border-top: 1px solid rgba(255,255,255,0.1); margin: 25px 0;">
@@ -317,15 +283,7 @@
     Welcome to BIG AI QA Solution - Script Runner.
     Select a project and a mode to begin.
 </div>
-<div class="terminal-footer" id="cmdFooter"
-    style="display: none; padding: 10px; background: rgba(0,0,0,0.3); border-top: 1px solid var(--glass-border);">
-    <div style="display: flex; gap: 10px;">
-        <span style="color: #34d399; font-family: 'Courier New'; align-self: center;">&gt;</span>
-        <input type="text" id="cmdInput" class="form-control"
-            style="background: transparent !important; border: none !important; box-shadow: none !important; font-family: 'Courier New'; height: 30px;"
-            placeholder="Type command and press Enter..." onkeypress="handleCmdKey(event)">
-    </div>
-</div>
+
 </div>
 
 <!-- Custom Commit Message Modal -->
@@ -708,16 +666,15 @@
 
     document.addEventListener('DOMContentLoaded', () => {
         if (document.getElementById('runProject').value) {
-            onProjectSelect();
+            onProjectSelect(false);
         }
+        handleHashChange();
     });
 
-    function onProjectSelect() {
+    function onProjectSelect(autoSetMode = true) {
         const sel = document.getElementById('runProject');
         const opt = sel.options[sel.selectedIndex];
         const modeDiv = document.getElementById('modeSelection');
-        const runConfigDiv = document.getElementById('runTestConfig');
-        const cmdFooter = document.getElementById('cmdFooter');
 
         if (sel.value) {
             modeDiv.style.display = 'flex';
@@ -743,17 +700,15 @@
             const cmds = opt.getAttribute('data-cmds');
             if (cmds && document.getElementById('seqCommands')) {
                 document.getElementById('seqCommands').value = cmds;
+            }
+            if (autoSetMode) {
                 setMode('seq');
-            } else {
-                setMode('run');
             }
         } else {
             modeDiv.style.display = 'none';
-            runConfigDiv.style.display = 'none';
             if (document.getElementById('seqConfig')) document.getElementById('seqConfig').style.display = 'none';
             if (document.getElementById('gitConfig')) document.getElementById('gitConfig').style.display = 'none';
             if (document.getElementById('executionAction')) document.getElementById('executionAction').style.display = 'none';
-            cmdFooter.style.display = 'none';
             document.getElementById('runDepCheckRow').style.display = 'none';
             currentMode = null;
         }
@@ -762,38 +717,23 @@
     function setMode(mode) {
         if (currentMode === mode) return;
         currentMode = mode;
-        const runConfigDiv = document.getElementById('runTestConfig');
         const seqConfigDiv = document.getElementById('seqConfig');
         const gitConfigDiv = document.getElementById('gitConfig');
-        const cmdFooter = document.getElementById('cmdFooter');
 
-        const btnRun = document.getElementById('btnModeRun');
         const btnSeq = document.getElementById('btnModeSeq');
-        const btnCmd = document.getElementById('btnModeCmd');
         const btnGit = document.getElementById('btnModeGit');
         const log = document.getElementById('logOutput');
 
         // Reset all buttons
-        btnRun.style.background = 'rgba(255,255,255,0.1)';
         if (btnSeq) btnSeq.style.background = 'rgba(255,255,255,0.1)';
-        btnCmd.style.background = 'rgba(255,255,255,0.1)';
         if (btnGit) btnGit.style.background = 'rgba(255,255,255,0.1)';
 
         // Hide all divs
-        runConfigDiv.style.display = 'none';
         if (seqConfigDiv) seqConfigDiv.style.display = 'none';
         if (gitConfigDiv) gitConfigDiv.style.display = 'none';
-        cmdFooter.style.display = 'none';
         if (document.getElementById('executionAction')) document.getElementById('executionAction').style.display = 'none';
 
-        if (mode === 'run') {
-            runConfigDiv.style.display = 'block';
-            if (document.getElementById('executionAction')) document.getElementById('executionAction').style.display = 'block';
-            btnRun.style.background = 'var(--accent-primary)';
-            log.innerHTML = `<div style="color: #94a3b8;">[System] Mode: Run Test Executions. Selected project will be executed using AI generation rules.</div>`;
-            updateStepperActiveStep(3);
-            if (window.location.hash !== '#execution') window.location.hash = 'execution';
-        } else if (mode === 'seq') {
+        if (mode === 'seq') {
             if (seqConfigDiv) seqConfigDiv.style.display = 'block';
             if (document.getElementById('executionAction')) document.getElementById('executionAction').style.display = 'block';
             if (btnSeq) btnSeq.style.background = '#6366f1';
@@ -806,13 +746,6 @@
             log.innerHTML = `<div style="color: #cbd5e1;">[System] Version Control Mode activated. You can use Native Git buttons or Ask AI for assistance.</div>`;
             updateStepperActiveStep(4);
             if (window.location.hash !== '#git') window.location.hash = 'git';
-        } else {
-            cmdFooter.style.display = 'block';
-            btnCmd.style.background = 'var(--accent-primary)';
-            log.innerHTML = `<div style="color: #60a5fa;">[System] Embedded Command Prompt active. Type a command below.</div>`;
-            document.getElementById('cmdInput').focus();
-            updateStepperActiveStep(3);
-            if (window.location.hash !== '#execution') window.location.hash = 'execution';
         }
     }
 
@@ -912,7 +845,7 @@
         }
 
         try {
-            const response = await fetch('/api/script-runner/execute-cmd', {
+            const response = await fetch('/api/git/execute-command', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -1129,8 +1062,10 @@
         const abortBtn = document.getElementById('abortBtn');
         const log = document.getElementById('logOutput');
         const status = document.getElementById('execStatus');
-        const env = document.getElementById('runEnv').value;
-        const browser = document.getElementById('runBrowser').value;
+        const envEl = document.getElementById('runEnv');
+        const env = envEl ? envEl.value : '';
+        const browserEl = document.getElementById('runBrowser');
+        const browser = browserEl ? browserEl.value : '';
         const tagsInput = document.getElementById('runTags');
         const tags = tagsInput ? tagsInput.value : '';
         const customCmds = currentMode === 'seq' ? document.getElementById('seqCommands').value : '';
@@ -1215,54 +1150,6 @@
         };
     }
 
-    async function handleCmdKey(e) {
-        if (e.key === 'Enter') {
-            const sel = document.getElementById('runProject');
-            const opt = sel.options[sel.selectedIndex];
-            if (!opt.value) return;
-
-            const input = document.getElementById('cmdInput');
-            const cmd = input.value.trim();
-            if (!cmd) return;
-
-            const log = document.getElementById('logOutput');
-            log.innerHTML += `<div><span style="color: #34d399;">$</span> ${cmd}</div>`;
-            input.value = 'Executing...';
-            input.disabled = true;
-
-            try {
-                const pPath = opt.getAttribute('data-path');
-                const pName = opt.value;
-                let projectPath = pPath;
-                if (pPath && pName) {
-                    const pathNormalized = pPath.replace(/\\/g, '/');
-                    const nameNormalized = pName.replace(/\\/g, '/');
-                    if (!pathNormalized.endsWith('/' + nameNormalized) && !pathNormalized.endsWith(nameNormalized)) {
-                        const sep = pPath.includes('\\') ? '\\' : '/';
-                        projectPath = pPath.endsWith(sep) ? pPath + pName : pPath + sep + pName;
-                    }
-                }
-                const response = await fetch('/api/script-runner/execute-cmd', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        command: cmd,
-                        project_path: projectPath
-                    })
-                });
-                const data = await response.json();
-                log.innerHTML += `<div style="color: #cbd5e1; white-space: pre-wrap; margin-bottom: 10px;">${data.output || '(No output)'}</div>`;
-            } catch (err) {
-                log.innerHTML += `<div style="color: #ef4444; margin-bottom: 10px;">Error: ${err.message}</div>`;
-            } finally {
-                input.disabled = false;
-                input.value = '';
-                input.focus();
-                log.scrollTop = log.scrollHeight;
-            }
-        }
-    }
-
     function handleHashChange() {
         const hash = window.location.hash;
         if (hash === '#git') {
@@ -1271,15 +1158,17 @@
                 if (sel.options.length > 1 && !sel.value) {
                     sel.selectedIndex = 1;
                 }
-                onProjectSelect();
+                onProjectSelect(false);
                 setMode('git');
             }
-        } else if (hash === '#execution') {
-            setMode('run');
+        } else {
+            const sel = document.getElementById('runProject');
+            if (sel && sel.value) {
+                setMode('seq');
+            }
         }
     }
 
-    document.addEventListener('DOMContentLoaded', handleHashChange);
     window.addEventListener('hashchange', handleHashChange);
 </script>
 {% endblock %}

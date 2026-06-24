@@ -93,6 +93,109 @@ class GitService:
         return {"success": True, "message": "Git configuration successfully synchronized locally."}
 
     @staticmethod
+    def download_project_from_git(project_path, auth_config):
+        """
+        Clones/downloads the project from the git repository into the specified directory,
+        initializing git and configuring remote and authentication locally.
+        """
+        repo_url = auth_config.get('repo_url')
+        username = auth_config.get('username')
+        access_token = auth_config.get('access_token')
+
+        if not repo_url:
+            return {"success": False, "message": "Repository URL is required."}
+
+        # Make sure the directory exists
+        try:
+            os.makedirs(project_path, exist_ok=True)
+        except Exception as e:
+            return {"success": False, "message": f"Failed to create directory '{project_path}': {str(e)}"}
+
+        # Construct authenticated URL
+        if "://" in repo_url and access_token:
+            parts = repo_url.split("://", 1)
+            user = username or 'git'
+            import urllib.parse
+            escaped_token = urllib.parse.quote_plus(access_token)
+            escaped_user = urllib.parse.quote_plus(user)
+            authed_url = f"{parts[0]}://{escaped_user}:{escaped_token}@{parts[1]}"
+        else:
+            authed_url = repo_url
+
+        # Check if .git folder already exists.
+        git_dir = os.path.join(project_path, '.git')
+        if not os.path.exists(git_dir):
+            # If the directory is empty, we can run git clone directly.
+            # Otherwise, we initialize git, set remote, fetch, and checkout/reset.
+            try:
+                is_empty = len(os.listdir(project_path)) == 0
+            except Exception:
+                is_empty = True
+
+            if is_empty:
+                clone_res = GitService._run_cmd(f"git clone {authed_url} .", project_path)
+                if not clone_res["success"]:
+                    return {"success": False, "message": f"Git clone failed: {clone_res['stderr'] or clone_res['stdout']}"}
+            else:
+                init_res = GitService._run_cmd("git init", project_path)
+                if not init_res["success"]:
+                    return {"success": False, "message": f"Failed to initialize git: {init_res['stderr']}"}
+                
+                remote_res = GitService._run_cmd(f"git remote add origin {authed_url}", project_path)
+                if not remote_res["success"]:
+                    GitService._run_cmd(f"git remote set-url origin {authed_url}", project_path)
+        else:
+            GitService._run_cmd(f"git remote set-url origin {authed_url}", project_path)
+
+        # Set user name/email local configs
+        if username:
+            GitService._run_cmd(f'git config user.name "{username}"', project_path)
+            email = f"{username}@users.noreply.github.com"
+            GitService._run_cmd(f'git config user.email "{email}"', project_path)
+            GitService._run_cmd('git config credential.helper ""', project_path)
+
+        # Fetch remote branches
+        fetch_res = GitService._run_cmd("git fetch origin", project_path)
+        if not fetch_res["success"]:
+            return {"success": False, "message": f"Failed to fetch from remote origin: {fetch_res['stderr'] or fetch_res['stdout']}"}
+
+        # Determine default branch
+        default_branch = "main"
+        ls_res = GitService._run_cmd("git ls-remote --symref origin HEAD", project_path)
+        if ls_res["success"] and ls_res["stdout"]:
+            for line in ls_res["stdout"].splitlines():
+                if "refs/heads/" in line and "HEAD" in line:
+                    parts = line.split("refs/heads/")
+                    if len(parts) > 1:
+                        default_branch = parts[1].split()[0].strip()
+                        break
+        else:
+            heads_res = GitService._run_cmd("git ls-remote --heads origin", project_path)
+            if heads_res["success"] and heads_res["stdout"]:
+                lines = heads_res["stdout"]
+                if "refs/heads/main" in lines:
+                    default_branch = "main"
+                elif "refs/heads/master" in lines:
+                    default_branch = "master"
+
+        # Checkout default branch
+        checkout_res = GitService._run_cmd(f"git checkout -f {default_branch}", project_path)
+        if not checkout_res["success"]:
+            checkout_res = GitService._run_cmd(f"git checkout -b {default_branch} origin/{default_branch}", project_path)
+            if not checkout_res["success"]:
+                reset_res = GitService._run_cmd(f"git reset --hard origin/{default_branch}", project_path)
+                if not reset_res["success"]:
+                    return {"success": False, "message": f"Failed to checkout default branch '{default_branch}': {checkout_res['stderr'] or checkout_res['stdout']}"}
+
+        # Set upstream/tracking branch
+        GitService._run_cmd(f"git branch --set-upstream-to=origin/{default_branch} {default_branch}", project_path)
+
+        # Pull/rebase to be up to date
+        GitService._run_cmd(f"git pull origin {default_branch} --rebase", project_path)
+
+        return {"success": True, "message": f"Successfully configured and downloaded project branch '{default_branch}'"}
+
+    @staticmethod
     def execute_native_action(action, project_path, auth_config, commit_message=None):
         """
         Executes a standard deterministic Git command.

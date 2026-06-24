@@ -50,8 +50,8 @@
             <div class="form-group mb-4">
                 <label>Method</label>
                 <div>
-                    <label class="mr-3" style="cursor: pointer;"><input type="radio" name="projectMethod" value="existing" checked onchange="toggleProjectMethod()"> Select Existing Project</label>
-                    <label style="cursor: pointer;"><input type="radio" name="projectMethod" value="new" onchange="toggleProjectMethod()"> Create New Project</label>
+                    <label class="mr-3" style="cursor: pointer;"><input type="radio" name="projectMethod" value="existing" checked onchange="toggleProjectMethod()"> Automation Project Exists</label>
+                    <label style="cursor: pointer;"><input type="radio" name="projectMethod" value="new" onchange="toggleProjectMethod()"> Build Framework From Scratch</label>
                 </div>
             </div>
 
@@ -350,8 +350,13 @@
                     <div class="form-col">
                         <div class="form-group">
                             <label><i class="fas fa-tag"></i> Project Name <span class="required-mark">*</span></label>
-                            <input type="text" id="bsProjectName" class="form-control" placeholder="e.g. MyWebTests" oninput="updatePathPreview(); clearFieldError('bsProjectName')">
+                            <select id="bsProjectName" class="form-control" onchange="handleBsProjectSelect()">
+                                <option value="">-- Choose Project --</option>
+                            </select>
                             <small class="error-text" id="bsProjectNameError"></small>
+                            <small class="help-text" style="margin-top: 8px;">
+                                <i class="fas fa-info-circle" style="color: var(--accent-primary); margin-right: 4px;"></i>if the project name not found, please configure the project in configurations module.
+                            </small>
                         </div>
                     </div>
                 </div>
@@ -507,22 +512,35 @@
         <div class="modal-body" style="display: flex; flex-direction: column; height: calc(100% - 70px);">
             <p class="text-secondary mb-3">Review the existing file and the auto-merged output. You can edit the merged output before saving.</p>
             <div style="display: flex; gap: 20px; flex-grow: 1; min-height: 0;">
-                <div style="flex: 1; display: flex; flex-direction: column;">
-                    <label>Newly Generated File (Read-only)</label>
-                    <textarea id="generatedFileContent" class="form-control" style="flex-grow: 1; font-family: monospace; font-size: 0.85rem; resize: none;" readonly></textarea>
+                <div style="flex: 1; display: flex; flex-direction: column; min-height: 0;">
+                    <label>Newly Generated File (Editable)</label>
+                    <div class="editor-container">
+                        <div id="generatedFileLines" class="editor-lines">1</div>
+                        <div style="position: relative; flex-grow: 1; height: 100%; overflow: hidden;">
+                            <div id="generatedFileHighlights" class="editor-highlights"></div>
+                            <textarea id="generatedFileContent" spellcheck="false" autocapitalize="off" autocomplete="off" autocorrect="off" class="form-control editor-textarea"></textarea>
+                        </div>
+                    </div>
                 </div>
-                <div style="flex: 1; display: flex; flex-direction: column;">
+                <div style="flex: 1; display: flex; flex-direction: column; min-height: 0;">
                     <div class="d-flex justify-content-between align-items-center mb-2" style="padding-bottom: 2px;">
                         <label class="mb-0">Existing File (Editable - Merge Here)</label>
-                        <button type="button" class="btn btn-sm btn-outline" style="padding: 2px 10px; font-size: 0.8rem; border-color: var(--accent-primary); color: var(--accent-primary); height: 26px;" id="browseMergeFileBtn">
+                        <button type="button" class="btn btn-sm btn-outline" style="padding: 2px 10px; font-size: 0.85rem; border-color: var(--accent-primary); color: var(--accent-primary); height: 26px;" id="browseMergeFileBtn">
                             <i class="fas fa-folder-open"></i> Browse
                         </button>
                     </div>
-                    <textarea id="existingFileContent" class="form-control" style="flex-grow: 1; font-family: monospace; font-size: 0.85rem; resize: none; background: rgba(0,0,0,0.5) !important; color: #a5d6ff !important;"></textarea>
+                    <div class="editor-container">
+                        <div id="existingFileLines" class="editor-lines">1</div>
+                        <div style="position: relative; flex-grow: 1; height: 100%; overflow: hidden;">
+                            <div id="existingFileHighlights" class="editor-highlights"></div>
+                            <textarea id="existingFileContent" spellcheck="false" autocapitalize="off" autocomplete="off" autocorrect="off" class="form-control editor-textarea"></textarea>
+                        </div>
+                    </div>
                 </div>
             </div>
             <div class="form-actions right mt-4">
                 <button type="button" class="btn btn-secondary" onclick="closeMergeModal()">Cancel</button>
+                <button type="button" class="btn btn-primary" id="smartMergeBtn" onclick="runSmartMerge()"><i class="fas fa-random"></i> Smart Merge</button>
                 <button type="button" class="btn btn-success" id="confirmMergeBtn"><i class="fas fa-save"></i> Save Merged File</button>
             </div>
         </div>
@@ -532,6 +550,133 @@
 
 {% block extra_css %}
 <style>
+    /* Diff View Styles */
+    .diff-line {
+        display: flex;
+        font-family: 'Fira Code', Consolas, Monaco, monospace;
+        font-size: 0.85rem;
+        line-height: 1.5;
+        width: 100%;
+        min-width: max-content;
+    }
+    .diff-line-number {
+        width: 45px;
+        text-align: right;
+        padding-right: 10px;
+        margin-right: 10px;
+        color: #57606a;
+        user-select: none;
+        border-right: 1px solid #30363d;
+    }
+    .diff-line-content {
+        white-space: pre;
+        padding-left: 5px;
+        flex-grow: 1;
+        color: #c9d1d9;
+    }
+    .diff-line.added {
+        background-color: rgba(46, 160, 67, 0.15) !important;
+        border-left: 3px solid #2ea043;
+    }
+    .diff-line.added .diff-line-content {
+        color: #58a6ff !important;
+        font-weight: 500;
+    }
+    .diff-line.added .diff-line-number {
+        color: #3fb950;
+        border-right: 1px solid rgba(46, 160, 67, 0.3);
+    }
+
+    /* Editor styling and overlays */
+    .editor-container {
+        display: flex;
+        flex-grow: 1;
+        border: 1px solid var(--glass-border);
+        border-radius: 6px;
+        background: rgba(13, 17, 23, 0.95);
+        overflow: hidden;
+        min-height: 0;
+        height: 100%;
+        transition: border-color 0.2s, box-shadow 0.2s;
+    }
+    .editor-container:focus-within {
+        border-color: var(--accent-primary) !important;
+        box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.25) !important;
+    }
+    .editor-lines {
+        width: 45px;
+        text-align: right;
+        padding: 10px 10px 10px 0;
+        border-right: 1px solid #30363d;
+        color: #57606a;
+        font-family: 'Fira Code', Consolas, Monaco, monospace;
+        font-size: 0.85rem;
+        line-height: 20px !important;
+        user-select: none;
+        background: rgba(0,0,0,0.2);
+        overflow-y: hidden;
+        white-space: nowrap;
+        box-sizing: border-box !important;
+    }
+    .editor-textarea {
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        z-index: 2;
+        font-family: 'Fira Code', Consolas, Monaco, monospace;
+        font-size: 0.85rem;
+        line-height: 20px !important;
+        resize: none;
+        border: none !important;
+        background: transparent !important;
+        color: #c9d1d9 !important;
+        padding: 10px;
+        height: 100% !important;
+        width: 100% !important;
+        box-sizing: border-box !important;
+        outline: none;
+        box-shadow: none !important;
+        overflow-y: auto;
+        overflow-x: auto;
+        white-space: pre;
+        margin: 0;
+        border-radius: 0;
+        caret-color: #ffffff;
+    }
+    .editor-highlights {
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        pointer-events: none;
+        overflow: hidden;
+        padding: 10px !important;
+        margin: 0;
+        background: transparent;
+        height: 100% !important;
+        width: 100% !important;
+        box-sizing: border-box !important;
+    }
+    .highlight-line {
+        font-family: 'Fira Code', Consolas, Monaco, monospace;
+        font-size: 0.85rem;
+        line-height: 20px !important;
+        height: 20px !important;
+        box-sizing: border-box;
+        width: 100%;
+        color: transparent !important;
+        white-space: pre;
+        overflow: hidden;
+    }
+    .highlight-line.added {
+        background-color: rgba(46, 160, 67, 0.15) !important;
+        border-left: 3px solid #2ea043;
+    }
+
+
     .wizard-container {
         margin-bottom: 40px;
         padding: 0 20px;
@@ -959,8 +1104,8 @@ function handleProjectSelect() {
             .then(res => {
                 if (res.status === 'success' && res.data) {
                     document.getElementById('projectBaseUrl').value = res.data.baseurl || '';
-                    document.getElementById('projectUsername').value = res.data.username || '';
-                    document.getElementById('projectPassword').value = res.data.password || '';
+                    document.getElementById('projectUsername').value = res.data.app_username || '';
+                    document.getElementById('projectPassword').value = res.data.app_password || '';
                 }
             })
             .catch(err => console.error("Error fetching credentials:", err));
@@ -1051,11 +1196,32 @@ function handleNextStep1() {
         return;
     }
 
+    const select = document.getElementById('projectSelect');
+    const selectedOpt = select.options[select.selectedIndex];
+    let projectName = "";
+    let projectId = null;
+    let isNewProject = true;
+
+    if (select.selectedIndex > 0) {
+        projectName = selectedOpt.value;
+        projectId = selectedOpt.getAttribute('data-id');
+        isNewProject = false;
+    } else {
+        const manualId = select.getAttribute('data-manual-id');
+        if (manualId) {
+            projectId = manualId;
+            isNewProject = false;
+        }
+    }
+
     const data = {
+        is_new_project: isNewProject,
+        project_id: projectId ? parseInt(projectId) : null,
+        project_name: projectName,
         project_path: path,
         baseurl: document.getElementById('projectBaseUrl').value,
-        username: document.getElementById('projectUsername').value,
-        password: document.getElementById('projectPassword').value,
+        app_username: document.getElementById('projectUsername').value,
+        app_password: document.getElementById('projectPassword').value,
         tool: document.getElementById('detTool').innerText,
         language: document.getElementById('detLanguage').innerText,
         framework: document.getElementById('detFramework').innerText,
@@ -1086,7 +1252,8 @@ function handleNextStep1() {
             }
             nextStep(2);
         } else {
-            showToast("Error saving config: " + res.message, 'error');
+            const errorMsg = res.message || res.error || res.detail || "Unknown error";
+            showToast("Error saving config: " + errorMsg, 'error');
         }
     })
     .catch(err => {
@@ -1101,6 +1268,18 @@ function nextStep(step) {
     document.querySelectorAll('.wizard-content').forEach(c => c.classList.remove('active'));
     // Show target content
     document.getElementById('step-' + step).classList.add('active');
+
+    // Reset scroll to the top when switching steps. The Next / Generate Script buttons
+    // sit at the bottom, so without this the new section (e.g. "Generate Script") opens
+    // scrolled to the bottom where the click happened. NOTE: the page body is
+    // `overflow: hidden` and the actual scrollable element is `.content-wrapper`, so
+    // window.scrollTo() has no effect — we must reset the scroll container itself.
+    const scroller = document.querySelector('.content-wrapper');
+    if (scroller) {
+        scroller.scrollTop = 0;
+    } else {
+        window.scrollTo({ top: 0, behavior: 'auto' });
+    }
 
     // Update Indicators
     document.querySelectorAll('.step-p').forEach((s, idx) => {
@@ -1146,13 +1325,64 @@ function toggleProjectMethod() {
     }
 }
 
-function openBootstrapperModal() {
+async function openBootstrapperModal() {
     document.getElementById('bootstrapperModal').style.display = 'block';
     // Always start from a clean slate. closeBootstrapperModal() already resets on the way out,
     // but doing it here too is cheap and protects against the first ever open (where close has
     // never run) and any future code path that might bypass close.
     resetBootstrapperPanels();
     resetBootstrapperForm();
+
+    // Load unconfigured projects dropdown dynamically
+    try {
+        const select = document.getElementById('bsProjectName');
+        select.innerHTML = '<option value="">-- Choose Project --</option>';
+        const r = await fetch('/api/unconfigured-projects');
+        const d = await r.json();
+        if (d.status === 'success') {
+            d.data.forEach(p => {
+                const opt = document.createElement('option');
+                opt.value = p.project_name;
+                opt.innerText = p.project_name;
+                opt.setAttribute('data-id', p.id);
+                select.appendChild(opt);
+            });
+        }
+    } catch (e) {
+        console.error('Failed to load unconfigured projects:', e);
+    }
+}
+
+async function handleBsProjectSelect() {
+    updatePathPreview();
+    clearFieldError('bsProjectName');
+    
+    // Clear URL/credentials fields first
+    document.getElementById('bsUrl').value = '';
+    document.getElementById('bsUsername').value = '';
+    document.getElementById('bsPassword').value = '';
+    clearFieldErrors(['bsUrl']);
+    
+    const select = document.getElementById('bsProjectName');
+    const selectedOpt = select.options[select.selectedIndex];
+    
+    if (selectedOpt && selectedOpt.value) {
+        const projectId = selectedOpt.getAttribute('data-id');
+        if (projectId) {
+            try {
+                const r = await fetch('/api/get-project-config/' + projectId);
+                const d = await r.json();
+                if (d.status === 'success') {
+                    const data = d.data;
+                    document.getElementById('bsUrl').value = data.baseurl || '';
+                    document.getElementById('bsUsername').value = data.app_username || '';
+                    document.getElementById('bsPassword').value = data.app_password || '';
+                }
+            } catch (e) {
+                console.error('Failed to fetch project credentials:', e);
+            }
+        }
+    }
 }
 
 /**
@@ -1621,6 +1851,8 @@ function detectProject(path) {
 }
 
 let generatedFilesData = [];
+let currentMergeIdx = null;
+let originalExistingContent = "";
 
 function updateGenLanguage() {
     const tool = document.getElementById('genTool').value;
@@ -1978,12 +2210,250 @@ async function executeSave(projectId, filesArray) {
     });
 }
 
+function syncScroll() {
+    const leftTextarea = document.getElementById('generatedFileContent');
+    const leftHighlights = document.getElementById('generatedFileHighlights');
+    const leftLines = document.getElementById('generatedFileLines');
+    
+    const rightTextarea = document.getElementById('existingFileContent');
+    const rightHighlights = document.getElementById('existingFileHighlights');
+    const rightLines = document.getElementById('existingFileLines');
+    
+    if (!leftTextarea || !rightTextarea) return;
+    
+    let isSyncingLeft = false;
+    let isSyncingRight = false;
+    
+    leftTextarea.onscroll = () => {
+        // Sync local components always
+        if (leftHighlights) {
+            leftHighlights.scrollTop = leftTextarea.scrollTop;
+            leftHighlights.scrollLeft = leftTextarea.scrollLeft;
+        }
+        if (leftLines) {
+            leftLines.scrollTop = leftTextarea.scrollTop;
+        }
+        
+        // Sync right pane
+        if (!isSyncingLeft) {
+            isSyncingRight = true;
+            rightTextarea.scrollTop = leftTextarea.scrollTop;
+            rightTextarea.scrollLeft = leftTextarea.scrollLeft;
+            
+            // Sync right highlights and lines to right textarea's ACTUAL scroll position (after clamping)
+            if (rightHighlights) {
+                rightHighlights.scrollTop = rightTextarea.scrollTop;
+                rightHighlights.scrollLeft = rightTextarea.scrollLeft;
+            }
+            if (rightLines) {
+                rightLines.scrollTop = rightTextarea.scrollTop;
+            }
+        }
+        isSyncingLeft = false;
+    };
+    
+    rightTextarea.onscroll = () => {
+        // Sync local components always
+        if (rightHighlights) {
+            rightHighlights.scrollTop = rightTextarea.scrollTop;
+            rightHighlights.scrollLeft = rightTextarea.scrollLeft;
+        }
+        if (rightLines) {
+            rightLines.scrollTop = rightTextarea.scrollTop;
+        }
+        
+        // Sync left pane
+        if (!isSyncingRight) {
+            isSyncingLeft = true;
+            leftTextarea.scrollTop = rightTextarea.scrollTop;
+            leftTextarea.scrollLeft = rightTextarea.scrollLeft;
+            
+            // Sync left highlights and lines to left textarea's ACTUAL scroll position (after clamping)
+            if (leftHighlights) {
+                leftHighlights.scrollTop = leftTextarea.scrollTop;
+                leftHighlights.scrollLeft = leftTextarea.scrollLeft;
+            }
+            if (leftLines) {
+                leftLines.scrollTop = leftTextarea.scrollTop;
+            }
+        }
+        isSyncingRight = false;
+    };
+}
+
+function updateExistingFileLines() {
+    const textarea = document.getElementById('existingFileContent');
+    const linesDiv = document.getElementById('existingFileLines');
+    if (!textarea || !linesDiv) return;
+    
+    const lines = textarea.value.split('\n');
+    const lineCount = lines.length || 1;
+    
+    let html = "";
+    for (let i = 1; i <= lineCount; i++) {
+        html += i + "<br>";
+    }
+    linesDiv.innerHTML = html;
+}
+
+function updateGeneratedFileLines() {
+    const textarea = document.getElementById('generatedFileContent');
+    const linesDiv = document.getElementById('generatedFileLines');
+    if (!textarea || !linesDiv) return;
+    
+    const lines = textarea.value.split('\n');
+    const lineCount = lines.length || 1;
+    
+    let html = "";
+    for (let i = 1; i <= lineCount; i++) {
+        html += i + "<br>";
+    }
+    linesDiv.innerHTML = html;
+}
+
+function computeLCSMatches(linesA, linesB) {
+    let matchesB = new Set();
+    const setA = new Set(linesA.map(l => l.trim()));
+    const n = linesB.length;
+    for (let j = 0; j < n; j++) {
+        if (setA.has(linesB[j].trim())) {
+            matchesB.add(j);
+        }
+    }
+    return matchesB;
+}
+
+function updateHighlights(textareaId, highlightId, matches, lines) {
+    const highlightContainer = document.getElementById(highlightId);
+    if (!highlightContainer) return;
+    
+    let html = "";
+    const n = lines.length;
+    for (let j = 0; j < n; j++) {
+        const lineText = lines[j];
+        const isMatch = matches.has(j);
+        const isAdded = !isMatch && lineText.trim() !== "";
+        
+        const className = isAdded ? "highlight-line added" : "highlight-line";
+        
+        const escapedText = lineText
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;")
+            .replace(/'/g, "&#039;");
+            
+        html += `<div class="${className}">${escapedText || "&nbsp;"}</div>`;
+    }
+    highlightContainer.innerHTML = html;
+}
+
+function updateDiffView() {
+    updateExistingFileLines();
+    updateGeneratedFileLines();
+    
+    const leftTextarea = document.getElementById('generatedFileContent');
+    const rightTextarea = document.getElementById('existingFileContent');
+    if (!leftTextarea || !rightTextarea) return;
+    
+    const generatedRaw = leftTextarea.value;
+    const existingRaw = rightTextarea.value;
+    
+    const generatedLines = generatedRaw.split(/\r?\n/);
+    const existingLines = existingRaw.split(/\r?\n/);
+    
+    // 1. Highlight generated file (left pane): lines in generated but not in existing
+    const matchesGenerated = computeLCSMatches(existingLines, generatedLines);
+    updateHighlights('generatedFileContent', 'generatedFileHighlights', matchesGenerated, generatedLines);
+    
+    // 2. Highlight existing file (right pane): lines in current existing but not in original existing
+    const originalLines = originalExistingContent.split(/\r?\n/);
+    const matchesExisting = computeLCSMatches(originalLines, existingLines);
+    updateHighlights('existingFileContent', 'existingFileHighlights', matchesExisting, existingLines);
+
+    // Dynamically align scroll range height by adding padding-bottom to the shorter panel
+    const genLength = generatedLines.length;
+    const extLength = existingLines.length;
+    
+    const basePadding = 300; // Scroll beyond last line padding
+    let genPadding = basePadding;
+    let extPadding = basePadding;
+    
+    if (genLength > extLength) {
+        extPadding = basePadding + (genLength - extLength) * 20; // 20px is line-height
+    } else if (extLength > genLength) {
+        genPadding = basePadding + (extLength - genLength) * 20; // 20px is line-height
+    }
+    
+    leftTextarea.style.setProperty('padding-bottom', genPadding + 'px', 'important');
+    rightTextarea.style.setProperty('padding-bottom', extPadding + 'px', 'important');
+    
+    const leftHighlights = document.getElementById('generatedFileHighlights');
+    const rightHighlights = document.getElementById('existingFileHighlights');
+    if (leftHighlights) leftHighlights.style.setProperty('padding-bottom', genPadding + 'px', 'important');
+    if (rightHighlights) rightHighlights.style.setProperty('padding-bottom', extPadding + 'px', 'important');
+    
+    const leftLines = document.getElementById('generatedFileLines');
+    const rightLines = document.getElementById('existingFileLines');
+    if (leftLines) leftLines.style.setProperty('padding-bottom', genPadding + 'px', 'important');
+    if (rightLines) rightLines.style.setProperty('padding-bottom', extPadding + 'px', 'important');
+}
+
+function runSmartMerge() {
+    if (currentMergeIdx === null) return;
+    
+    const file = generatedFilesData[currentMergeIdx];
+    const smartMergeBtn = document.getElementById('smartMergeBtn');
+    const originalText = smartMergeBtn.innerHTML;
+    
+    smartMergeBtn.disabled = true;
+    smartMergeBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Merging...';
+    
+    const generatedContent = document.getElementById('generatedFileContent').value;
+    const existingContent = document.getElementById('existingFileContent').value;
+    
+    fetch('/api/smart-merge', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            existing_content: existingContent,
+            generated_content: generatedContent,
+            filename: file.filename
+        })
+    })
+    .then(r => r.json())
+    .then(res => {
+        smartMergeBtn.disabled = false;
+        smartMergeBtn.innerHTML = originalText;
+        
+        if (res.status === 'success') {
+            document.getElementById('existingFileContent').value = res.merged_content;
+            updateDiffView();
+            showToast("Smart Merge completed! Review the result in the right pane.", 'success');
+        } else {
+            showToast("Smart Merge failed: " + res.message, 'error');
+        }
+    })
+    .catch(err => {
+        smartMergeBtn.disabled = false;
+        smartMergeBtn.innerHTML = originalText;
+        showToast("Error during merge: " + err.message, 'error');
+    });
+}
+
 function openMergeDialog(idx) {
+    currentMergeIdx = idx;
     const file = generatedFilesData[idx];
     const targetPath = document.getElementById('targetPath_' + idx).value;
     
     document.getElementById('generatedFileContent').value = "Loading...";
     document.getElementById('existingFileContent').value = "Loading...";
+    
+    const genHighlights = document.getElementById('generatedFileHighlights');
+    if (genHighlights) genHighlights.innerHTML = "";
+    const extHighlights = document.getElementById('existingFileHighlights');
+    if (extHighlights) extHighlights.innerHTML = "";
+    
     document.getElementById('mergeModal').style.display = "block";
     document.body.style.overflow = "hidden"; // Prevent background scrolling
 
@@ -2001,8 +2471,10 @@ function openMergeDialog(idx) {
         if (res.status === 'success') {
             document.getElementById('generatedFileContent').value = file.content;
             if (res.existing_content) {
+                originalExistingContent = res.existing_content;
                 document.getElementById('existingFileContent').value = res.existing_content;
             } else {
+                originalExistingContent = "";
                 document.getElementById('existingFileContent').value = "";
             }
             
@@ -2012,6 +2484,20 @@ function openMergeDialog(idx) {
 
             const browseBtn = document.getElementById('browseMergeFileBtn');
             browseBtn.onclick = () => browseExistingFileForMerge(idx);
+
+            // Render diff view, setup scroll syncing, and listen for input
+            updateDiffView();
+            syncScroll();
+            
+            const rightTextarea = document.getElementById('existingFileContent');
+            rightTextarea.oninput = () => {
+                updateDiffView();
+            };
+            
+            const leftTextarea = document.getElementById('generatedFileContent');
+            leftTextarea.oninput = () => {
+                updateDiffView();
+            };
         } else {
             showToast("Error previewing merge: " + res.message, 'error');
             closeMergeModal();
@@ -2036,8 +2522,10 @@ function browseExistingFileForMerge(idx) {
             browseBtn.disabled = false;
             
             if (data.path && data.content !== undefined) {
+                originalExistingContent = data.content;
                 document.getElementById('existingFileContent').value = data.content;
                 document.getElementById('targetPath_' + idx).value = data.path;
+                updateDiffView();
             } else if (!data.path) {
                 // User cancelled or dialog failed silently
                 console.log("Browse cancelled or failed.");
