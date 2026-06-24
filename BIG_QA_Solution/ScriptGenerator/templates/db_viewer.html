@@ -214,11 +214,6 @@
                 listEl.appendChild(li);
             });
             
-            // Automatically select first table if exists
-            if (data.tables.length > 0) {
-                listEl.firstChild.click();
-            }
-            
         } catch (error) {
             console.error('Failed to load tables:', error);
             document.getElementById('tableList').innerHTML = `<li class="text-danger">Failed to connect</li>`;

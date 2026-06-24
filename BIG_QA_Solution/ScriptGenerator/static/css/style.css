@@ -594,23 +594,22 @@ a:hover {
 
 /* Layouts */
 .login-bg {
-    display: flex;
-    align-items: center;
-    justify-content: center;
     position: relative;
-    min-height: 100vh;
+    height: 100vh;
+    height: 100dvh;
     overflow: hidden;
 }
 
 /* Abstract Background Shapes for Login */
 .login-bg::before, .login-bg::after {
     content: '';
-    position: absolute;
+    position: fixed;
     width: 400px;
     height: 400px;
     border-radius: 50%;
     filter: blur(100px);
     z-index: -1;
+    pointer-events: none;
 }
 
 .login-bg::before {
@@ -629,40 +628,49 @@ a:hover {
 
 .login-container {
     width: 100%;
-    max-width: 520px;
-    padding: 20px;
+    height: 100%;
+    display: grid;
+    align-items: center;
+    align-items: safe center;
+    justify-items: center;
+    overflow-x: hidden;
+    overflow-y: auto;
+    padding: clamp(16px, 4vw, 32px);
 }
 
 .login-card {
-    padding: 3rem 3.5rem;
+    width: min(100%, 480px);
+    padding: clamp(1.5rem, 5vw, 3rem);
 }
 
 .login-header {
     text-align: center;
-    margin-bottom: 1rem;
+    margin-bottom: clamp(0.75rem, 2vh, 1rem);
 }
 
 .login-logo {
-    height: 110px;
+    height: clamp(72px, 14vh, 110px);
     width: auto;
-    margin-bottom: 1.5rem;
+    max-width: min(220px, 70vw);
+    margin-bottom: clamp(0.75rem, 2vh, 1.5rem);
     /* Soft glow so the transparent logo reads cleanly on the dark card */
     filter: drop-shadow(0 6px 16px rgba(0, 188, 242, 0.25));
 }
 
 .login-header h1 {
-    font-size: 1.75rem;
-    margin-bottom: 0.5rem;
+    font-size: clamp(1.35rem, 4.5vw, 1.75rem);
+    margin-bottom: 0.4rem;
 }
 
 .login-header p {
     color: var(--text-secondary);
-    font-size: 0.95rem;
+    font-size: clamp(0.85rem, 2.8vw, 0.95rem);
+    margin-bottom: 0;
 }
 
 /* Forms */
 .form-group {
-    margin-bottom: 1.5rem;
+    margin-bottom: clamp(1rem, 2.6vh, 1.5rem);
 }
 
 .form-group label {
@@ -709,7 +717,7 @@ select option {
 }
 
 .login-footer {
-    margin-top: 1.5rem;
+    margin-top: clamp(1rem, 2.6vh, 1.5rem);
     text-align: center;
 }
 
@@ -1322,6 +1330,52 @@ select option {
     .user-greeting > span:last-child { display: none; }
     .ai-status-badge span { display: none; }
     .global-project-selector select { min-width: 90px; max-width: 130px; }
+}
+
+@media (max-width: 480px) {
+    .login-container {
+        padding: 12px;
+    }
+    .login-card {
+        padding: 1.25rem;
+    }
+    .login-logo {
+        height: 68px;
+    }
+    .form-group label,
+    .forgot-link {
+        font-size: 0.85rem;
+    }
+    input[type="text"],
+    input[type="email"],
+    input[type="password"],
+    select,
+    textarea {
+        min-height: 44px;
+    }
+}
+
+@media (max-height: 680px) {
+    .login-container {
+        padding-top: 12px;
+        padding-bottom: 12px;
+    }
+    .login-card {
+        padding-top: 1.25rem;
+        padding-bottom: 1.25rem;
+    }
+    .login-logo {
+        height: 64px;
+    }
+    .login-header {
+        margin-bottom: 0.65rem;
+    }
+    .form-group {
+        margin-bottom: 0.85rem;
+    }
+    .login-footer {
+        margin-top: 0.85rem;
+    }
 }
 
 /* ========================================

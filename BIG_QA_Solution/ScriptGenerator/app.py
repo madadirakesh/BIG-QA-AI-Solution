@@ -57,15 +57,6 @@ app = Flask(__name__)
 app.secret_key = os.environ.get('FLASK_SECRET_KEY', os.urandom(24))
 app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 31536000  # Cache static files for 1 year
 
-# New per process; changes when the dev reloader restarts the server, so the browser can auto-reload.
-LIVE_RELOAD_ID = uuid.uuid4().hex
-
-@app.route('/__version')
-def __version():
-    if not app.debug:
-        return ('', 404)  # dev-only; the client poller stops itself on a non-OK response
-    return jsonify({"id": LIVE_RELOAD_ID})
-
 @app.teardown_appcontext
 def close_connection(exception):
     from flask import g

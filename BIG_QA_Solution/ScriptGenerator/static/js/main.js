@@ -383,18 +383,3 @@ function updateStepperActiveStep(step) {
         }
     });
 }
-
-// Dev auto-reload: reload when the server id changes. /__version 404s outside debug, so this stops there.
-(function () {
-    var initial = null;
-    var timer = setInterval(function () {
-        fetch('/__version', { cache: 'no-store' })
-            .then(function (r) { if (!r.ok) { clearInterval(timer); return null; } return r.json(); })
-            .then(function (d) {
-                if (!d) return;
-                if (initial === null) { initial = d.id; return; }
-                if (d.id !== initial) location.reload();
-            })
-            .catch(function () {});
-    }, 1000);
-})();
