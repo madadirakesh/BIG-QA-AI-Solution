@@ -659,11 +659,13 @@
                             <option value="XPath" ${el.type === 'XPath' ? 'selected' : ''}>XPath</option>
                             <option value="CSS" ${el.type === 'CSS' ? 'selected' : ''}>CSS</option>
                             <option value="ID" ${el.type === 'ID' ? 'selected' : ''}>ID</option>
+                            ${_selectedTool === 'Playwright' ? `
                             <option value="getByRole" ${el.type === 'getByRole' ? 'selected' : ''}>getByRole</option>
                             <option value="getByText" ${el.type === 'getByText' ? 'selected' : ''}>getByText</option>
                             <option value="getByPlaceholder" ${el.type === 'getByPlaceholder' ? 'selected' : ''}>getByPlaceholder</option>
                             <option value="getByLabel" ${el.type === 'getByLabel' ? 'selected' : ''}>getByLabel</option>
                             <option value="getByTestId" ${el.type === 'getByTestId' ? 'selected' : ''}>getByTestId</option>
+                            ` : ''}
                         </select>
                     </td>
                     <td>

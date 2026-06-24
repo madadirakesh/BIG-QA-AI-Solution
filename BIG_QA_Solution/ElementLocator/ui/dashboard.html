@@ -2437,8 +2437,12 @@
             updateLanguageOptions();
             const langSelect = document.getElementById("langSelect");
             if (langSelect) previousLangVal = langSelect.value;
+            if (typeof pyBridge !== 'undefined' && pyBridge) {
+                pyBridge.callPython("tool_changed", JSON.stringify({ tool: newVal }));
+            }
             refreshLocatorsForNewTool();
         }
+
 
         function handleLangChange() {
             const langSelect = document.getElementById("langSelect");
@@ -2482,7 +2486,12 @@
                 allLocs.forEach(l => {
                     if (l && l.value) uniqueLocsMap.set(l.value, l);
                 });
-                const uniqueLocs = Array.from(uniqueLocsMap.values());
+                let uniqueLocs = Array.from(uniqueLocsMap.values());
+
+                if (selectedTool === 'Selenium') {
+                    uniqueLocs = uniqueLocs.filter(l => l && l.type && !l.type.startsWith('getBy') && l.type !== 'Test ID');
+                }
+
 
                 // Rank
                 const ranked = uniqueLocs
@@ -2981,7 +2990,12 @@
             const selectedTool = document.getElementById('toolSelect').value;
             const isPwNative = document.getElementById('pwNativeToggle').checked;
 
-            const ranked = locators
+            let filteredLocators = locators;
+            if (selectedTool === 'Selenium') {
+                filteredLocators = locators.filter(l => l && l.type && !l.type.startsWith('getBy') && l.type !== 'Test ID');
+            }
+
+            const ranked = filteredLocators
                 .filter(l => l.count == null || l.count > 0)
                 .sort((a, b) => {
                     const ac = a.count ?? 99, bc = b.count ?? 99;
@@ -2994,7 +3008,7 @@
             let bestLoc = ranked[0];
             if (!bestLoc) {
                 // fallback if all locators were filtered out
-                bestLoc = locators[0];
+                bestLoc = filteredLocators[0];
             } else {
                 if (selectedTool === 'Selenium') {
                     const xp = ranked.find(l => l.type === 'XPath' && l.count === 1);
@@ -3445,9 +3459,36 @@
         function showAddManualModal() {
             document.getElementById('manualName').value = '';
             document.getElementById('manualValue').value = '';
-            document.getElementById('manualType').value = 'XPath';
             document.getElementById('manualAction').value = 'Click';
+
+            const tool = document.getElementById('toolSelect').value;
+            const typeSelect = document.getElementById('manualType');
+            if (typeSelect) {
+                typeSelect.innerHTML = '';
+                const options = [
+                    { value: 'XPath', text: 'XPath' },
+                    { value: 'CSS', text: 'CSS' },
+                    { value: 'ID', text: 'ID' }
+                ];
+                if (tool === 'Playwright') {
+                    options.push(
+                        { value: 'getByRole', text: 'Playwright getByRole' },
+                        { value: 'getByText', text: 'Playwright getByText' },
+                        { value: 'getByPlaceholder', text: 'Playwright getByPlaceholder' },
+                        { value: 'getByLabel', text: 'Playwright getByLabel' },
+                        { value: 'getByTestId', text: 'Playwright getByTestId' }
+                    );
+                }
+                options.forEach(opt => {
+                    const el = document.createElement('option');
+                    el.value = opt.value;
+                    el.textContent = opt.text;
+                    typeSelect.appendChild(el);
+                });
+                typeSelect.value = 'XPath';
+            }
             document.getElementById('addManualModal').style.display = 'flex';
+
             
             // Trigger placeholder update
             onManualTypeChange();

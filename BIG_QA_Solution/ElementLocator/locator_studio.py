@@ -271,6 +271,24 @@ def config_changes(project_tool, project_lang, sel_tool, sel_lang):
     if not _values_match(project_lang, sel_lang):
         changed.append(f"Language (Expected: {project_lang}, Got: {sel_lang})")
     return changed
+def filter_locators(locators, tool):
+    if tool and tool.lower() == "selenium":
+        filtered = []
+        for loc in locators:
+            l_type = loc.get("type", "")
+            if l_type.startswith("getBy") or l_type == "Test ID":
+                continue
+            # Copy to avoid side-effects
+            loc_copy = dict(loc)
+            if "alternatives" in loc_copy and isinstance(loc_copy["alternatives"], list):
+                loc_copy["alternatives"] = [
+                    alt for alt in loc_copy["alternatives"]
+                    if not (alt.get("type", "").startswith("getBy") or alt.get("type", "") == "Test ID")
+                ]
+            filtered.append(loc_copy)
+        return filtered
+    return locators
+
 
 
 class StudioBridge(QObject):
@@ -974,6 +992,8 @@ class MergeWindow(QMainWindow):
                 locators = payload.get("locators", [])
                 tool     = payload.get("tool", self.tool)
                 lang     = payload.get("lang", self.lang)
+                locators = filter_locators(locators, tool)
+
 
                 # ── Layer 1: Python-side flag ──────────────────────────────
                 # Guard closeEvent so any OS-level close event sent to this
@@ -1077,6 +1097,8 @@ class MergeWindow(QMainWindow):
                 tool     = payload.get("tool", self.tool)
                 lang     = payload.get("lang", self.lang)
                 file_path = payload.get("file_path", "")
+                locators = filter_locators(locators, tool)
+
                 bypass_style = payload.get("bypass_style", self.bypass_style)
 
                 title_cl = "".join(
@@ -1427,8 +1449,10 @@ class LocatorStudio(QMainWindow):
 
     def _on_elements_captured(self, data):
         """Elements captured from browser_controller -> send to Dashboard UI"""
-        json_data = json.dumps(data)
+        filtered_data = filter_locators(data, self.project_tool)
+        json_data = json.dumps(filtered_data)
         self.bridge.locatorsReceived.emit(json_data)
+
 
     def _on_window_opened(self, url, title):
         """A new window/tab was opened by an action -> tell the dashboard so it
@@ -1448,6 +1472,10 @@ class LocatorStudio(QMainWindow):
                 # via the shared helper (which is idempotent).
                 print("[Studio] dashboard_ready received from JS", flush=True)
                 self._push_project_context()
+            
+            elif action == "tool_changed":
+                self.project_tool = payload.get("tool", self.project_tool)
+
             
             elif action == "launch_url":
                 url = payload.get("url")
@@ -1510,6 +1538,9 @@ class LocatorStudio(QMainWindow):
                 tool = payload.get("tool", "Playwright")
                 lang = payload.get("lang", "TypeScript")
                 current_url = payload.get("target_url", "")
+                
+                locators = filter_locators(locators, tool)
+
                 
                 # Check for changes in configuration
                 changed = config_changes(self.project_tool, self.project_lang, tool, lang)
@@ -1601,6 +1632,7 @@ class LocatorStudio(QMainWindow):
 
             elif action == "export_to_excel":
                 locators = payload.get("locators", [])
+                locators = filter_locators(locators, self.project_tool)
                 title_cl = "".join(c for c in self.browser_ctrl.view.page().title() if c.isalnum())
                 if not title_cl: title_cl = "MyPage"
 
@@ -1618,6 +1650,8 @@ class LocatorStudio(QMainWindow):
                 locators = payload.get("locators", [])
                 tool = payload.get("tool", "Playwright")
                 lang = payload.get("lang", "TypeScript")
+                locators = filter_locators(locators, tool)
+
 
                 db_path = os.path.normpath(BASE_DIR.parent / 'ScriptGenerator' / 'local_database.db')
                 
@@ -1691,6 +1725,8 @@ class LocatorStudio(QMainWindow):
                 locators = payload.get("locators", [])
                 tool     = payload.get("tool", "Playwright")
                 lang     = payload.get("lang", "TypeScript")
+                locators = filter_locators(locators, tool)
+
 
                 # Warn (and disable style inheritance) only on a genuine
                 # tool/language mismatch with the selected project.
@@ -1751,6 +1787,8 @@ class LocatorStudio(QMainWindow):
                 tool = payload.get("tool", "Playwright")
                 lang = payload.get("lang", "TypeScript")
                 current_url = payload.get("target_url", "")
+                locators = filter_locators(locators, tool)
+
 
                 changed = config_changes(self.project_tool, self.project_lang, tool, lang)
 
@@ -1791,6 +1829,8 @@ class LocatorStudio(QMainWindow):
                 locators = payload.get("locators", [])
                 tool = payload.get("tool", "Playwright")
                 lang = payload.get("lang", "TypeScript")
+                locators = filter_locators(locators, tool)
+
                 
                 if not hasattr(self, 'grid_window') or self.grid_window is None:
                     self.grid_window = GridWindow(self, locators, tool, lang)
