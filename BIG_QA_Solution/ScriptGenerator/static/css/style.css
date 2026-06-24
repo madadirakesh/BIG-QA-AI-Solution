@@ -372,6 +372,21 @@ textarea.input-error {
     border-color: var(--error) !important;
     box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.15) !important;
 }
+input.is-invalid,
+select.is-invalid,
+textarea.is-invalid {
+    border-color: var(--error) !important;
+    box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.18) !important;
+}
+.error-text {
+    display: none;
+    color: var(--error);
+    font-size: 0.8rem;
+    margin-top: 5px;
+}
+.error-text.show {
+    display: block;
+}
 input.input-valid,
 select.input-valid {
     border-color: var(--success) !important;

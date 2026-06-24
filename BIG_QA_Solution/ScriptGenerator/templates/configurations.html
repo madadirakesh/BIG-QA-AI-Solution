@@ -76,10 +76,12 @@
         <!-- 2. Project Name Input / Dropdown -->
         <div class="form-group" style="margin-bottom:1.25rem;">
             <label style="margin-bottom:6px;display:block;font-size:0.9rem;color:var(--text-secondary);">Project Name <span style="color:#ef4444;">*</span></label>
-            <input type="text" id="projectNameInput" placeholder="Enter project name" style="width:100%;padding:10px 12px;background:var(--bg-primary);border:1px solid var(--glass-border);border-radius:8px;color:var(--text-primary);font-family:inherit;">
-            <select id="projectNameSelect" onchange="onProjectSelectChange()" style="display:none;width:100%;padding:10px 12px;background:var(--bg-primary);border:1px solid var(--glass-border);border-radius:8px;color:var(--text-primary);font-family:inherit;">
+            <input type="text" id="projectNameInput" oninput="clearProjectConfigFieldError('projectNameInput')" placeholder="Enter project name" style="width:100%;padding:10px 12px;background:var(--bg-primary);border:1px solid var(--glass-border);border-radius:8px;color:var(--text-primary);font-family:inherit;">
+            <select id="projectNameSelect" onchange="clearProjectConfigFieldError('projectNameSelect'); onProjectSelectChange()" style="display:none;width:100%;padding:10px 12px;background:var(--bg-primary);border:1px solid var(--glass-border);border-radius:8px;color:var(--text-primary);font-family:inherit;">
                 <option value="">-- Choose Project --</option>
             </select>
+            <small class="error-text" id="projectNameInputError"></small>
+            <small class="error-text" id="projectNameSelectError"></small>
         </div>
 
         <!-- 3. Application URL -->
@@ -106,31 +108,35 @@
         <!-- 6. Git Repository URL -->
         <div class="form-group" style="margin-bottom:1.25rem;">
             <label for="gitUrlInput" style="margin-bottom:6px;display:block;font-size:0.9rem;color:var(--text-secondary);">Git Repository URL</label>
-            <input type="text" id="gitUrlInput" oninput="updateGitMandatoryStars()" placeholder="e.g. https://github.com/user/repo.git" style="width:100%;padding:10px 12px;background:var(--bg-primary);border:1px solid var(--glass-border);border-radius:8px;color:var(--text-primary);font-family:inherit;">
+            <input type="text" id="gitUrlInput" oninput="clearProjectConfigFieldError('gitUrlInput'); clearProjectConfigFieldError('gitUsernameInput'); clearProjectConfigFieldError('gitTokenInput'); updateGitMandatoryStars()" placeholder="e.g. https://github.com/user/repo.git" style="width:100%;padding:10px 12px;background:var(--bg-primary);border:1px solid var(--glass-border);border-radius:8px;color:var(--text-primary);font-family:inherit;">
+            <small class="error-text" id="gitUrlInputError"></small>
         </div>
 
         <!-- 7. Git Username -->
         <div class="form-group" style="margin-bottom:1.25rem;">
             <label for="gitUsernameInput" style="margin-bottom:6px;display:block;font-size:0.9rem;color:var(--text-secondary);">Git Username <span id="gitUserReqStar" style="display:none;color:#ef4444;">*</span></label>
-            <input type="text" id="gitUsernameInput" placeholder="Enter Git Username" style="width:100%;padding:10px 12px;background:var(--bg-primary);border:1px solid var(--glass-border);border-radius:8px;color:var(--text-primary);font-family:inherit;">
+            <input type="text" id="gitUsernameInput" oninput="clearProjectConfigFieldError('gitUsernameInput'); clearProjectConfigFieldError('gitUrlInput')" placeholder="Enter Git Username" style="width:100%;padding:10px 12px;background:var(--bg-primary);border:1px solid var(--glass-border);border-radius:8px;color:var(--text-primary);font-family:inherit;">
+            <small class="error-text" id="gitUsernameInputError"></small>
         </div>
 
         <!-- 8. Git PA Token -->
         <div class="form-group" style="margin-bottom:1.25rem;">
             <label for="gitTokenInput" style="margin-bottom:6px;display:block;font-size:0.9rem;color:var(--text-secondary);">Git PA Token <span id="gitTokenReqStar" style="display:none;color:#ef4444;">*</span></label>
             <div class="password-wrapper" style="position:relative;">
-                <input type="password" id="gitTokenInput" placeholder="Enter Git Personal Access Token" style="width:100%;padding:10px 12px;background:var(--bg-primary);border:1px solid var(--glass-border);border-radius:8px;color:var(--text-primary);font-family:inherit;">
+                <input type="password" id="gitTokenInput" oninput="clearProjectConfigFieldError('gitTokenInput'); clearProjectConfigFieldError('gitUrlInput')" placeholder="Enter Git Personal Access Token" style="width:100%;padding:10px 12px;background:var(--bg-primary);border:1px solid var(--glass-border);border-radius:8px;color:var(--text-primary);font-family:inherit;">
                 <button class="pwd-toggle" onclick="togglePwdLocal('gitTokenInput', this)" type="button"><i class="fas fa-eye"></i></button>
             </div>
+            <small class="error-text" id="gitTokenInputError"></small>
         </div>
 
         <!-- 9. Local Automation Directory Path -->
         <div class="form-group" style="margin-bottom:1.25rem;">
             <label for="projectPathInput" style="margin-bottom:6px;display:block;font-size:0.9rem;color:var(--text-secondary);">Local Automation Directory path <span style="color:#ef4444;">*</span></label>
             <div style="display:flex;gap:8px;">
-                <input type="text" id="projectPathInput" placeholder="e.g. C:\automation\project" style="flex:1;padding:10px 12px;background:var(--bg-primary);border:1px solid var(--glass-border);border-radius:8px;color:var(--text-primary);font-family:inherit;">
+                <input type="text" id="projectPathInput" oninput="clearProjectConfigFieldError('projectPathInput')" placeholder="e.g. C:\automation\project" style="flex:1;padding:10px 12px;background:var(--bg-primary);border:1px solid var(--glass-border);border-radius:8px;color:var(--text-primary);font-family:inherit;">
                 <button type="button" onclick="browseProjectDirectory()" class="btn btn-secondary" style="white-space:nowrap;padding:10px 15px;"><i class="fas fa-folder-open"></i> Browse</button>
             </div>
+            <small class="error-text" id="projectPathInputError"></small>
         </div>
 
         <!-- 10. Test Execution commands -->
@@ -260,6 +266,86 @@
         document.getElementById('configureProjectModal').style.display = 'none';
     }
 
+    function getProjectConfigValidationFieldIds() {
+        return [
+            'projectNameInput',
+            'projectNameSelect',
+            'gitUrlInput',
+            'gitUsernameInput',
+            'gitTokenInput',
+            'projectPathInput'
+        ];
+    }
+
+    function clearProjectConfigFieldError(fieldId) {
+        if (typeof clearFieldError === 'function') {
+            clearFieldError(fieldId);
+            return;
+        }
+        const input = document.getElementById(fieldId);
+        const error = document.getElementById(fieldId + 'Error');
+        if (input) input.classList.remove('is-invalid');
+        if (error) {
+            error.textContent = '';
+            error.classList.remove('show');
+        }
+    }
+
+    function clearProjectConfigErrors() {
+        getProjectConfigValidationFieldIds().forEach(clearProjectConfigFieldError);
+    }
+
+    function validateProjectConfiguration(values) {
+        const schema = {};
+        if (values.isNew) {
+            schema.projectNameInput = { required: true, message: 'Project Name is required.' };
+        } else {
+            schema.projectNameSelect = { required: true, message: 'Please select a project to update.' };
+        }
+
+        if (values.gitRepoUrl || values.gitUsername || values.gitPaToken) {
+            schema.gitUrlInput = values.gitRepoUrl
+                ? {
+                    pattern: /^(https?:\/\/|git@|ssh:\/\/).+/i,
+                    message: 'Invalid Git Repository URL format. Must start with http://, https://, git@, or ssh://'
+                }
+                : {
+                    required: true,
+                    message: 'Git Repository URL is mandatory when Git Username or Git PA Token is provided.'
+                };
+        }
+
+        if (values.gitRepoUrl) {
+            schema.gitUsernameInput = { required: true, message: 'Git Username is mandatory when Git URL is provided.' };
+            schema.gitTokenInput = { required: true, message: 'Git PA Token is mandatory when Git URL is provided.' };
+        }
+
+        schema.projectPathInput = {
+            required: true,
+            message: values.gitRepoUrl
+                ? 'Local Automation Directory path is mandatory when Git Repository URL is provided.'
+                : 'Local Automation Directory path is required.'
+        };
+
+        const fieldValues = {
+            projectNameInput: values.projectName,
+            projectNameSelect: values.projectId,
+            gitUrlInput: values.gitRepoUrl,
+            gitUsernameInput: values.gitUsername,
+            gitTokenInput: values.gitPaToken,
+            projectPathInput: values.projectPath
+        };
+        const isValid = typeof validateForm === 'function'
+            ? validateForm(schema, fieldValues)
+            : Object.keys(schema).every(function(inputId) {
+                const rule = schema[inputId] || {};
+                const value = (fieldValues[inputId] || '').trim();
+                return !(rule.required && !value) && !(rule.pattern && value && !rule.pattern.test(value));
+            });
+
+        return isValid;
+    }
+
     function onNewProjectToggleChange() {
         const toggle = document.getElementById('newProjectToggle');
         const isNew = toggle.checked;
@@ -271,6 +357,7 @@
         
         // Reset stars
         updateGitMandatoryStars();
+        clearProjectConfigErrors();
 
         if (isNew) {
             nameInput.style.display = 'block';
@@ -304,6 +391,7 @@
         document.getElementById('gitConfiguredToggle').checked = false;
         document.getElementById('gitConfiguredLabel').innerText = "No";
         updateGitMandatoryStars();
+        clearProjectConfigErrors();
     }
 
     function updateGitMandatoryStars() {
@@ -382,6 +470,7 @@
             const d = await r.json();
             if (d.path) {
                 document.getElementById('projectPathInput').value = d.path;
+                clearProjectConfigFieldError('projectPathInput');
             }
         } catch (e) {
             showToast('Failed to browse directory.', 'error');
@@ -403,42 +492,15 @@
         const runCommands = document.getElementById('runCommandsInput').value.trim();
         const isGitConfigured = document.getElementById('gitConfiguredToggle').checked;
 
-        if (isNew && !projectName) {
-            showToast('Project Name is required.', 'error');
-            return;
-        }
-        if (!isNew && !projectId) {
-            showToast('Please select a project to update.', 'error');
-            return;
-        }
-        if (gitRepoUrl && !projectPath) {
-            showToast('Local Automation Directory path is mandatory when Git Repository URL is provided.', 'error');
-            return;
-        }
-        if (!projectPath) {
-            showToast('Local Automation Directory path is required.', 'error');
-            return;
-        }
-
-        if (gitRepoUrl) {
-            if (!gitRepoUrl.startsWith('http://') && !gitRepoUrl.startsWith('https://') && !gitRepoUrl.startsWith('git@') && !gitRepoUrl.startsWith('ssh://')) {
-                showToast('Invalid Git Repository URL format. Must start with http://, https://, git@, or ssh://', 'error');
-                return;
-            }
-            if (!gitUsername) {
-                showToast('Git Username is mandatory when Git URL is provided.', 'error');
-                return;
-            }
-            if (!gitPaToken) {
-                showToast('Git PA Token is mandatory when Git URL is provided.', 'error');
-                return;
-            }
-        } else {
-            if (gitUsername || gitPaToken) {
-                showToast('Git Repository URL is mandatory when Git Username or Git PA Token is provided.', 'error');
-                return;
-            }
-        }
+        if (!validateProjectConfiguration({
+            isNew,
+            projectName,
+            projectId,
+            projectPath,
+            gitRepoUrl,
+            gitUsername,
+            gitPaToken
+        })) return;
 
         const btn = document.getElementById('projectConfigSubmitBtn');
         const originalText = btn.innerHTML;
