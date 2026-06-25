@@ -51,6 +51,13 @@ def get_flask_secret_key():
         # Last-resort fallback keeps the app bootable, but sessions will reset on reload.
         return generated_key
 
+def get_env_bool(name, default=False):
+    """Parse a boolean environment variable with a safe default."""
+    value = os.environ.get(name)
+    if value is None:
+        return default
+    return value.strip().lower() in ("1", "true", "yes", "on")
+
 def install_prerequisites():
     req_file = ROOT_DIR / "requirements.txt"
     if req_file.exists():
@@ -2450,7 +2457,8 @@ if __name__ == '__main__':
         seed()
         launch_backend()
 
-    # Watch templates/static too so HTML/CSS/JS edits also restart the server (triggering the reload).
+    # When enabled, watch templates/static too so HTML/CSS/JS edits also restart the server.
     extra_files = [str(p) for sub in ('templates', 'static')
                    for p in (BASE_DIR / sub).rglob('*') if p.is_file()]
-    app.run(debug=True, use_reloader=True, port=port, threaded=True, extra_files=extra_files)
+    use_reloader = get_env_bool("USE_RELOADER", default=False)
+    app.run(debug=True, use_reloader=use_reloader, port=port, threaded=True, extra_files=extra_files)
