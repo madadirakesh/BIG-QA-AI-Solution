@@ -3034,6 +3034,13 @@
 
             if (!bestLoc) return;
 
+            // Check for duplicates
+            const isDuplicate = capturedElements.some(e => !e.isFrame && e.type === bestLoc.type && e.value === bestLoc.value);
+            if (isDuplicate) {
+                setLastAction(`Duplicate ignored: ${bestLoc.value.substring(0, 30)}`);
+                return;
+            }
+
             bestLoc.action = 'Click';
             bestLoc.alternatives = ranked.filter(l => l !== bestLoc).slice(0, 8);
 
@@ -3346,7 +3353,29 @@
             if (pyBridge) {
                 pyBridge.callPython('copy_to_clipboard', JSON.stringify({ text: '' }));
                 pyBridge.callPython('clear_elements', '');
+                try {
+                    pyBridge.callPython("verify_locator", JSON.stringify({ type: "CSS", value: "" }));
+                } catch (e) {
+                    console.error("Failed to clear verify_locator state:", e);
+                }
             }
+
+            // Clear Live Locator Console
+            const inputEl = document.getElementById('liveConsoleInput');
+            if (inputEl) {
+                inputEl.value = '';
+                inputEl.style.borderColor = 'rgba(255,255,255,0.1)';
+            }
+            const countEl = document.getElementById('liveConsoleCount');
+            if (countEl) {
+                countEl.innerText = '0 matches';
+                countEl.style.color = 'var(--text-secondary)';
+            }
+            const feedbackEl = document.getElementById('liveConsoleFeedback');
+            if (feedbackEl) {
+                feedbackEl.innerHTML = '';
+            }
+
             setLastAction('Queue cleared');
         }
 
@@ -3567,6 +3596,13 @@
                 alternatives: [],
                 aiGenerated: false
             };
+
+            // Check for duplicates
+            const isDuplicate = capturedElements.some(e => !e.isFrame && e.type === type && e.value === value);
+            if (isDuplicate) {
+                showAlert("An element with this locator value and type is already in the queue.");
+                return;
+            }
 
             capturedElements.push(newElement);
             hideAddManualModal();
@@ -4094,6 +4130,13 @@
                 count: parseInt(document.getElementById('liveConsoleCount').innerText) || 1,
                 inIframe: false
             };
+
+            // Check for duplicates
+            const isDuplicate = capturedElements.some(e => !e.isFrame && e.type === type && e.value === val);
+            if (isDuplicate) {
+                showAlert("This locator is already in the queue.");
+                return;
+            }
 
             capturedElements.push(manualLoc);
             appendNewItem(capturedElements.length - 1);
