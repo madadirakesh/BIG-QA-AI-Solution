@@ -339,6 +339,41 @@
         });
 
         // ── Global Active Project ─────────────────────────────────────
+        async function refreshGlobalProjectSelectors(preferredProjectId = null) {
+            try {
+                const response = await fetch('/api/projects');
+                const data = await response.json();
+                if (data.status !== 'success') return;
+
+                const selectors = ['globalActiveProject', 'homeActiveProject']
+                    .map(id => document.getElementById(id))
+                    .filter(Boolean);
+                if (!selectors.length) return;
+
+                selectors.forEach(select => {
+                    const previousValue = select.value;
+                    const keepValue = preferredProjectId && String(previousValue) === String(preferredProjectId)
+                        ? String(preferredProjectId)
+                        : String(previousValue || '');
+
+                    select.innerHTML = '<option value="">-- Select Active Project --</option>';
+                    data.data.forEach(project => {
+                        const opt = document.createElement('option');
+                        opt.value = project.id;
+                        opt.textContent = project.project_name;
+                        opt.setAttribute('data-path', project.project_path || '');
+                        select.appendChild(opt);
+                    });
+
+                    if (keepValue && Array.from(select.options).some(opt => opt.value === keepValue)) {
+                        select.value = keepValue;
+                    }
+                });
+            } catch (error) {
+                console.error('Failed to refresh active project selectors:', error);
+            }
+        }
+
         async function setGlobalActiveProject(selectElement) {
             const projectId = selectElement.value;
             const projectName = selectElement.options[selectElement.selectedIndex].text;

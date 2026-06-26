@@ -16,7 +16,7 @@ class EnvironmentSetup:
         return platform.system().lower() == "darwin"
 
     @classmethod
-    def _augmented_probe_env(cls, check_cmd):
+    def _augmented_probe_env(cls, check_cmd, base_env=None):
         """Mirror common interactive shell PATH setup for dependency probes.
 
         The app can be launched from a GUI, service, IDE, or an older shell session whose PATH
@@ -25,7 +25,7 @@ class EnvironmentSetup:
         supplement PATH with well-known tool-home variables and standard install locations across
         Windows, macOS, and Linux before running the probe.
         """
-        env = os.environ.copy()
+        env = dict(base_env or os.environ.copy())
 
         tool = (check_cmd or "").strip().split()[0].lower()
         candidate_dirs = []
@@ -97,7 +97,17 @@ class EnvironmentSetup:
 
         if tool == "java":
             add_dir(env.get("JAVA_HOME"))
-            if not cls.is_windows():
+            if cls.is_windows():
+                program_roots = [
+                    env.get("ProgramFiles"),
+                    env.get("ProgramFiles(x86)"),
+                    env.get("ProgramW6432"),
+                    "C:\\",
+                    str(Path.home()),
+                ]
+                for root in filter(None, program_roots):
+                    add_globbed_dirs(root, ("jdk*", "java*", "temurin*", "zulu*", "adoptopenjdk*"))
+            else:
                 add_common_unix_bins()
 
         if tool in ("python", "python3", "pip", "pip3", "py"):
@@ -167,6 +177,60 @@ class EnvironmentSetup:
             existing_path = env.get("PATH", "")
             merged = candidate_dirs + ([existing_path] if existing_path else [])
             env["PATH"] = os.pathsep.join(merged)
+        return env
+
+    @staticmethod
+    def _home_from_executable(executable_path):
+        if not executable_path:
+            return None
+        path = Path(executable_path)
+        parent = path.parent
+        if parent.name.lower() == "bin":
+            return str(parent.parent)
+        return str(parent)
+
+    @staticmethod
+    def _is_valid_java_home(java_home):
+        if not java_home:
+            return False
+        root = Path(java_home)
+        for name in ("java", "java.exe"):
+            if (root / "bin" / name).exists():
+                return True
+        return False
+
+    @classmethod
+    def prepare_runtime_env(cls, command, base_env=None):
+        """Build a subprocess environment that can actually launch the requested tool.
+
+        The runtime executor differs from the preflight probe in one important way: wrappers such
+        as `mvn` consult JAVA_HOME directly and fail hard when it points at a stale install, even
+        if `java` itself is discoverable on PATH. Reuse the same path augmentation logic we use
+        for dependency detection, then normalise JAVA_HOME / MAVEN_HOME from the resolved
+        executable paths when they are missing or invalid.
+        """
+        env = cls._augmented_probe_env(command, base_env=base_env)
+        java_env = cls._augmented_probe_env("java -version", base_env=env)
+        env["PATH"] = java_env.get("PATH", env.get("PATH", ""))
+
+        java_path = cls._resolve_command_path("java -version", env)
+        if java_path and not cls._is_valid_java_home(env.get("JAVA_HOME")):
+            env["JAVA_HOME"] = cls._home_from_executable(java_path)
+
+        mvn_path = cls._resolve_command_path("mvn -version", env)
+        if mvn_path:
+            mvn_home = cls._home_from_executable(mvn_path)
+            if mvn_home and not env.get("MAVEN_HOME"):
+                env["MAVEN_HOME"] = mvn_home
+            if mvn_home and not env.get("M2_HOME"):
+                env["M2_HOME"] = mvn_home
+
+        # Stale JAVA_HOME is worse than no JAVA_HOME for Maven/Gradle wrappers. If we still
+        # couldn't resolve a valid JDK, remove the broken value so downstream tools can fall back
+        # to PATH or surface a cleaner "java not found" error.
+        if env.get("JAVA_HOME") and not cls._is_valid_java_home(env.get("JAVA_HOME")):
+            env.pop("JAVA_HOME", None)
+
         return env
 
     @classmethod
