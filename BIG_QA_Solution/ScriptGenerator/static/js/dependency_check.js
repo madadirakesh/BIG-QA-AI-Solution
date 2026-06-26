@@ -8,6 +8,15 @@ const _DEP_STYLE = {
     mismatch: { icon: 'fa-exclamation-triangle', color: '#f1c40f' }
 };
 
+function escapeDependencyText(value) {
+    return String(value == null ? '' : value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
 function runDependencyCheck(opts) {
     const rowEl = opts.rowEl;
     const listEl = opts.listEl;
@@ -98,12 +107,20 @@ function buildDependencyCheckHTML(deps) {
         } else {
             detail = 'Not found' + (d.required ? (' (needs ' + d.required + ')') : '') + ' — ' + d.hint;
         }
+        const debugBits = [];
+        const shouldShowDebug = d.status !== 'ok' && !!d.executable_path;
+        if (shouldShowDebug) debugBits.push('Detected path: ' + escapeDependencyText(d.executable_path));
+        if (shouldShowDebug && d.command_used) debugBits.push('Check: ' + escapeDependencyText(d.command_used));
+        const debugHtml = debugBits.length
+            ? '<br><span style="opacity:0.7; font-family:monospace;">' + debugBits.join(' | ') + '</span>'
+            : '';
         html +=
             '<div style="display:flex; align-items:flex-start; gap:8px; font-size:0.85rem; margin-bottom:6px; text-align:left;">'
             + '<i class="fas ' + s.icon + '" style="color:' + s.color + '; margin-top:2px;"></i>'
             + '<span><b>' + d.name + '</b>'
             + (d.required ? (' <span style="opacity:0.7;">(requires ' + d.required + '+)</span>') : '')
-            + '<br><span style="opacity:0.8;">' + detail + '</span></span></div>';
+            + '<br><span style="opacity:0.8;">' + detail + '</span>'
+            + debugHtml + '</span></div>';
     });
     return html;
 }

@@ -3,6 +3,8 @@ import platform
 import os
 import re
 import logging
+from pathlib import Path
+import shutil
 
 class EnvironmentSetup:
     @staticmethod
@@ -13,13 +15,200 @@ class EnvironmentSetup:
     def is_mac():
         return platform.system().lower() == "darwin"
 
+    @classmethod
+    def _augmented_probe_env(cls, check_cmd):
+        """Mirror common interactive shell PATH setup for dependency probes.
+
+        The app can be launched from a GUI, service, IDE, or an older shell session whose PATH
+        does not match a freshly opened terminal. That is most noticeable with Maven: `mvn -v`
+        works in the user's terminal, but the app reports "Not found". To narrow that gap we
+        supplement PATH with well-known tool-home variables and standard install locations across
+        Windows, macOS, and Linux before running the probe.
+        """
+        env = os.environ.copy()
+
+        tool = (check_cmd or "").strip().split()[0].lower()
+        candidate_dirs = []
+
+        def add_dir(path_str, include_bin=True):
+            if not path_str:
+                return
+            path = Path(path_str)
+            if include_bin and path.name.lower() != "bin":
+                path = path / "bin"
+            try:
+                if path.is_dir():
+                    resolved = str(path.resolve())
+                    if resolved not in candidate_dirs:
+                        candidate_dirs.append(resolved)
+            except OSError:
+                return
+
+        def add_globbed_dirs(root_str, patterns, include_bin=True):
+            if not root_str:
+                return
+            root_path = Path(root_str)
+            for pattern in patterns:
+                try:
+                    for match in root_path.glob(pattern):
+                        add_dir(str(match), include_bin=include_bin)
+                except OSError:
+                    continue
+
+        def add_common_unix_bins():
+            for known_bin in (
+                "/opt/homebrew/bin",
+                "/usr/local/bin",
+                "/usr/bin",
+                "/opt/bin",
+                "/snap/bin",
+            ):
+                add_dir(known_bin, include_bin=False)
+
+        if tool == "mvn":
+            for env_key in ("MAVEN_HOME", "M2_HOME", "M2"):
+                add_dir(env.get(env_key))
+
+            # SDKMAN is a common source of "works in terminal, missing in app" on macOS/Linux
+            # because shell startup files export it, but GUI-launched apps never source them.
+            add_dir(env.get("SDKMAN_CANDIDATES_DIR") and str(Path(env["SDKMAN_CANDIDATES_DIR"]) / "maven" / "current"))
+            add_dir(str(Path.home() / ".sdkman" / "candidates" / "maven" / "current"))
+
+            if cls.is_windows():
+                program_roots = [
+                    env.get("ProgramFiles"),
+                    env.get("ProgramFiles(x86)"),
+                    env.get("ProgramW6432"),
+                    "C:\\",
+                    str(Path.home()),
+                ]
+                for root in filter(None, program_roots):
+                    add_globbed_dirs(root, ("apache-maven*", "maven*"))
+            else:
+                add_common_unix_bins()
+
+                for root in (
+                    "/opt",
+                    "/usr/local",
+                    "/usr/share",
+                    str(Path.home()),
+                ):
+                    add_globbed_dirs(root, ("apache-maven*", "maven*", "apache-maven-*"))
+
+        if tool == "java":
+            add_dir(env.get("JAVA_HOME"))
+            if not cls.is_windows():
+                add_common_unix_bins()
+
+        if tool in ("python", "python3", "pip", "pip3", "py"):
+            for env_key in ("PYENV_ROOT",):
+                root = env.get(env_key)
+                if root:
+                    add_dir(str(Path(root) / "shims"), include_bin=False)
+                    add_dir(str(Path(root) / "bin"), include_bin=False)
+            add_dir(str(Path.home() / ".pyenv" / "shims"), include_bin=False)
+            add_dir(str(Path.home() / ".pyenv" / "bin"), include_bin=False)
+            add_dir(str(Path.home() / ".asdf" / "shims"), include_bin=False)
+
+            conda_prefix = env.get("CONDA_PREFIX")
+            if conda_prefix:
+                add_dir(conda_prefix, include_bin=not cls.is_windows())
+                if cls.is_windows():
+                    add_dir(str(Path(conda_prefix) / "Scripts"), include_bin=False)
+
+            if cls.is_windows():
+                local_appdata = env.get("LOCALAPPDATA")
+                appdata = env.get("APPDATA")
+                for root in filter(None, (local_appdata, appdata)):
+                    add_globbed_dirs(root, ("Programs/Python/Python*", "Python/Python*"), include_bin=False)
+                add_dir(str(Path.home() / "AppData" / "Local" / "Programs" / "Python"), include_bin=False)
+            else:
+                add_common_unix_bins()
+                add_dir(str(Path.home() / ".local" / "bin"), include_bin=False)
+
+        if tool in ("node", "npm", "npx"):
+            for env_key in ("NVM_BIN", "NVM_SYMLINK"):
+                add_dir(env.get(env_key), include_bin=False)
+            volta_home = env.get("VOLTA_HOME")
+            if volta_home:
+                add_dir(str(Path(volta_home) / "bin"), include_bin=False)
+            fnm_dir = env.get("FNM_DIR")
+            if fnm_dir:
+                add_globbed_dirs(str(Path(fnm_dir) / "aliases"), ("default/bin", "*/bin"))
+            add_dir(str(Path.home() / ".nvm" / "versions" / "node"), include_bin=False)
+            add_globbed_dirs(str(Path.home() / ".nvm" / "versions" / "node"), ("*/bin",))
+            add_dir(str(Path.home() / ".volta" / "bin"), include_bin=False)
+            add_dir(str(Path.home() / ".asdf" / "shims"), include_bin=False)
+            if cls.is_windows():
+                appdata = env.get("APPDATA")
+                local_appdata = env.get("LOCALAPPDATA")
+                for root in filter(None, (appdata, local_appdata)):
+                    add_dir(str(Path(root) / "npm"), include_bin=False)
+                    add_globbed_dirs(root, ("nvm/*", "Programs/nodejs"), include_bin=False)
+                add_dir(str(Path.home() / "AppData" / "Roaming" / "npm"), include_bin=False)
+            else:
+                add_common_unix_bins()
+                add_dir(str(Path.home() / ".local" / "bin"), include_bin=False)
+
+        if tool == "dotnet":
+            for env_key in ("DOTNET_ROOT", "DOTNET_ROOT(x86)"):
+                add_dir(env.get(env_key), include_bin=False)
+            if cls.is_windows():
+                for root in filter(None, (env.get("ProgramFiles"), env.get("ProgramFiles(x86)"), env.get("ProgramW6432"))):
+                    add_dir(str(Path(root) / "dotnet"), include_bin=False)
+                add_dir(str(Path.home() / "AppData" / "Local" / "Microsoft" / "dotnet"), include_bin=False)
+            else:
+                add_common_unix_bins()
+                add_dir(str(Path.home() / ".dotnet"), include_bin=False)
+                add_dir("/usr/share/dotnet", include_bin=False)
+                add_dir("/usr/local/share/dotnet", include_bin=False)
+
+        if candidate_dirs:
+            existing_path = env.get("PATH", "")
+            merged = candidate_dirs + ([existing_path] if existing_path else [])
+            env["PATH"] = os.pathsep.join(merged)
+        return env
+
+    @classmethod
+    def _command_visible_in_env(cls, check_cmd, env):
+        tool = (check_cmd or "").strip().split()[0]
+        # `python -m pip`/`py -m pip` require a module in addition to the launcher itself; the
+        # presence of `python` alone must not be mistaken for a valid pip installation.
+        if " -m " in f" {check_cmd} ":
+            return False
+        return bool(tool and shutil.which(tool, path=env.get("PATH")))
+
+    @classmethod
+    def _resolve_command_path(cls, check_cmd, env):
+        tool = (check_cmd or "").strip().split()[0]
+        if not tool:
+            return None
+        resolved = shutil.which(tool, path=env.get("PATH"))
+        return str(Path(resolved).resolve()) if resolved else None
+
+    @classmethod
+    def _try_check_commands(cls, check_cmds):
+        commands = check_cmds if isinstance(check_cmds, (list, tuple)) else [check_cmds]
+        saw_visible_binary = False
+        for cmd in commands:
+            env = cls._augmented_probe_env(cmd)
+            try:
+                subprocess.run(
+                    cmd,
+                    shell=True,
+                    check=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    env=env,
+                )
+                return True
+            except (subprocess.CalledProcessError, FileNotFoundError):
+                saw_visible_binary = saw_visible_binary or cls._command_visible_in_env(cmd, env)
+        return saw_visible_binary
+
     @staticmethod
     def check_system_dependency(dep_name, check_cmd):
-        try:
-            subprocess.run(check_cmd, shell=True, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-            return True
-        except (subprocess.CalledProcessError, FileNotFoundError):
-            return False
+        return EnvironmentSetup._try_check_commands(check_cmd)
             
     @classmethod
     def verify_environment(cls, language):
@@ -28,8 +217,16 @@ class EnvironmentSetup:
             if not cls.check_system_dependency("Java", "java -version"): missing.append("Java")
             if not cls.check_system_dependency("Maven", "mvn -version"): missing.append("Maven")
         elif language == "Python":
-            py_cmd = "python --version" if cls.is_windows() else "python3.12 --version"
-            pip_cmd = "pip --version" if cls.is_windows() else "pip3.12 --version"
+            py_cmd = (
+                ["py -3.12 --version", "py -3 --version", "python --version", "python3 --version"]
+                if cls.is_windows()
+                else ["python3.12 --version", "python3 --version", "python --version"]
+            )
+            pip_cmd = (
+                ["py -3.12 -m pip --version", "py -3 -m pip --version", "python -m pip --version", "pip --version"]
+                if cls.is_windows()
+                else ["python3.12 -m pip --version", "python3 -m pip --version", "python -m pip --version", "pip3 --version", "pip --version"]
+            )
             if not cls.check_system_dependency("Python", py_cmd): missing.append("Python 3.12")
             if not cls.check_system_dependency("Pip", pip_cmd): missing.append("Pip 3.12")
         elif language in ["JS / TS", "JavaScript", "TypeScript"]:
@@ -51,26 +248,45 @@ class EnvironmentSetup:
     # installed, and whether the two agree. The user can then fix anything flagged before
     # clicking Generate. This is advisory only — nothing here blocks project creation.
 
-    @staticmethod
-    def _probe(check_cmd):
-        """Run a version-probe command and return (installed, combined_output).
+    @classmethod
+    def _probe(cls, check_cmd):
+        """Run a version-probe command and return probe details.
 
         `installed` is True when the command exists and exits 0. We merge stdout+stderr because
         several tools (notably `java -version`) print their version banner to stderr, and we want
         the version string regardless of which stream it lands on. On failure we still return any
         partial output the process produced so the caller can attempt to parse a version from it.
         """
-        try:
-            res = subprocess.run(check_cmd, shell=True, check=True,
-                                 stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-            return True, (res.stdout or b"").decode("utf-8", "ignore")
-        except subprocess.CalledProcessError as e:
-            out = e.output or b""
-            return False, out.decode("utf-8", "ignore") if isinstance(out, (bytes, bytearray)) else str(out)
-        except FileNotFoundError:
-            # Only reachable if a future caller passes shell=False; with shell=True a missing
-            # binary surfaces as a non-zero exit (CalledProcessError) instead.
-            return False, ""
+        commands = check_cmd if isinstance(check_cmd, (list, tuple)) else [check_cmd]
+        last_output = ""
+        saw_visible_binary = False
+        last_path = None
+        last_cmd = commands[-1] if commands else None
+        for cmd in commands:
+            env = cls._augmented_probe_env(cmd)
+            resolved_path = cls._resolve_command_path(cmd, env)
+            if resolved_path:
+                last_path = resolved_path
+                last_cmd = cmd
+            try:
+                res = subprocess.run(
+                    cmd,
+                    shell=True,
+                    check=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    env=env,
+                )
+                return True, (res.stdout or b"").decode("utf-8", "ignore"), resolved_path, cmd
+            except subprocess.CalledProcessError as e:
+                out = e.output or b""
+                saw_visible_binary = saw_visible_binary or cls._command_visible_in_env(cmd, env)
+                last_output = out.decode("utf-8", "ignore") if isinstance(out, (bytes, bytearray)) else str(out)
+            except FileNotFoundError:
+                # Only reachable if a future caller passes shell=False; with shell=True a missing
+                # binary surfaces as a non-zero exit (CalledProcessError) instead.
+                saw_visible_binary = saw_visible_binary or cls._command_visible_in_env(cmd, env)
+        return saw_visible_binary, last_output, last_path, last_cmd
 
     @staticmethod
     def _java_major(version):
@@ -156,8 +372,16 @@ class EnvironmentSetup:
                  "hint": "Install Maven from https://maven.apache.org/install.html and add 'mvn' to PATH."},
             ]
         if language == "Python":
-            py_cmd = "python --version" if cls.is_windows() else "python3.12 --version"
-            pip_cmd = "pip --version" if cls.is_windows() else "pip3.12 --version"
+            py_cmd = (
+                ["py -3.12 --version", "py -3 --version", "python --version", "python3 --version"]
+                if cls.is_windows()
+                else ["python3.12 --version", "python3 --version", "python --version"]
+            )
+            pip_cmd = (
+                ["py -3.12 -m pip --version", "py -3 -m pip --version", "python -m pip --version", "pip --version"]
+                if cls.is_windows()
+                else ["python3.12 -m pip --version", "python3 -m pip --version", "python -m pip --version", "pip3 --version", "pip --version"]
+            )
             return [
                 {"key": "python", "name": "Python", "check_cmd": py_cmd,
                  "version_re": r"Python ([\d.]+)", "profile_key": "python", "compare": "min_version",
@@ -201,7 +425,7 @@ class EnvironmentSetup:
         profile_versions = profile_versions or {}
         results = []
         for spec in cls._dependency_specs(language):
-            installed, output = cls._probe(spec["check_cmd"])
+            installed, output, executable_path, command_used = cls._probe(spec["check_cmd"])
 
             detected = None
             if installed and spec.get("version_re"):
@@ -245,6 +469,8 @@ class EnvironmentSetup:
                 "installed": installed,
                 "status": status,
                 "hint": spec["hint"],
+                "executable_path": executable_path,
+                "command_used": command_used,
             })
         return results
 
