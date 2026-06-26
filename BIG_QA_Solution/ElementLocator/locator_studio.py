@@ -573,6 +573,14 @@ class GridWindow(QMainWindow):
             elif action == "grid_store_db":
                 self._parent_studio.dashboard_view.page().runJavaScript("showDbModal();")
 
+            elif action == "grid_gen_po":
+                po_payload = {
+                    "locators": self.locators,
+                    "tool":     self.tool,
+                    "lang":     self.lang
+                }
+                self._parent_studio._handle_js_command("open_po_window", json.dumps(po_payload))
+
         except Exception as e:
             print(f"[GridWindow] _handle_command ERROR: {e}")
             logging.error(f"Error handling GridWindow command {action}: {e}")
@@ -1263,6 +1271,7 @@ class LocatorStudio(QMainWindow):
         self.merge_window = None
         self.grid_window  = None
         self.po_window    = None
+        self.locators     = []
         
         # Setup AI Service
         self.ai_tool = os.getenv("AI_TOOL", "GEMINI").strip().upper()
@@ -1450,6 +1459,7 @@ class LocatorStudio(QMainWindow):
     def _on_elements_captured(self, data):
         """Elements captured from browser_controller -> send to Dashboard UI"""
         filtered_data = filter_locators(data, self.project_tool)
+        self.locators.extend(filtered_data)
         json_data = json.dumps(filtered_data)
         self.bridge.locatorsReceived.emit(json_data)
 
@@ -1726,6 +1736,7 @@ class LocatorStudio(QMainWindow):
                 tool     = payload.get("tool", "Playwright")
                 lang     = payload.get("lang", "TypeScript")
                 locators = filter_locators(locators, tool)
+                self.locators = locators
 
 
                 # Warn (and disable style inheritance) only on a genuine
@@ -1788,6 +1799,7 @@ class LocatorStudio(QMainWindow):
                 lang = payload.get("lang", "TypeScript")
                 current_url = payload.get("target_url", "")
                 locators = filter_locators(locators, tool)
+                self.locators = locators
 
 
                 changed = config_changes(self.project_tool, self.project_lang, tool, lang)
@@ -1830,6 +1842,7 @@ class LocatorStudio(QMainWindow):
                 tool = payload.get("tool", "Playwright")
                 lang = payload.get("lang", "TypeScript")
                 locators = filter_locators(locators, tool)
+                self.locators = locators
 
                 
                 if not hasattr(self, 'grid_window') or self.grid_window is None:
@@ -1840,6 +1853,55 @@ class LocatorStudio(QMainWindow):
                 self.grid_window.show()
                 self.grid_window.raise_()
                 self.grid_window.activateWindow()
+
+            elif action == "edit_element":
+                idx = payload.get("idx")
+                field = payload.get("field")
+                value = payload.get("value")
+                if isinstance(idx, int) and 0 <= idx < len(self.locators):
+                    self.locators[idx][field] = value
+                    if field == 'nameHint':
+                        self.locators[idx]['name'] = value
+                    if getattr(self, "grid_window", None):
+                        self.grid_window.update_data(self.locators, self.project_tool, self.project_lang)
+
+            elif action == "delete_element":
+                idx = payload.get("idx")
+                if isinstance(idx, int) and 0 <= idx < len(self.locators):
+                    self.locators.pop(idx)
+                    if getattr(self, "grid_window", None):
+                        self.grid_window.update_data(self.locators, self.project_tool, self.project_lang)
+
+            elif action == "swap_element_alt":
+                elem_idx = payload.get("elemIdx")
+                alt_idx = payload.get("altIdx")
+                if isinstance(elem_idx, int) and 0 <= elem_idx < len(self.locators):
+                    el = self.locators[elem_idx]
+                    alts = el.get("alternatives", [])
+                    if isinstance(alt_idx, int) and 0 <= alt_idx < len(alts):
+                        chosen = alts[alt_idx]
+                        current = {"type": el.get("type"), "value": el.get("value"), "count": el.get("count")}
+                        el["type"] = chosen.get("type")
+                        el["value"] = chosen.get("value")
+                        el["count"] = chosen.get("count")
+                        alts[alt_idx] = current
+                        if getattr(self, "grid_window", None):
+                            self.grid_window.update_data(self.locators, self.project_tool, self.project_lang)
+
+            elif action == "reorder_elements":
+                old_idx = payload.get("oldIdx")
+                new_idx = payload.get("newIdx")
+                if isinstance(old_idx, int) and isinstance(new_idx, int):
+                    if 0 <= old_idx < len(self.locators) and 0 <= new_idx < len(self.locators):
+                        item = self.locators.pop(old_idx)
+                        self.locators.insert(new_idx, item)
+                        if getattr(self, "grid_window", None):
+                            self.grid_window.update_data(self.locators, self.project_tool, self.project_lang)
+
+            elif action == "clear_elements":
+                self.locators = []
+                if getattr(self, "grid_window", None):
+                    self.grid_window.update_data(self.locators, self.project_tool, self.project_lang)
 
             elif action == "request_ai_locators":
                 if not self.ai_api_key:

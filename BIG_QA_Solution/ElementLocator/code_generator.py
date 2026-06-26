@@ -30,7 +30,8 @@ class CodeGenerator:
                 lines.append("import org.openqa.selenium.*;")
                 lines.append("import org.openqa.selenium.support.*;\n")
             elif tool.lower() == "playwright":
-                lines.append("import com.microsoft.playwright.*;\n")
+                lines.append("import com.microsoft.playwright.*;")
+                lines.append("import com.microsoft.playwright.options.AriaRole;\n")
             
             lines.append(f"public class {page_name} {{\n")
 
@@ -51,7 +52,12 @@ class CodeGenerator:
                             continue   # window switch has no DOM locator field
                         name = loc.get("_final_name")
                         val = CodeGenerator.escape_quotes(loc.get("value", ""))
-                        lines.append(f"        this.{name} = this.page.locator(\"{val}\");")
+                        l_type = loc.get("type", "XPath")
+                        if l_type.startswith("getBy"):
+                            native_call = CodeGenerator._get_playwright_native_call_java(l_type, val)
+                            lines.append(f"        this.{name} = {native_call};")
+                        else:
+                            lines.append(f"        this.{name} = this.page.locator(\"{val}\");")
                 lines.append("    }\n")
                 lines.append("    public void navigateTo(String url) {")
                 lines.append("        this.page.navigate(url);")
@@ -86,24 +92,38 @@ class CodeGenerator:
             lines.append(f"class {page_name}:\n")
             if tool.lower() == "playwright":
                 lines.append("    def __init__(self, page):")
-                lines.append("        self.page = page\n")
+                lines.append("        self.page = page")
+                if locators:
+                    for loc in locators:
+                        if loc.get("action") == "SwitchToWindow":
+                            continue
+                        name = loc.get("_final_name")
+                        val = CodeGenerator.escape_quotes(loc.get("value", ""))
+                        l_type = loc.get("type", "XPath")
+                        category = loc.get("category", "Ok")
+                        lines.append(f"        # Priority: {category}")
+                        if l_type.startswith("getBy"):
+                            native_call = CodeGenerator._get_playwright_native_call_python(l_type, val)
+                            lines.append(f"        self.{name} = {native_call}")
+                        else:
+                            lines.append(f"        self.{name} = page.locator(\"{val}\")")
+                lines.append("")
                 lines.append("    def navigate_to(self, url):")
                 lines.append("        self.page.goto(url)\n")
             elif tool.lower() == "selenium":
                 lines.append("    def navigate_to(self, driver, url):")
                 lines.append("        driver.get(url)\n")
+                if locators:
+                    for loc in locators:
+                        if loc.get("action") == "SwitchToWindow":
+                            continue
+                        name = loc.get("_final_name")
+                        val = CodeGenerator.escape_quotes(loc.get("value", ""))
+                        category = loc.get("category", "Ok")
+                        lines.append(f"    # Priority: {category}")
+                        lines.append(f"    {name} = \"{val}\"\n")
 
             if locators:
-                for loc in locators:
-                    if loc.get("action") == "SwitchToWindow":
-                        continue   # window switch has no DOM locator field
-                    name = loc.get("_final_name")
-                    val = CodeGenerator.escape_quotes(loc.get("value", ""))
-                    category = loc.get("category", "Ok")
-
-                    lines.append(f"    # Priority: {category}")
-                    lines.append(f"    {name} = \"{val}\"\n")
-
                 for loc in locators:
                     name = loc.get("_final_name")
                     action = loc.get("action", "Click")
@@ -138,7 +158,12 @@ class CodeGenerator:
                             continue   # window switch has no DOM locator field
                         name = loc.get("_final_name")
                         val = CodeGenerator.escape_quotes(loc.get("value", ""))
-                        lines.append(f"        this._{name} = page.Locator(\"{val}\");")
+                        l_type = loc.get("type", "XPath")
+                        if l_type.startswith("getBy"):
+                            native_call = CodeGenerator._get_playwright_native_call_csharp(l_type, val)
+                            lines.append(f"        this._{name} = {native_call};")
+                        else:
+                            lines.append(f"        this._{name} = page.Locator(\"{val}\");")
                 lines.append("    }\n")
                 lines.append("    public async System.Threading.Tasks.Task NavigateToAsync(string url) {")
                 lines.append("        await _page.GotoAsync(url);")
@@ -254,9 +279,7 @@ class CodeGenerator:
             
             lines.append("}")
             lines.append("")
-            if is_ts:
-                lines.append(f"export {{ {page_name} }};")
-            else:
+            if not is_ts:
                 if is_pw:
                     lines.append(f"module.exports = {{ {page_name} }};")
                 else:
@@ -265,17 +288,44 @@ class CodeGenerator:
         return "\n".join(lines)
 
     @staticmethod
+    def _parse_get_by_role(val: str) -> tuple[str, str | None]:
+        val_stripped = val.strip()
+        
+        # Check for JavaScript options format: 'button', {name: 'Login'}
+        if "," in val_stripped:
+            parts = val_stripped.split(",", 1)
+            role = parts[0].strip().strip("'").strip('"')
+            rest = parts[1].strip()
+            import re
+            name_match = re.search(r"name\s*[:=]\s*['\"](.*?)['\"]", rest)
+            if name_match:
+                return role, name_match.group(1)
+            return role, None
+            
+        # Heuristic for || or : separator
+        separator = "||" if "||" in val_stripped else ":" if ":" in val_stripped else None
+        if separator:
+            parts = val_stripped.split(separator, 1)
+            role = parts[0].strip().strip("'").strip('"')
+            name = parts[1].strip().strip("'").strip('"')
+            return role, name
+            
+        # Simple unquoted fallback
+        role = val_stripped.strip("'").strip('"')
+        return role, None
+
+    @staticmethod
     def _get_playwright_native_call(l_type: str, val: str) -> str:
         """Converts internal type to Playwright native call string."""
         import json
-        safe_val = json.dumps(val)
         if l_type == "getByRole":
-            # Heuristic: if value looks like 'button:Login', split it
-            if ":" in val:
-                role, name = val.split(":", 1)
-                return f"page.getByRole('{role}', {{ name: {json.dumps(name)} }})"
-            return f"page.getByRole('{val}')"
-        elif l_type == "getByText":
+            role, name = CodeGenerator._parse_get_by_role(val)
+            if name:
+                return f"page.getByRole('{role}', {{ name: '{name}' }})"
+            return f"page.getByRole('{role}')"
+            
+        safe_val = json.dumps(val)
+        if l_type == "getByText":
             return f"page.getByText({safe_val})"
         elif l_type == "getByLabel":
             return f"page.getByLabel({safe_val})"
@@ -288,6 +338,83 @@ class CodeGenerator:
         elif l_type == "getByTestId":
             return f"page.getByTestId({safe_val})"
         return f"page.locator({safe_val})"
+
+    @staticmethod
+    def _get_playwright_native_call_python(l_type: str, val: str) -> str:
+        import json
+        if l_type == "getByRole":
+            role, name = CodeGenerator._parse_get_by_role(val)
+            if name:
+                escaped_name = name.replace('"', '\\"')
+                return f"page.get_by_role(\"{role}\", name=\"{escaped_name}\")"
+            return f"page.get_by_role(\"{role}\")"
+            
+        safe_val = json.dumps(val)
+        if l_type == "getByText":
+            return f"page.get_by_text({safe_val})"
+        elif l_type == "getByLabel":
+            return f"page.get_by_label({safe_val})"
+        elif l_type == "getByPlaceholder":
+            return f"page.get_by_placeholder({safe_val})"
+        elif l_type == "getByAltText":
+            return f"page.get_by_alt_text({safe_val})"
+        elif l_type == "getByTitle":
+            return f"page.get_by_title({safe_val})"
+        elif l_type == "getByTestId":
+            return f"page.get_by_test_id({safe_val})"
+        return f"page.locator({safe_val})"
+
+    @staticmethod
+    def _get_playwright_native_call_java(l_type: str, val: str) -> str:
+        import json
+        if l_type == "getByRole":
+            role, name = CodeGenerator._parse_get_by_role(val)
+            role_enum = role.upper()
+            if name:
+                escaped_name = name.replace('"', '\\"')
+                return f"page.getByRole(AriaRole.{role_enum}, new Page.GetByRoleOptions().setName(\"{escaped_name}\"))"
+            return f"page.getByRole(AriaRole.{role_enum})"
+            
+        safe_val = json.dumps(val)
+        if l_type == "getByText":
+            return f"page.getByText({safe_val})"
+        elif l_type == "getByLabel":
+            return f"page.getByLabel({safe_val})"
+        elif l_type == "getByPlaceholder":
+            return f"page.getByPlaceholder({safe_val})"
+        elif l_type == "getByAltText":
+            return f"page.getByAltText({safe_val})"
+        elif l_type == "getByTitle":
+            return f"page.getByTitle({safe_val})"
+        elif l_type == "getByTestId":
+            return f"page.getByTestId({safe_val})"
+        return f"page.locator({safe_val})"
+
+    @staticmethod
+    def _get_playwright_native_call_csharp(l_type: str, val: str) -> str:
+        import json
+        if l_type == "getByRole":
+            role, name = CodeGenerator._parse_get_by_role(val)
+            role_pascal = role[0].upper() + role[1:] if role else ""
+            if name:
+                escaped_name = name.replace('"', '\\"')
+                return f"page.GetByRole(AriaRole.{role_pascal}, new PageGetByRoleOptions {{ Name = \"{escaped_name}\" }})"
+            return f"page.GetByRole(AriaRole.{role_pascal})"
+            
+        safe_val = json.dumps(val)
+        if l_type == "getByText":
+            return f"page.GetByText({safe_val})"
+        elif l_type == "getByLabel":
+            return f"page.GetByLabel({safe_val})"
+        elif l_type == "getByPlaceholder":
+            return f"page.GetByPlaceholder({safe_val})"
+        elif l_type == "getByAltText":
+            return f"page.GetByAltText({safe_val})"
+        elif l_type == "getByTitle":
+            return f"page.GetByTitle({safe_val})"
+        elif l_type == "getByTestId":
+            return f"page.GetByTestId({safe_val})"
+        return f"page.Locator({safe_val})"
 
 
     @staticmethod
@@ -360,7 +487,7 @@ class CodeGenerator:
             elif action == "GetText":
                 res.append(f"    public String {m_name}() {{\n        return {el_name}.textContent();\n    }}\n")
             elif action == "IsDisplayed":
-                res.append(f"    public boolean {m_name}() {{\n        return {el_name}.isVisible();\n    }}\n")
+                res.append(f"    public boolean {m_name}() {{\n        this.{el_name}.waitfor(new Locator.WaitForOptions()\n            .setState(WaitForSelectorState.VISIBLE)\n            .setTimeout(10000));\n        return {el_name}.isVisible();\n    }}\n")
             elif action == "SelectByVisibleText":
                 res.append(f"    public void {m_name}(String text) {{\n        {el_name}.selectOption(new SelectOption().withLabel(text));\n    }}\n")
             elif action == "Hover":
@@ -385,27 +512,27 @@ class CodeGenerator:
         res = []
         if tool.lower() == "playwright":
             if action == "Click":
-                res.append(f"    def {m_name}(self):\n        self.page.locator(self.{el_name}).click()\n\n")
+                res.append(f"    def {m_name}(self):\n        self.{el_name}.click()\n\n")
             elif action == "Type":
-                res.append(f"    def {m_name}(self, text):\n        self.page.locator(self.{el_name}).fill(text)\n\n")
+                res.append(f"    def {m_name}(self, text):\n        self.{el_name}.fill(text)\n\n")
             elif action == "Clear":
-                res.append(f"    def {m_name}(self):\n        self.page.locator(self.{el_name}).fill(\"\")\n\n")
+                res.append(f"    def {m_name}(self):\n        self.{el_name}.fill(\"\")\n\n")
             elif action == "GetText":
-                res.append(f"    def {m_name}(self):\n        return self.page.locator(self.{el_name}).text_content()\n\n")
+                res.append(f"    def {m_name}(self):\n        return self.{el_name}.text_content()\n\n")
             elif action == "IsDisplayed":
-                res.append(f"    def {m_name}(self):\n        return self.page.locator(self.{el_name}).is_visible()\n\n")
+                res.append(f"    def {m_name}(self):\n        self.{el_name}.wait_for(state='visible', timeout=10000)\n        return self.{el_name}.is_visible()\n\n")
             elif action == "SelectByVisibleText":
-                res.append(f"    def {m_name}(self, text):\n        self.page.locator(self.{el_name}).select_option(label=text)\n\n")
+                res.append(f"    def {m_name}(self, text):\n        self.{el_name}.select_option(label=text)\n\n")
             elif action == "Hover":
-                res.append(f"    def {m_name}(self):\n        self.page.locator(self.{el_name}).hover()\n\n")
+                res.append(f"    def {m_name}(self):\n        self.{el_name}.hover()\n\n")
             elif action == "DoubleClick":
-                res.append(f"    def {m_name}(self):\n        self.page.locator(self.{el_name}).double_click()\n\n")
+                res.append(f"    def {m_name}(self):\n        self.{el_name}.double_click()\n\n")
             elif action in ("RightClick", "ContextClick"):
-                res.append(f"    def {m_name}(self):\n        self.page.locator(self.{el_name}).click(button='right')\n\n")
+                res.append(f"    def {m_name}(self):\n        self.{el_name}.click(button='right')\n\n")
             elif action == "WaitForVisible":
-                res.append(f"    def {m_name}(self):\n        self.page.locator(self.{el_name}).wait_for(state='visible')\n\n")
+                res.append(f"    def {m_name}(self):\n        self.{el_name}.wait_for(state='visible')\n\n")
             elif action == "SwitchToFrame":
-                res.append(f"    def {m_name}(self):\n        return self.page.locator(self.{el_name}).content_frame\n\n")
+                res.append(f"    def {m_name}(self):\n        return self.{el_name}.content_frame\n\n")
             elif action == "SwitchToWindow":
                 res.append(f"    def {m_name}(self):\n        pages = self.page.context.pages\n        return pages[-1]\n\n")
         else:
@@ -507,7 +634,7 @@ class CodeGenerator:
             elif action == "GetText":
                 res.append(f"    async {m_name}() {{\n        return await this.{el_name}.textContent();\n    }}\n\n")
             elif action == "IsDisplayed":
-                res.append(f"    async {m_name}() {{\n        return await this.{el_name}.isVisible();\n    }}\n\n")
+                res.append(f"    async {m_name}() {{\n        await this.{el_name}.waitFor({{ state: 'visible', timeout: 10000}});\n        return await this.{el_name}.isVisible();\n    }}\n\n")
             elif action == "SelectByVisibleText":
                 res.append(f"    async {m_name}(text) {{\n        await this.{el_name}.selectOption({{ label: text }});\n    }}\n\n")
             elif action == "Hover":

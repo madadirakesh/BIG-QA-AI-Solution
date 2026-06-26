@@ -2512,8 +2512,13 @@
                         const xp = ranked.find(l => l.type === 'XPath' && l.count === 1);
                         if (xp) bestLoc = xp;
                     } else if (isPwNative) {
-                        const pw = ranked.find(l => l.type.startsWith('getBy') && (l.count ?? 2) === 1);
-                        if (pw) bestLoc = pw;
+                        const xp = ranked.find(l => l.type === 'XPath' && l.count === 1);
+                        if (xp) {
+                            bestLoc = xp;
+                        } else {
+                            const pw = ranked.find(l => l.type.startsWith('getBy') && (l.count ?? 2) === 1);
+                            if (pw) bestLoc = pw;
+                        }
                     }
                 }
 
@@ -2750,6 +2755,9 @@
                     if (draggedItemIdx === null || draggedItemIdx === idx) return;
                     const movedItem = capturedElements.splice(draggedItemIdx, 1)[0];
                     capturedElements.splice(idx, 0, movedItem);
+                    if (window.pyBridge) {
+                        pyBridge.callPython("reorder_elements", JSON.stringify({ oldIdx: draggedItemIdx, newIdx: idx }));
+                    }
                     renderQueue();
                 });
                 item.addEventListener('dragend', () => {
@@ -2878,7 +2886,7 @@
             item.addEventListener('dragstart', (e) => { draggedItemIdx = idx; item.classList.add('dragging'); e.dataTransfer.effectAllowed = 'move'; });
             item.addEventListener('dragover', (e) => { e.preventDefault(); item.style.borderTop = '2px solid var(--accent)'; });
             item.addEventListener('dragleave', () => { item.style.borderTop = 'none'; });
-            item.addEventListener('drop', (e) => { e.preventDefault(); item.style.borderTop = 'none'; if (draggedItemIdx === null || draggedItemIdx === idx) return; const movedItem = capturedElements.splice(draggedItemIdx, 1)[0]; capturedElements.splice(idx, 0, movedItem); renderQueue(); });
+            item.addEventListener('drop', (e) => { e.preventDefault(); item.style.borderTop = 'none'; if (draggedItemIdx === null || draggedItemIdx === idx) return; const movedItem = capturedElements.splice(draggedItemIdx, 1)[0]; capturedElements.splice(idx, 0, movedItem); if (window.pyBridge) { pyBridge.callPython("reorder_elements", JSON.stringify({ oldIdx: draggedItemIdx, newIdx: idx })); } renderQueue(); });
             item.addEventListener('dragend', () => { item.classList.remove('dragging'); draggedItemIdx = null; });
             item.innerHTML = `
                 <div class="drag-handle" title="Drag to reorder" style="flex-shrink:0;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="5" r="1"></circle><circle cx="9" cy="12" r="1"></circle><circle cx="9" cy="19" r="1"></circle><circle cx="15" cy="5" r="1"></circle><circle cx="15" cy="12" r="1"></circle><circle cx="15" cy="19" r="1"></circle></svg></div>
@@ -3014,12 +3022,24 @@
                     const xp = ranked.find(l => l.type === 'XPath' && l.count === 1);
                     if (xp) bestLoc = xp;
                 } else if (isPwNative) {
-                    const pw = ranked.find(l => l.type.startsWith('getBy') && (l.count ?? 2) === 1);
-                    if (pw) bestLoc = pw;
+                    const xp = ranked.find(l => l.type === 'XPath' && l.count === 1);
+                    if (xp) {
+                        bestLoc = xp;
+                    } else {
+                        const pw = ranked.find(l => l.type.startsWith('getBy') && (l.count ?? 2) === 1);
+                        if (pw) bestLoc = pw;
+                    }
                 }
             }
 
             if (!bestLoc) return;
+
+            // Check for duplicates
+            const isDuplicate = capturedElements.some(e => !e.isFrame && e.type === bestLoc.type && e.value === bestLoc.value);
+            if (isDuplicate) {
+                setLastAction(`Duplicate ignored: ${bestLoc.value.substring(0, 30)}`);
+                return;
+            }
 
             bestLoc.action = 'Click';
             bestLoc.alternatives = ranked.filter(l => l !== bestLoc).slice(0, 8);
@@ -3093,6 +3113,10 @@
             el.count = chosen.count;
             el.alternatives[altIdx] = current;
 
+            if (window.pyBridge) {
+                pyBridge.callPython("swap_element_alt", JSON.stringify({ elemIdx: elemIdx, altIdx: altIdx }));
+            }
+
             renderSingleItem(elemIdx);
         }
 
@@ -3114,6 +3138,9 @@
             if (idx >= 0 && idx < capturedElements.length) {
                 if (confirm("Are you sure you want to delete this element?")) {
                     capturedElements.splice(idx, 1);
+                    if (window.pyBridge) {
+                        pyBridge.callPython("delete_element", JSON.stringify({ idx: idx }));
+                    }
                     renderQueue();
                 }
             }
@@ -3251,6 +3278,9 @@
         function updateAction(index, action) {
             if (index >= 0 && index < capturedElements.length) {
                 capturedElements[index].action = action;
+                if (window.pyBridge) {
+                    pyBridge.callPython("edit_element", JSON.stringify({ idx: index, field: 'action', value: action }));
+                }
             }
         }
 
@@ -3258,6 +3288,9 @@
             if (index >= 0 && index < capturedElements.length) {
                 capturedElements[index].nameHint = newName;
                 capturedElements[index].name = newName;
+                if (window.pyBridge) {
+                    pyBridge.callPython("edit_element", JSON.stringify({ idx: index, field: 'nameHint', value: newName }));
+                }
             }
         }
 
@@ -3319,7 +3352,30 @@
             // Fix #10: clear clipboard so copied locator values don't persist
             if (pyBridge) {
                 pyBridge.callPython('copy_to_clipboard', JSON.stringify({ text: '' }));
+                pyBridge.callPython('clear_elements', '');
+                try {
+                    pyBridge.callPython("verify_locator", JSON.stringify({ type: "CSS", value: "" }));
+                } catch (e) {
+                    console.error("Failed to clear verify_locator state:", e);
+                }
             }
+
+            // Clear Live Locator Console
+            const inputEl = document.getElementById('liveConsoleInput');
+            if (inputEl) {
+                inputEl.value = '';
+                inputEl.style.borderColor = 'rgba(255,255,255,0.1)';
+            }
+            const countEl = document.getElementById('liveConsoleCount');
+            if (countEl) {
+                countEl.innerText = '0 matches';
+                countEl.style.color = 'var(--text-secondary)';
+            }
+            const feedbackEl = document.getElementById('liveConsoleFeedback');
+            if (feedbackEl) {
+                feedbackEl.innerHTML = '';
+            }
+
             setLastAction('Queue cleared');
         }
 
@@ -3540,6 +3596,13 @@
                 alternatives: [],
                 aiGenerated: false
             };
+
+            // Check for duplicates
+            const isDuplicate = capturedElements.some(e => !e.isFrame && e.type === type && e.value === value);
+            if (isDuplicate) {
+                showAlert("An element with this locator value and type is already in the queue.");
+                return;
+            }
 
             capturedElements.push(newElement);
             hideAddManualModal();
@@ -4067,6 +4130,13 @@
                 count: parseInt(document.getElementById('liveConsoleCount').innerText) || 1,
                 inIframe: false
             };
+
+            // Check for duplicates
+            const isDuplicate = capturedElements.some(e => !e.isFrame && e.type === type && e.value === val);
+            if (isDuplicate) {
+                showAlert("This locator is already in the queue.");
+                return;
+            }
 
             capturedElements.push(manualLoc);
             appendNewItem(capturedElements.length - 1);

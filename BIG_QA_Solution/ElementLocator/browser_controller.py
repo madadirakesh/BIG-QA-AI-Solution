@@ -1,7 +1,8 @@
 import os
 import json
 import time
-from PyQt6.QtCore import QObject, pyqtSlot, pyqtSignal, QUrl, QTimer, QFile, QIODevice, QTextStream
+from PyQt6.QtCore import QObject, pyqtSlot, pyqtSignal, QUrl, QTimer, QFile, QIODevice, QTextStream, Qt
+from PyQt6.QtGui import QImage, QPixmap, QPainter, QColor, QPen
 from PyQt6.QtWidgets import QTabWidget, QVBoxLayout, QWidget
 from PyQt6.QtWebEngineWidgets import QWebEngineView
 from PyQt6.QtWebEngineCore import QWebEnginePage, QWebEngineScript, QWebEngineProfile, QWebEngineNewWindowRequest
@@ -51,19 +52,56 @@ class BrowserController(QObject):
     def __init__(self, parent=None):
         super().__init__(parent)
         
+        # Generate clean cross icons dynamically
+        ui_dir = os.path.dirname(os.path.abspath(__file__))
+        images_dir = os.path.join(ui_dir, "ui", "images")
+        os.makedirs(images_dir, exist_ok=True)
+        close_icon_path = os.path.join(images_dir, "close.png").replace("\\", "/")
+        close_hover_path = os.path.join(images_dir, "close_hover.png").replace("\\", "/")
+
+        def generate_png_icon(path, color_hex):
+            image = QImage(12, 12, QImage.Format.Format_ARGB32)
+            image.fill(Qt.GlobalColor.transparent)
+            painter = QPainter(image)
+            painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+            pen = QPen(QColor(color_hex))
+            pen.setWidth(2)
+            pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+            painter.setPen(pen)
+            # Draw cross lines
+            painter.drawLine(3, 3, 9, 9)
+            painter.drawLine(9, 3, 3, 9)
+            painter.end()
+            image.save(path, "PNG")
+
+        generate_png_icon(close_icon_path, "#94a3b8")
+        generate_png_icon(close_hover_path, "#ffffff")
+
+        # Convert local absolute paths to file:// URLs so Qt Stylesheet parser handles them correctly on Windows
+        close_icon_url = QUrl.fromLocalFile(close_icon_path).toString()
+        close_hover_url = QUrl.fromLocalFile(close_hover_path).toString()
+
         # The main UI container is now a Tab Widget
         self.tabs = QTabWidget()
         self.tabs.setTabsClosable(True)
         self.tabs.tabCloseRequested.connect(self._close_tab)
         
         # Styles for the tab bar to blend with the studio
-        self.tabs.setStyleSheet("""
-            QTabWidget::pane { border: 1px solid #1e293b; border-radius: 4px; }
-            QTabBar::tab { background: #0f172a; color: #94a3b8; padding: 8px 16px; border: 1px solid #1e293b; border-bottom: none; border-top-left-radius: 4px; border-top-right-radius: 4px; }
-            QTabBar::tab:selected { background: #1e293b; color: #ffffff; font-weight: bold; }
-            QTabBar::tab:hover:!selected { background: #1e293b; }
-            QTabBar::close-button { subcontrol-position: right; padding: 2px; }
-            QTabBar::close-button:hover { background: rgba(239,68,68,0.25); border-radius: 3px; }
+        self.tabs.setStyleSheet(f"""
+            QTabWidget::pane {{ border: 1px solid #1e293b; border-radius: 4px; }}
+            QTabBar::tab {{ background: #0f172a; color: #94a3b8; padding: 8px 16px; border: 1px solid #1e293b; border-bottom: none; border-top-left-radius: 4px; border-top-right-radius: 4px; }}
+            QTabBar::tab:selected {{ background: #1e293b; color: #ffffff; font-weight: bold; }}
+            QTabBar::tab:hover:!selected {{ background: #1e293b; }}
+            QTabBar::close-button {{
+                subcontrol-position: right;
+                padding: 2px;
+                image: url("{close_icon_url}");
+            }}
+            QTabBar::close-button:hover {{
+                image: url("{close_hover_url}");
+                background: rgba(239,68,68,0.25);
+                border-radius: 3px;
+            }}
         """)
 
         # Shared Python bridge
