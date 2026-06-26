@@ -299,6 +299,42 @@
     // =========================================================================
 
     /**
+     * Parse Playwright getByRole locator values.
+     * Supports formats like:
+     * - 'button', {name: 'Login'}
+     * - 'button'
+     * - button||Login (legacy format)
+     * - button (simple role)
+     */
+    function parseGetByRole(val) {
+        if (!val) return { role: '', name: '' };
+        
+        // 1. Check if it matches 'role', {name: 'name'}
+        // E.g., 'button', {name: 'Login'} or "button", {name: "Login"} or 'button',{name:'Login'}
+        const match = val.match(/^(?:['"]?)((?:[^'"\\]|\\.)*?)(?:['"]?)\s*,\s*\{\s*name\s*:\s*['"]((?:[^'"\\]|\\.)*)['"]\s*\}/i);
+        if (match) {
+            return {
+                role: match[1].replace(/\\'/g, "'").replace(/\\"/g, '"'),
+                name: match[2].replace(/\\'/g, "'").replace(/\\"/g, '"')
+            };
+        }
+        
+        // 2. Check if it matches 'role' (with single/double quotes around it)
+        const roleMatch = val.match(/^(?:['"])([^'"]+?)(?:['"])$/);
+        if (roleMatch) {
+            return { role: roleMatch[1], name: '' };
+        }
+        
+        // 3. Check legacy || format
+        if (val.includes('||')) {
+            const parts = val.split('||');
+            return { role: parts[0], name: parts[1] || '' };
+        }
+        
+        return { role: val.trim(), name: '' };
+    }
+
+    /**
      * Safely escape a string for use in an XPath predicate.
      * Handles strings with single quotes, double quotes, or both.
      */
@@ -744,9 +780,12 @@
 
         // ── Playwright semantic role ─────────────────────────────────────────
         if (role && text && text.length < 50) {
-            list.push({ type: 'getByRole', value: `${role}||${text}`, count: 1 });
+            const escapedRole = role.replace(/'/g, "\\'");
+            const escapedText = text.replace(/'/g, "\\'");
+            list.push({ type: 'getByRole', value: `'${escapedRole}', {name: '${escapedText}'}`, count: 1 });
         } else if (role) {
-            list.push({ type: 'getByRole', value: role, count: cssCount(`[role='${role}']`, searchRoot) });
+            const escapedRole = role.replace(/'/g, "\\'");
+            list.push({ type: 'getByRole', value: `'${escapedRole}'`, count: cssCount(`[role='${role}']`, searchRoot) });
         }
 
         // Text-based
@@ -764,6 +803,30 @@
         if (!list.some(l => l.count > 0)) {
             list.push({ type: 'XPath', value: `//${tag}`, count: 1, rating: 'Poor', note: 'Forced Fallback' });
         }
+
+        // Sort: prioritize XPath (with count === 1 first), then other standard/enterprise locators (CSS, ID, Name), then Playwright specific ones (getBy*, Test ID).
+        list.sort((a, b) => {
+            const ac = a.count ?? 99, bc = b.count ?? 99;
+            const aUnique = (ac === 1);
+            const bUnique = (bc === 1);
+            
+            if (aUnique && !bUnique) return -1;
+            if (bUnique && !aUnique) return 1;
+            
+            const getPriority = (type) => {
+                if (type === 'XPath') return 1;
+                if (['CSS', 'ID', 'Name', 'Link Text'].includes(type)) return 2;
+                if (type && (type.startsWith('getBy') || type === 'Test ID')) return 3;
+                return 4;
+            };
+            
+            const pA = getPriority(a.type);
+            const pB = getPriority(b.type);
+            
+            if (pA !== pB) return pA - pB;
+            
+            return String(a.value).length - String(b.value).length;
+        });
 
         return list;
     }
@@ -990,7 +1053,9 @@
                     domResults = Array.from(d.querySelectorAll('*')).filter(n => n.children.length === 0 && n.textContent.trim() === locVal);
                 }
                 else if (uType === 'GETBYROLE') {
-                    const [role, name] = locVal.split('||');
+                    const parsed = parseGetByRole(locVal);
+                    const role = parsed.role;
+                    const name = parsed.name;
                     const tagMap = { 'link': 'a', 'checkbox': 'input[type="checkbox"]', 'textbox': 'input[type="text"],textarea', 'heading': 'h1,h2,h3,h4,h5,h6' };
                     const tagSelector = tagMap[role] || role;
                     const selector = `[role="${escapeCSSString(role)}"],${tagSelector}`;
@@ -1125,7 +1190,9 @@
             else if (uType === 'GETBYTITLE')        allNodes = Array.from(document.querySelectorAll(`[title="${escVal}"]`));
             else if (uType === 'GETBYTEXT')         allNodes = Array.from(document.querySelectorAll('*')).filter(n => n.children.length === 0 && n.textContent.trim() === value);
             else if (uType === 'GETBYROLE') {
-                const [role, name] = value.split('||');
+                const parsed = parseGetByRole(value);
+                const role = parsed.role;
+                const name = parsed.name;
                 const tagMap = { 'link': 'a', 'checkbox': 'input[type="checkbox"]', 'textbox': 'input[type="text"],textarea', 'heading': 'h1,h2,h3,h4,h5,h6' };
                 const tagSelector = tagMap[role] || role;
                 const selector = `[role="${escapeCSSString(role)}"],${tagSelector}`;
