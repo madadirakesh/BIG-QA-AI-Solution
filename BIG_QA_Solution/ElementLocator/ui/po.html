@@ -1081,132 +1081,159 @@
             return steps;
         }
 
-        // ── Extract method parameters from PO script ───────────────────────
-        // Returns: { methodName: [paramName, ...], ... }
-        function extractMethodParams(code) {
-            const result = {};
-            // Python: def login(self, username, password):
-            // TypeScript: async login(username: string, password: string)
-            // Java: public void login(String username, String password)
-            const patterns = [
-                // Python/JS/TS async/sync methods with params
-                /(?:async\s+)?(?:def|function)\s+(\w+)\s*\(([^)]+)\)/g,
-                // TypeScript class methods: methodName(param: Type)
-                /^\s+(\w+)\s*\(([^)]+)\)\s*(?::\s*\w+)?\s*\{/gm,
-                // Java: public void methodName(Type param, ...)
-                /(?:public|private|protected)?\s+(?:\w+\s+)?(\w+)\s*\(([^)]+)\)/g,
-            ];
-            const skipNames = new Set(['constructor', '__init__', 'setUp', 'tearDown',
-                'beforeEach', 'afterEach', 'before', 'after', 'setup', 'teardown']);
-
-            for (const re of patterns) {
-                let m;
-                while ((m = re.exec(code)) !== null) {
-                    const name = m[1];
-                    if (skipNames.has(name)) continue;
-                    const rawParams = m[2];
-                    // Parse individual params, strip type annotations and defaults
-                    const params = rawParams.split(',').map(p => {
-                        // Remove type hints: "username: str", "username: string", "String username"
-                        p = p.trim()
-                            .replace(/:\s*\w+(?:\[\w+\])?/g, '')   // TS/Python: param: Type
-                            .replace(/^\w+\s+(\w+)\s*$/, '$1')       // Java: Type paramName
-                            .replace(/=.*$/, '')                      // defaults: param=None
-                            .replace(/^self$|^this$|^cls$/, '')       // remove self/this/cls
-                            .trim();
-                        return p;
-                    }).filter(p => p && /^[a-zA-Z_]\w*$/.test(p));
-
-                    if (params.length > 0) result[name] = params;
-                }
-            }
-            return result;
-        }
-
         // ── Open Test Data Panel before simulation ─────────────────────────
+        // Builds one editable row for EVERY fill action found in the steps,
+        // pre-populated with whatever value is already in the script.
+        // The user can override any value before running.
         function openTestDataPanel() {
             const code = getCode();
             if (!code.trim()) { showSimIdle('No code to simulate.'); return; }
 
-            // Pre-check there are steps
             const steps = extractMethodSteps(code, _tool);
             if (steps.length === 0) { showSimIdle('No actionable steps found in the script.'); return; }
 
-            const methodParams = extractMethodParams(code);
-            const allParams = {};   // de-duplicated across all methods
-            Object.values(methodParams).forEach(params => params.forEach(p => { allParams[p] = true; }));
+            // Separate fill steps and click/highlight steps
+            const fillSteps  = steps.filter(s => s.action === 'fill');
+            const otherSteps = steps.filter(s => s.action !== 'fill');
 
             // Hide idle hint, show test data panel
-            document.getElementById('simIdleHint').style.display   = 'none';
-            document.getElementById('simActiveUI').style.display   = 'none';
+            document.getElementById('simIdleHint').style.display  = 'none';
+            document.getElementById('simActiveUI').style.display  = 'none';
             document.getElementById('testDataPanel').classList.remove('hidden');
 
             const fieldsEl = document.getElementById('testDataFields');
             fieldsEl.innerHTML = '';
 
-            const methodNames = Object.keys(methodParams);
+            // ── Summary row ────────────────────────────────────────────────
+            const summaryDiv = document.createElement('div');
+            summaryDiv.style.cssText = 'font-size:0.68rem; color:var(--text-secondary); display:flex; gap:12px; padding:2px 0 6px;';
+            summaryDiv.innerHTML = `
+                <span style="color:#34d399;"><i class="fas fa-edit" style="margin-right:3px;"></i>${fillSteps.length} fill action${fillSteps.length !== 1 ? 's' : ''}</span>
+                <span style="color:#00bcf2;"><i class="fas fa-mouse-pointer" style="margin-right:3px;"></i>${otherSteps.filter(s=>s.action==='click').length} click${otherSteps.filter(s=>s.action==='click').length !== 1 ? 's' : ''}</span>
+                <span style="color:#94a3b8;"><i class="fas fa-eye" style="margin-right:3px;"></i>${otherSteps.filter(s=>s.action==='highlight').length} inspect</span>`;
+            fieldsEl.appendChild(summaryDiv);
 
-            if (methodNames.length === 0 || Object.keys(allParams).length === 0) {
-                // No parameters — just show a note and run directly
-                fieldsEl.innerHTML = `
-                    <div class="test-data-section">
-                        <div class="test-data-no-params">
-                            <i class="fas fa-info-circle" style="margin-right:5px;"></i>
-                            No method parameters detected. Literal values in the script will be used.
-                        </div>
-                    </div>`;
+            if (fillSteps.length === 0) {
+                // No fill actions — just show clicks/inspects summary and let user run
+                const noFill = document.createElement('div');
+                noFill.className = 'test-data-section';
+                noFill.innerHTML = `<div class="test-data-no-params">
+                    <i class="fas fa-info-circle" style="margin-right:5px;"></i>
+                    No fill actions found. The simulation will highlight and click elements only.
+                </div>`;
+                fieldsEl.appendChild(noFill);
             } else {
-                // Build one section per method that has params
-                methodNames.forEach(method => {
-                    const params = methodParams[method];
-                    if (!params.length) return;
-                    const section = document.createElement('div');
-                    section.className = 'test-data-section';
-                    section.innerHTML = `
-                        <div class="test-data-method-label">
-                            <i class="fas fa-code" style="font-size:0.6rem;"></i> ${escHtml(method)}()
-                        </div>
-                        <div class="test-data-fields">
-                            ${params.map(p => `
-                                <div class="test-data-field">
-                                    <label>${escHtml(p)}</label>
-                                    <input type="text"
-                                           id="td-${escHtml(p)}"
-                                           data-param="${escHtml(p)}"
-                                           placeholder="Enter value for ${escHtml(p)}…"
-                                           autocomplete="off"
-                                           onkeydown="if(event.key==='Enter') runWithTestData()">
-                                </div>`).join('')}
-                        </div>`;
-                    fieldsEl.appendChild(section);
+                // ── One section: Fill Actions ───────────────────────────────
+                const section = document.createElement('div');
+                section.className = 'test-data-section';
+
+                const header = document.createElement('div');
+                header.className = 'test-data-method-label';
+                header.innerHTML = `<i class="fas fa-edit" style="font-size:0.6rem;"></i> Fill Actions — enter test values`;
+                section.appendChild(header);
+
+                const fieldsWrap = document.createElement('div');
+                fieldsWrap.className = 'test-data-fields';
+
+                fillSteps.forEach((step, idx) => {
+                    // Derive a human-friendly label from the locator
+                    const locLabel = deriveFieldLabel(step);
+                    // Determine if the current arg is a literal value or a variable
+                    const isLiteral = step.arg && !/^[a-zA-Z_]\w*$/.test(step.arg);
+                    const defaultVal = isLiteral ? step.arg : '';
+                    const placeholder = isLiteral
+                        ? step.arg
+                        : (step.arg ? `Variable: ${step.arg}` : 'Enter value…');
+
+                    const field = document.createElement('div');
+                    field.className = 'test-data-field';
+                    field.innerHTML = `
+                        <label>
+                            <span style="color:#00bcf2; margin-right:4px;">✏</span>
+                            ${escHtml(locLabel)}
+                            <span style="opacity:0.45; font-size:0.58rem; margin-left:4px;">line ${step.lineNum}</span>
+                        </label>
+                        <input type="text"
+                               data-step-idx="${idx}"
+                               data-step-arg="${escHtml(step.arg || '')}"
+                               value="${escHtml(defaultVal)}"
+                               placeholder="${escHtml(placeholder)}"
+                               autocomplete="off"
+                               onkeydown="if(event.key==='Enter'){ this.closest('.test-data-section').querySelectorAll('input')[Array.from(this.closest('.test-data-section').querySelectorAll('input')).indexOf(this)+1]?.focus() || runWithTestData(); }">`;
+                    fieldsWrap.appendChild(field);
                 });
+
+                section.appendChild(fieldsWrap);
+                fieldsEl.appendChild(section);
             }
 
-            // Focus first input
+            // ── Click/Inspect preview (read-only) ──────────────────────────
+            const actionSteps = otherSteps.filter(s => s.action === 'click' || s.action === 'highlight');
+            if (actionSteps.length > 0) {
+                const actionSection = document.createElement('div');
+                actionSection.className = 'test-data-section';
+                actionSection.style.marginTop = '2px';
+                actionSection.innerHTML = `
+                    <div class="test-data-method-label">
+                        <i class="fas fa-list-check" style="font-size:0.6rem;"></i>
+                        Other Actions (will run automatically)
+                    </div>
+                    <div class="test-data-fields">
+                        ${actionSteps.slice(0, 6).map(s => `
+                            <div style="display:flex; align-items:center; gap:7px; padding:3px 0; font-size:0.68rem; color:var(--text-secondary); font-family:'Fira Code',monospace; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
+                                <span style="color:${s.action==='click'?'#fbbf24':'#64748b'}; font-size:0.62rem;">
+                                    ${s.action==='click'?'🖱':'👁'}
+                                </span>
+                                <span style="overflow:hidden; text-overflow:ellipsis;">${escHtml(s.lineText.substring(0,55))}${s.lineText.length>55?'…':''}</span>
+                            </div>`).join('')}
+                        ${actionSteps.length > 6 ? `<div style="font-size:0.63rem;color:var(--text-secondary);opacity:0.6;padding-top:3px;">…and ${actionSteps.length-6} more</div>` : ''}
+                    </div>`;
+                fieldsEl.appendChild(actionSection);
+            }
+
+            // Focus first editable input
             setTimeout(() => {
-                const first = fieldsEl.querySelector('input');
+                const first = fieldsEl.querySelector('input[data-step-idx]');
                 if (first) first.focus();
             }, 80);
         }
+
+        // Derive a readable label from a fill step (from locator value or line)
+        function deriveFieldLabel(step) {
+            const v = step.value || '';
+            // CSS id: #username → "username"
+            if (v.startsWith('#') && /^#[\w-]+$/.test(v)) return v.slice(1);
+            // CSS class or attr: .email-input → "email-input"
+            if (v.startsWith('.') && /^\.[\w-]+$/.test(v)) return v.slice(1);
+            // input[name="email"] → "email"
+            const nameMatch = v.match(/\[name=["']?(\w+)["']?\]/);
+            if (nameMatch) return nameMatch[1];
+            // getByLabel / getByPlaceholder: use value directly
+            if (['GETBYLABEL','GETBYPLACEHOLDER','GETBYTEXT'].includes(step.type)) return v;
+            // XPath: last part like /input[@id='user'] → "user"
+            const xpathId = v.match(/[@[](?:id|name|placeholder)=["']?([\w-]+)/i);
+            if (xpathId) return xpathId[1];
+            // Fallback: truncate locator
+            return v.length > 28 ? v.substring(0, 28) + '…' : (v || `Field ${step.lineNum}`);
+        }
+
 
         function cancelTestData() {
             document.getElementById('testDataPanel').classList.add('hidden');
             document.getElementById('simIdleHint').style.display = 'block';
         }
 
-        // ── Collect values and start simulation ───────────────────────────
+        // ── Collect fill values by step index and start simulation ──────────
         function runWithTestData() {
-            // Collect all input values into _testData map
+            // Build an index-keyed map: { stepIdx: overrideValue }
             _testData = {};
-            document.querySelectorAll('#testDataFields input[data-param]').forEach(inp => {
-                const param = inp.getAttribute('data-param');
-                const val   = inp.value.trim();
-                if (param) _testData[param] = val;
+            document.querySelectorAll('#testDataFields input[data-step-idx]').forEach(inp => {
+                const idx = inp.getAttribute('data-step-idx');
+                const val = inp.value;   // keep as-is, even if empty (means clear field)
+                _testData[idx] = val;
             });
 
-            // Hide test data panel
             document.getElementById('testDataPanel').classList.add('hidden');
-
             startSimulationAll();
         }
 
@@ -1217,21 +1244,21 @@
             const steps = extractMethodSteps(code, _tool);
             if (steps.length === 0) { showSimIdle('No actionable steps found in the script.'); return; }
 
-            // Apply test data substitution: if step.arg is a variable name
-            // matching a key in _testData, use the supplied value instead
+            // Apply test data substitution:
+            // _testData is { fillStepIdx: value } where fillStepIdx is the index
+            // in the fill-steps-only list (matching what was shown in the form).
+            let fillStepCounter = 0;
             const resolvedSteps = steps.map(s => {
-                if (s.action === 'fill' && s.arg && _testData[s.arg] !== undefined) {
-                    return { ...s, arg: _testData[s.arg] };
-                }
-                // Also check if arg looks like a variable (no quotes, just identifier)
-                if (s.action === 'fill' && s.arg && /^[a-zA-Z_]\w*$/.test(s.arg)) {
-                    // Try to find it case-insensitively
-                    const key = Object.keys(_testData).find(
-                        k => k.toLowerCase() === s.arg.toLowerCase());
-                    if (key) return { ...s, arg: _testData[key] };
+                if (s.action !== 'fill') return s;
+                const overrideVal = _testData[String(fillStepCounter)];
+                fillStepCounter++;
+                // Use override if user typed something; otherwise keep original arg
+                if (overrideVal !== undefined && overrideVal !== '') {
+                    return { ...s, arg: overrideVal };
                 }
                 return s;
             });
+
 
             _simSteps   = resolvedSteps;
             _simIndex   = 0;
