@@ -1082,45 +1082,86 @@
             return steps;
         }
 
-        // ── Extract class-level locator inventory ──────────────────────────────
-        // Finds all: this.xxx = page.locator(...)  or  this.xxx = page.getBy...(...)
+        // ── Extract class-level locator inventory (Language-Agnostic) ──────────
+        // Finds locators across Python, Java, C#, JS, and TS for Playwright & Selenium
         // Returns: [{ propName, locType, locValue }]
         function extractLocatorInventory(code) {
             const inventory = [];
             const seen = new Set();
             const lines = code.split('\n');
 
-            lines.forEach(line => {
+            lines.forEach((line, idx) => {
                 const t = line.trim();
-                // Pattern: this.propName = page.locator("selector")
-                // OR:      this.propName = page.getByLabel("text")
-                const assignMatch = t.match(/this\.(\w+)\s*=\s*(?:\w+\.)?(\w+)\s*\(\s*(['"`])(.*?)\3/);
-                if (!assignMatch) return;
-                const propName = assignMatch[1];
-                const method   = assignMatch[2];
-                const value    = assignMatch[4];
+                if (!t || t.startsWith('//') || t.startsWith('#') || t.startsWith('*')) return;
 
-                if (seen.has(propName)) return;
-                // Skip non-locator assignments like page, driver, url
-                if (['page','driver','browser','context','url','baseURL'].includes(propName)) return;
-
+                let propName = '';
                 let locType = 'CSS';
-                const semanticMap = {
-                    getByLabel:'GETBYLABEL', getByText:'GETBYTEXT',
-                    getByPlaceholder:'GETBYPLACEHOLDER', getByRole:'GETBYROLE',
-                    getByTestId:'GETBYTESTID'
-                };
-                if (semanticMap[method]) {
-                    locType = semanticMap[method];
-                } else if (method === 'locator' || method === 'findElement') {
-                    locType = (value.startsWith('//') || value.startsWith('(//') || value.startsWith('xpath='))
-                        ? 'XPATH' : 'CSS';
+                let locValue = '';
+
+                // ── 1. Match standard variable assignments ──
+                // TS/JS: this.usernameInput = page.locator("#user-name")
+                // Python: self.username_input = self.page.locator("#user-name")
+                // Java/C#: private Locator usernameInput = page.locator("#user-name");
+                // C#: private IWebElement usernameInput => driver.FindElement(By.Id("..."));
+                const assignRegex = /(?:this|self)\.(\w+)\s*=\s*(.+)$|(?:\b(?:private|public|protected|readonly|const|let|var|Locator|WebElement|IWebElement|By)\s+)?(\w+)\s*(?:=|\b(?:get|set)\b|=>)\s*(.+)$/i;
+                const m = t.match(assignRegex);
+                
+                let rhs = '';
+                if (m) {
+                    propName = m[1] || m[3];
+                    rhs = m[2] || m[4];
                 } else {
-                    return; // not a locator assignment
+                    // Check if it's an annotation style on previous/current line
+                    // e.g. @FindBy(css = "#username") private WebElement username;
+                    const annotMatch = t.match(/@FindBy\s*\(\s*(?:css|xpath|id|name|xpath|tagName|linkText|className|how\s*=\s*How\s*\.\w+\s*,\s*using)?\s*=\s*(['"`])(.*?)\1\s*\)/i);
+                    if (annotMatch) {
+                        locValue = annotMatch[2];
+                        const nextLine = lines[idx + 1] ? lines[idx + 1].trim() : '';
+                        const varNameMatch = (t + ' ' + nextLine).match(/(?:private|public|protected|private|IWebElement|WebElement)\s+(\w+)\b/i);
+                        if (varNameMatch) {
+                            propName = varNameMatch[1];
+                        }
+                    }
                 }
 
-                seen.add(propName);
-                inventory.push({ propName, locType, locValue: value.replace(/^xpath=/, '') });
+                if (rhs) {
+                    // Playwright styles: page.locator("...") or page.getByLabel("...")
+                    const pwMatch = rhs.match(/\.(locator|getByLabel|getByText|getByPlaceholder|getByRole|getByTestId|getByAltText|getByTitle)\s*\(\s*(['"`])(.*?)\2/);
+                    if (pwMatch) {
+                        const method = pwMatch[1];
+                        locValue = pwMatch[3];
+                        const semanticMap = {
+                            getByLabel:'GETBYLABEL', getByText:'GETBYTEXT',
+                            getByPlaceholder:'GETBYPLACEHOLDER', getByRole:'GETBYROLE',
+                            getByTestId:'GETBYTESTID', getByAltText:'GETBYALTTEXT', getByTitle:'GETBYTITLE'
+                        };
+                        if (semanticMap[method]) {
+                            locType = semanticMap[method];
+                        } else {
+                            locType = (locValue.startsWith('//') || locValue.startsWith('(//') || locValue.startsWith('xpath=')) ? 'XPATH' : 'CSS';
+                        }
+                    } else {
+                        // Selenium styles: By.id("val"), By.cssSelector("val"), find_element(By.ID, "val") etc.
+                        const selMatch = rhs.match(/By\.(cssSelector|xpath|id|name|className|linkText|tagName|css_selector)\s*[,(]\s*(['"`])(.*?)\2/i);
+                        if (selMatch) {
+                            const method = selMatch[1].toLowerCase();
+                            locValue = selMatch[3];
+                            if (method.includes('xpath')) locType = 'XPATH';
+                            else if (method.includes('id')) locType = 'ID';
+                            else if (method.includes('name')) locType = 'NAME';
+                            else if (method.includes('linktext')) locType = 'LINKTEXT';
+                            else locType = 'CSS';
+                        }
+                    }
+                }
+
+                if (propName && locValue) {
+                    propName = propName.replace(/^self\./, '').replace(/^this\./, '');
+                    if (seen.has(propName)) return;
+                    if (['page','driver','browser','context','url','baseURL'].includes(propName)) return;
+                    seen.add(propName);
+                    inventory.push({ propName, locType, locValue: locValue.replace(/^xpath=/, '') });
+                }
             });
 
             return inventory;
