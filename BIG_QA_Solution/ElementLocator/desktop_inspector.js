@@ -1209,14 +1209,27 @@
         if (actionType === 'fill' && fillArg) {
             el.classList.add('po-sandbox-fill');
             el.focus();
-            // Simulate typing character by character for visual effect
-            el.value = '';
+            
+            // Clear current value react-compatibly
+            const setNativeValue = (element, value) => {
+                const lastValue = element.value;
+                element.value = value;
+                const tracker = element._valueTracker;
+                if (tracker) {
+                    tracker.setValue(lastValue);
+                }
+                element.dispatchEvent(new Event('input', { bubbles: true }));
+            };
+
+            setNativeValue(el, '');
+
             const chars = String(fillArg).split('');
             let i = 0;
+            let typedText = '';
             const typeNext = () => {
                 if (i < chars.length) {
-                    el.value += chars[i++];
-                    el.dispatchEvent(new Event('input', { bubbles: true }));
+                    typedText += chars[i++];
+                    setNativeValue(el, typedText);
                     setTimeout(typeNext, 40);
                 } else {
                     el.dispatchEvent(new Event('change', { bubbles: true }));
