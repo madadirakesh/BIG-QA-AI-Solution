@@ -683,12 +683,13 @@
         let _elemCount    = 0;
 
         // Simulation state
-        let _simSteps     = [];   // [{lineText, type, value, action, arg}]
-        let _simIndex     = 0;
-        let _simPaused    = false;
-        let _simRunning   = false;
-        let _simTimer     = null;
-        let _testData     = {};   // { paramName: 'value' } — supplied by user
+        let _simSteps       = [];   // [{lineText, type, value, action, arg}]
+        let _simIndex       = 0;
+        let _simPaused      = false;
+        let _simRunning     = false;
+        let _simTimer       = null;
+        let _testData       = {};   // { idx: value } — supplied by user
+        let _customSimSteps = null; // override steps built from locator inventory
 
         // Validation state
         let _validationPending = 0;
@@ -1081,22 +1082,87 @@
             return steps;
         }
 
-        // ── Open Test Data Panel before simulation ─────────────────────────
-        // Builds one editable row for EVERY fill action found in the steps,
-        // pre-populated with whatever value is already in the script.
-        // The user can override any value before running.
+        // ── Extract class-level locator inventory ──────────────────────────────
+        // Finds all: this.xxx = page.locator(...)  or  this.xxx = page.getBy...(...)
+        // Returns: [{ propName, locType, locValue }]
+        function extractLocatorInventory(code) {
+            const inventory = [];
+            const seen = new Set();
+            const lines = code.split('\n');
+
+            lines.forEach(line => {
+                const t = line.trim();
+                // Pattern: this.propName = page.locator("selector")
+                // OR:      this.propName = page.getByLabel("text")
+                const assignMatch = t.match(/this\.(\w+)\s*=\s*(?:\w+\.)?(\w+)\s*\(\s*(['"`])(.*?)\3/);
+                if (!assignMatch) return;
+                const propName = assignMatch[1];
+                const method   = assignMatch[2];
+                const value    = assignMatch[4];
+
+                if (seen.has(propName)) return;
+                // Skip non-locator assignments like page, driver, url
+                if (['page','driver','browser','context','url','baseURL'].includes(propName)) return;
+
+                let locType = 'CSS';
+                const semanticMap = {
+                    getByLabel:'GETBYLABEL', getByText:'GETBYTEXT',
+                    getByPlaceholder:'GETBYPLACEHOLDER', getByRole:'GETBYROLE',
+                    getByTestId:'GETBYTESTID'
+                };
+                if (semanticMap[method]) {
+                    locType = semanticMap[method];
+                } else if (method === 'locator' || method === 'findElement') {
+                    locType = (value.startsWith('//') || value.startsWith('(//') || value.startsWith('xpath='))
+                        ? 'XPATH' : 'CSS';
+                } else {
+                    return; // not a locator assignment
+                }
+
+                seen.add(propName);
+                inventory.push({ propName, locType, locValue: value.replace(/^xpath=/, '') });
+            });
+
+            return inventory;
+        }
+
+        // ── Derive friendly label from locator value ───────────────────────────
+        function deriveLocatorLabel(locType, locValue, propName) {
+            const v = locValue || '';
+            // Use prop name if it's descriptive (not generic like 'el' or 'item')
+            if (propName && propName.length > 3) {
+                return propName.replace(/([A-Z])/g, ' $1').replace(/^./, c => c.toUpperCase()).trim();
+            }
+            if (['GETBYLABEL','GETBYPLACEHOLDER','GETBYTEXT'].includes(locType)) return v;
+            if (v.startsWith('#') && /^#[\w-]+$/.test(v)) return v.slice(1);
+            const nameMatch = v.match(/\[name=["']?([\w-]+)["']?\]/);
+            if (nameMatch) return nameMatch[1];
+            const idMatch = v.match(/[@[](?:id|name|placeholder)=["']?([\w-]+)/i);
+            if (idMatch) return idMatch[1];
+            return v.length > 25 ? v.substring(0, 25) + '…' : (v || propName);
+        }
+
+        // ── Guess if a locator is likely an input field ─────────────────────────
+        function isLikelyInput(locType, locValue, propName) {
+            const v = (locValue || '').toLowerCase();
+            const p = (propName || '').toLowerCase();
+            // Check locator for input-like hints
+            if (v.includes('input') || v.includes('textarea') || v.includes('field')) return true;
+            if (v.includes('type=') && !v.includes('type="button"') && !v.includes('type="submit"')) return true;
+            // Check prop name for input-like hints
+            const inputKeywords = ['input','field','text','email','password','phone','name','search',
+                'user','username','pass','login','signup','first','last','address','zip','city',
+                'query','term','value','amount','qty','quantity','msg','message','comment','note'];
+            return inputKeywords.some(kw => p.includes(kw));
+        }
+
+        // ── Open Test Data Panel ────────────────────────────────────────────────
+        // Scans class locator properties and lets user assign fill values to any of them.
         function openTestDataPanel() {
             const code = getCode();
             if (!code.trim()) { showSimIdle('No code to simulate.'); return; }
 
-            const steps = extractMethodSteps(code, _tool);
-            if (steps.length === 0) { showSimIdle('No actionable steps found in the script.'); return; }
-
-            // Separate fill steps and click/highlight steps
-            const fillSteps  = steps.filter(s => s.action === 'fill');
-            const otherSteps = steps.filter(s => s.action !== 'fill');
-
-            // Hide idle hint, show test data panel
+            // Hide idle / active UI, show test data panel
             document.getElementById('simIdleHint').style.display  = 'none';
             document.getElementById('simActiveUI').style.display  = 'none';
             document.getElementById('testDataPanel').classList.remove('hidden');
@@ -1104,160 +1170,209 @@
             const fieldsEl = document.getElementById('testDataFields');
             fieldsEl.innerHTML = '';
 
-            // ── Summary row ────────────────────────────────────────────────
-            const summaryDiv = document.createElement('div');
-            summaryDiv.style.cssText = 'font-size:0.68rem; color:var(--text-secondary); display:flex; gap:12px; padding:2px 0 6px;';
-            summaryDiv.innerHTML = `
-                <span style="color:#34d399;"><i class="fas fa-edit" style="margin-right:3px;"></i>${fillSteps.length} fill action${fillSteps.length !== 1 ? 's' : ''}</span>
-                <span style="color:#00bcf2;"><i class="fas fa-mouse-pointer" style="margin-right:3px;"></i>${otherSteps.filter(s=>s.action==='click').length} click${otherSteps.filter(s=>s.action==='click').length !== 1 ? 's' : ''}</span>
-                <span style="color:#94a3b8;"><i class="fas fa-eye" style="margin-right:3px;"></i>${otherSteps.filter(s=>s.action==='highlight').length} inspect</span>`;
-            fieldsEl.appendChild(summaryDiv);
+            // Get locator inventory from class properties
+            const inventory = extractLocatorInventory(code);
 
-            if (fillSteps.length === 0) {
-                // No fill actions — just show clicks/inspects summary and let user run
-                const noFill = document.createElement('div');
-                noFill.className = 'test-data-section';
-                noFill.innerHTML = `<div class="test-data-no-params">
-                    <i class="fas fa-info-circle" style="margin-right:5px;"></i>
-                    No fill actions found. The simulation will highlight and click elements only.
-                </div>`;
-                fieldsEl.appendChild(noFill);
-            } else {
-                // ── One section: Fill Actions ───────────────────────────────
-                const section = document.createElement('div');
-                section.className = 'test-data-section';
-
-                const header = document.createElement('div');
-                header.className = 'test-data-method-label';
-                header.innerHTML = `<i class="fas fa-edit" style="font-size:0.6rem;"></i> Fill Actions — enter test values`;
-                section.appendChild(header);
-
-                const fieldsWrap = document.createElement('div');
-                fieldsWrap.className = 'test-data-fields';
-
-                fillSteps.forEach((step, idx) => {
-                    // Derive a human-friendly label from the locator
-                    const locLabel = deriveFieldLabel(step);
-                    // Determine if the current arg is a literal value or a variable
-                    const isLiteral = step.arg && !/^[a-zA-Z_]\w*$/.test(step.arg);
-                    const defaultVal = isLiteral ? step.arg : '';
-                    const placeholder = isLiteral
-                        ? step.arg
-                        : (step.arg ? `Variable: ${step.arg}` : 'Enter value…');
-
-                    const field = document.createElement('div');
-                    field.className = 'test-data-field';
-                    field.innerHTML = `
-                        <label>
-                            <span style="color:#00bcf2; margin-right:4px;">✏</span>
-                            ${escHtml(locLabel)}
-                            <span style="opacity:0.45; font-size:0.58rem; margin-left:4px;">line ${step.lineNum}</span>
-                        </label>
-                        <input type="text"
-                               data-step-idx="${idx}"
-                               data-step-arg="${escHtml(step.arg || '')}"
-                               value="${escHtml(defaultVal)}"
-                               placeholder="${escHtml(placeholder)}"
-                               autocomplete="off"
-                               onkeydown="if(event.key==='Enter'){ this.closest('.test-data-section').querySelectorAll('input')[Array.from(this.closest('.test-data-section').querySelectorAll('input')).indexOf(this)+1]?.focus() || runWithTestData(); }">`;
-                    fieldsWrap.appendChild(field);
-                });
-
-                section.appendChild(fieldsWrap);
-                fieldsEl.appendChild(section);
+            if (inventory.length === 0) {
+                // Fallback: try existing fill-step approach
+                const steps = extractMethodSteps(code, _tool);
+                const fillSteps = steps.filter(s => s.action === 'fill');
+                if (fillSteps.length === 0 && steps.length === 0) {
+                    showSimIdle('No actionable steps found in the script.');
+                    document.getElementById('testDataPanel').classList.add('hidden');
+                    return;
+                }
+                // Build fallback from steps
+                _buildFallbackStepPanel(fieldsEl, steps);
+                return;
             }
 
-            // ── Click/Inspect preview (read-only) ──────────────────────────
-            const actionSteps = otherSteps.filter(s => s.action === 'click' || s.action === 'highlight');
-            if (actionSteps.length > 0) {
-                const actionSection = document.createElement('div');
-                actionSection.className = 'test-data-section';
-                actionSection.style.marginTop = '2px';
-                actionSection.innerHTML = `
-                    <div class="test-data-method-label">
-                        <i class="fas fa-list-check" style="font-size:0.6rem;"></i>
-                        Other Actions (will run automatically)
-                    </div>
-                    <div class="test-data-fields">
-                        ${actionSteps.slice(0, 6).map(s => `
-                            <div style="display:flex; align-items:center; gap:7px; padding:3px 0; font-size:0.68rem; color:var(--text-secondary); font-family:'Fira Code',monospace; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
-                                <span style="color:${s.action==='click'?'#fbbf24':'#64748b'}; font-size:0.62rem;">
-                                    ${s.action==='click'?'🖱':'👁'}
-                                </span>
-                                <span style="overflow:hidden; text-overflow:ellipsis;">${escHtml(s.lineText.substring(0,55))}${s.lineText.length>55?'…':''}</span>
-                            </div>`).join('')}
-                        ${actionSteps.length > 6 ? `<div style="font-size:0.63rem;color:var(--text-secondary);opacity:0.6;padding-top:3px;">…and ${actionSteps.length-6} more</div>` : ''}
-                    </div>`;
-                fieldsEl.appendChild(actionSection);
-            }
+            // ── Header hint ────────────────────────────────────────────────
+            const hint = document.createElement('div');
+            hint.style.cssText = 'font-size:0.7rem; color:var(--text-secondary); padding:0 0 6px; line-height:1.5;';
+            hint.innerHTML = `<i class="fas fa-info-circle" style="color:#00bcf2;margin-right:5px;"></i>
+                Enter a value to <strong style="color:#34d399;">type</strong> into that field.
+                Leave blank to <strong style="color:#fbbf24;">click</strong> it instead.`;
+            fieldsEl.appendChild(hint);
 
-            // Focus first editable input
+            // ── Locator rows ───────────────────────────────────────────────
+            const section = document.createElement('div');
+            section.className = 'test-data-section';
+
+            const sectionHeader = document.createElement('div');
+            sectionHeader.className = 'test-data-method-label';
+            sectionHeader.innerHTML = `<i class="fas fa-layer-group" style="font-size:0.6rem;"></i>
+                Page Elements — ${inventory.length} locator${inventory.length !== 1 ? 's' : ''} found`;
+            section.appendChild(sectionHeader);
+
+            const fieldsWrap = document.createElement('div');
+            fieldsWrap.className = 'test-data-fields';
+
+            inventory.forEach((loc, idx) => {
+                const label    = deriveLocatorLabel(loc.locType, loc.locValue, loc.propName);
+                const isInput  = isLikelyInput(loc.locType, loc.locValue, loc.propName);
+                const shortSel = loc.locValue.length > 32
+                    ? loc.locValue.substring(0, 32) + '…' : loc.locValue;
+
+                const row = document.createElement('div');
+                row.className = 'test-data-field';
+                row.innerHTML = `
+                    <label>
+                        <span style="color:${isInput ? '#34d399' : '#fbbf24'}; margin-right:5px; font-size:0.75rem;">
+                            ${isInput ? '✏' : '🖱'}
+                        </span>
+                        <span style="color:var(--text-primary);">${escHtml(label)}</span>
+                        <span style="opacity:0.35; font-size:0.58rem; margin-left:5px; font-family:'Fira Code',monospace;">${escHtml(shortSel)}</span>
+                    </label>
+                    <input type="text"
+                           data-loc-idx="${idx}"
+                           data-loc-prop="${escHtml(loc.propName)}"
+                           data-loc-type="${escHtml(loc.locType)}"
+                           data-loc-value="${escHtml(loc.locValue)}"
+                           placeholder="${isInput ? 'Type value here (leave blank to click instead)' : 'Leave blank to click, or type to fill'}"
+                           autocomplete="off"
+                           onkeydown="if(event.key==='Enter'){ var inputs=Array.from(document.querySelectorAll('#testDataFields input[data-loc-idx]')); var ni=inputs[inputs.indexOf(this)+1]; ni ? ni.focus() : runWithTestData(); }">`;
+                fieldsWrap.appendChild(row);
+            });
+
+            section.appendChild(fieldsWrap);
+            fieldsEl.appendChild(section);
+
+            // Focus first likely-input field, otherwise first field
             setTimeout(() => {
-                const first = fieldsEl.querySelector('input[data-step-idx]');
-                if (first) first.focus();
+                const inputs = Array.from(fieldsEl.querySelectorAll('input[data-loc-idx]'));
+                const firstInput = inputs.find((inp, i) =>
+                    isLikelyInput(
+                        inp.getAttribute('data-loc-type'),
+                        inp.getAttribute('data-loc-value'),
+                        inp.getAttribute('data-loc-prop')
+                    ));
+                (firstInput || inputs[0])?.focus();
             }, 80);
         }
 
-        // Derive a readable label from a fill step (from locator value or line)
-        function deriveFieldLabel(step) {
-            const v = step.value || '';
-            // CSS id: #username → "username"
-            if (v.startsWith('#') && /^#[\w-]+$/.test(v)) return v.slice(1);
-            // CSS class or attr: .email-input → "email-input"
-            if (v.startsWith('.') && /^\.[\w-]+$/.test(v)) return v.slice(1);
-            // input[name="email"] → "email"
-            const nameMatch = v.match(/\[name=["']?(\w+)["']?\]/);
-            if (nameMatch) return nameMatch[1];
-            // getByLabel / getByPlaceholder: use value directly
-            if (['GETBYLABEL','GETBYPLACEHOLDER','GETBYTEXT'].includes(step.type)) return v;
-            // XPath: last part like /input[@id='user'] → "user"
-            const xpathId = v.match(/[@[](?:id|name|placeholder)=["']?([\w-]+)/i);
-            if (xpathId) return xpathId[1];
-            // Fallback: truncate locator
-            return v.length > 28 ? v.substring(0, 28) + '…' : (v || `Field ${step.lineNum}`);
-        }
+        // Fallback: build panel from explicit fill steps (for Python/Java POs)
+        function _buildFallbackStepPanel(fieldsEl, steps) {
+            const fillSteps = steps.filter(s => s.action === 'fill');
+            const hint = document.createElement('div');
+            hint.style.cssText = 'font-size:0.7rem; color:var(--text-secondary); padding:0 0 6px;';
+            hint.innerHTML = `<i class="fas fa-edit" style="color:#34d399;margin-right:5px;"></i>${fillSteps.length} fill step${fillSteps.length!==1?'s':''} detected`;
+            fieldsEl.appendChild(hint);
 
+            if (fillSteps.length === 0) {
+                const info = document.createElement('div');
+                info.className = 'test-data-section';
+                info.innerHTML = `<div class="test-data-no-params">
+                    <i class="fas fa-info-circle" style="margin-right:5px;"></i>
+                    No fill actions found. Simulation will click/inspect elements only.
+                </div>`;
+                fieldsEl.appendChild(info);
+                return;
+            }
+
+            const section = document.createElement('div');
+            section.className = 'test-data-section';
+            section.innerHTML = `<div class="test-data-method-label">
+                <i class="fas fa-edit" style="font-size:0.6rem;"></i> Fill Values
+            </div>`;
+            const wrap = document.createElement('div');
+            wrap.className = 'test-data-fields';
+
+            fillSteps.forEach((step, idx) => {
+                const v = step.value || '';
+                let label = v;
+                if (v.startsWith('#')) label = v.slice(1);
+                const idM = v.match(/[@[](?:id|name)=["']?([\w-]+)/i);
+                if (idM) label = idM[1];
+                if (['GETBYLABEL','GETBYPLACEHOLDER'].includes(step.type)) label = v;
+                label = label.length > 25 ? label.substring(0,25)+'…' : label;
+
+                const isLit = step.arg && !/^[a-zA-Z_]\w*$/.test(step.arg);
+                const f = document.createElement('div');
+                f.className = 'test-data-field';
+                f.innerHTML = `
+                    <label><span style="color:#00bcf2;margin-right:4px;">✏</span>${escHtml(label)}
+                        <span style="opacity:0.4;font-size:0.58rem;margin-left:4px;">line ${step.lineNum}</span>
+                    </label>
+                    <input type="text" data-step-idx="${idx}"
+                           value="${escHtml(isLit ? step.arg : '')}"
+                           placeholder="${escHtml(isLit ? step.arg : (step.arg ? 'Variable: '+step.arg : 'Enter value…'))}"
+                           autocomplete="off"
+                           onkeydown="if(event.key==='Enter') runWithTestData()">`;
+                wrap.appendChild(f);
+            });
+            section.appendChild(wrap);
+            fieldsEl.appendChild(section);
+        }
 
         function cancelTestData() {
             document.getElementById('testDataPanel').classList.add('hidden');
             document.getElementById('simIdleHint').style.display = 'block';
         }
 
-        // ── Collect fill values by step index and start simulation ──────────
+        // ── Collect values and build simulation steps ──────────────────────────
         function runWithTestData() {
-            // Build an index-keyed map: { stepIdx: overrideValue }
+            // Collect locator-inventory based inputs (new approach)
+            const locInputs = document.querySelectorAll('#testDataFields input[data-loc-idx]');
+            // Collect fill-step based inputs (fallback approach)
+            const stepInputs = document.querySelectorAll('#testDataFields input[data-step-idx]');
+
             _testData = {};
-            document.querySelectorAll('#testDataFields input[data-step-idx]').forEach(inp => {
-                const idx = inp.getAttribute('data-step-idx');
-                const val = inp.value;   // keep as-is, even if empty (means clear field)
-                _testData[idx] = val;
-            });
+            stepInputs.forEach(inp => { _testData[inp.getAttribute('data-step-idx')] = inp.value; });
+
+            // For locator-inventory inputs, build a custom step list and store in _customSimSteps
+            if (locInputs.length > 0) {
+                _customSimSteps = [];
+                locInputs.forEach(inp => {
+                    const locType  = inp.getAttribute('data-loc-type');
+                    const locValue = inp.getAttribute('data-loc-value');
+                    const propName = inp.getAttribute('data-loc-prop');
+                    const val      = inp.value;
+                    const action   = val ? 'fill' : 'click';
+                    _customSimSteps.push({
+                        lineText: val
+                            ? `await this.${propName}.fill("${val}")`
+                            : `await this.${propName}.click()`,
+                        lineNum:  0,
+                        type:     locType,
+                        value:    locValue,
+                        action,
+                        arg:      val
+                    });
+                });
+            } else {
+                _customSimSteps = null;
+            }
 
             document.getElementById('testDataPanel').classList.add('hidden');
             startSimulationAll();
         }
 
+
         function startSimulationAll() {
-            const code = getCode();
-            if (!code.trim()) { showSimIdle('No code to simulate.'); return; }
+            // If runWithTestData built custom steps from locator inventory, use those;
+            // otherwise extract from code and apply _testData overrides.
+            let resolvedSteps;
 
-            const steps = extractMethodSteps(code, _tool);
-            if (steps.length === 0) { showSimIdle('No actionable steps found in the script.'); return; }
+            if (_customSimSteps && _customSimSteps.length > 0) {
+                resolvedSteps = _customSimSteps;
+                _customSimSteps = null;
+            } else {
+                const code = getCode();
+                if (!code.trim()) { showSimIdle('No code to simulate.'); return; }
 
-            // Apply test data substitution:
-            // _testData is { fillStepIdx: value } where fillStepIdx is the index
-            // in the fill-steps-only list (matching what was shown in the form).
-            let fillStepCounter = 0;
-            const resolvedSteps = steps.map(s => {
-                if (s.action !== 'fill') return s;
-                const overrideVal = _testData[String(fillStepCounter)];
-                fillStepCounter++;
-                // Use override if user typed something; otherwise keep original arg
-                if (overrideVal !== undefined && overrideVal !== '') {
-                    return { ...s, arg: overrideVal };
-                }
-                return s;
-            });
+                const steps = extractMethodSteps(code, _tool);
+                if (steps.length === 0) { showSimIdle('No actionable steps found in the script.'); return; }
+
+                let fillStepCounter = 0;
+                resolvedSteps = steps.map(s => {
+                    if (s.action !== 'fill') return s;
+                    const overrideVal = _testData[String(fillStepCounter)];
+                    fillStepCounter++;
+                    if (overrideVal !== undefined && overrideVal !== '') return { ...s, arg: overrideVal };
+                    return s;
+                });
+            }
 
 
             _simSteps   = resolvedSteps;
