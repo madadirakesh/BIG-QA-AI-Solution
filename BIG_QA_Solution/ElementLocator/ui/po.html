@@ -284,6 +284,78 @@
         }
         .sim-idle-hint i { font-size: 2rem; opacity: 0.3; margin-bottom: 12px; display: block; color: #818cf8; }
 
+        /* ── Test Data Setup Panel ── */
+        .test-data-panel {
+            display: flex; flex-direction: column; gap: 10px;
+            padding: 12px; flex: 1; overflow-y: auto;
+        }
+        .test-data-panel.hidden { display: none; }
+
+        .test-data-header {
+            display: flex; align-items: center; gap: 8px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid rgba(255,255,255,0.06);
+        }
+        .test-data-header i { color: #a5b4fc; font-size: 0.9rem; }
+        .test-data-title {
+            font-family: 'Outfit', sans-serif; font-weight: 600;
+            font-size: 0.82rem; color: var(--text-primary);
+        }
+        .test-data-subtitle {
+            font-size: 0.68rem; color: var(--text-secondary); margin-top: 1px;
+        }
+
+        .test-data-section {
+            background: rgba(129,140,248,0.05);
+            border: 1px solid rgba(129,140,248,0.15);
+            border-radius: 8px;
+            overflow: hidden;
+        }
+        .test-data-method-label {
+            padding: 6px 11px;
+            background: rgba(129,140,248,0.08);
+            border-bottom: 1px solid rgba(129,140,248,0.12);
+            font-family: 'Fira Code', monospace;
+            font-size: 0.72rem; color: #a5b4fc;
+            display: flex; align-items: center; gap: 6px;
+        }
+        .test-data-fields { padding: 10px 11px; display: flex; flex-direction: column; gap: 8px; }
+
+        .test-data-field {
+            display: flex; flex-direction: column; gap: 3px;
+        }
+        .test-data-field label {
+            font-size: 0.65rem; font-family: 'Fira Code', monospace;
+            color: var(--text-secondary); opacity: 0.8;
+        }
+        .test-data-field input {
+            background: rgba(255,255,255,0.05);
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 6px;
+            padding: 6px 9px;
+            font-family: 'Fira Code', monospace;
+            font-size: 0.75rem;
+            color: var(--text-primary);
+            outline: none;
+            transition: border-color 0.15s, box-shadow 0.15s;
+            width: 100%;
+        }
+        .test-data-field input:focus {
+            border-color: rgba(129,140,248,0.5);
+            box-shadow: 0 0 0 2px rgba(129,140,248,0.1);
+        }
+        .test-data-field input::placeholder { color: rgba(148,163,184,0.4); }
+
+        .test-data-no-params {
+            padding: 10px 11px;
+            font-size: 0.72rem; color: var(--text-secondary);
+            font-style: italic; opacity: 0.7;
+        }
+
+        .test-data-actions {
+            display: flex; gap: 6px; margin-top: 4px;
+        }
+
         .sim-progress-bar-wrap {
             background: rgba(255,255,255,0.05); border-radius: 20px;
             height: 4px; margin-bottom: 14px; overflow: hidden;
@@ -517,12 +589,35 @@
 
             <!-- ── Simulator Panel ── -->
             <div class="simulator-panel hidden" id="simulatorPanel">
+
+                <!-- Idle hint (shown before any action) -->
                 <div class="sim-idle-hint" id="simIdleHint">
                     <i class="fas fa-robot"></i>
-                    Click <strong>Simulate All</strong> to play back all Page Object method steps on the live browser page.
+                    Click <strong>Simulate All</strong> to configure test data and play back all Page Object steps on the live browser page.
                 </div>
 
-                <!-- Active simulation UI (hidden until running) -->
+                <!-- ── Test Data Setup (shown after clicking Simulate All) ── -->
+                <div class="test-data-panel hidden" id="testDataPanel">
+                    <div class="test-data-header">
+                        <i class="fas fa-database"></i>
+                        <div>
+                            <div class="test-data-title">Test Data Setup</div>
+                            <div class="test-data-subtitle">Enter values for method parameters below</div>
+                        </div>
+                    </div>
+                    <!-- Sections are injected here dynamically per method -->
+                    <div id="testDataFields"></div>
+                    <div class="test-data-actions">
+                        <button class="btn btn-sm btn-outline" style="flex:1;" onclick="cancelTestData()">
+                            <i class="fas fa-times"></i> Cancel
+                        </button>
+                        <button class="btn btn-sm btn-purple" style="flex:2;" onclick="runWithTestData()">
+                            <i class="fas fa-play"></i> Run Simulation
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Active simulation UI (shown while running) -->
                 <div id="simActiveUI" style="display:none; flex-direction:column; flex:1; min-height:0;">
                     <div class="sim-controls">
                         <button class="btn btn-sm btn-outline" id="simPauseBtn" onclick="toggleSimPause()" style="display:none;">
@@ -560,7 +655,7 @@
             <button class="btn btn-teal btn-outline" id="sidebarToggleBtn" onclick="openSidebar('validator')">
                 <i class="fas fa-check-circle"></i> Validate Script
             </button>
-            <button class="btn btn-purple" id="simulateBtn" onclick="openSidebar('simulator'); startSimulationAll();">
+            <button class="btn btn-purple" id="simulateBtn" onclick="openSidebar('simulator'); openTestDataPanel();">
                 <i class="fas fa-play"></i> Simulate All
             </button>
             <button class="btn btn-success" id="copyBtn" onclick="copyCode()">
@@ -593,6 +688,7 @@
         let _simPaused    = false;
         let _simRunning   = false;
         let _simTimer     = null;
+        let _testData     = {};   // { paramName: 'value' } — supplied by user
 
         // Validation state
         let _validationPending = 0;
@@ -985,6 +1081,135 @@
             return steps;
         }
 
+        // ── Extract method parameters from PO script ───────────────────────
+        // Returns: { methodName: [paramName, ...], ... }
+        function extractMethodParams(code) {
+            const result = {};
+            // Python: def login(self, username, password):
+            // TypeScript: async login(username: string, password: string)
+            // Java: public void login(String username, String password)
+            const patterns = [
+                // Python/JS/TS async/sync methods with params
+                /(?:async\s+)?(?:def|function)\s+(\w+)\s*\(([^)]+)\)/g,
+                // TypeScript class methods: methodName(param: Type)
+                /^\s+(\w+)\s*\(([^)]+)\)\s*(?::\s*\w+)?\s*\{/gm,
+                // Java: public void methodName(Type param, ...)
+                /(?:public|private|protected)?\s+(?:\w+\s+)?(\w+)\s*\(([^)]+)\)/g,
+            ];
+            const skipNames = new Set(['constructor', '__init__', 'setUp', 'tearDown',
+                'beforeEach', 'afterEach', 'before', 'after', 'setup', 'teardown']);
+
+            for (const re of patterns) {
+                let m;
+                while ((m = re.exec(code)) !== null) {
+                    const name = m[1];
+                    if (skipNames.has(name)) continue;
+                    const rawParams = m[2];
+                    // Parse individual params, strip type annotations and defaults
+                    const params = rawParams.split(',').map(p => {
+                        // Remove type hints: "username: str", "username: string", "String username"
+                        p = p.trim()
+                            .replace(/:\s*\w+(?:\[\w+\])?/g, '')   // TS/Python: param: Type
+                            .replace(/^\w+\s+(\w+)\s*$/, '$1')       // Java: Type paramName
+                            .replace(/=.*$/, '')                      // defaults: param=None
+                            .replace(/^self$|^this$|^cls$/, '')       // remove self/this/cls
+                            .trim();
+                        return p;
+                    }).filter(p => p && /^[a-zA-Z_]\w*$/.test(p));
+
+                    if (params.length > 0) result[name] = params;
+                }
+            }
+            return result;
+        }
+
+        // ── Open Test Data Panel before simulation ─────────────────────────
+        function openTestDataPanel() {
+            const code = getCode();
+            if (!code.trim()) { showSimIdle('No code to simulate.'); return; }
+
+            // Pre-check there are steps
+            const steps = extractMethodSteps(code, _tool);
+            if (steps.length === 0) { showSimIdle('No actionable steps found in the script.'); return; }
+
+            const methodParams = extractMethodParams(code);
+            const allParams = {};   // de-duplicated across all methods
+            Object.values(methodParams).forEach(params => params.forEach(p => { allParams[p] = true; }));
+
+            // Hide idle hint, show test data panel
+            document.getElementById('simIdleHint').style.display   = 'none';
+            document.getElementById('simActiveUI').style.display   = 'none';
+            document.getElementById('testDataPanel').classList.remove('hidden');
+
+            const fieldsEl = document.getElementById('testDataFields');
+            fieldsEl.innerHTML = '';
+
+            const methodNames = Object.keys(methodParams);
+
+            if (methodNames.length === 0 || Object.keys(allParams).length === 0) {
+                // No parameters — just show a note and run directly
+                fieldsEl.innerHTML = `
+                    <div class="test-data-section">
+                        <div class="test-data-no-params">
+                            <i class="fas fa-info-circle" style="margin-right:5px;"></i>
+                            No method parameters detected. Literal values in the script will be used.
+                        </div>
+                    </div>`;
+            } else {
+                // Build one section per method that has params
+                methodNames.forEach(method => {
+                    const params = methodParams[method];
+                    if (!params.length) return;
+                    const section = document.createElement('div');
+                    section.className = 'test-data-section';
+                    section.innerHTML = `
+                        <div class="test-data-method-label">
+                            <i class="fas fa-code" style="font-size:0.6rem;"></i> ${escHtml(method)}()
+                        </div>
+                        <div class="test-data-fields">
+                            ${params.map(p => `
+                                <div class="test-data-field">
+                                    <label>${escHtml(p)}</label>
+                                    <input type="text"
+                                           id="td-${escHtml(p)}"
+                                           data-param="${escHtml(p)}"
+                                           placeholder="Enter value for ${escHtml(p)}…"
+                                           autocomplete="off"
+                                           onkeydown="if(event.key==='Enter') runWithTestData()">
+                                </div>`).join('')}
+                        </div>`;
+                    fieldsEl.appendChild(section);
+                });
+            }
+
+            // Focus first input
+            setTimeout(() => {
+                const first = fieldsEl.querySelector('input');
+                if (first) first.focus();
+            }, 80);
+        }
+
+        function cancelTestData() {
+            document.getElementById('testDataPanel').classList.add('hidden');
+            document.getElementById('simIdleHint').style.display = 'block';
+        }
+
+        // ── Collect values and start simulation ───────────────────────────
+        function runWithTestData() {
+            // Collect all input values into _testData map
+            _testData = {};
+            document.querySelectorAll('#testDataFields input[data-param]').forEach(inp => {
+                const param = inp.getAttribute('data-param');
+                const val   = inp.value.trim();
+                if (param) _testData[param] = val;
+            });
+
+            // Hide test data panel
+            document.getElementById('testDataPanel').classList.add('hidden');
+
+            startSimulationAll();
+        }
+
         function startSimulationAll() {
             const code = getCode();
             if (!code.trim()) { showSimIdle('No code to simulate.'); return; }
@@ -992,17 +1217,34 @@
             const steps = extractMethodSteps(code, _tool);
             if (steps.length === 0) { showSimIdle('No actionable steps found in the script.'); return; }
 
-            _simSteps   = steps;
+            // Apply test data substitution: if step.arg is a variable name
+            // matching a key in _testData, use the supplied value instead
+            const resolvedSteps = steps.map(s => {
+                if (s.action === 'fill' && s.arg && _testData[s.arg] !== undefined) {
+                    return { ...s, arg: _testData[s.arg] };
+                }
+                // Also check if arg looks like a variable (no quotes, just identifier)
+                if (s.action === 'fill' && s.arg && /^[a-zA-Z_]\w*$/.test(s.arg)) {
+                    // Try to find it case-insensitively
+                    const key = Object.keys(_testData).find(
+                        k => k.toLowerCase() === s.arg.toLowerCase());
+                    if (key) return { ...s, arg: _testData[key] };
+                }
+                return s;
+            });
+
+            _simSteps   = resolvedSteps;
             _simIndex   = 0;
             _simPaused  = false;
             _simRunning = true;
 
             // Show active UI
             document.getElementById('simIdleHint').style.display   = 'none';
+            document.getElementById('testDataPanel').classList.add('hidden');
             document.getElementById('simActiveUI').style.display    = 'flex';
             document.getElementById('simLog').innerHTML             = '';
             document.getElementById('simPauseBtn').style.display    = 'inline-flex';
-            document.getElementById('simStepCounter').textContent   = `Step 0/${steps.length}`;
+            document.getElementById('simStepCounter').textContent   = `Step 0/${resolvedSteps.length}`;
             document.getElementById('simProgressBar').style.width   = '0%';
 
             // Disable simulate button while running
