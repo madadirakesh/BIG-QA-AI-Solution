@@ -623,10 +623,21 @@
                         <button class="btn btn-sm btn-outline" id="simPauseBtn" onclick="toggleSimPause()" style="display:none;">
                             <i class="fas fa-pause" id="simPauseIcon"></i> <span id="simPauseLabel">Pause</span>
                         </button>
+                        <button class="btn btn-sm btn-outline" id="simStepNextBtn" onclick="stepNext()" style="display:none; border-color:rgba(129,140,248,0.3); color:#a5b4fc;">
+                            <i class="fas fa-forward-step"></i> Step Next
+                        </button>
                         <button class="btn btn-sm btn-outline" onclick="stopSimulation()" id="simStopBtn">
                             <i class="fas fa-stop"></i> Stop
                         </button>
                         <span id="simStepCounter" style="font-size:0.68rem; color: var(--text-secondary); margin-left:auto;">Step 0/0</span>
+                    </div>
+
+                    <!-- Speed controller -->
+                    <div style="display:flex; align-items:center; gap:8px; margin: 9px 0 12px; font-size:0.68rem; color:var(--text-secondary); border-top: 1px solid rgba(255,255,255,0.04); padding-top:8px;">
+                        <i class="fas fa-gauge-high" style="color:var(--accent-secondary); font-size:0.62rem;"></i>
+                        <span>Delay:</span>
+                        <input type="range" id="simSpeedSlider" min="500" max="4000" step="250" value="1000" style="flex:1; accent-color:var(--accent-secondary); height:4px; border-radius:2px; cursor:pointer;" oninput="updateSpeedLabel(this.value)">
+                        <span id="simSpeedVal" style="font-family:'Fira Code',monospace; width:35px; text-align:right; color:#00bcf2;">1.0s</span>
                     </div>
                     <div class="sim-progress-bar-wrap">
                         <div class="sim-progress-bar" id="simProgressBar"></div>
@@ -686,6 +697,7 @@
         let _simSteps       = [];   // [{lineText, type, value, action, arg}]
         let _simIndex       = 0;
         let _simPaused      = false;
+        let _simStepped     = false; // triggers next step when paused
         let _simRunning     = false;
         let _simTimer       = null;
         let _testData       = {};   // { idx: value } — supplied by user
@@ -1438,11 +1450,17 @@
 
         function runNextSimStep() {
             if (!_simRunning) return;
-            if (_simPaused) { _simTimer = setTimeout(runNextSimStep, 300); return; }
+            if (_simPaused && !_simStepped) { 
+                _simTimer = setTimeout(runNextSimStep, 250); 
+                return; 
+            }
             if (_simIndex >= _simSteps.length) {
                 finishSimulation();
                 return;
             }
+
+            // Reset step request flag
+            _simStepped = false;
 
             const step = _simSteps[_simIndex];
             const total = _simSteps.length;
@@ -1493,19 +1511,40 @@
             logEl.appendChild(item);
             logEl.scrollTop = logEl.scrollHeight;
 
-            // Advance after a short pause for visual clarity
-            _simTimer = setTimeout(runNextSimStep, step.action === 'fill' ? 1800 : 900);
+            // Determine next execution delay dynamically from speed slider
+            const baseDelay = parseInt(document.getElementById('simSpeedSlider').value || 1000);
+            const delay = step.action === 'fill' ? baseDelay + 800 : baseDelay;
+
+            // If we are currently paused, don't schedule next step automatically
+            if (_simPaused) return;
+
+            _simTimer = setTimeout(runNextSimStep, delay);
         };
 
         function toggleSimPause() {
             _simPaused = !_simPaused;
             document.getElementById('simPauseIcon').className = _simPaused ? 'fas fa-play' : 'fas fa-pause';
             document.getElementById('simPauseLabel').textContent = _simPaused ? 'Resume' : 'Pause';
+            
+            // Show/hide the Step Next button when paused
+            document.getElementById('simStepNextBtn').style.display = _simPaused ? 'inline-flex' : 'none';
+        }
+
+        function stepNext() {
+            if (!_simRunning) return;
+            _simStepped = true;
+            runNextSimStep();
+        }
+
+        function updateSpeedLabel(val) {
+            const sec = (val / 1000).toFixed(1);
+            document.getElementById('simSpeedVal').textContent = `${sec}s`;
         }
 
         function stopSimulation() {
             _simRunning = false;
             _simPaused  = false;
+            _simStepped = false;
             if (_simTimer) clearTimeout(_simTimer);
             finishSimulation(true);
         }
@@ -1514,6 +1553,7 @@
             _simRunning = false;
             document.getElementById('simulateBtn').disabled = false;
             document.getElementById('simPauseBtn').style.display = 'none';
+            document.getElementById('simStepNextBtn').style.display = 'none';
             document.getElementById('simProgressBar').style.width = stopped ? document.getElementById('simProgressBar').style.width : '100%';
 
             // Add completion entry to log
