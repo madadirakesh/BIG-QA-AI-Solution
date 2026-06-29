@@ -31,6 +31,27 @@ def _runtime_env_with_ca():
         return os.environ.copy()
 
 
+def _runtime_env_for_command(cmd: str):
+    """Build the subprocess env for a specific command, preserving proxy/TLS settings.
+
+    We start from the CA/proxy-aware base env, then let EnvironmentSetup normalise PATH plus
+    tool-home variables (notably JAVA_HOME for Maven runs) so execution matches the preflight
+    dependency checks.
+    """
+    base_env = _runtime_env_with_ca()
+    try:
+        try:
+            from ProjectBootstrapper.environment_setup import EnvironmentSetup
+        except ImportError:
+            try:
+                from ScriptGenerator.ProjectBootstrapper.environment_setup import EnvironmentSetup
+            except ImportError:
+                from BIG_QA_Solution.ScriptGenerator.ProjectBootstrapper.environment_setup import EnvironmentSetup
+        return EnvironmentSetup.prepare_runtime_env(cmd, base_env=base_env)
+    except Exception:
+        return base_env
+
+
 class ScriptRunnerService:
     MAX_HEALING_RETRIES = 3
 
@@ -102,7 +123,7 @@ class ScriptRunnerService:
                     
                     # Automatically detect and use venv if present.
                     # Start from _runtime_env_with_ca() so proxy CA certs are preserved.
-                    env_vars = _runtime_env_with_ca()
+                    env_vars = _runtime_env_for_command(cmd)
                     venv_bin = os.path.join(full_path, "venv", "Scripts" if os.name == 'nt' else "bin")
                     if os.path.exists(venv_bin):
                         env_vars["PATH"] = venv_bin + os.pathsep + env_vars.get("PATH", "")
@@ -260,7 +281,7 @@ class ScriptRunnerService:
                 # Automatically detect and use venv if present.
                 # Start from _runtime_env_with_ca() (not a bare os.environ copy) so a test run
                 # behind a corporate proxy inherits the same TLS/CA + proxy settings as install.
-                env_vars = _runtime_env_with_ca()
+                env_vars = _runtime_env_for_command(cmd)
                 venv_bin = os.path.join(full_path, "venv", "Scripts" if os.name == 'nt' else "bin")
                 if os.path.exists(venv_bin):
                     env_vars["PATH"] = venv_bin + os.pathsep + env_vars.get("PATH", "")
@@ -435,7 +456,7 @@ class ScriptRunnerService:
                     yield f"event: progress\ndata: {json.dumps({'msg': f'[Fallback] Running command: {fallback_cmd}', 'type': 'step_start', 'step': attempts+1})}\n\n"
                     try:
                         # Same TLS/CA + proxy-aware base env as the primary run path above.
-                        env_vars = _runtime_env_with_ca()
+                        env_vars = _runtime_env_for_command(fallback_cmd)
                         is_windows = os.name == 'nt'
                         if is_windows:
                             process = subprocess.Popen(fallback_cmd, cwd=full_path, shell=True, env=env_vars, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1, universal_newlines=True, encoding='utf-8', errors='replace')
@@ -593,12 +614,16 @@ class ScriptRunnerService:
             return {"output": "No command provided."}
             
         try:
+            env_vars = _runtime_env_for_command(cmd)
+            venv_bin = os.path.join(project_path, "venv", "Scripts" if os.name == 'nt' else "bin")
+            if os.path.exists(venv_bin):
+                env_vars["PATH"] = venv_bin + os.pathsep + env_vars.get("PATH", "")
             is_windows = os.name == 'nt'
             if is_windows:
-                result = subprocess.run(cmd, cwd=project_path, shell=True, capture_output=True, text=True, timeout=30, encoding='utf-8', errors='replace')
+                result = subprocess.run(cmd, cwd=project_path, shell=True, env=env_vars, capture_output=True, text=True, timeout=30, encoding='utf-8', errors='replace')
             else:
                 import shlex
-                result = subprocess.run(shlex.split(cmd), cwd=project_path, shell=False, capture_output=True, text=True, timeout=30, encoding='utf-8', errors='replace')
+                result = subprocess.run(shlex.split(cmd), cwd=project_path, shell=False, env=env_vars, capture_output=True, text=True, timeout=30, encoding='utf-8', errors='replace')
             output = result.stdout + result.stderr
             return {"output": output}
         except Exception as e:

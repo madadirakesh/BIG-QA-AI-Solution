@@ -1730,9 +1730,19 @@ def serve_report():
 @login_required()
 def configure_ai_endpoint():
     env_path = os.path.join(BASE_DIR, '.env')
+
+    def normalize_ai_provider(ai_tool_value):
+        tool = str(ai_tool_value or '').strip().lower()
+        if tool in ('gemini', 'google'):
+            return 'gemini'
+        if tool in ('claude', 'anthropic'):
+            return 'anthropic'
+        if tool in ('openai', 'copilot'):
+            return 'openai'
+        return tool or 'openai'
     
     if request.method == 'GET':
-        config = {'AI_TOOL': '', 'AI_MODEL': '', 'API_KEY': ''}
+        config = {'AI_TOOL': '', 'AI_MODEL': '', 'API_KEY': '', 'AI_PROVIDER': ''}
         if os.path.exists(env_path):
             with open(env_path, 'r') as f:
                 for line in f:
@@ -1742,6 +1752,8 @@ def configure_ai_endpoint():
                         config['AI_MODEL'] = line.split('=', 1)[1].strip().strip('"').strip("'")
                     elif line.startswith('API_KEY'):
                         config['API_KEY'] = line.split('=', 1)[1].strip().strip('"').strip("'")
+                    elif line.startswith('AI_PROVIDER'):
+                        config['AI_PROVIDER'] = line.split('=', 1)[1].strip().strip('"').strip("'")
         return jsonify({"status": "success", "config": config})
         
     # POST
@@ -1749,6 +1761,7 @@ def configure_ai_endpoint():
     ai_tool = data.get('ai_tool')
     ai_model = data.get('ai_model')
     api_key = data.get('api_key')
+    ai_provider = normalize_ai_provider(ai_tool)
     
     env_lines = []
     if os.path.exists(env_path):
@@ -1756,7 +1769,7 @@ def configure_ai_endpoint():
             env_lines = f.readlines()
             
     new_env_lines = []
-    updated_keys = {'AI_TOOL': False, 'AI_MODEL': False, 'API_KEY': False}
+    updated_keys = {'AI_TOOL': False, 'AI_MODEL': False, 'API_KEY': False, 'AI_PROVIDER': False}
     
     for line in env_lines:
         if line.startswith('AI_TOOL'):
@@ -1768,6 +1781,9 @@ def configure_ai_endpoint():
         elif line.startswith('API_KEY'):
             new_env_lines.append(f'API_KEY = "{api_key}"\n')
             updated_keys['API_KEY'] = True
+        elif line.startswith('AI_PROVIDER'):
+            new_env_lines.append(f'AI_PROVIDER = "{ai_provider}"\n')
+            updated_keys['AI_PROVIDER'] = True
         else:
             new_env_lines.append(line)
             
@@ -1777,6 +1793,8 @@ def configure_ai_endpoint():
         new_env_lines.append(f'AI_MODEL = "{ai_model}"\n')
     if not updated_keys['API_KEY']:
         new_env_lines.append(f'API_KEY = "{api_key}"\n')
+    if not updated_keys['AI_PROVIDER']:
+        new_env_lines.append(f'AI_PROVIDER = "{ai_provider}"\n')
         
     with open(env_path, 'w') as f:
         f.writelines(new_env_lines)
@@ -1785,6 +1803,7 @@ def configure_ai_endpoint():
     os.environ['AI_TOOL'] = str(ai_tool)
     os.environ['AI_MODEL'] = str(ai_model)
     os.environ['API_KEY'] = str(api_key)
+    os.environ['AI_PROVIDER'] = str(ai_provider)
         
     status_data = None
     try:
@@ -2043,7 +2062,7 @@ def check_and_initialize_db():
 import asyncio
 import pandas as pd
 from api.code_injector import CodeInjector
-from api.backend import UniversalScriptGenerator, DEFAULT_AI_PROVIDER
+from api.backend import UniversalScriptGenerator, get_effective_ai_provider
 
 @app.route('/api/generate-bdd-code', methods=['POST'])
 @login_required()
@@ -2056,6 +2075,7 @@ def generate_bdd_code():
         file_type = request.form.get('file_type')
         project_id = request.form.get('project_id')
         db_locators = request.form.get('db_locators') 
+        ai_provider = (request.form.get('ai_provider') or '').strip().lower()
         
         scenario_file = request.files.get('scenario_file')
         po_files = request.files.getlist('po_files')
@@ -2214,7 +2234,7 @@ def generate_bdd_code():
                         except Exception:
                             pass
 
-        generator = UniversalScriptGenerator(DEFAULT_AI_PROVIDER, tool, language, framework)
+        generator = UniversalScriptGenerator(ai_provider or get_effective_ai_provider(), tool, language, framework)
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         

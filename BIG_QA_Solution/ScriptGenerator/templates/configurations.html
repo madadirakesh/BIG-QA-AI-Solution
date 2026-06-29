@@ -535,6 +535,12 @@
             const d = await r.json();
 
             if (d.status === 'success') {
+                if (typeof refreshGlobalProjectSelectors === 'function') {
+                    await refreshGlobalProjectSelectors(d.project_id || null);
+                }
+                if (typeof loadProjectsList === 'function') {
+                    await loadProjectsList(d.project_id || null);
+                }
                 showToast(isNew ? 'Project created successfully!' : 'Project updated successfully!', 'success');
                 closeProjectConfigModal();
             } else {

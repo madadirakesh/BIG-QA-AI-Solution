@@ -35,8 +35,51 @@ load_dotenv(dotenv_path=env_path)
 AI_TOOL     = os.getenv("AI_TOOL", "GEMINI").upper()
 AI_MODEL    = os.getenv("AI_MODEL", "gemini-2.5-flash")
 API_KEY     = os.getenv("API_KEY", "")
+AI_REQUEST_TIMEOUT_SECONDS = 90
 
-DEFAULT_AI_PROVIDER = os.getenv("AI_PROVIDER", "openai").lower()
+
+def _normalize_provider_name(provider: str) -> str:
+    raw = (provider or "").strip().lower()
+    if raw in ("gemini", "google"):
+        return "gemini"
+    if raw in ("openai", "copilot"):
+        return "openai"
+    if raw in ("claude", "anthropic"):
+        return "anthropic"
+    return raw
+
+
+def get_effective_ai_provider() -> str:
+    configured = _normalize_provider_name(os.getenv("AI_PROVIDER", ""))
+    if configured:
+        return configured
+
+    tool_provider = _normalize_provider_name(os.getenv("AI_TOOL", ""))
+    if tool_provider:
+        return tool_provider
+
+    return "openai"
+
+
+DEFAULT_AI_PROVIDER = get_effective_ai_provider()
+
+
+def _is_auth_error(exc: Exception) -> bool:
+    """Detect invalid/missing credential errors so we can fail fast without retries."""
+    text = str(exc or "").lower()
+    if "timed out" in text or "timeout" in text:
+        return False
+    markers = (
+        "invalid api key",
+        "incorrect api key",
+        "authentication",
+        "unauthorized",
+        "permission denied",
+        "403",
+        "401",
+        "access token",
+    )
+    return any(marker in text for marker in markers)
 
 def reload_env():
     global AI_TOOL, AI_MODEL, API_KEY, DEFAULT_AI_PROVIDER
@@ -44,7 +87,7 @@ def reload_env():
     AI_TOOL     = os.getenv("AI_TOOL", "GEMINI").upper()
     AI_MODEL    = os.getenv("AI_MODEL", "gemini-2.5-flash")
     API_KEY     = os.getenv("API_KEY", "")
-    DEFAULT_AI_PROVIDER = os.getenv("AI_PROVIDER", "openai").lower()
+    DEFAULT_AI_PROVIDER = get_effective_ai_provider()
 
 # Initialize API clients
 _openai_client = None
@@ -211,7 +254,13 @@ async def call_openai(prompt: str, expect_json: bool = True) -> str:
         )
         return response.choices[0].message.content
     
-    return await asyncio.to_thread(_call)
+    try:
+        return await asyncio.wait_for(asyncio.to_thread(_call), timeout=AI_REQUEST_TIMEOUT_SECONDS)
+    except asyncio.TimeoutError as e:
+        raise RuntimeError(
+            f"AI request timed out after {AI_REQUEST_TIMEOUT_SECONDS} seconds. "
+            "The selected model may need more time for this request. Please try again or use a faster model."
+        ) from e
 
 
 async def call_gemini(prompt: str, expect_json: bool = True) -> str:
@@ -241,7 +290,13 @@ async def call_gemini(prompt: str, expect_json: bool = True) -> str:
         )
         return response.text
 
-    return await asyncio.to_thread(_call)
+    try:
+        return await asyncio.wait_for(asyncio.to_thread(_call), timeout=AI_REQUEST_TIMEOUT_SECONDS)
+    except asyncio.TimeoutError as e:
+        raise RuntimeError(
+            f"AI request timed out after {AI_REQUEST_TIMEOUT_SECONDS} seconds. "
+            "The selected model may need more time for this request. Please try again or use a faster model."
+        ) from e
 
 
 async def call_anthropic(prompt: str, expect_json: bool = True) -> str:
@@ -274,36 +329,63 @@ async def call_anthropic(prompt: str, expect_json: bool = True) -> str:
         )
         return response.content[0].text
 
-    return await asyncio.to_thread(_call)
+    try:
+        return await asyncio.wait_for(asyncio.to_thread(_call), timeout=AI_REQUEST_TIMEOUT_SECONDS)
+    except asyncio.TimeoutError as e:
+        raise RuntimeError(
+            f"AI request timed out after {AI_REQUEST_TIMEOUT_SECONDS} seconds. "
+            "The selected model may need more time for this request. Please try again or use a faster model."
+        ) from e
 
 
 async def call_ai(prompt: str, provider: str = "", expect_json: bool = True, retries: int = 3) -> str:
     """Calls the configured AI provider with retry logic and logging."""
     reload_env()
+    requested_provider = _normalize_provider_name(provider)
+    configured_provider = get_effective_ai_provider()
+    effective_provider = requested_provider or configured_provider
+
     for attempt in range(retries):
         try:
-            logger.info(f"AI Call attempt {attempt + 1}/{retries} using {AI_TOOL}")
-            if AI_TOOL in ["GEMINI", "GOOGLE"]:
+            logger.info(
+                f"AI Call attempt {attempt + 1}/{retries} using provider={effective_provider} "
+                f"(requested={requested_provider or 'default'}, configured={configured_provider}, tool={AI_TOOL})"
+            )
+            if effective_provider == "gemini":
                 if not API_KEY:
                     raise HTTPException(status_code=500, detail="API_KEY not configured in .env")
                 result = await call_gemini(prompt, expect_json)
-            elif AI_TOOL in ["OPENAI", "COPILOT"]:
+            elif effective_provider == "openai":
                 if not API_KEY:
                     raise HTTPException(status_code=500, detail="API_KEY not configured in .env")
                 result = await call_openai(prompt, expect_json)
-            elif AI_TOOL in ["CLAUDE", "ANTHROPIC"]:
+            elif effective_provider == "anthropic":
                 if not API_KEY:
                     raise HTTPException(status_code=500, detail="API_KEY not configured in .env")
                 result = await call_anthropic(prompt, expect_json)
             else:
                 if not API_KEY:
                     raise HTTPException(status_code=500, detail="API_KEY not configured in .env")
-                result = await call_gemini(prompt, expect_json)
+                logger.warning(
+                    f"Unknown AI provider '{effective_provider}'. Falling back to configured provider '{configured_provider}'."
+                )
+                if configured_provider == "anthropic":
+                    result = await call_anthropic(prompt, expect_json)
+                elif configured_provider == "openai":
+                    result = await call_openai(prompt, expect_json)
+                else:
+                    result = await call_gemini(prompt, expect_json)
             
             logger.info(f"AI Call successful on attempt {attempt + 1}")
             return result
         except Exception as e:
             logger.error(f"AI Call failed on attempt {attempt + 1}: {e}")
+            if _is_auth_error(e):
+                logger.error("Detected AI authentication/credential failure. Skipping retries.")
+                raise RuntimeError(
+                    "AI authentication failed. Please verify the configured AI provider "
+                    "and API key in Configurations."
+                ) from e
             if attempt == retries - 1:
                 raise
             wait_time = 2 ** attempt
@@ -328,6 +410,59 @@ def parse_json_result(result: str, fallback_key: str) -> dict:
                 pass
         return None
 
+    def _try_extract_partial_mapping(s: str):
+        decoder = json.JSONDecoder()
+        start = s.find("{")
+        if start == -1:
+            return None
+
+        i = start + 1
+        extracted = {}
+
+        while i < len(s):
+            while i < len(s) and s[i] in " \r\n\t,":
+                i += 1
+
+            if i >= len(s) or s[i] == "}":
+                break
+
+            try:
+                key, i = decoder.raw_decode(s, i)
+            except json.JSONDecodeError:
+                break
+
+            if not isinstance(key, str):
+                break
+
+            while i < len(s) and s[i] in " \r\n\t":
+                i += 1
+
+            if i >= len(s) or s[i] != ":":
+                break
+            i += 1
+
+            while i < len(s) and s[i] in " \r\n\t":
+                i += 1
+
+            try:
+                value, i = decoder.raw_decode(s, i)
+            except json.JSONDecodeError:
+                # Salvage a truncated final string value if the AI response cut off mid-file.
+                if i < len(s) and s[i] == '"':
+                    try:
+                        value = json.loads(s[i:] + '"')
+                        extracted[key] = value
+                    except Exception:
+                        pass
+                break
+
+            if isinstance(value, str):
+                extracted[key] = value
+            else:
+                extracted[key] = json.dumps(value, ensure_ascii=False, indent=2)
+
+        return extracted or None
+
     logger.debug(f"Parsing AI JSON result. Fallback key: {fallback_key}")
     parsed = _try_parse(result)
     if not parsed:
@@ -349,6 +484,13 @@ def parse_json_result(result: str, fallback_key: str) -> dict:
         for block in re.finditer(r"```(?:json)?\s*(.*?)```", result, re.DOTALL):
             parsed = _try_parse(block.group(1).strip())
             if parsed: break
+
+    if not parsed:
+        parsed = _try_extract_partial_mapping(result)
+        if parsed:
+            logger.warning(
+                f"Recovered {len(parsed)} file(s) from a partially formed AI JSON response."
+            )
 
     if not parsed:
         logger.warning(f"Could not extract valid JSON from AI response. Falling back to {fallback_key}.")
@@ -1198,8 +1340,15 @@ class UniversalScriptGenerator(CodeGenerator):
         prompt = sg_prompts.get_universal_script_generation_prompt(
             self.framework, self.tool, self.language, self.standards, support_content, bdd_content
         )
-        
-        ext = "py" if self.language.lower() == "python" else "java" if self.language.lower() == "java" else "ts" if "ts" in self.language.lower() else "cs"
+
+        language = self.language.lower()
+        ext = (
+            "py" if language == "python"
+            else "java" if language == "java"
+            else "ts" if ("typescript" in language or language == "ts")
+            else "js" if ("javascript" in language or language == "js")
+            else "cs"
+        )
         fallback = f"tests/generated_test.{ext}"
         
         parsed = await self._call_ai_and_parse(prompt, fallback)

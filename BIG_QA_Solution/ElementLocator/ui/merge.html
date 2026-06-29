@@ -1042,8 +1042,13 @@
         function browseMergeFile() {
             console.log('JS: Browse button clicked');
             const selectedLocators = capturedElements.filter((el, idx) => mergeSelections.includes(idx));
-            _pendingAction  = 'browse_merge_file';
-            _pendingPayload = JSON.stringify({ locators: selectedLocators, tool: _selectedTool, lang: _selectedLang });
+            const payload = JSON.stringify({ locators: selectedLocators, tool: _selectedTool, lang: _selectedLang });
+            if (pyBridge && typeof pyBridge.callPython === 'function') {
+                pyBridge.callPython('browse_merge_file', payload);
+            } else {
+                _pendingAction  = 'browse_merge_file';
+                _pendingPayload = payload;
+            }
         }
 
         function confirmMerge() {
@@ -1051,8 +1056,13 @@
             if (!_targetFilePath) { alert('Please browse and select a target file first.'); return; }
             const mergedCode = cmRight ? cmRight.getValue() : document.getElementById('mergeExistingCodeTextarea').value;
             if (!mergedCode || !mergedCode.trim()) { alert('Merged code is empty!'); return; }
-            _pendingAction  = 'smart_merge_confirm';
-            _pendingPayload = JSON.stringify({ file_path: _targetFilePath, merged_code: mergedCode });
+            const payload = JSON.stringify({ file_path: _targetFilePath, merged_code: mergedCode });
+            if (pyBridge && typeof pyBridge.callPython === 'function') {
+                pyBridge.callPython('smart_merge_confirm', payload);
+            } else {
+                _pendingAction  = 'smart_merge_confirm';
+                _pendingPayload = payload;
+            }
         }
 
         function closeWindow() {
@@ -1064,8 +1074,12 @@
                 console.log('JS: closeWindow ignored — browse dialog is open');
                 return;
             }
-            _pendingAction  = 'close_merge_window';
-            _pendingPayload = '';
+            if (pyBridge && typeof pyBridge.callPython === 'function') {
+                pyBridge.callPython('close_merge_window', '');
+            } else {
+                _pendingAction  = 'close_merge_window';
+                _pendingPayload = '';
+            }
         }
 
         function initSplitResizer() {
