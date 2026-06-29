@@ -170,6 +170,17 @@ Page Object Model pattern:
         }
     }
 
+CRITICAL - URL & Credentials (.env via ConfigReader):
+    - For steps that launch/navigate to the application URL or enter credentials, do NOT
+      hardcode the URL, username, or password unless the scenario/test data provides them.
+    - Import and use the existing ConfigReader utility (test/utils/configReader.ts):
+          import { ConfigReader } from '../utils/configReader';   // adjust relative path
+          await this.page.goto(ConfigReader.getEnvUrl());          // APP_URL
+          await this.usernameInput.fill(ConfigReader.getProperty('USER'));
+          await this.passwordInput.fill(ConfigReader.getProperty('PASSWORD'));
+    - This MUST work the same way it does in the Selenium Java template - never special-case
+      TypeScript/Playwright into hardcoded values.
+
 CRITICAL - Page Object Methods:
     - Generate ONE corresponding method per unique action/step mentioned in the BDD scenarios.
     - Every action in a Step Definition MUST call a corresponding method in the Page Object.
@@ -235,6 +246,49 @@ Then generated code MUST use:
 NEVER substitute, modify or guess locators.
 NEVER use By.ID, By.NAME or any other type unless it exactly matches the Type in Supporting Information.
 If a locator is provided in Supporting Information, use it exactly as given - no exceptions.
+"""
+
+ENV_CONFIG_STANDARDS = """
+CRITICAL - URL & CREDENTIALS RESOLUTION (read the .env via ConfigReader):
+
+This rule applies to EVERY language/tool combination equally (Playwright TypeScript, Selenium/
+Playwright Java, Python, C#) - do NOT treat TypeScript/Playwright differently from Java.
+
+When a BDD step launches or navigates to the application URL (e.g. "I launch the application",
+"I navigate to the login page", "Given I am on the home page", "open the URL") OR enters
+credentials (e.g. "I enter valid Username and Password", "I login as a valid user", "enter
+username/password"), resolve the value in this STRICT priority order:
+
+  1. If the value is explicitly given in the BDD scenario step text, a Scenario Outline
+     Examples table, or a data table (i.e. provided as test data), use that literal value.
+  2. OTHERWISE you MUST read it from the project's .env file through the project's ConfigReader
+     utility (listed under "Project Reusable Utilities"). NEVER hardcode a URL, username, or
+     password, and NEVER invent placeholder/example values when a ConfigReader utility exists.
+
+Standard .env keys shipped by the project templates:
+    APP_URL   -> the base/application URL
+    USER      -> the username
+    PASSWORD  -> the password (may be AES-encrypted as "ENC:..."; ConfigReader decrypts it)
+    BROWSER, HEADLESS, CRED_KEY -> runtime config (don't hardcode these either)
+
+Use the EXISTING ConfigReader utility - never recreate or re-import a parallel one. Correct calls
+per stack:
+  - Playwright TypeScript: import { ConfigReader } from '<relative-path>/utils/configReader';
+        await this.page.goto(ConfigReader.getEnvUrl());            // APP_URL
+        await loginPage.login(ConfigReader.getProperty('USER'), ConfigReader.getProperty('PASSWORD'));
+  - Selenium / Playwright Java: import utils.ConfigReader;
+        loginPage.open(ConfigReader.getAppUrl());                  // APP_URL
+        loginPage.login(ConfigReader.getProperty("USER"), ConfigReader.getProperty("PASSWORD"));
+  - Python (Selenium/Playwright): from utils.config_reader import ConfigReader
+        page.goto(ConfigReader.get_app_url())                      # APP_URL
+        login_page.login(ConfigReader.get("USER"), ConfigReader.get("PASSWORD"))
+  - C# Reqnroll: using <Namespace>.Utils;
+        loginPage.Open(ConfigReader.GetAppUrl());                  // APP_URL
+        loginPage.Login(ConfigReader.GetProperty("USER"), ConfigReader.GetProperty("PASSWORD"));
+
+If (and only if) no ConfigReader utility appears under "Project Reusable Utilities", read the
+environment directly instead of hardcoding: process.env.APP_URL (TypeScript), os.getenv (Python),
+System.getenv / dotenv (Java), Environment.GetEnvironmentVariable (C#).
 """
 
 def get_pytest_new_suite_prompt(file_templates: dict, support_content: str, bdd_content: str) -> str:
@@ -517,6 +571,7 @@ def get_universal_script_generation_prompt(framework: str, tool: str, language: 
 
         {standards}
         {LOCATOR_USAGE_STANDARDS}
+        {ENV_CONFIG_STANDARDS}
 
         Supporting Information:
         {support_content}
