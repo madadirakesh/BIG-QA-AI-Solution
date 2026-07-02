@@ -2063,11 +2063,36 @@ import asyncio
 import pandas as pd
 from api.code_injector import CodeInjector
 from api.backend import UniversalScriptGenerator, get_effective_ai_provider
+import re
+
+def _count_step_definitions(content: str) -> int:
+    if not content:
+        return 0
+    pattern = r'@\s*(?:given|when|then|step|Given|When|Then|Step|and|And|but|But)\b|\[\s*(?:Given|When|Then|And|But|Step)\b|(?:Given|When|Then|Step|And|But)\s*\('
+    return len(re.findall(pattern, content))
+
+def _count_scenarios(text: str, file_type: str) -> int:
+    if not text:
+        return 0
+    if file_type == 'Excel':
+        lines = [l for l in text.splitlines() if l.strip()]
+        return max(1, len(lines) - 1)
+    
+    matches = re.findall(r'^\s*(?:Scenario|Scenario\s+Outline|Scenario\s+Template)\s*:', text, re.MULTILINE | re.IGNORECASE)
+    if matches:
+        return len(matches)
+    
+    matches = re.findall(r'^\s*(?:Scenario|TC|Test Case|Testcase|Case|\d+)\b', text, re.MULTILINE | re.IGNORECASE)
+    if matches:
+        return len(matches)
+        
+    return 1
 
 @app.route('/api/generate-bdd-code', methods=['POST'])
 @login_required()
 def generate_bdd_code():
     try:
+        existing_steps_count = 0
         project_path = request.form.get('project_path')
         tool = request.form.get('tool')
         language = request.form.get('language')
@@ -2152,7 +2177,9 @@ def generate_bdd_code():
                             if f.endswith(('.py', '.java', '.ts', '.js', '.cs')):
                                 try:
                                     with open(os.path.join(root, f), 'r', encoding='utf-8', errors='ignore') as st_file:
-                                        existing_steps.append(f"--- {f} ---\n{st_file.read()}")
+                                        st_content = st_file.read()
+                                        existing_steps.append(f"--- {f} ---\n{st_content}")
+                                        existing_steps_count += _count_step_definitions(st_content)
                                 except Exception:
                                     pass
                     if existing_steps:
@@ -2242,6 +2269,10 @@ def generate_bdd_code():
         
         parsed_files = loop.run_until_complete(generator.generate(scenarios_text, support_content, ""))
         
+        new_step_definitions_count = 0
+        step_def_files_count = 0
+        scenarios_count = _count_scenarios(scenarios_text, file_type)
+
         if isinstance(parsed_files, dict):
             # Enforce selective generation output
             keys_to_delete = []
@@ -2256,6 +2287,13 @@ def generate_bdd_code():
                     keys_to_delete.append(k)
             for k in keys_to_delete:
                 del parsed_files[k]
+
+            # Calculate stats for remaining files
+            for k, v in parsed_files.items():
+                k_norm = k.replace('\\', '/').lower()
+                if k_norm.endswith(('.py', '.java', '.ts', '.js', '.cs')) and ('step' in k_norm or 'definition' in k_norm):
+                    step_def_files_count += 1
+                    new_step_definitions_count += _count_step_definitions(v)
                 
         result_files = []
         if isinstance(parsed_files, dict):
@@ -2264,7 +2302,14 @@ def generate_bdd_code():
         else:
             result_files.append({'filename': 'generated_code.txt', 'content': "// AI Failed to return valid dict formats.", 'path': os.path.join(project_path, 'generated_code.txt')})
 
-        return jsonify({'status': 'success', 'files': result_files})
+        stats = {
+            'new_step_definitions': new_step_definitions_count,
+            'existing_steps': existing_steps_count,
+            'step_def_files_generated': step_def_files_count,
+            'scenarios_count': scenarios_count
+        }
+
+        return jsonify({'status': 'success', 'files': result_files, 'stats': stats})
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500
 

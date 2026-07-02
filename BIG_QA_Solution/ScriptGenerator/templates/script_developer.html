@@ -307,6 +307,51 @@
                 </div>
             </div>
 
+            <!-- Generation Statistics Section -->
+            <div id="generationStatsStep3" class="mb-4 animate-slide-up" style="display: none;">
+                <h4 class="text-light mb-3" style="font-size: 1.05rem; font-weight: 600; letter-spacing: 0.5px; display: flex; align-items: center; gap: 8px;">
+                    <i class="fas fa-chart-bar text-primary"></i> Generation Statistics
+                </h4>
+                <div class="summary-grid">
+                    <div class="summary-card">
+                        <div class="summary-card-icon" style="background: rgba(0, 120, 212, 0.15); color: var(--accent-primary);">
+                            <i class="fas fa-code"></i>
+                        </div>
+                        <div class="summary-card-content">
+                            <div class="summary-card-val" id="statsNewSteps">0</div>
+                            <div class="summary-card-label">New Step Definitions</div>
+                        </div>
+                    </div>
+                    <div class="summary-card">
+                        <div class="summary-card-icon" style="background: rgba(16, 185, 129, 0.15); color: #10b981;">
+                            <i class="fas fa-clipboard-check"></i>
+                        </div>
+                        <div class="summary-card-content">
+                            <div class="summary-card-val" id="statsExistingSteps">0</div>
+                            <div class="summary-card-label">Existing Steps</div>
+                        </div>
+                    </div>
+                    <div class="summary-card">
+                        <div class="summary-card-icon" style="background: rgba(139, 92, 246, 0.15); color: #8b5cf6;">
+                            <i class="fas fa-file-code"></i>
+                        </div>
+                        <div class="summary-card-content">
+                            <div class="summary-card-val" id="statsStepFiles">0</div>
+                            <div class="summary-card-label">Step Def Files</div>
+                        </div>
+                    </div>
+                    <div class="summary-card">
+                        <div class="summary-card-icon" style="background: rgba(245, 158, 11, 0.15); color: #f59e0b;">
+                            <i class="fas fa-film"></i>
+                        </div>
+                        <div class="summary-card-content">
+                            <div class="summary-card-val" id="statsScenarios">0</div>
+                            <div class="summary-card-label">For Scenarios</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             <div id="loadingStatus" class="loading-state text-center py-5">
                 <div class="spinner"><i class="fas fa-circle-notch fa-spin fa-3x text-primary"></i></div>
                 <h4 class="mt-3">AI is processing your request...</h4>
@@ -1053,6 +1098,58 @@
     }
     .error-text.show {
         display: block;
+    }
+
+    /* Statistics Summary Dashboard Styles */
+    .summary-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 16px;
+        margin-bottom: 24px;
+    }
+    .summary-card {
+        background: rgba(255, 255, 255, 0.02);
+        border: 1px solid var(--glass-border);
+        border-radius: 12px;
+        padding: 16px;
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    .summary-card:hover {
+        background: rgba(255, 255, 255, 0.05);
+        border-color: rgba(255, 255, 255, 0.15);
+        transform: translateY(-2px);
+        box-shadow: 0 8px 20px rgba(0, 0, 0, 0.3);
+    }
+    .summary-card-icon {
+        width: 44px;
+        height: 44px;
+        border-radius: 10px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.25rem;
+        flex-shrink: 0;
+    }
+    .summary-card-content {
+        flex-grow: 1;
+        min-width: 0;
+    }
+    .summary-card-val {
+        font-size: 1.5rem;
+        font-weight: 700;
+        line-height: 1.2;
+        color: #f8fafc;
+    }
+    .summary-card-label {
+        font-size: 0.7rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.8px;
+        color: var(--text-secondary);
+        margin-top: 2px;
     }
 </style>
 {% endblock %}
@@ -2052,6 +2149,7 @@ function generateCode() {
     nextStep(3);
     document.getElementById('loadingStatus').style.display = 'block';
     document.getElementById('resultContent').style.display = 'none';
+    document.getElementById('generationStatsStep3').style.display = 'none';
 
     fetch('/api/generate-bdd-code', {
         method: 'POST',
@@ -2063,6 +2161,34 @@ function generateCode() {
         if (res.status === 'success') {
             document.getElementById('resultContent').style.display = 'block';
             generatedFilesData = res.files;
+
+            // Set statistics
+            document.getElementById('generationStatsStep3').style.display = 'block';
+            let stats = res.stats || {};
+            let newSteps = stats.new_step_definitions ?? 0;
+            let existingSteps = stats.existing_steps ?? 0;
+            let stepFiles = stats.step_def_files_generated ?? 0;
+            let scenarios = stats.scenarios_count ?? 0;
+
+            // Fallback calculations in JS if needed
+            if (newSteps === 0 || stepFiles === 0) {
+                const fallback = getJSFallbackStats(res.files, language);
+                if (newSteps === 0) newSteps = fallback.newSteps;
+                if (stepFiles === 0) stepFiles = fallback.stepFiles;
+            }
+            if (scenarios === 0) {
+                let scenariosContent = "";
+                if (fileType === 'BDD' && document.getElementById('bddContentEditor').value.trim()) {
+                    scenariosContent = document.getElementById('bddContentEditor').value;
+                }
+                scenarios = countScenariosFallback(scenariosContent, fileType);
+            }
+
+            document.getElementById('statsNewSteps').innerText = newSteps;
+            document.getElementById('statsExistingSteps').innerText = existingSteps;
+            document.getElementById('statsStepFiles').innerText = stepFiles;
+            document.getElementById('statsScenarios').innerText = scenarios;
+
             renderCodeResults(res.files);
         } else {
             showToast("Generation failed: " + res.message, 'error');
@@ -2074,6 +2200,57 @@ function generateCode() {
         showToast("Error: " + err.message, 'error');
         nextStep(2);
     });
+}
+
+function getJSFallbackStats(files, language) {
+    let newSteps = 0;
+    let stepFiles = 0;
+    if (!files) return { newSteps, stepFiles };
+    
+    files.forEach(f => {
+        const pathLower = (f.filename || '').toLowerCase();
+        if (pathLower.endsWith('.py') || pathLower.endsWith('.java') || pathLower.endsWith('.ts') || pathLower.endsWith('.js') || pathLower.endsWith('.cs')) {
+            if (pathLower.includes('step') || pathLower.includes('definition')) {
+                stepFiles++;
+                const pattern = /@\s*(?:given|when|then|step|Given|When|Then|Step|and|And|but|But)\b|\[\s*(?:Given|When|Then|And|But|Step)\b|(?:Given|When|Then|Step|And|But)\s*\(/g;
+                const matches = (f.content || '').match(pattern);
+                if (matches) {
+                    newSteps += matches.length;
+                }
+            }
+        }
+    });
+
+    return {
+        newSteps,
+        stepFiles
+    };
+}
+
+function countScenariosFallback(content, fileType) {
+    if (fileType === 'Excel') {
+        const fileInput = document.getElementById('scenarioFile');
+        if (fileInput && fileInput.files.length > 0) {
+            return 10; 
+        }
+        return 1;
+    }
+    
+    if (!content) {
+        content = document.getElementById('bddContentEditor')?.value || "";
+    }
+    
+    if (!content) return 0;
+    
+    const lines = content.split('\n');
+    let count = 0;
+    lines.forEach(line => {
+        const trimmed = line.trim();
+        if (trimmed.startsWith('Scenario:') || trimmed.startsWith('Scenario Outline:') || trimmed.startsWith('Scenario Template:')) {
+            count++;
+        }
+    });
+    return count > 0 ? count : 1;
 }
 
 function renderCodeResults(files) {
