@@ -58,6 +58,17 @@ def get_env_bool(name, default=False):
         return default
     return value.strip().lower() in ("1", "true", "yes", "on")
 
+def is_headless():
+    """Detect if running in a headless container, virtual, or cloud environment (SaaS)."""
+    if os.environ.get('HEADLESS') == 'true' or os.environ.get('HEADLESS_CLOUD') == 'true':
+        return True
+    if os.path.exists('/.dockerenv') or os.environ.get('DOCKER') == 'true':
+        return True
+    if os.environ.get('AWS_EXECUTION_ENV') or os.environ.get('AWS_LAMBDA_FUNCTION_NAME'):
+        return True
+    return False
+
+
 def install_prerequisites():
     req_file = ROOT_DIR / "requirements.txt"
     if req_file.exists():
@@ -594,6 +605,12 @@ def _get_directory_path(prompt="Select Directory"):
 
 @app.route('/api/browse-directory', methods=['GET'])
 def browse_directory():
+    if is_headless():
+        # Headless Cloud/Docker fallback: return a default sandboxed projects folder under ROOT_DIR
+        default_dir = os.path.abspath(ROOT_DIR / "projects")
+        os.makedirs(default_dir, exist_ok=True)
+        return jsonify({"path": default_dir})
+        
     path = _get_directory_path("Select Project Save Location")
     return jsonify({"path": path})
 
@@ -638,6 +655,10 @@ def _get_file_path(prompt="Select File"):
 @app.route('/api/browse-file', methods=['GET'])
 @login_required()
 def browse_file():
+    if is_headless():
+        # Headless Cloud/Docker fallback: return empty or let user input/upload files
+        return jsonify({"path": "", "content": "", "message": "GUI file picker unavailable in cloud environment."})
+
     path = _get_file_path("Select File to Load")
     content = ""
     if path and os.path.exists(path):
@@ -1691,8 +1712,15 @@ def git_execute_command():
         if not cmd or not project_path:
             return jsonify({"output": "Command and project_path are required"}), 400
             
-        # Security check: only allow commands starting with 'git'
-        if not cmd.lower().startswith('git'):
+        import shlex
+        posix = (sys.platform != 'win32')
+        try:
+            args = shlex.split(cmd, posix=posix)
+        except Exception as e:
+            return jsonify({"output": f"Invalid command syntax: {str(e)}"}), 400
+            
+        # Security check: only allow commands running git directly
+        if not args or args[0].lower() != 'git':
             return jsonify({"output": "Only Git commands are allowed."}), 400
             
         # Check if project exists in database
@@ -1701,7 +1729,7 @@ def git_execute_command():
             return jsonify({"output": "Project not found"}), 404
             
         import subprocess
-        result = subprocess.run(cmd, cwd=project_path, shell=True, capture_output=True, text=True, timeout=30)
+        result = subprocess.run(args, cwd=project_path, shell=False, capture_output=True, text=True, timeout=30)
         output = result.stdout + result.stderr
         return jsonify({"output": output})
     except Exception as e:
@@ -1715,15 +1743,44 @@ def git_execute_command():
 @login_required()
 def serve_report():
     file_path = request.args.get('path')
-    if not file_path or not os.path.exists(file_path):
-        return "Report not found", 404
+    if not file_path:
+        return "Path parameter is required", 400
+        
+    # Resolve absolute path for safety check
+    abs_path = os.path.abspath(file_path)
+    
+    # ── Path Traversal Security Verification ──
+    # Ensure the path is located within registered projects, temp directory, or the app workspace
+    allowed_bases = []
+    
+    projects = fetch_data("SELECT project_path FROM ProjectDetails")
+    for p in projects:
+        if p.get('project_path'):
+            allowed_bases.append(os.path.abspath(p['project_path']))
+            
+    import tempfile
+    allowed_bases.append(os.path.abspath(tempfile.gettempdir()))
+    allowed_bases.append(os.path.abspath(str(ROOT_DIR)))
+
+    is_allowed = False
+    for base in allowed_bases:
+        try:
+            if os.path.commonpath([abs_path, base]) == base:
+                is_allowed = True
+                break
+        except ValueError:
+            # Paths on different drives on Windows will raise ValueError
+            continue
+            
+    if not is_allowed or not os.path.exists(abs_path):
+        return "Report not found or access denied", 404
     
     import mimetypes
     from flask import Response
-    with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+    with open(abs_path, 'r', encoding='utf-8', errors='ignore') as f:
         content = f.read()
     
-    mime_type, _ = mimetypes.guess_type(file_path)
+    mime_type, _ = mimetypes.guess_type(abs_path)
     return Response(content, mimetype=mime_type or 'text/html')
 
 @app.route('/api/configure-ai', methods=['GET', 'POST'])
