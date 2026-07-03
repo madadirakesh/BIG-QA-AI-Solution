@@ -3,7 +3,7 @@ import json
 import time
 from PyQt6.QtCore import QObject, pyqtSlot, pyqtSignal, QUrl, QTimer, QFile, QIODevice, QTextStream, Qt
 from PyQt6.QtGui import QImage, QPixmap, QPainter, QColor, QPen
-from PyQt6.QtWidgets import QTabWidget, QVBoxLayout, QWidget
+from PyQt6.QtWidgets import QTabWidget, QVBoxLayout, QWidget, QStackedLayout, QLabel, QProgressBar
 from PyQt6.QtWebEngineWidgets import QWebEngineView
 from PyQt6.QtWebEngineCore import QWebEnginePage, QWebEngineScript, QWebEngineProfile, QWebEngineNewWindowRequest
 from PyQt6.QtWebChannel import QWebChannel
@@ -81,7 +81,7 @@ class BrowserController(QObject):
         close_icon_url = QUrl.fromLocalFile(close_icon_path).toString()
         close_hover_url = QUrl.fromLocalFile(close_hover_path).toString()
 
-        # The main UI container is now a Tab Widget
+        # The main UI container is a tab widget wrapped in an overlay-capable shell.
         self.tabs = QTabWidget()
         self.tabs.setTabsClosable(True)
         self.tabs.tabCloseRequested.connect(self._close_tab)
@@ -103,6 +103,73 @@ class BrowserController(QObject):
                 border-radius: 3px;
             }}
         """)
+
+        self.container = QWidget()
+        self.container.setObjectName("browserShell")
+        self.container.setStyleSheet("""
+            QWidget#browserShell {
+                background: #ffffff;
+            }
+            QWidget#browserLoadingOverlay {
+                background: rgba(15, 23, 42, 0.84);
+                border: 1px solid rgba(255, 255, 255, 0.08);
+                border-radius: 4px;
+            }
+            QLabel#browserLoadingTitle {
+                color: #f8fafc;
+                font-size: 18px;
+                font-weight: 600;
+            }
+            QLabel#browserLoadingText {
+                color: #94a3b8;
+                font-size: 13px;
+            }
+            QProgressBar#browserLoadingBar {
+                min-width: 220px;
+                max-width: 220px;
+                min-height: 8px;
+                max-height: 8px;
+                border-radius: 4px;
+                background: rgba(255, 255, 255, 0.08);
+                border: none;
+            }
+            QProgressBar#browserLoadingBar::chunk {
+                border-radius: 4px;
+                background: #00bcf2;
+            }
+        """)
+
+        self._stack = QStackedLayout(self.container)
+        self._stack.setStackingMode(QStackedLayout.StackingMode.StackAll)
+        self._stack.setContentsMargins(0, 0, 0, 0)
+        self._stack.addWidget(self.tabs)
+
+        self.loading_overlay = QWidget(self.container)
+        self.loading_overlay.setObjectName("browserLoadingOverlay")
+        self.loading_overlay.hide()
+
+        overlay_layout = QVBoxLayout(self.loading_overlay)
+        overlay_layout.setContentsMargins(24, 24, 24, 24)
+        overlay_layout.setSpacing(12)
+        overlay_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        title = QLabel("Loading Preview")
+        title.setObjectName("browserLoadingTitle")
+        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        overlay_layout.addWidget(title)
+
+        self.loading_label = QLabel("Please wait while the page loads...")
+        self.loading_label.setObjectName("browserLoadingText")
+        self.loading_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        overlay_layout.addWidget(self.loading_label)
+
+        self.loading_bar = QProgressBar()
+        self.loading_bar.setObjectName("browserLoadingBar")
+        self.loading_bar.setRange(0, 0)
+        self.loading_bar.setTextVisible(False)
+        overlay_layout.addWidget(self.loading_bar)
+
+        self._stack.addWidget(self.loading_overlay)
 
         # Shared Python bridge
         self.pybridge = PyBridge()
@@ -149,6 +216,8 @@ class BrowserController(QObject):
             self._scripts_registered = True
 
         # Connect signals
+        view.loadStarted.connect(lambda v=view: self._on_load_started(v))
+        view.loadProgress.connect(lambda progress, v=view: self._on_load_progress(progress, v))
         view.loadFinished.connect(lambda ok, v=view: self._on_load_finished(ok, v))
         page.newWindowRequested.connect(self._on_new_window_requested)
         # Fix #7: propagate URL changes (back/forward/redirect) to the dashboard URL bar
@@ -224,6 +293,8 @@ class BrowserController(QObject):
             )
 
     def _on_load_finished(self, ok, view):
+        if view == self.tabs.currentWidget():
+            self._hide_loading_overlay()
         if not ok: return
         
         # Update tab title
@@ -275,7 +346,7 @@ class BrowserController(QObject):
         return self.tabs.currentWidget()
 
     def get_ui_component(self):
-        return self.tabs
+        return self.container
 
     def load_url(self, url_str: str):
         current_view = self.tabs.currentWidget()
@@ -300,7 +371,26 @@ class BrowserController(QObject):
                     url_str = "http://" + url_str
                 else:
                     url_str = "https://" + url_str
+            self._show_loading_overlay("Please wait while the page loads...")
             current_view.setUrl(QUrl(url_str))
+
+    def _on_load_started(self, view):
+        if view == self.tabs.currentWidget():
+            self._show_loading_overlay("Please wait while the page loads...")
+
+    def _on_load_progress(self, progress, view):
+        if view == self.tabs.currentWidget():
+            msg = f"Loading preview... {progress}%"
+            self._show_loading_overlay(msg)
+
+    def _show_loading_overlay(self, message: str):
+        self.loading_label.setText(message)
+        self.loading_overlay.show()
+        self.loading_overlay.raise_()
+        self.loading_overlay.setGeometry(self.container.rect())
+
+    def _hide_loading_overlay(self):
+        self.loading_overlay.hide()
 
     def start_capturing(self):
         self.is_capturing = True
@@ -339,4 +429,3 @@ class BrowserController(QObject):
             file.close()
             return content
         return ""
-

@@ -174,6 +174,36 @@
             border-radius: 10px;
             border: 1px solid var(--glass-border);
             overflow: hidden;
+            position: relative;
+        }
+
+        #loadingOverlay {
+            position: absolute;
+            inset: 0;
+            background: rgba(9, 13, 24, 0.85);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 14px;
+            z-index: 20;
+        }
+
+        .spinner {
+            width: 36px;
+            height: 36px;
+            border: 3px solid rgba(0, 188, 242, 0.15);
+            border-top-color: var(--accent-secondary);
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        #loadingOverlay p {
+            font-family: 'Outfit', sans-serif;
+            font-size: 0.85rem;
+            color: var(--text-secondary);
         }
 
         .diff-nav-bar {
@@ -598,6 +628,11 @@
 
     <!-- Split Editable Code Areas -->
     <div id="diffViewContainer" class="diff-viewer-wrap">
+        <div id="loadingOverlay">
+            <div class="spinner"></div>
+            <p id="loadingMessage">Preparing Smart Merge...</p>
+        </div>
+
         <!-- Navigation toolbar -->
         <div class="diff-nav-bar">
             <div class="diff-nav-group">
@@ -736,6 +771,20 @@
             initSplitResizer();
             initBridge();
         });
+
+        function showLoading(message = 'Loading preview...') {
+            const ov = document.getElementById('loadingOverlay');
+            const msg = document.getElementById('loadingMessage');
+            if (msg) msg.textContent = message;
+            if (ov) ov.style.display = 'flex';
+        }
+
+        function hideLoading() {
+            const ov = document.getElementById('loadingOverlay');
+            if (ov) ov.style.display = 'none';
+            if (cmLeft) setTimeout(() => cmLeft.refresh(), 50);
+            if (cmRight) setTimeout(() => cmRight.refresh(), 50);
+        }
 
         function getLangMode() {
             const lang = (_selectedLang || '').toLowerCase();
@@ -944,6 +993,7 @@
 
             // 3. Render diff
             renderDiff(_leftCode, _rightCode, _targetFilePath);
+            hideLoading();
         }
 
         // Add a signal listener from pyBridge once it is loaded
@@ -1004,6 +1054,9 @@
         function triggerSmartMergePreview() {
             if (!pyBridge) return;
             const selectedLocators = capturedElements.filter((el, idx) => mergeSelections.includes(idx));
+            if (_targetFilePath) {
+                showLoading('Refreshing merge preview...');
+            }
             console.log("JS: triggerSmartMergePreview. Tool: " + _selectedTool + ", Lang: " + _selectedLang + ", locators: " + selectedLocators.length + ", bypassStyle: " + _bypassStyle);
             pyBridge.callPython('refresh_merge_preview', JSON.stringify({
                 locators: selectedLocators,
@@ -1016,16 +1069,20 @@
 
         // ─── Polling-based bridge (no QWebChannel dependency) ───────────────────
         // Python calls getPendingAction() every 250 ms via runJavaScript.
-        // Buttons just set _pendingAction; Python reads and clears it.
-        let _pendingAction  = null;
-        let _pendingPayload = null;
+        // Queue button actions here because direct QWebChannel button calls
+        // are less reliable in this popup than the polling path.
+        let _pendingActions = [];
 
         function getPendingAction() {
-            if (!_pendingAction) return null;
-            const result = JSON.stringify({ action: _pendingAction, payload: _pendingPayload || '' });
-            _pendingAction  = null;   // clear so Python won't pick it up twice
-            _pendingPayload = null;
-            return result;
+            if (_pendingActions.length === 0) return null;
+            return JSON.stringify(_pendingActions.shift());
+        }
+
+        function pushPendingAction(action, payload) {
+            _pendingActions.push({
+                action,
+                payload: typeof payload === 'string' ? payload : JSON.stringify(payload || {})
+            });
         }
 
         // Called by Python via runJavaScript after Browse file is selected
@@ -1037,18 +1094,15 @@
             _rightCode = data.merged_code || '';
             document.getElementById('mergeExistingCode').value = _rightCode || _leftCode;
             renderDiff(_leftCode, _rightCode, _targetFilePath);
+            hideLoading();
         }
 
         function browseMergeFile() {
             console.log('JS: Browse button clicked');
             const selectedLocators = capturedElements.filter((el, idx) => mergeSelections.includes(idx));
             const payload = JSON.stringify({ locators: selectedLocators, tool: _selectedTool, lang: _selectedLang });
-            if (pyBridge && typeof pyBridge.callPython === 'function') {
-                pyBridge.callPython('browse_merge_file', payload);
-            } else {
-                _pendingAction  = 'browse_merge_file';
-                _pendingPayload = payload;
-            }
+            showLoading('Waiting for file selection...');
+            pushPendingAction('browse_merge_file', payload);
         }
 
         function confirmMerge() {
@@ -1057,12 +1111,7 @@
             const mergedCode = cmRight ? cmRight.getValue() : document.getElementById('mergeExistingCodeTextarea').value;
             if (!mergedCode || !mergedCode.trim()) { alert('Merged code is empty!'); return; }
             const payload = JSON.stringify({ file_path: _targetFilePath, merged_code: mergedCode });
-            if (pyBridge && typeof pyBridge.callPython === 'function') {
-                pyBridge.callPython('smart_merge_confirm', payload);
-            } else {
-                _pendingAction  = 'smart_merge_confirm';
-                _pendingPayload = payload;
-            }
+            pushPendingAction('smart_merge_confirm', payload);
         }
 
         function closeWindow() {
@@ -1074,12 +1123,7 @@
                 console.log('JS: closeWindow ignored — browse dialog is open');
                 return;
             }
-            if (pyBridge && typeof pyBridge.callPython === 'function') {
-                pyBridge.callPython('close_merge_window', '');
-            } else {
-                _pendingAction  = 'close_merge_window';
-                _pendingPayload = '';
-            }
+            pushPendingAction('close_merge_window', '');
         }
 
         function initSplitResizer() {
