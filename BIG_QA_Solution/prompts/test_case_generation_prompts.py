@@ -58,16 +58,32 @@ def get_test_case_generation_prompt(requirements: str, template: str) -> str:
     Instructions:
     1. Extract test cases from the Requirements.
     2. Cover all types of scenarios: Positive, Negative, Edge Cases, Boundary conditions, field level validations, Business rule validations, Error handling, Regression impact scenarios
-    3. Return the test cases as a JSON object with a single key "test_cases".
+    3. Return the response as a JSON object with two top-level keys: "test_cases" and "summary".
     4. The value for "test_cases" MUST be a JSON array of objects.
+       The value for "summary" MUST be a JSON object containing the following keys:
+       - "positive_count": total number of positive test cases/scenarios
+       - "negative_count": total number of negative test cases/scenarios
+       - "high_priority_count": total number of high priority test cases
+       - "medium_priority_count": total number of medium priority test cases
+       - "low_priority_count": total number of low priority test cases
     5. Each object in the array represents ONE test case.
-    6. CRITICAL FATAL INSTRUCTION: The keys in each JSON object MUST STRICTLY be the exact column headers specified in the Template / Sample Format. 
+    6. CRITICAL FATAL INSTRUCTION: The keys in each JSON object in the "test_cases" array MUST STRICTLY be the exact column headers specified in the Template / Sample Format. 
        - You MUST create a distinct, separate JSON key-value pair (node) for EVERY single heading in the provided template.
        - Every column header provided in the Template MUST be a key in every JSON object.
        - Do NOT invent your own keys.
        - NEVER use standard keys like 'Step No', 'Pre-requisite', 'Test Data', 'Action' unless they are explicitly in the template.
        - You MUST map the test cases exactly to whatever keys the user provided in the Template string.
-       - Example: if the template provided is ["A", "B", "C"], your JSON must be {{ "test_cases": [ {{ "A": "...", "B": "...", "C": "..." }} ] }}
+       - Example: if the template provided is ["A", "B", "C"], your JSON must be:
+         {{
+           "test_cases": [ {{ "A": "...", "B": "...", "C": "..." }} ],
+           "summary": {{
+             "positive_count": 1,
+             "negative_count": 0,
+             "high_priority_count": 1,
+             "medium_priority_count": 0,
+             "low_priority_count": 0
+           }}
+         }}
        - Always provide steps to be executed with serial number
        - Always generate steps from the beginning of the functional flow  
     7. Include NO other information. Your entire response must be standard, parseable JSON.
