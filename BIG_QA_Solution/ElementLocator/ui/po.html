@@ -8,7 +8,7 @@
     <!-- Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600;700&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 
     <!-- CodeMirror -->
@@ -31,6 +31,7 @@
             --glass-shadow:     0 8px 32px 0 rgba(0, 0, 0, 0.35);
             --border-radius:    12px;
             --transition:       all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            --sidebar-w:        310px;
         }
 
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Inter', -apple-system, sans-serif; }
@@ -45,7 +46,7 @@
         }
 
         /* ── Scrollbars ── */
-        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar { width: 5px; height: 5px; }
         ::-webkit-scrollbar-track { background: transparent; }
         ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 10px; }
         ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.2); }
@@ -55,294 +56,454 @@
             display: flex;
             align-items: center;
             justify-content: space-between;
-            padding: 12px 20px;
-            background: rgba(15, 23, 42, 0.9);
+            padding: 10px 18px;
+            background: rgba(15, 23, 42, 0.95);
             border-bottom: 1px solid var(--glass-border);
             flex-shrink: 0;
-            gap: 12px;
+            gap: 10px;
         }
 
-        .po-header-left {
-            display: flex;
-            align-items: center;
-            gap: 14px;
-        }
+        .po-header-left { display: flex; align-items: center; gap: 12px; }
 
         .po-logo {
             font-family: 'Outfit', sans-serif;
             font-weight: 700;
-            font-size: 1.05rem;
+            font-size: 1rem;
             display: flex;
             align-items: center;
-            gap: 10px;
+            gap: 9px;
             letter-spacing: -0.3px;
         }
 
         .po-logo-icon {
-            width: 32px;
-            height: 32px;
-            border-radius: 9px;
+            width: 30px; height: 30px;
+            border-radius: 8px;
             background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
-            display: flex;
-            align-items: center;
-            justify-content: center;
+            display: flex; align-items: center; justify-content: center;
             box-shadow: 0 4px 12px rgba(0, 188, 242, 0.3);
             flex-shrink: 0;
         }
 
-        .po-meta {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
+        .po-meta { display: flex; align-items: center; gap: 6px; }
 
         .po-badge {
-            font-size: 0.7rem;
-            padding: 3px 10px;
-            border-radius: 20px;
-            font-family: 'Outfit', sans-serif;
-            font-weight: 600;
-            letter-spacing: 0.3px;
-            border: 1px solid;
+            font-size: 0.68rem; padding: 2px 9px; border-radius: 20px;
+            font-family: 'Outfit', sans-serif; font-weight: 600;
+            letter-spacing: 0.3px; border: 1px solid;
+        }
+        .po-badge-lang  { background: rgba(0,188,242,0.12); border-color: rgba(0,188,242,0.3); color: #00bcf2; }
+        .po-badge-tool  { background: rgba(99,102,241,0.12); border-color: rgba(99,102,241,0.3); color: #818cf8; }
+        .po-badge-file  {
+            background: rgba(16,185,129,0.1); border-color: rgba(16,185,129,0.25); color: #34d399;
+            font-family: 'Fira Code', monospace; font-weight: 400;
+            max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: help;
         }
 
-        .po-badge-lang {
-            background: rgba(0, 188, 242, 0.12);
-            border-color: rgba(0, 188, 242, 0.3);
-            color: #00bcf2;
-        }
+        .po-header-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
 
-        .po-badge-tool {
-            background: rgba(99, 102, 241, 0.12);
-            border-color: rgba(99, 102, 241, 0.3);
-            color: #818cf8;
-        }
-
-        .po-badge-file {
-            background: rgba(16, 185, 129, 0.1);
-            border-color: rgba(16, 185, 129, 0.25);
-            color: #34d399;
-            font-family: 'Fira Code', monospace;
-            font-weight: 400;
-            max-width: 300px;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
-            cursor: help;
-        }
-
-        .po-header-actions {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            flex-shrink: 0;
-        }
-
-        /* ── Toolbar (line count, lang) ── */
+        /* ── Toolbar ── */
         .po-toolbar {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            padding: 6px 20px;
-            background: rgba(9, 13, 24, 0.85);
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 5px 18px;
+            background: rgba(9, 13, 24, 0.9);
             border-bottom: 1px solid rgba(255,255,255,0.04);
-            flex-shrink: 0;
-            font-size: 0.7rem;
-            color: var(--text-secondary);
+            flex-shrink: 0; font-size: 0.68rem; color: var(--text-secondary);
         }
-
-        .po-toolbar-left { display: flex; align-items: center; gap: 14px; }
+        .po-toolbar-left  { display: flex; align-items: center; gap: 14px; }
         .po-toolbar-right { display: flex; align-items: center; gap: 10px; }
+        .toolbar-stat { display: flex; align-items: center; gap: 5px; }
+        .toolbar-stat i { font-size: 0.62rem; opacity: 0.55; }
 
-        .toolbar-stat {
-            display: flex;
-            align-items: center;
-            gap: 5px;
-        }
-
-        .toolbar-stat i { font-size: 0.65rem; opacity: 0.6; }
-
-        /* ── Editor area ── */
-        .po-editor-wrap {
+        /* ── Main body: editor + sidebar ── */
+        .po-body {
             flex: 1;
             display: flex;
-            flex-direction: column;
             min-height: 0;
-            background: #090d16;
             position: relative;
         }
 
-        #poCodeTextarea {
+        /* ── Editor column ── */
+        .po-editor-col {
             flex: 1;
-            border: none;
-            background: transparent;
-            padding: 16px 20px;
-            font-size: 0.85rem;
-            line-height: 1.6;
-            color: #e2e8f0;
-            resize: none;
-            outline: none;
+            display: flex;
+            flex-direction: column;
+            min-width: 0;
+            position: relative;
+            background: #090d16;
+        }
+
+        #poCodeTextarea {
+            flex: 1; border: none; background: transparent;
+            padding: 16px 20px; font-size: 0.84rem; line-height: 1.6;
+            color: #e2e8f0; resize: none; outline: none;
             font-family: 'Fira Code', 'Cascadia Code', 'Consolas', monospace;
             width: 100%;
-            box-sizing: border-box;
-            margin: 0;
         }
 
         /* CodeMirror overrides */
         .CodeMirror {
-            flex: 1;
-            height: 100% !important;
+            flex: 1; height: 100% !important;
             font-family: 'Fira Code', 'Cascadia Code', 'Consolas', monospace;
-            font-size: 0.84rem !important;
-            background: #090d16 !important;
-            color: #e2e8f0 !important;
-            line-height: 1.6 !important;
+            font-size: 0.83rem !important; background: #090d16 !important;
+            color: #e2e8f0 !important; line-height: 1.6 !important;
         }
-
         .CodeMirror-scroll { height: 100% !important; }
-
-        .CodeMirror-gutters {
-            background: #060911 !important;
-            border-right: 1px solid rgba(255,255,255,0.05) !important;
-        }
-
+        .CodeMirror-gutters { background: #060911 !important; border-right: 1px solid rgba(255,255,255,0.05) !important; }
         .CodeMirror-linenumber { color: #3d4f6e !important; }
+        .CodeMirror-cursor { border-left: 2px solid var(--accent-secondary) !important; }
+        .CodeMirror-selected { background: rgba(0, 188, 242, 0.15) !important; }
 
-        .CodeMirror-cursor {
-            border-left: 2px solid var(--accent-secondary) !important;
+        /* ── Validator Sidebar ── */
+        .po-sidebar {
+            width: var(--sidebar-w);
+            background: #080c17;
+            border-left: 1px solid rgba(255,255,255,0.06);
+            display: flex;
+            flex-direction: column;
+            flex-shrink: 0;
+            transition: width 0.25s cubic-bezier(0.4,0,0.2,1), opacity 0.25s ease;
+            overflow: hidden;
         }
 
-        .CodeMirror-selected {
-            background: rgba(0, 188, 242, 0.15) !important;
+        .po-sidebar.collapsed {
+            width: 0;
+            opacity: 0;
+            pointer-events: none;
         }
+
+        .sidebar-header {
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 10px 14px;
+            border-bottom: 1px solid rgba(255,255,255,0.06);
+            flex-shrink: 0;
+        }
+
+        .sidebar-tabs {
+            display: flex; gap: 2px;
+        }
+
+        .sidebar-tab {
+            padding: 5px 11px; border-radius: 6px; cursor: pointer;
+            font-size: 0.7rem; font-family: 'Outfit', sans-serif; font-weight: 600;
+            color: var(--text-secondary); border: 1px solid transparent;
+            transition: var(--transition);
+            display: flex; align-items: center; gap: 5px;
+        }
+        .sidebar-tab:hover { background: rgba(255,255,255,0.05); color: var(--text-primary); }
+        .sidebar-tab.active {
+            background: rgba(0,188,242,0.1); color: #00bcf2;
+            border-color: rgba(0,188,242,0.25);
+        }
+
+        .sidebar-close-btn {
+            width: 22px; height: 22px; border-radius: 5px; cursor: pointer;
+            background: transparent; border: none; color: var(--text-secondary);
+            display: flex; align-items: center; justify-content: center;
+            font-size: 0.7rem; transition: var(--transition);
+        }
+        .sidebar-close-btn:hover { background: rgba(255,255,255,0.08); color: var(--text-primary); }
+
+        /* ── Validator Panel ── */
+        .validator-panel {
+            flex: 1; display: flex; flex-direction: column; min-height: 0;
+            padding: 12px;
+            overflow-y: auto;
+        }
+
+        .validator-panel.hidden { display: none; }
+
+        .validator-hint {
+            text-align: center; padding: 30px 16px;
+            color: var(--text-secondary); font-size: 0.78rem; line-height: 1.7;
+        }
+        .validator-hint i { font-size: 2rem; opacity: 0.3; margin-bottom: 12px; display: block; color: var(--accent-secondary); }
+
+        .validator-summary {
+            display: flex; gap: 6px; margin-bottom: 12px; flex-wrap: wrap;
+        }
+
+        .v-summary-pill {
+            flex: 1; min-width: 70px;
+            padding: 8px 10px; border-radius: 8px; text-align: center;
+            font-family: 'Outfit', sans-serif;
+        }
+        .v-summary-pill .v-count { font-size: 1.3rem; font-weight: 700; }
+        .v-summary-pill .v-label { font-size: 0.62rem; opacity: 0.7; margin-top: 1px; }
+        .v-pill-pass { background: rgba(16,185,129,0.12); border: 1px solid rgba(16,185,129,0.25); color: #34d399; }
+        .v-pill-warn { background: rgba(245,158,11,0.12); border: 1px solid rgba(245,158,11,0.25); color: #fbbf24; }
+        .v-pill-fail { background: rgba(239,68,68,0.12); border: 1px solid rgba(239,68,68,0.25); color: #f87171; }
+
+        .v-item {
+            padding: 9px 11px; border-radius: 8px; margin-bottom: 6px;
+            border: 1px solid rgba(255,255,255,0.05);
+            background: rgba(255,255,255,0.02);
+            display: flex; align-items: flex-start; gap: 9px;
+            transition: background 0.15s;
+        }
+        .v-item:hover { background: rgba(255,255,255,0.04); }
+
+        .v-icon {
+            width: 20px; height: 20px; border-radius: 50%; flex-shrink: 0;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 0.65rem; margin-top: 1px;
+        }
+        .v-icon.pass { background: rgba(16,185,129,0.2); color: #34d399; }
+        .v-icon.warn { background: rgba(245,158,11,0.2); color: #fbbf24; }
+        .v-icon.fail { background: rgba(239,68,68,0.2); color: #f87171; }
+        .v-icon.loading { background: rgba(0,188,242,0.1); color: #00bcf2; animation: spin 0.8s linear infinite; }
+
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        .v-info { flex: 1; min-width: 0; }
+        .v-varname {
+            font-family: 'Fira Code', monospace; font-size: 0.73rem;
+            color: #e2e8f0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        }
+        .v-selector {
+            font-family: 'Fira Code', monospace; font-size: 0.65rem;
+            color: var(--text-secondary); opacity: 0.7; margin-top: 2px;
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        }
+        .v-status {
+            font-size: 0.62rem; margin-top: 3px; font-weight: 600;
+        }
+        .v-status.pass { color: #34d399; }
+        .v-status.warn { color: #fbbf24; }
+        .v-status.fail { color: #f87171; }
+
+        /* ── Simulator Panel ── */
+        .simulator-panel {
+            flex: 1; display: flex; flex-direction: column; min-height: 0;
+            overflow-y: auto; padding: 12px;
+        }
+        .simulator-panel.hidden { display: none; }
+
+        .sim-idle-hint {
+            text-align: center; padding: 30px 16px;
+            color: var(--text-secondary); font-size: 0.78rem; line-height: 1.7;
+        }
+        .sim-idle-hint i { font-size: 2rem; opacity: 0.3; margin-bottom: 12px; display: block; color: #818cf8; }
+
+        /* ── Test Data Setup Panel ── */
+        .test-data-panel {
+            display: flex; flex-direction: column; gap: 10px;
+            padding: 12px; flex: 1; overflow-y: auto;
+        }
+        .test-data-panel.hidden { display: none; }
+
+        .test-data-header {
+            display: flex; align-items: center; gap: 8px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid rgba(255,255,255,0.06);
+        }
+        .test-data-header i { color: #a5b4fc; font-size: 0.9rem; }
+        .test-data-title {
+            font-family: 'Outfit', sans-serif; font-weight: 600;
+            font-size: 0.82rem; color: var(--text-primary);
+        }
+        .test-data-subtitle {
+            font-size: 0.68rem; color: var(--text-secondary); margin-top: 1px;
+        }
+
+        .test-data-section {
+            background: rgba(129,140,248,0.05);
+            border: 1px solid rgba(129,140,248,0.15);
+            border-radius: 8px;
+            overflow: hidden;
+        }
+        .test-data-method-label {
+            padding: 6px 11px;
+            background: rgba(129,140,248,0.08);
+            border-bottom: 1px solid rgba(129,140,248,0.12);
+            font-family: 'Fira Code', monospace;
+            font-size: 0.72rem; color: #a5b4fc;
+            display: flex; align-items: center; gap: 6px;
+        }
+        .test-data-fields { padding: 10px 11px; display: flex; flex-direction: column; gap: 8px; }
+
+        .test-data-field {
+            display: flex; flex-direction: column; gap: 3px;
+        }
+        .test-data-field label {
+            font-size: 0.65rem; font-family: 'Fira Code', monospace;
+            color: var(--text-secondary); opacity: 0.8;
+        }
+        .test-data-field input {
+            background: rgba(255,255,255,0.05);
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 6px;
+            padding: 6px 9px;
+            font-family: 'Fira Code', monospace;
+            font-size: 0.75rem;
+            color: var(--text-primary);
+            outline: none;
+            transition: border-color 0.15s, box-shadow 0.15s;
+            width: 100%;
+        }
+        .test-data-field input:focus {
+            border-color: rgba(129,140,248,0.5);
+            box-shadow: 0 0 0 2px rgba(129,140,248,0.1);
+        }
+        .test-data-field input::placeholder { color: rgba(148,163,184,0.4); }
+
+        .test-data-no-params {
+            padding: 10px 11px;
+            font-size: 0.72rem; color: var(--text-secondary);
+            font-style: italic; opacity: 0.7;
+        }
+
+        .test-data-actions {
+            display: flex; gap: 6px; margin-top: 4px;
+        }
+
+        .sim-progress-bar-wrap {
+            background: rgba(255,255,255,0.05); border-radius: 20px;
+            height: 4px; margin-bottom: 14px; overflow: hidden;
+        }
+        .sim-progress-bar {
+            height: 100%; background: linear-gradient(90deg, var(--accent-primary), var(--accent-secondary));
+            border-radius: 20px; width: 0%;
+            transition: width 0.4s ease;
+        }
+
+        .sim-current-step {
+            background: rgba(0,188,242,0.07); border: 1px solid rgba(0,188,242,0.2);
+            border-radius: 10px; padding: 12px; margin-bottom: 12px;
+            font-size: 0.75rem;
+        }
+        .sim-step-label {
+            font-size: 0.62rem; text-transform: uppercase; letter-spacing: 0.7px;
+            color: var(--accent-secondary); opacity: 0.7; margin-bottom: 5px;
+        }
+        .sim-step-code {
+            font-family: 'Fira Code', monospace; color: #e2e8f0; font-size: 0.75rem;
+            line-height: 1.5; word-break: break-all;
+        }
+        .sim-step-action-badge {
+            margin-top: 7px; display: inline-flex; align-items: center; gap: 5px;
+            padding: 2px 8px; border-radius: 10px; font-size: 0.62rem; font-weight: 600;
+        }
+        .badge-highlight { background: rgba(0,188,242,0.15); color: #00bcf2; border: 1px solid rgba(0,188,242,0.3); }
+        .badge-fill      { background: rgba(16,185,129,0.15); color: #34d399; border: 1px solid rgba(16,185,129,0.3); }
+        .badge-click     { background: rgba(245,158,11,0.15); color: #fbbf24; border: 1px solid rgba(245,158,11,0.3); }
+        .badge-skip      { background: rgba(100,116,139,0.15); color: #94a3b8; border: 1px solid rgba(100,116,139,0.2); }
+
+        .sim-log {
+            flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 4px;
+        }
+
+        .sim-log-item {
+            display: flex; align-items: center; gap: 8px;
+            padding: 6px 9px; border-radius: 6px; font-size: 0.7rem;
+            background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.04);
+            animation: fade-in 0.2s ease;
+        }
+        @keyframes fade-in { from { opacity:0; transform: translateY(4px); } to { opacity:1; transform: translateY(0); } }
+
+        .sim-log-item.success { border-color: rgba(16,185,129,0.2); }
+        .sim-log-item.fail    { border-color: rgba(239,68,68,0.2); }
+        .sim-log-item.skip    { opacity: 0.55; }
+
+        .sim-log-icon { font-size: 0.65rem; flex-shrink: 0; }
+        .sim-log-text { flex: 1; font-family: 'Fira Code', monospace; color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .sim-log-tag { font-size: 0.6rem; background: rgba(255,255,255,0.07); padding: 1px 5px; border-radius: 4px; color: #64748b; }
+
+        .sim-controls {
+            display: flex; gap: 6px; margin-bottom: 12px; flex-shrink: 0;
+        }
+
+        /* ── Loading overlay ── */
+        #loadingOverlay {
+            position: absolute; inset: 0;
+            background: rgba(9, 13, 24, 0.88);
+            display: flex; flex-direction: column;
+            align-items: center; justify-content: center;
+            gap: 14px; z-index: 10;
+        }
+        .spinner {
+            width: 34px; height: 34px;
+            border: 3px solid rgba(0, 188, 242, 0.15);
+            border-top-color: var(--accent-secondary);
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+        #loadingOverlay p { font-family: 'Outfit', sans-serif; font-size: 0.84rem; color: var(--text-secondary); }
 
         /* ── Footer ── */
         .po-footer {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            padding: 10px 20px;
-            background: rgba(9, 13, 24, 0.95);
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 9px 18px;
+            background: rgba(9, 13, 24, 0.97);
             border-top: 1px solid var(--glass-border);
-            flex-shrink: 0;
-            gap: 12px;
+            flex-shrink: 0; gap: 10px;
         }
-
-        .po-footer-left {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            font-size: 0.75rem;
-            color: var(--text-secondary);
-        }
-
-        .po-footer-right {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
+        .po-footer-left { display: flex; align-items: center; gap: 7px; font-size: 0.72rem; color: var(--text-secondary); }
+        .po-footer-right { display: flex; align-items: center; gap: 6px; }
 
         /* ── Buttons ── */
         .btn {
-            cursor: pointer;
-            border: none;
-            border-radius: 8px;
-            padding: 7px 16px;
-            font-family: 'Outfit', sans-serif;
-            font-weight: 600;
-            font-size: 0.82rem;
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            gap: 7px;
-            transition: var(--transition);
-            transform: translateY(0);
+            cursor: pointer; border: none; border-radius: 7px;
+            padding: 7px 14px;
+            font-family: 'Outfit', sans-serif; font-weight: 600; font-size: 0.8rem;
+            display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+            transition: var(--transition); transform: translateY(0);
         }
-
         .btn:hover { transform: translateY(-1.5px); }
         .btn:active { transform: translateY(0.5px) scale(0.97); }
 
         .btn-primary {
             background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
-            color: white;
-            box-shadow: 0 4px 14px var(--accent-glow);
+            color: white; box-shadow: 0 4px 14px var(--accent-glow);
         }
-
-        .btn-primary:hover {
-            box-shadow: 0 6px 20px var(--accent-glow);
-            filter: brightness(1.08);
-        }
+        .btn-primary:hover { box-shadow: 0 6px 20px var(--accent-glow); filter: brightness(1.08); }
 
         .btn-outline {
-            background: transparent;
-            border: 1px solid var(--glass-border);
+            background: transparent; border: 1px solid var(--glass-border);
             color: var(--text-secondary);
         }
-
-        .btn-outline:hover {
-            background: rgba(255,255,255,0.06);
-            color: var(--text-primary);
-            border-color: rgba(255,255,255,0.18);
-        }
+        .btn-outline:hover { background: rgba(255,255,255,0.06); color: var(--text-primary); border-color: rgba(255,255,255,0.18); }
 
         .btn-success {
-            background: rgba(16, 185, 129, 0.15);
-            border: 1px solid rgba(16, 185, 129, 0.3);
-            color: #34d399;
+            background: rgba(16,185,129,0.15); border: 1px solid rgba(16,185,129,0.3); color: #34d399;
         }
+        .btn-success:hover { background: rgba(16,185,129,0.25); border-color: rgba(16,185,129,0.55); box-shadow: 0 4px 14px rgba(16,185,129,0.2); }
 
-        .btn-success:hover {
-            background: rgba(16, 185, 129, 0.25);
-            border-color: rgba(16, 185, 129, 0.55);
-            box-shadow: 0 4px 14px rgba(16, 185, 129, 0.2);
+        .btn-purple {
+            background: rgba(129,140,248,0.12); border: 1px solid rgba(129,140,248,0.3); color: #a5b4fc;
         }
+        .btn-purple:hover { background: rgba(129,140,248,0.22); border-color: rgba(129,140,248,0.5); box-shadow: 0 4px 14px rgba(129,140,248,0.2); }
+
+        .btn-teal {
+            background: rgba(0,188,242,0.1); border: 1px solid rgba(0,188,242,0.25); color: #00bcf2;
+        }
+        .btn-teal:hover { background: rgba(0,188,242,0.2); border-color: rgba(0,188,242,0.5); box-shadow: 0 4px 14px rgba(0,188,242,0.2); }
+
+        .btn-sm { padding: 5px 10px; font-size: 0.72rem; border-radius: 6px; }
+        .btn:disabled { opacity: 0.45; cursor: not-allowed; transform: none !important; }
 
         /* ── Copy flash feedback ── */
         @keyframes copy-flash {
             0%   { background: rgba(16, 185, 129, 0.3); }
             100% { background: transparent; }
         }
-
         .copy-flash { animation: copy-flash 0.7s ease-out; }
-
-        /* ── Loading overlay ── */
-        #loadingOverlay {
-            position: absolute;
-            inset: 0;
-            background: rgba(9, 13, 24, 0.85);
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            gap: 14px;
-            z-index: 10;
-        }
-
-        .spinner {
-            width: 36px;
-            height: 36px;
-            border: 3px solid rgba(0, 188, 242, 0.15);
-            border-top-color: var(--accent-secondary);
-            border-radius: 50%;
-            animation: spin 0.8s linear infinite;
-        }
-
-        @keyframes spin { to { transform: rotate(360deg); } }
-
-        #loadingOverlay p {
-            font-family: 'Outfit', sans-serif;
-            font-size: 0.85rem;
-            color: var(--text-secondary);
-        }
 
         /* ── Status dot ── */
         .status-dot {
             width: 7px; height: 7px; border-radius: 50%;
             display: inline-block; margin-right: 3px;
         }
-        .status-dot.connected   { background: var(--success); box-shadow: 0 0 5px var(--success); }
-        .status-dot.connecting  { background: var(--warning); }
-        .status-dot.error       { background: var(--danger); }
+        .status-dot.connected  { background: var(--success); box-shadow: 0 0 5px var(--success); }
+        .status-dot.connecting { background: var(--warning); }
+        .status-dot.error      { background: var(--danger); }
+
+        /* ── Toggle sidebar btn ── */
+        #sidebarToggleBtn { position: relative; }
+        #sidebarToggleBtn.active {
+            background: rgba(0,188,242,0.12);
+            border-color: rgba(0,188,242,0.3);
+            color: #00bcf2;
+        }
     </style>
 </head>
 <body>
@@ -352,7 +513,7 @@
         <div class="po-header-left">
             <div class="po-logo">
                 <div class="po-logo-icon">
-                    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
                         <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
                         <polyline points="14 2 14 8 20 8"/>
                         <polyline points="10 15 8 17 10 19"/>
@@ -368,7 +529,7 @@
             </div>
         </div>
         <div class="po-header-actions">
-            <span style="font-size:0.68rem; display:flex; align-items:center; gap:5px; color: var(--text-secondary);">
+            <span style="font-size:0.66rem; display:flex; align-items:center; gap:5px; color: var(--text-secondary);">
                 <span class="status-dot connecting" id="statusDot"></span>
                 <span id="statusText">Connecting…</span>
             </span>
@@ -380,31 +541,133 @@
         <div class="po-toolbar-left">
             <span class="toolbar-stat"><i class="fas fa-align-left"></i> <span id="lineCount">0 lines</span></span>
             <span class="toolbar-stat"><i class="fas fa-text-width"></i> <span id="charCount">0 chars</span></span>
-            <span class="toolbar-stat" id="elemCountStat" style="color: var(--accent-secondary);"><i class="fas fa-fingerprint"></i> <span id="elemCount">0 locators</span></span>
+            <span class="toolbar-stat" style="color: var(--accent-secondary);"><i class="fas fa-fingerprint"></i> <span id="elemCount">0 locators</span></span>
         </div>
         <div class="po-toolbar-right">
+            <span id="validatorSummaryChip" style="display:none; font-size:0.65rem; padding: 2px 8px; border-radius: 10px; background: rgba(0,188,242,0.1); border: 1px solid rgba(0,188,242,0.25); color: #00bcf2;"></span>
             <span style="opacity:0.5;">Preview &amp; Edit before saving</span>
         </div>
     </div>
 
-    <!-- ── Editor ── -->
-    <div class="po-editor-wrap">
-        <div id="loadingOverlay">
-            <div class="spinner"></div>
-            <p>Generating Page Object…</p>
+    <!-- ── Body: Editor + Sidebar ── -->
+    <div class="po-body">
+
+        <!-- Editor column -->
+        <div class="po-editor-col">
+            <div id="loadingOverlay">
+                <div class="spinner"></div>
+                <p>Generating Page Object…</p>
+            </div>
+            <textarea id="poCodeTextarea" spellcheck="false" placeholder="Generated code will appear here…"></textarea>
         </div>
-        <textarea id="poCodeTextarea" spellcheck="false" placeholder="Generated code will appear here…"></textarea>
+
+        <!-- Validator / Simulator Sidebar -->
+        <div class="po-sidebar collapsed" id="poSidebar">
+            <div class="sidebar-header">
+                <div class="sidebar-tabs">
+                    <div class="sidebar-tab active" id="tabValidator" onclick="switchTab('validator')">
+                        <i class="fas fa-check-circle"></i> Validate
+                    </div>
+                    <div class="sidebar-tab" id="tabSimulator" onclick="switchTab('simulator')">
+                        <i class="fas fa-play-circle"></i> Simulate
+                    </div>
+                </div>
+                <button class="sidebar-close-btn" onclick="closeSidebar()" title="Close panel">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+
+            <!-- ── Validator Panel ── -->
+            <div class="validator-panel" id="validatorPanel">
+                <div class="validator-hint" id="validatorHint">
+                    <i class="fas fa-search"></i>
+                    Click <strong>Validate Script</strong> to check all locators against the active browser page.
+                </div>
+                <div id="validatorSummary" class="validator-summary" style="display:none;"></div>
+                <div id="validatorItems"></div>
+            </div>
+
+            <!-- ── Simulator Panel ── -->
+            <div class="simulator-panel hidden" id="simulatorPanel">
+
+                <!-- Idle hint (shown before any action) -->
+                <div class="sim-idle-hint" id="simIdleHint">
+                    <i class="fas fa-robot"></i>
+                    Click <strong>Simulate All</strong> to configure test data and play back all Page Object steps on the live browser page.
+                </div>
+
+                <!-- ── Test Data Setup (shown after clicking Simulate All) ── -->
+                <div class="test-data-panel hidden" id="testDataPanel">
+                    <div class="test-data-header">
+                        <i class="fas fa-database"></i>
+                        <div>
+                            <div class="test-data-title">Test Data Setup</div>
+                            <div class="test-data-subtitle">Enter values for method parameters below</div>
+                        </div>
+                    </div>
+                    <!-- Sections are injected here dynamically per method -->
+                    <div id="testDataFields"></div>
+                    <div class="test-data-actions">
+                        <button class="btn btn-sm btn-outline" style="flex:1;" onclick="cancelTestData()">
+                            <i class="fas fa-times"></i> Cancel
+                        </button>
+                        <button class="btn btn-sm btn-purple" style="flex:2;" onclick="runWithTestData()">
+                            <i class="fas fa-play"></i> Run Simulation
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Active simulation UI (shown while running) -->
+                <div id="simActiveUI" style="display:none; flex-direction:column; flex:1; min-height:0;">
+                    <div class="sim-controls">
+                        <button class="btn btn-sm btn-outline" id="simPauseBtn" onclick="toggleSimPause()" style="display:none;">
+                            <i class="fas fa-pause" id="simPauseIcon"></i> <span id="simPauseLabel">Pause</span>
+                        </button>
+                        <button class="btn btn-sm btn-outline" id="simStepNextBtn" onclick="stepNext()" style="display:none; border-color:rgba(129,140,248,0.3); color:#a5b4fc;">
+                            <i class="fas fa-forward-step"></i> Step Next
+                        </button>
+                        <button class="btn btn-sm btn-outline" onclick="stopSimulation()" id="simStopBtn">
+                            <i class="fas fa-stop"></i> Stop
+                        </button>
+                        <span id="simStepCounter" style="font-size:0.68rem; color: var(--text-secondary); margin-left:auto;">Step 0/0</span>
+                    </div>
+
+                    <!-- Speed controller -->
+                    <div style="display:flex; align-items:center; gap:8px; margin: 9px 0 12px; font-size:0.68rem; color:var(--text-secondary); border-top: 1px solid rgba(255,255,255,0.04); padding-top:8px;">
+                        <i class="fas fa-gauge-high" style="color:var(--accent-secondary); font-size:0.62rem;"></i>
+                        <span>Delay:</span>
+                        <input type="range" id="simSpeedSlider" min="500" max="4000" step="250" value="1000" style="flex:1; accent-color:var(--accent-secondary); height:4px; border-radius:2px; cursor:pointer;" oninput="updateSpeedLabel(this.value)">
+                        <span id="simSpeedVal" style="font-family:'Fira Code',monospace; width:35px; text-align:right; color:#00bcf2;">1.0s</span>
+                    </div>
+                    <div class="sim-progress-bar-wrap">
+                        <div class="sim-progress-bar" id="simProgressBar"></div>
+                    </div>
+                    <div class="sim-current-step" id="simCurrentStep">
+                        <div class="sim-step-label">CURRENT STEP</div>
+                        <div class="sim-step-code" id="simCurrentCode">—</div>
+                        <div id="simCurrentBadge"></div>
+                    </div>
+                    <div class="sim-log" id="simLog"></div>
+                </div>
+            </div>
+        </div>
     </div>
 
     <!-- ── Footer ── -->
     <div class="po-footer">
         <div class="po-footer-left">
             <i class="fas fa-info-circle" style="opacity:0.5;"></i>
-            <span>You can edit the code directly — changes are reflected when you Save.</span>
+            <span>Edit code directly — changes are reflected when you Save.</span>
         </div>
         <div class="po-footer-right">
             <button class="btn btn-outline" onclick="closeWindow()">
                 <i class="fas fa-times"></i> Close
+            </button>
+            <button class="btn btn-teal btn-outline" id="sidebarToggleBtn" onclick="openSidebar('validator')">
+                <i class="fas fa-check-circle"></i> Validate Script
+            </button>
+            <button class="btn btn-purple" id="simulateBtn" onclick="openSidebar('simulator'); openTestDataPanel();">
+                <i class="fas fa-play"></i> Simulate All
             </button>
             <button class="btn btn-success" id="copyBtn" onclick="copyCode()">
                 <i class="fas fa-copy"></i> Copy
@@ -422,7 +685,7 @@
     <script src="libs/clike.min.js"></script>
     <script src="qrc:///qtwebchannel/qwebchannel.js"></script>
     <script>
-        // ── State ──────────────────────────────────────────────────────────
+        // ── State ──────────────────────────────────────────────────────────────
         let pyBridge      = null;
         let cmEditor      = null;
         let _lang         = 'TypeScript';
@@ -430,19 +693,31 @@
         let _filename     = 'MyPage';
         let _elemCount    = 0;
 
-        // Polling action queue (same pattern as merge.html / grid.html)
-        let _pendingActions = [];
+        // Simulation state
+        let _simSteps       = [];   // [{lineText, type, value, action, arg}]
+        let _simIndex       = 0;
+        let _simPaused      = false;
+        let _simStepped     = false; // triggers next step when paused
+        let _simRunning     = false;
+        let _simTimer       = null;
+        let _testData       = {};   // { idx: value } — supplied by user
+        let _customSimSteps = null; // override steps built from locator inventory
 
+        // Validation state
+        let _validationPending = 0;
+        let _validationResults = [];
+
+        // Polling action queue
+        let _pendingActions = [];
         function getPendingAction() {
             if (_pendingActions.length === 0) return null;
             return JSON.stringify(_pendingActions.shift());
         }
-
         function pushPendingAction(action, payload) {
             _pendingActions.push({ action, payload: JSON.stringify(payload) });
         }
 
-        // ── Bridge ─────────────────────────────────────────────────────────
+        // ── Bridge ─────────────────────────────────────────────────────────────
         function initBridge() {
             if (typeof qt !== 'undefined' && qt.webChannelTransport &&
                 typeof qt.webChannelTransport.send === 'function') {
@@ -457,13 +732,11 @@
         }
 
         function setStatus(cls, text) {
-            const dot = document.getElementById('statusDot');
-            const txt = document.getElementById('statusText');
-            dot.className = 'status-dot ' + cls;
-            txt.textContent = text;
+            document.getElementById('statusDot').className = 'status-dot ' + cls;
+            document.getElementById('statusText').textContent = text;
         }
 
-        // ── Data loading (called by Python via runJavaScript) ─────────────
+        // ── Data loading (called by Python via runJavaScript) ───────────────────
         window.loadInitialPOData = function(payload) {
             _lang      = payload.lang      || 'TypeScript';
             _tool      = payload.tool      || 'Playwright';
@@ -471,7 +744,6 @@
             _elemCount = payload.elemCount || 0;
             const code = payload.code      || '';
 
-            // Update badges
             document.getElementById('badgeLang').textContent = _lang;
             document.getElementById('badgeTool').textContent = _tool;
             document.getElementById('elemCount').textContent = _elemCount + ' locators';
@@ -481,7 +753,6 @@
             document.getElementById('badgeFile').textContent = fileLabel;
             document.getElementById('badgeFile').title       = fileLabel;
 
-            // Populate editor
             if (cmEditor) {
                 cmEditor.setValue(code);
                 cmEditor.setOption('mode', getLangMode(_lang));
@@ -494,23 +765,18 @@
             hideLoading();
         };
 
-        // ── Editor setup ───────────────────────────────────────────────────
+        // ── Editor setup ───────────────────────────────────────────────────────
         function initEditor() {
             if (typeof CodeMirror === 'undefined') return;
             const ta = document.getElementById('poCodeTextarea');
             if (!ta || cmEditor) return;
-
             cmEditor = CodeMirror.fromTextArea(ta, {
                 lineNumbers:  true,
                 mode:         getLangMode(_lang),
                 theme:        'material-darker',
                 lineWrapping: false,
                 autofocus:    true,
-                extraKeys: {
-                    'Ctrl-S': saveCode,
-                    'Cmd-S':  saveCode,
-                    'Ctrl-C': copyCode
-                }
+                extraKeys: { 'Ctrl-S': saveCode, 'Cmd-S': saveCode, 'Ctrl-C': copyCode }
             });
             cmEditor.getWrapperElement().style.height = '100%';
             cmEditor.getWrapperElement().style.display = 'flex';
@@ -524,9 +790,8 @@
             if (l === 'java')       return 'text/x-java';
             if (l === 'c#')         return 'text/x-csharp';
             if (l === 'javascript') return 'text/javascript';
-            return 'text/typescript';  // TypeScript default
+            return 'text/typescript';
         }
-
         function getExt(lang) {
             const l = (lang || '').toLowerCase();
             if (l === 'python')     return '.py';
@@ -535,91 +800,833 @@
             if (l === 'javascript') return '.js';
             return '.ts';
         }
-
         function updateStats() {
             const code = getCode();
-            const lines = code ? code.split('\n').length : 0;
-            const chars = code ? code.length : 0;
-            document.getElementById('lineCount').textContent = lines + ' lines';
-            document.getElementById('charCount').textContent = chars + ' chars';
+            document.getElementById('lineCount').textContent = (code ? code.split('\n').length : 0) + ' lines';
+            document.getElementById('charCount').textContent = (code ? code.length : 0) + ' chars';
         }
-
         function getCode() {
             return cmEditor ? cmEditor.getValue() : document.getElementById('poCodeTextarea').value;
         }
-
         function hideLoading() {
             const ov = document.getElementById('loadingOverlay');
             if (ov) ov.style.display = 'none';
             if (cmEditor) setTimeout(() => cmEditor.refresh(), 50);
         }
 
-        // ── Actions ────────────────────────────────────────────────────────
+        // ── Sidebar UI ─────────────────────────────────────────────────────────
+        let _currentTab = 'validator';
+
+        function openSidebar(tab) {
+            document.getElementById('poSidebar').classList.remove('collapsed');
+            document.getElementById('sidebarToggleBtn').classList.add('active');
+            switchTab(tab || _currentTab);
+            if (tab === 'validator') runPOValidation();
+        }
+
+        function closeSidebar() {
+            document.getElementById('poSidebar').classList.add('collapsed');
+            document.getElementById('sidebarToggleBtn').classList.remove('active');
+        }
+
+        function switchTab(tab) {
+            _currentTab = tab;
+            document.getElementById('tabValidator').classList.toggle('active', tab === 'validator');
+            document.getElementById('tabSimulator').classList.toggle('active', tab === 'simulator');
+            document.getElementById('validatorPanel').classList.toggle('hidden', tab !== 'validator');
+            document.getElementById('simulatorPanel').classList.toggle('hidden', tab !== 'simulator');
+        }
+
+        // ─────────────────────────────────────────────────────────────────────────
+        // PHASE 1: LOCATOR VALIDATOR
+        // ─────────────────────────────────────────────────────────────────────────
+
+        function extractLocatorsFromCode(code, tool) {
+            const results = [];
+            const seen = new Set();
+
+            const addResult = (varName, locType, locValue) => {
+                const key = locType + '::' + locValue;
+                if (seen.has(key) || !locValue) return;
+                seen.add(key);
+                results.push({ variable: varName || locValue.substring(0, 20), type: locType, value: locValue });
+            };
+
+            // --- Playwright TypeScript / JavaScript / Python ---
+            // self.page.locator("...") or page.locator("...")
+            let m;
+            const locRe = /(?:self\.)?\w*\.?locator\s*\(\s*(['"`])(.*?)\1/g;
+            while ((m = locRe.exec(code)) !== null) {
+                // Determine if it looks like XPath or CSS
+                const v = m[2];
+                const t = v.startsWith('//') || v.startsWith('(//') || v.startsWith('xpath=') ? 'XPATH' : 'CSS';
+                addResult(null, t, v.replace(/^xpath=/, ''));
+            }
+
+            const semanticMap = {
+                getByLabel: 'GETBYLABEL', getByText: 'GETBYTEXT',
+                getByPlaceholder: 'GETBYPLACEHOLDER', getByRole: 'GETBYROLE',
+                getByTestId: 'GETBYTESTID', getByAltText: 'GETBYALTTEXT',
+                getByTitle: 'GETBYTITLE'
+            };
+            for (const [method, locType] of Object.entries(semanticMap)) {
+                const re = new RegExp(`\\.${method}\\s*\\(\\s*(['"\`])(.*?)\\1`, 'g');
+                while ((m = re.exec(code)) !== null) addResult(null, locType, m[2]);
+            }
+
+            // --- Selenium Python: By.ID("..."), By.CSS_SELECTOR("..."), etc. ---
+            const seleniumPyMap = {
+                'CSS_SELECTOR': 'CSS', 'XPATH': 'XPATH', 'ID': 'ID', 'NAME': 'NAME',
+                'CLASS_NAME': 'CSS', 'LINK_TEXT': 'LINKTEXT', 'TAG_NAME': 'CSS'
+            };
+            const byPyRe = /By\.(CSS_SELECTOR|XPATH|ID|NAME|CLASS_NAME|LINK_TEXT|TAG_NAME)\s*,\s*(['"`])(.*?)\2/g;
+            while ((m = byPyRe.exec(code)) !== null) {
+                const rawType = m[1];
+                const val = m[3];
+                const t = seleniumPyMap[rawType] || 'CSS';
+                const finalVal = rawType === 'CLASS_NAME' ? '.' + val : rawType === 'TAG_NAME' ? val : val;
+                addResult(null, t, finalVal);
+            }
+
+            // --- Selenium Java: By.cssSelector("..."), By.xpath("..."), etc. ---
+            const byJavaRe = /By\.(cssSelector|xpath|id|name|className|linkText|tagName)\s*\(\s*(['"`])(.*?)\2/g;
+            const javaTypeMap = { cssSelector:'CSS', xpath:'XPATH', id:'ID', name:'NAME', className:'CSS', linkText:'LINKTEXT', tagName:'CSS' };
+            while ((m = byJavaRe.exec(code)) !== null) addResult(null, javaTypeMap[m[1]] || 'CSS', m[3]);
+
+            // --- Variable name extraction: match self.xxx_yyy = ... or this.xxxYyy = ...  ---
+            // Re-run to pair variable names with values
+            const assignRe = /(?:self|this)\.(\w+)\s*=\s*.+?(?:locator|By\.|getBy)\w*\s*[,(]\s*(['"`])(.*?)\2/g;
+            while ((m = assignRe.exec(code)) !== null) {
+                const varName = m[1];
+                const val = m[3];
+                // Try to find existing result and update its variable name
+                const existing = results.find(r => r.value === val);
+                if (existing && !existing.variable.includes('.')) existing.variable = 'self.' + varName;
+            }
+
+            return results;
+        }
+
+        function runPOValidation() {
+            const code = getCode();
+            if (!code.trim()) {
+                showValidatorEmpty('No code to validate.');
+                return;
+            }
+
+            const selectors = extractLocatorsFromCode(code, _tool);
+            if (selectors.length === 0) {
+                showValidatorEmpty('No locators found in the script.');
+                return;
+            }
+
+            // Reset UI
+            document.getElementById('validatorHint').style.display = 'none';
+            document.getElementById('validatorSummary').style.display = 'none';
+            const itemsEl = document.getElementById('validatorItems');
+            itemsEl.innerHTML = '';
+
+            _validationPending = selectors.length;
+            _validationResults = [];
+
+            // Render loading placeholders
+            selectors.forEach((sel, i) => {
+                const div = document.createElement('div');
+                div.className = 'v-item';
+                div.id = 'v-item-' + i;
+                div.innerHTML = `
+                    <div class="v-icon loading" id="v-icon-${i}"><i class="fas fa-circle-notch"></i></div>
+                    <div class="v-info">
+                        <div class="v-varname">${escHtml(sel.variable)}</div>
+                        <div class="v-selector">${escHtml(sel.type)} · ${escHtml(sel.value)}</div>
+                        <div class="v-status" id="v-status-${i}">Verifying…</div>
+                    </div>`;
+                itemsEl.appendChild(div);
+            });
+
+            // Push validation request to Python
+            pushPendingAction('validate_po', { selectors, total: selectors.length });
+        }
+
+        // Called by Python via runJavaScript after all verifications complete
+        window.receiveValidationResults = function(resultsJson) {
+            const results = typeof resultsJson === 'string' ? JSON.parse(resultsJson) : resultsJson;
+            let pass = 0, warn = 0, fail = 0;
+
+            results.forEach((r, i) => {
+                const iconEl   = document.getElementById('v-icon-' + i);
+                const statusEl = document.getElementById('v-status-' + i);
+                if (!iconEl) return;
+
+                if (r.status === 'pass') {
+                    iconEl.className = 'v-icon pass';
+                    iconEl.innerHTML = '<i class="fas fa-check"></i>';
+                    statusEl.className = 'v-status pass';
+                    statusEl.textContent = '1 match — unique ✓';
+                    pass++;
+                } else if (r.status === 'warn') {
+                    iconEl.className = 'v-icon warn';
+                    iconEl.innerHTML = '<i class="fas fa-exclamation"></i>';
+                    statusEl.className = 'v-status warn';
+                    statusEl.textContent = `${r.count} matches — non-unique`;
+                    warn++;
+                } else {
+                    iconEl.className = 'v-icon fail';
+                    iconEl.innerHTML = '<i class="fas fa-times"></i>';
+                    statusEl.className = 'v-status fail';
+                    statusEl.textContent = '0 matches — element not found';
+                    fail++;
+                }
+            });
+
+            // Summary pills
+            const summaryEl = document.getElementById('validatorSummary');
+            summaryEl.style.display = 'flex';
+            summaryEl.innerHTML = `
+                <div class="v-summary-pill v-pill-pass"><div class="v-count">${pass}</div><div class="v-label">PASS</div></div>
+                <div class="v-summary-pill v-pill-warn"><div class="v-count">${warn}</div><div class="v-label">WARN</div></div>
+                <div class="v-summary-pill v-pill-fail"><div class="v-count">${fail}</div><div class="v-label">FAIL</div></div>`;
+
+            // Toolbar chip
+            const chip = document.getElementById('validatorSummaryChip');
+            chip.style.display = 'inline-flex';
+            chip.textContent = `✓${pass}  ⚠${warn}  ✗${fail}`;
+
+            // Re-sort: failures first, then warnings, then pass
+            const itemsEl = document.getElementById('validatorItems');
+            const items = Array.from(itemsEl.children);
+            const order = { fail: 0, warn: 1, pass: 2 };
+            items.sort((a, b) => {
+                const si = parseInt(a.id.split('-').pop());
+                const sj = parseInt(b.id.split('-').pop());
+                return (order[results[si]?.status] ?? 9) - (order[results[sj]?.status] ?? 9);
+            });
+            items.forEach(el => itemsEl.appendChild(el));
+        };
+
+        function showValidatorEmpty(msg) {
+            document.getElementById('validatorHint').style.display = 'block';
+            document.getElementById('validatorHint').innerHTML = `<i class="fas fa-info-circle"></i>${msg}`;
+        }
+
+        // ─────────────────────────────────────────────────────────────────────────
+        // PHASE 2a: VISUAL SIMULATOR
+        // ─────────────────────────────────────────────────────────────────────────
+
+        function extractMethodSteps(code, tool) {
+            const steps = [];
+            const lines = code.split('\n');
+
+            // Patterns for extracting actionable lines
+            const fillPatterns = [
+                // Playwright: .fill("value"), .type("value")
+                /\.fill\s*\(\s*(['"`])(.*?)\1/,
+                /\.type\s*\(\s*(['"`])(.*?)\1/,
+                // Selenium: .send_keys("value"), .sendKeys("value")
+                /\.send_keys\s*\(\s*(['"`])(.*?)\1/i,
+                /\.sendKeys\s*\(\s*(['"`])(.*?)\1/,
+            ];
+            const clickPatterns = [
+                /\.click\s*\(\s*\)/,
+                /\.tap\s*\(\s*\)/,
+                /\.submit\s*\(\s*\)/,
+            ];
+            const locatorPatterns = [
+                /\.locator\s*\(\s*(['"`])(.*?)\1/,
+                /\.getBy(?:Label|Text|Placeholder|Role|TestId)\s*\(\s*(['"`])(.*?)\1/,
+                /By\.\w+\s*[,(]\s*(['"`])(.*?)\1/,
+                /find_element\s*\(.*?(['"`])(.*?)\1\s*\)/,
+            ];
+            const semanticTypeRe = /\.(getByLabel|getByText|getByPlaceholder|getByRole|getByTestId)\s*\(\s*(['"`])(.*?)\2/;
+            const locatorTypeMap = { getByLabel:'GETBYLABEL', getByText:'GETBYTEXT',
+                getByPlaceholder:'GETBYPLACEHOLDER', getByRole:'GETBYROLE', getByTestId:'GETBYTESTID' };
+
+            lines.forEach((line, idx) => {
+                const trimmed = line.trim();
+                if (!trimmed || trimmed.startsWith('//') || trimmed.startsWith('#') ||
+                    trimmed.startsWith('*') || trimmed.startsWith('import') ||
+                    trimmed.startsWith('class') || trimmed.startsWith('def ') ||
+                    trimmed.startsWith('async def') || trimmed.startsWith('constructor') ||
+                    trimmed.startsWith('public ') || trimmed.startsWith('private ')) return;
+
+                // Determine if line has a fill action
+                let fillMatch = null;
+                for (const p of fillPatterns) {
+                    fillMatch = trimmed.match(p);
+                    if (fillMatch) break;
+                }
+
+                // Determine if line has a click action
+                const isClick = clickPatterns.some(p => p.test(trimmed));
+
+                // Extract locator from the line or surrounding context
+                let locType = 'CSS', locValue = '';
+                const semMatch = trimmed.match(semanticTypeRe);
+                if (semMatch) {
+                    locType  = locatorTypeMap[semMatch[1]] || 'CSS';
+                    locValue = semMatch[3];
+                } else {
+                    const locMatch = trimmed.match(/\.locator\s*\(\s*(['"`])(.*?)\1/);
+                    if (locMatch) {
+                        locValue = locMatch[2];
+                        locType  = locValue.startsWith('//') || locValue.startsWith('(//') ? 'XPATH' : 'CSS';
+                    } else {
+                        const byMatch = trimmed.match(/By\.\w+\s*[,(]\s*(['"`])(.*?)\1/);
+                        if (byMatch) { locValue = byMatch[2]; locType = 'CSS'; }
+                    }
+                }
+
+                if (!locValue && !isClick && !fillMatch) return; // skip non-actionable lines
+
+                const action = fillMatch ? 'fill' : isClick ? 'click' : 'highlight';
+                const arg    = fillMatch ? fillMatch[2] : '';
+
+                steps.push({
+                    lineText: trimmed,
+                    lineNum:  idx + 1,
+                    type:     locType,
+                    value:    locValue,
+                    action,
+                    arg
+                });
+            });
+
+            return steps;
+        }
+
+        // ── Extract class-level locator inventory (Language-Agnostic) ──────────
+        // Finds locators across Python, Java, C#, JS, and TS for Playwright & Selenium
+        // Returns: [{ propName, locType, locValue }]
+        function extractLocatorInventory(code) {
+            const inventory = [];
+            const seen = new Set();
+            const lines = code.split('\n');
+
+            lines.forEach((line, idx) => {
+                const t = line.trim();
+                if (!t || t.startsWith('//') || t.startsWith('#') || t.startsWith('*')) return;
+
+                let propName = '';
+                let locType = 'CSS';
+                let locValue = '';
+
+                // ── 1. Match standard variable assignments ──
+                // TS/JS: this.usernameInput = page.locator("#user-name")
+                // Python: self.username_input = self.page.locator("#user-name")
+                // Java/C#: private Locator usernameInput = page.locator("#user-name");
+                // C#: private IWebElement usernameInput => driver.FindElement(By.Id("..."));
+                const assignRegex = /(?:this|self)\.(\w+)\s*=\s*(.+)$|(?:\b(?:private|public|protected|readonly|const|let|var|Locator|WebElement|IWebElement|By)\s+)?(\w+)\s*(?:=|\b(?:get|set)\b|=>)\s*(.+)$/i;
+                const m = t.match(assignRegex);
+                
+                let rhs = '';
+                if (m) {
+                    propName = m[1] || m[3];
+                    rhs = m[2] || m[4];
+                } else {
+                    // Check if it's an annotation style on previous/current line
+                    // e.g. @FindBy(css = "#username") private WebElement username;
+                    const annotMatch = t.match(/@FindBy\s*\(\s*(?:css|xpath|id|name|xpath|tagName|linkText|className|how\s*=\s*How\s*\.\w+\s*,\s*using)?\s*=\s*(['"`])(.*?)\1\s*\)/i);
+                    if (annotMatch) {
+                        locValue = annotMatch[2];
+                        const nextLine = lines[idx + 1] ? lines[idx + 1].trim() : '';
+                        const varNameMatch = (t + ' ' + nextLine).match(/(?:private|public|protected|private|IWebElement|WebElement)\s+(\w+)\b/i);
+                        if (varNameMatch) {
+                            propName = varNameMatch[1];
+                        }
+                    }
+                }
+
+                if (rhs) {
+                    // Playwright styles: page.locator("...") or page.getByLabel("...")
+                    const pwMatch = rhs.match(/\.(locator|getByLabel|getByText|getByPlaceholder|getByRole|getByTestId|getByAltText|getByTitle)\s*\(\s*(['"`])(.*?)\2/);
+                    if (pwMatch) {
+                        const method = pwMatch[1];
+                        locValue = pwMatch[3];
+                        const semanticMap = {
+                            getByLabel:'GETBYLABEL', getByText:'GETBYTEXT',
+                            getByPlaceholder:'GETBYPLACEHOLDER', getByRole:'GETBYROLE',
+                            getByTestId:'GETBYTESTID', getByAltText:'GETBYALTTEXT', getByTitle:'GETBYTITLE'
+                        };
+                        if (semanticMap[method]) {
+                            locType = semanticMap[method];
+                        } else {
+                            locType = (locValue.startsWith('//') || locValue.startsWith('(//') || locValue.startsWith('xpath=')) ? 'XPATH' : 'CSS';
+                        }
+                    } else {
+                        // Selenium styles: By.id("val"), By.cssSelector("val"), find_element(By.ID, "val") etc.
+                        const selMatch = rhs.match(/By\.(cssSelector|xpath|id|name|className|linkText|tagName|css_selector)\s*[,(]\s*(['"`])(.*?)\2/i);
+                        if (selMatch) {
+                            const method = selMatch[1].toLowerCase();
+                            locValue = selMatch[3];
+                            if (method.includes('xpath')) locType = 'XPATH';
+                            else if (method.includes('id')) locType = 'ID';
+                            else if (method.includes('name')) locType = 'NAME';
+                            else if (method.includes('linktext')) locType = 'LINKTEXT';
+                            else locType = 'CSS';
+                        }
+                    }
+                }
+
+                if (propName && locValue) {
+                    propName = propName.replace(/^self\./, '').replace(/^this\./, '');
+                    if (seen.has(propName)) return;
+                    if (['page','driver','browser','context','url','baseURL'].includes(propName)) return;
+                    seen.add(propName);
+                    inventory.push({ propName, locType, locValue: locValue.replace(/^xpath=/, '') });
+                }
+            });
+
+            return inventory;
+        }
+
+        // ── Derive friendly label from locator value ───────────────────────────
+        function deriveLocatorLabel(locType, locValue, propName) {
+            const v = locValue || '';
+            // Use prop name if it's descriptive (not generic like 'el' or 'item')
+            if (propName && propName.length > 3) {
+                return propName.replace(/([A-Z])/g, ' $1').replace(/^./, c => c.toUpperCase()).trim();
+            }
+            if (['GETBYLABEL','GETBYPLACEHOLDER','GETBYTEXT'].includes(locType)) return v;
+            if (v.startsWith('#') && /^#[\w-]+$/.test(v)) return v.slice(1);
+            const nameMatch = v.match(/\[name=["']?([\w-]+)["']?\]/);
+            if (nameMatch) return nameMatch[1];
+            const idMatch = v.match(/[@[](?:id|name|placeholder)=["']?([\w-]+)/i);
+            if (idMatch) return idMatch[1];
+            return v.length > 25 ? v.substring(0, 25) + '…' : (v || propName);
+        }
+
+        // ── Guess if a locator is likely an input field ─────────────────────────
+        function isLikelyInput(locType, locValue, propName) {
+            const v = (locValue || '').toLowerCase();
+            const p = (propName || '').toLowerCase();
+            // Check locator for input-like hints
+            if (v.includes('input') || v.includes('textarea') || v.includes('field')) return true;
+            if (v.includes('type=') && !v.includes('type="button"') && !v.includes('type="submit"')) return true;
+            // Check prop name for input-like hints
+            const inputKeywords = ['input','field','text','email','password','phone','name','search',
+                'user','username','pass','login','signup','first','last','address','zip','city',
+                'query','term','value','amount','qty','quantity','msg','message','comment','note'];
+            return inputKeywords.some(kw => p.includes(kw));
+        }
+
+        // ── Open Test Data Panel ────────────────────────────────────────────────
+        // Scans class locator properties and lets user assign fill values to any of them.
+        function openTestDataPanel() {
+            const code = getCode();
+            if (!code.trim()) { showSimIdle('No code to simulate.'); return; }
+
+            // Hide idle / active UI, show test data panel
+            document.getElementById('simIdleHint').style.display  = 'none';
+            document.getElementById('simActiveUI').style.display  = 'none';
+            document.getElementById('testDataPanel').classList.remove('hidden');
+
+            const fieldsEl = document.getElementById('testDataFields');
+            fieldsEl.innerHTML = '';
+
+            // Get locator inventory from class properties
+            const inventory = extractLocatorInventory(code);
+
+            if (inventory.length === 0) {
+                // Fallback: try existing fill-step approach
+                const steps = extractMethodSteps(code, _tool);
+                const fillSteps = steps.filter(s => s.action === 'fill');
+                if (fillSteps.length === 0 && steps.length === 0) {
+                    showSimIdle('No actionable steps found in the script.');
+                    document.getElementById('testDataPanel').classList.add('hidden');
+                    return;
+                }
+                // Build fallback from steps
+                _buildFallbackStepPanel(fieldsEl, steps);
+                return;
+            }
+
+            // ── Header hint ────────────────────────────────────────────────
+            const hint = document.createElement('div');
+            hint.style.cssText = 'font-size:0.7rem; color:var(--text-secondary); padding:0 0 6px; line-height:1.5;';
+            hint.innerHTML = `<i class="fas fa-info-circle" style="color:#00bcf2;margin-right:5px;"></i>
+                Enter a value to <strong style="color:#34d399;">type</strong> into that field.
+                Leave blank to <strong style="color:#fbbf24;">click</strong> it instead.`;
+            fieldsEl.appendChild(hint);
+
+            // ── Locator rows ───────────────────────────────────────────────
+            const section = document.createElement('div');
+            section.className = 'test-data-section';
+
+            const sectionHeader = document.createElement('div');
+            sectionHeader.className = 'test-data-method-label';
+            sectionHeader.innerHTML = `<i class="fas fa-layer-group" style="font-size:0.6rem;"></i>
+                Page Elements — ${inventory.length} locator${inventory.length !== 1 ? 's' : ''} found`;
+            section.appendChild(sectionHeader);
+
+            const fieldsWrap = document.createElement('div');
+            fieldsWrap.className = 'test-data-fields';
+
+            inventory.forEach((loc, idx) => {
+                const label    = deriveLocatorLabel(loc.locType, loc.locValue, loc.propName);
+                const isInput  = isLikelyInput(loc.locType, loc.locValue, loc.propName);
+                const shortSel = loc.locValue.length > 32
+                    ? loc.locValue.substring(0, 32) + '…' : loc.locValue;
+
+                const row = document.createElement('div');
+                row.className = 'test-data-field';
+                row.innerHTML = `
+                    <label>
+                        <span style="color:${isInput ? '#34d399' : '#fbbf24'}; margin-right:5px; font-size:0.75rem;">
+                            ${isInput ? '✏' : '🖱'}
+                        </span>
+                        <span style="color:var(--text-primary);">${escHtml(label)}</span>
+                        <span style="opacity:0.35; font-size:0.58rem; margin-left:5px; font-family:'Fira Code',monospace;">${escHtml(shortSel)}</span>
+                    </label>
+                    <input type="text"
+                           data-loc-idx="${idx}"
+                           data-loc-prop="${escHtml(loc.propName)}"
+                           data-loc-type="${escHtml(loc.locType)}"
+                           data-loc-value="${escHtml(loc.locValue)}"
+                           placeholder="${isInput ? 'Type value here (leave blank to click instead)' : 'Leave blank to click, or type to fill'}"
+                           autocomplete="off"
+                           onkeydown="if(event.key==='Enter'){ var inputs=Array.from(document.querySelectorAll('#testDataFields input[data-loc-idx]')); var ni=inputs[inputs.indexOf(this)+1]; ni ? ni.focus() : runWithTestData(); }">`;
+                fieldsWrap.appendChild(row);
+            });
+
+            section.appendChild(fieldsWrap);
+            fieldsEl.appendChild(section);
+
+            // Focus first likely-input field, otherwise first field
+            setTimeout(() => {
+                const inputs = Array.from(fieldsEl.querySelectorAll('input[data-loc-idx]'));
+                const firstInput = inputs.find((inp, i) =>
+                    isLikelyInput(
+                        inp.getAttribute('data-loc-type'),
+                        inp.getAttribute('data-loc-value'),
+                        inp.getAttribute('data-loc-prop')
+                    ));
+                (firstInput || inputs[0])?.focus();
+            }, 80);
+        }
+
+        // Fallback: build panel from explicit fill steps (for Python/Java POs)
+        function _buildFallbackStepPanel(fieldsEl, steps) {
+            const fillSteps = steps.filter(s => s.action === 'fill');
+            const hint = document.createElement('div');
+            hint.style.cssText = 'font-size:0.7rem; color:var(--text-secondary); padding:0 0 6px;';
+            hint.innerHTML = `<i class="fas fa-edit" style="color:#34d399;margin-right:5px;"></i>${fillSteps.length} fill step${fillSteps.length!==1?'s':''} detected`;
+            fieldsEl.appendChild(hint);
+
+            if (fillSteps.length === 0) {
+                const info = document.createElement('div');
+                info.className = 'test-data-section';
+                info.innerHTML = `<div class="test-data-no-params">
+                    <i class="fas fa-info-circle" style="margin-right:5px;"></i>
+                    No fill actions found. Simulation will click/inspect elements only.
+                </div>`;
+                fieldsEl.appendChild(info);
+                return;
+            }
+
+            const section = document.createElement('div');
+            section.className = 'test-data-section';
+            section.innerHTML = `<div class="test-data-method-label">
+                <i class="fas fa-edit" style="font-size:0.6rem;"></i> Fill Values
+            </div>`;
+            const wrap = document.createElement('div');
+            wrap.className = 'test-data-fields';
+
+            fillSteps.forEach((step, idx) => {
+                const v = step.value || '';
+                let label = v;
+                if (v.startsWith('#')) label = v.slice(1);
+                const idM = v.match(/[@[](?:id|name)=["']?([\w-]+)/i);
+                if (idM) label = idM[1];
+                if (['GETBYLABEL','GETBYPLACEHOLDER'].includes(step.type)) label = v;
+                label = label.length > 25 ? label.substring(0,25)+'…' : label;
+
+                const isLit = step.arg && !/^[a-zA-Z_]\w*$/.test(step.arg);
+                const f = document.createElement('div');
+                f.className = 'test-data-field';
+                f.innerHTML = `
+                    <label><span style="color:#00bcf2;margin-right:4px;">✏</span>${escHtml(label)}
+                        <span style="opacity:0.4;font-size:0.58rem;margin-left:4px;">line ${step.lineNum}</span>
+                    </label>
+                    <input type="text" data-step-idx="${idx}"
+                           value="${escHtml(isLit ? step.arg : '')}"
+                           placeholder="${escHtml(isLit ? step.arg : (step.arg ? 'Variable: '+step.arg : 'Enter value…'))}"
+                           autocomplete="off"
+                           onkeydown="if(event.key==='Enter') runWithTestData()">`;
+                wrap.appendChild(f);
+            });
+            section.appendChild(wrap);
+            fieldsEl.appendChild(section);
+        }
+
+        function cancelTestData() {
+            document.getElementById('testDataPanel').classList.add('hidden');
+            document.getElementById('simIdleHint').style.display = 'block';
+        }
+
+        // ── Collect values and build simulation steps ──────────────────────────
+        function runWithTestData() {
+            // Collect locator-inventory based inputs (new approach)
+            const locInputs = document.querySelectorAll('#testDataFields input[data-loc-idx]');
+            // Collect fill-step based inputs (fallback approach)
+            const stepInputs = document.querySelectorAll('#testDataFields input[data-step-idx]');
+
+            _testData = {};
+            stepInputs.forEach(inp => { _testData[inp.getAttribute('data-step-idx')] = inp.value; });
+
+            // For locator-inventory inputs, build a custom step list and store in _customSimSteps
+            if (locInputs.length > 0) {
+                _customSimSteps = [];
+                locInputs.forEach(inp => {
+                    const locType  = inp.getAttribute('data-loc-type');
+                    const locValue = inp.getAttribute('data-loc-value');
+                    const propName = inp.getAttribute('data-loc-prop');
+                    const val      = inp.value;
+                    const action   = val ? 'fill' : 'click';
+                    _customSimSteps.push({
+                        lineText: val
+                            ? `await this.${propName}.fill("${val}")`
+                            : `await this.${propName}.click()`,
+                        lineNum:  0,
+                        type:     locType,
+                        value:    locValue,
+                        action,
+                        arg:      val
+                    });
+                });
+            } else {
+                _customSimSteps = null;
+            }
+
+            document.getElementById('testDataPanel').classList.add('hidden');
+            startSimulationAll();
+        }
+
+
+        function startSimulationAll() {
+            // If runWithTestData built custom steps from locator inventory, use those;
+            // otherwise extract from code and apply _testData overrides.
+            let resolvedSteps;
+
+            if (_customSimSteps && _customSimSteps.length > 0) {
+                resolvedSteps = _customSimSteps;
+                _customSimSteps = null;
+            } else {
+                const code = getCode();
+                if (!code.trim()) { showSimIdle('No code to simulate.'); return; }
+
+                const steps = extractMethodSteps(code, _tool);
+                if (steps.length === 0) { showSimIdle('No actionable steps found in the script.'); return; }
+
+                let fillStepCounter = 0;
+                resolvedSteps = steps.map(s => {
+                    if (s.action !== 'fill') return s;
+                    const overrideVal = _testData[String(fillStepCounter)];
+                    fillStepCounter++;
+                    if (overrideVal !== undefined && overrideVal !== '') return { ...s, arg: overrideVal };
+                    return s;
+                });
+            }
+
+
+            _simSteps   = resolvedSteps;
+            _simIndex   = 0;
+            _simPaused  = false;
+            _simRunning = true;
+
+            // Show active UI
+            document.getElementById('simIdleHint').style.display   = 'none';
+            document.getElementById('testDataPanel').classList.add('hidden');
+            document.getElementById('simActiveUI').style.display    = 'flex';
+            document.getElementById('simLog').innerHTML             = '';
+            document.getElementById('simPauseBtn').style.display    = 'inline-flex';
+            document.getElementById('simStepCounter').textContent   = `Step 0/${resolvedSteps.length}`;
+            document.getElementById('simProgressBar').style.width   = '0%';
+
+            // Disable simulate button while running
+            document.getElementById('simulateBtn').disabled = true;
+
+            runNextSimStep();
+        }
+
+        function runNextSimStep() {
+            if (!_simRunning) return;
+            if (_simPaused && !_simStepped) { 
+                _simTimer = setTimeout(runNextSimStep, 250); 
+                return; 
+            }
+            if (_simIndex >= _simSteps.length) {
+                finishSimulation();
+                return;
+            }
+
+            // Reset step request flag
+            _simStepped = false;
+
+            const step = _simSteps[_simIndex];
+            const total = _simSteps.length;
+            const stepNum = _simIndex + 1;
+
+            // Update progress
+            document.getElementById('simProgressBar').style.width = `${(stepNum / total) * 100}%`;
+            document.getElementById('simStepCounter').textContent = `Step ${stepNum}/${total}`;
+
+            // Update current step display
+            const actionClass = { highlight: 'badge-highlight', fill: 'badge-fill', click: 'badge-click' }[step.action] || 'badge-skip';
+            const actionLabel = { highlight: '👁 Inspect', fill: '✏️ Fill', click: '🖱 Click' }[step.action] || 'Skip';
+            document.getElementById('simCurrentCode').textContent = step.lineText;
+            document.getElementById('simCurrentBadge').innerHTML =
+                `<span class="sim-step-action-badge ${actionClass}">${actionLabel}</span>
+                 <span style="font-size:0.6rem;color:var(--text-secondary);margin-left:6px;">Line ${step.lineNum}</span>`;
+
+            // Push to Python for browser execution
+            pushPendingAction('simulate_po_step', {
+                lineText: step.lineText, lineNum: step.lineNum,
+                type: step.type, value: step.value,
+                action: step.action, arg: step.arg
+            });
+
+            _simIndex++;
+        }
+
+        // Called by Python via runJavaScript after each step executes in browser
+        window.receiveSimulateResult = function(resultJson) {
+            const r = typeof resultJson === 'string' ? JSON.parse(resultJson) : resultJson;
+            const step = r.step || {};
+
+            const logEl = document.getElementById('simLog');
+            const item  = document.createElement('div');
+            const found = r.success && r.found;
+            item.className = `sim-log-item ${found ? 'success' : r.skipped ? 'skip' : 'fail'}`;
+
+            const iconHtml = found
+                ? `<i class="fas fa-check-circle sim-log-icon" style="color:#34d399;"></i>`
+                : r.skipped
+                ? `<i class="fas fa-forward sim-log-icon" style="color:#64748b;"></i>`
+                : `<i class="fas fa-times-circle sim-log-icon" style="color:#f87171;"></i>`;
+
+            const tagHtml = r.tag ? `<span class="sim-log-tag">&lt;${r.tag}&gt;</span>` : '';
+            item.innerHTML = `${iconHtml}
+                <span class="sim-log-text">${escHtml((step.lineText || '').substring(0, 60))}</span>
+                ${tagHtml}`;
+            logEl.appendChild(item);
+            logEl.scrollTop = logEl.scrollHeight;
+
+            // Determine next execution delay dynamically from speed slider
+            const baseDelay = parseInt(document.getElementById('simSpeedSlider').value || 1000);
+            const delay = step.action === 'fill' ? baseDelay + 800 : baseDelay;
+
+            // If we are currently paused, don't schedule next step automatically
+            if (_simPaused) return;
+
+            _simTimer = setTimeout(runNextSimStep, delay);
+        };
+
+        function toggleSimPause() {
+            _simPaused = !_simPaused;
+            document.getElementById('simPauseIcon').className = _simPaused ? 'fas fa-play' : 'fas fa-pause';
+            document.getElementById('simPauseLabel').textContent = _simPaused ? 'Resume' : 'Pause';
+            
+            // Show/hide the Step Next button when paused
+            document.getElementById('simStepNextBtn').style.display = _simPaused ? 'inline-flex' : 'none';
+        }
+
+        function stepNext() {
+            if (!_simRunning) return;
+            _simStepped = true;
+            runNextSimStep();
+        }
+
+        function updateSpeedLabel(val) {
+            const sec = (val / 1000).toFixed(1);
+            document.getElementById('simSpeedVal').textContent = `${sec}s`;
+        }
+
+        function stopSimulation() {
+            _simRunning = false;
+            _simPaused  = false;
+            _simStepped = false;
+            if (_simTimer) clearTimeout(_simTimer);
+            finishSimulation(true);
+        }
+
+        function finishSimulation(stopped = false) {
+            _simRunning = false;
+            document.getElementById('simulateBtn').disabled = false;
+            document.getElementById('simPauseBtn').style.display = 'none';
+            document.getElementById('simStepNextBtn').style.display = 'none';
+            document.getElementById('simProgressBar').style.width = stopped ? document.getElementById('simProgressBar').style.width : '100%';
+
+            // Add completion entry to log
+            const logEl = document.getElementById('simLog');
+            const endItem = document.createElement('div');
+            endItem.className = 'sim-log-item';
+            endItem.style.justifyContent = 'center';
+            endItem.style.color = stopped ? '#f59e0b' : '#34d399';
+            endItem.style.fontFamily = 'Outfit, sans-serif';
+            endItem.style.fontWeight = '600';
+            endItem.style.fontSize = '0.73rem';
+            endItem.innerHTML = stopped
+                ? `<i class="fas fa-stop-circle" style="margin-right:6px;"></i> Simulation stopped`
+                : `<i class="fas fa-check-double" style="margin-right:6px;"></i> Simulation complete — ${_simSteps.length} steps`;
+            logEl.appendChild(endItem);
+            logEl.scrollTop = logEl.scrollHeight;
+        }
+
+        function showSimIdle(msg) {
+            document.getElementById('simIdleHint').style.display = 'block';
+            document.getElementById('simIdleHint').innerHTML = `<i class="fas fa-info-circle"></i>${msg}`;
+        }
+
+        // ── Actions ────────────────────────────────────────────────────────────
         function copyCode() {
             const code = getCode();
             pushPendingAction('po_copy_code', { code });
-
             const btn = document.getElementById('copyBtn');
             const orig = btn.innerHTML;
             btn.innerHTML = '<i class="fas fa-check"></i> Copied!';
             btn.style.borderColor = 'rgba(16,185,129,0.6)';
             btn.style.color = '#34d399';
             btn.style.background = 'rgba(16,185,129,0.2)';
-
-            // Flash editor
             const wrap = cmEditor ? cmEditor.getWrapperElement() : document.getElementById('poCodeTextarea');
             wrap.classList.add('copy-flash');
-            setTimeout(() => { wrap.classList.remove('copy-flash'); }, 700);
-
-            setTimeout(() => {
-                btn.innerHTML = orig;
-                btn.style.borderColor = '';
-                btn.style.color = '';
-                btn.style.background = '';
-            }, 1800);
+            setTimeout(() => wrap.classList.remove('copy-flash'), 700);
+            setTimeout(() => { btn.innerHTML = orig; btn.style.borderColor = ''; btn.style.color = ''; btn.style.background = ''; }, 1800);
         }
 
         function saveCode() {
-            const code = getCode();
-            pushPendingAction('po_save_code', {
-                code:     code,
-                filename: _filename,
-                lang:     _lang
-            });
+            pushPendingAction('po_save_code', { code: getCode(), filename: _filename, lang: _lang });
         }
 
         function closeWindow() {
             pushPendingAction('close_po_window', {});
         }
 
-        // ── Init ───────────────────────────────────────────────────────────
+        // ── Helpers ────────────────────────────────────────────────────────────
+        function escHtml(s) {
+            return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+        }
+
+        // ── Init ───────────────────────────────────────────────────────────────
         window.addEventListener('DOMContentLoaded', () => {
             initEditor();
             initBridge();
         });
 
-        // Keyboard shortcut: Escape closes window
         document.addEventListener('keydown', (e) => {
             const backdrop = document.getElementById('alertBackdrop');
             if (backdrop && backdrop.style.display === 'flex') {
-                // Let the lightbox consume the escape key first
-                if (e.key === 'Escape') {
-                    window.resolveAlert(false);
-                    e.stopPropagation();
-                }
+                if (e.key === 'Escape') { window.resolveAlert(false); e.stopPropagation(); }
             } else {
-                if (e.key === 'Escape') closeWindow();
+                if (e.key === 'Escape') closeSidebar();
             }
         });
 
-        // ─── Global Lightbox Alert Dialog controller ─────────────────
+        // ─── Global Lightbox Alert Dialog ─────────────────────────────────────
         let _alertResolve = null;
-
         window.showAlert = function(message, title = "Notification", icon = "ℹ️") {
             document.getElementById('alertMessage').textContent = message;
-            document.getElementById('alertTitle').textContent = title;
-            document.getElementById('alertIcon').textContent = icon;
-            
+            document.getElementById('alertTitle').textContent   = title;
+            document.getElementById('alertIcon').textContent    = icon;
             const backdrop = document.getElementById('alertBackdrop');
             backdrop.style.display = 'flex';
             setTimeout(() => {
@@ -628,15 +1635,8 @@
             }, 10);
             return new Promise(resolve => { _alertResolve = resolve; });
         };
-
-        window.showLightboxAlert = function(message) {
-            window.showAlert(message);
-        };
-
-        window.alert = function(message) {
-            return window.showAlert(message);
-        };
-
+        window.showLightboxAlert = function(message) { window.showAlert(message); };
+        window.alert = function(message) { return window.showAlert(message); };
         window.resolveAlert = function(val) {
             const backdrop = document.getElementById('alertBackdrop');
             if (!backdrop) return;
@@ -644,20 +1644,12 @@
             backdrop.firstElementChild.style.transform = 'translateY(20px)';
             setTimeout(() => {
                 backdrop.style.display = 'none';
-                if (_alertResolve) {
-                    _alertResolve(val);
-                    _alertResolve = null;
-                }
+                if (_alertResolve) { _alertResolve(val); _alertResolve = null; }
             }, 200);
         };
-
         document.addEventListener('keydown', e => {
             const backdrop = document.getElementById('alertBackdrop');
-            if (backdrop && backdrop.style.display === 'flex') {
-                if (e.key === 'Enter') {
-                    window.resolveAlert(true);
-                }
-            }
+            if (backdrop && backdrop.style.display === 'flex' && e.key === 'Enter') window.resolveAlert(true);
         });
     </script>
 

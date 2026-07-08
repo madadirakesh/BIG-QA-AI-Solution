@@ -766,6 +766,106 @@ class POWindow(QMainWindow):
             elif action == "close_po_window":
                 self.close()
 
+            elif action == "validate_po":
+                # ── Phase 1: Bulk locator verification ───────────────────────
+                # JS sends a list of {variable, type, value} objects extracted
+                # from the PO script.  We run each against the active browser
+                # page and stream individual results back, then emit the full
+                # batch once all callbacks have fired.
+                selectors = payload.get("selectors", [])
+                if not selectors:
+                    self.view.page().runJavaScript("receiveValidationResults([]);")
+                    return
+
+                results   = [None] * len(selectors)
+                pending   = {"count": len(selectors)}   # mutable counter for closure
+
+                def make_callback(sel_info, idx):
+                    def on_res(count):
+                        count = count if isinstance(count, int) else 0
+                        if   count == 1: status = "pass"
+                        elif count  > 1: status = "warn"
+                        else:            status = "fail"
+                        results[idx] = {**sel_info, "count": count, "status": status}
+                        pending["count"] -= 1
+                        if pending["count"] == 0:
+                            result_json = json.dumps(results)
+                            self.view.page().runJavaScript(
+                                f"receiveValidationResults({result_json});"
+                            )
+                    return on_res
+
+                browser_page = getattr(
+                    getattr(self._parent_studio, "browser_ctrl", None), "view", None
+                )
+                if browser_page is None:
+                    # No browser pane available — mark all as fail
+                    for i, sel in enumerate(selectors):
+                        results[i] = {**sel, "count": 0, "status": "fail"}
+                    self.view.page().runJavaScript(
+                        f"receiveValidationResults({json.dumps(results)});"
+                    )
+                    return
+
+                for i, sel in enumerate(selectors):
+                    safe_val = json.dumps(sel.get("value", ""))
+                    loc_type = sel.get("type", "CSS")
+                    js = f"window.verifyLiveLocator('{loc_type}', {safe_val});"
+                    try:
+                        browser_page.page().runJavaScript(js, make_callback(sel, i))
+                    except Exception as ex:
+                        print(f"[POWindow] validate_po JS error (idx={i}): {ex}")
+                        make_callback(sel, i)(0)   # treat as not found
+
+            elif action == "simulate_po_step":
+                # ── Phase 2a: Single method-step sandbox execution ────────────
+                # JS sends one step at a time.  We run simulatePOStep on the
+                # active browser page and push the result back so JS can render
+                # the log entry and advance to the next step.
+                step = payload   # {lineText, lineNum, type, value, action, arg}
+                loc_type  = step.get("type",    "CSS")
+                loc_value = json.dumps(step.get("value",  ""))
+                action_t  = step.get("action",  "highlight")
+                fill_arg  = json.dumps(step.get("arg",    ""))
+
+                def on_sim_done(raw_result):
+                    # simulatePOStep returns a JSON string; Qt delivers it as str
+                    try:
+                        inner = json.loads(raw_result) if isinstance(raw_result, str) else {}
+                    except Exception:
+                        inner = {}
+                    result = {
+                        "success": inner.get("found", False),
+                        "found":   inner.get("found", False),
+                        "tag":     inner.get("tag",   None),
+                        "skipped": not inner.get("found", False) and action_t == "highlight",
+                        "step":    step
+                    }
+                    result_json = json.dumps(result)
+                    self.view.page().runJavaScript(
+                        f"receiveSimulateResult({result_json});"
+                    )
+
+                browser_page = getattr(
+                    getattr(self._parent_studio, "browser_ctrl", None), "view", None
+                )
+                if browser_page is None:
+                    on_sim_done(json.dumps({"found": False, "tag": None, "action": action_t}))
+                    return
+
+                js = (
+                    f"(function(){{"
+                    f"  var r = window.simulatePOStep('{action_t}', '{loc_type}', {loc_value}, {fill_arg});"
+                    f"  return r || JSON.stringify({{found:false,tag:null,action:'{action_t}'}});"
+                    f"}})()"
+                )
+                try:
+                    browser_page.page().runJavaScript(js, on_sim_done)
+                except Exception as ex:
+                    print(f"[POWindow] simulate_po_step JS error: {ex}")
+                    on_sim_done(json.dumps({"found": False, "tag": None, "action": action_t}))
+
+
         except Exception as e:
             print(f"[POWindow] _handle_command ERROR ({action}): {e}")
             logging.error(f"Error handling POWindow command {action}: {e}")
