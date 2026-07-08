@@ -1,6 +1,7 @@
 import os
 import sys
 import json
+import hashlib
 import subprocess
 import threading
 import webbrowser
@@ -8,29 +9,11 @@ import uuid
 import secrets
 from datetime import datetime
 from pathlib import Path
-from flask import Flask, render_template, request, redirect, url_for, session, flash, jsonify, Response, stream_with_context
-import pytz
-from dotenv import load_dotenv
-from scripts.deploy_team_templates import seed
 
 # Path setup
 BASE_DIR = Path(__file__).resolve().parent
 ROOT_DIR = BASE_DIR.parent
 PROJECT_BOOTSTRAPPER_DIR = ROOT_DIR / "ProjectBootstrapper"
-
-if str(PROJECT_BOOTSTRAPPER_DIR) not in sys.path:
-    sys.path.append(str(PROJECT_BOOTSTRAPPER_DIR))
-
-from ProjectBootstrapper.bootstrapper_engine import BootstrapperEngine
-from ProjectBootstrapper.environment_setup import EnvironmentSetup
-from db.app_db import fetch_data, insert_data, update_data, init_db, get_db
-# encrypt_for_app / decrypt_for_app protect the password stored in ProjectData with an app master
-# key (Flask .env). decrypt_for_app passes legacy plaintext rows through unchanged.
-from utils.crypto_util import encrypt_for_app, decrypt_for_app
-from utils.password_util import hash_password, verify_password, is_hashed
-
-# Load environment variables early
-load_dotenv(BASE_DIR / ".env")
 
 def get_flask_secret_key():
     """Return a stable Flask session key, creating a local dev key when needed."""
@@ -58,6 +41,9 @@ def get_env_bool(name, default=False):
         return default
     return value.strip().lower() in ("1", "true", "yes", "on")
 
+def _requirements_signature(req_file: Path):
+    return hashlib.sha256(req_file.read_bytes()).hexdigest()
+  
 def is_headless():
     """Detect if running in a headless container, virtual, or cloud environment (SaaS)."""
     if os.environ.get('HEADLESS') == 'true' or os.environ.get('HEADLESS_CLOUD') == 'true':
@@ -70,16 +56,93 @@ def is_headless():
 
 
 def install_prerequisites():
+    if os.environ.get("SCRIPTGENERATOR_PREREQS_INSTALLED") == "1":
+        return
+
     req_file = ROOT_DIR / "requirements.txt"
+    stamp_file = BASE_DIR / ".requirements_installed"
     if req_file.exists():
+        req_signature = _requirements_signature(req_file)
+        if stamp_file.exists():
+            try:
+                if stamp_file.read_text(encoding="utf-8").strip() == req_signature:
+                    os.environ["SCRIPTGENERATOR_PREREQS_INSTALLED"] = "1"
+                    return
+            except OSError:
+                pass
+
         print(f"Checking prerequisites from {req_file}...")
-        try:
-            # Using -q to keep it quiet unless there is an error
-            subprocess.check_call([sys.executable, '-m', 'pip', 'install', '-q', '-r', str(req_file)])
-        except subprocess.CalledProcessError as e:
-            print(f"Warning: Failed to install some prerequisites: {e}")
+        env = os.environ.copy()
+        env.setdefault("PIP_DISABLE_PIP_VERSION_CHECK", "1")
+
+        def run_cmd(cmd):
+            return subprocess.run(cmd, capture_output=True, text=True, env=env)
+
+        pip_check = run_cmd([sys.executable, '-m', 'pip', '--version'])
+        if pip_check.returncode != 0:
+            ensure_pip = run_cmd([sys.executable, '-m', 'ensurepip', '--upgrade'])
+            if ensure_pip.returncode != 0:
+                ensure_error = (ensure_pip.stderr or ensure_pip.stdout or "").strip()
+                print(f"Warning: Failed to prepare pip for prerequisites installation: {ensure_error}")
+                return
+
+        install_cmd = [sys.executable, '-m', 'pip', 'install', '-q', '-r', str(req_file)]
+        result = run_cmd(install_cmd)
+        error_text = (result.stderr or result.stdout or "").lower()
+
+        # Debian/Ubuntu system Python can block installs unless pip is told to proceed explicitly.
+        if result.returncode != 0 and "externally-managed-environment" in error_text:
+            fallback_cmd = install_cmd[:]
+            fallback_cmd.insert(-2, '--break-system-packages')
+            result = run_cmd(fallback_cmd)
+            error_text = (result.stderr or result.stdout or "").lower()
+
+        # macOS/Windows global Python installs often fail without a user-site fallback.
+        if result.returncode != 0 and sys.prefix == getattr(sys, "base_prefix", sys.prefix):
+            permission_markers = (
+                "permission denied",
+                "access is denied",
+                "not writable",
+                "errno 13",
+                "winerror 5",
+            )
+            if any(marker in error_text for marker in permission_markers):
+                fallback_cmd = install_cmd[:]
+                fallback_cmd.insert(-2, '--user')
+                result = run_cmd(fallback_cmd)
+
+        if result.returncode == 0:
+            os.environ["SCRIPTGENERATOR_PREREQS_INSTALLED"] = "1"
+            try:
+                stamp_file.write_text(req_signature, encoding="utf-8")
+            except OSError:
+                pass
+        else:
+            error_text = (result.stderr or result.stdout or "").strip()
+            print(f"Warning: Failed to install some prerequisites: {error_text}")
     else:
         print("requirements.txt not found, skipping prerequisites installation.")
+
+install_prerequisites()
+
+from flask import Flask, render_template, request, redirect, url_for, session, flash, jsonify, Response, stream_with_context
+import pytz
+from dotenv import load_dotenv
+from scripts.deploy_team_templates import seed
+
+if str(PROJECT_BOOTSTRAPPER_DIR) not in sys.path:
+    sys.path.append(str(PROJECT_BOOTSTRAPPER_DIR))
+
+from ProjectBootstrapper.bootstrapper_engine import BootstrapperEngine
+from ProjectBootstrapper.environment_setup import EnvironmentSetup
+from db.app_db import fetch_data, insert_data, update_data, init_db, get_db
+# encrypt_for_app / decrypt_for_app protect the password stored in ProjectData with an app master
+# key (Flask .env). decrypt_for_app passes legacy plaintext rows through unchanged.
+from utils.crypto_util import encrypt_for_app, decrypt_for_app
+from utils.password_util import hash_password, verify_password, is_hashed
+
+# Load environment variables early
+load_dotenv(BASE_DIR / ".env")
 
 # Global dictionary for background bootstrapper jobs
 bootstrapper_jobs = {}
@@ -2120,11 +2183,36 @@ import asyncio
 import pandas as pd
 from api.code_injector import CodeInjector
 from api.backend import UniversalScriptGenerator, get_effective_ai_provider
+import re
+
+def _count_step_definitions(content: str) -> int:
+    if not content:
+        return 0
+    pattern = r'@\s*(?:given|when|then|step|Given|When|Then|Step|and|And|but|But)\b|\[\s*(?:Given|When|Then|And|But|Step)\b|(?:Given|When|Then|Step|And|But)\s*\('
+    return len(re.findall(pattern, content))
+
+def _count_scenarios(text: str, file_type: str) -> int:
+    if not text:
+        return 0
+    if file_type == 'Excel':
+        lines = [l for l in text.splitlines() if l.strip()]
+        return max(1, len(lines) - 1)
+    
+    matches = re.findall(r'^\s*(?:Scenario|Scenario\s+Outline|Scenario\s+Template)\s*:', text, re.MULTILINE | re.IGNORECASE)
+    if matches:
+        return len(matches)
+    
+    matches = re.findall(r'^\s*(?:Scenario|TC|Test Case|Testcase|Case|\d+)\b', text, re.MULTILINE | re.IGNORECASE)
+    if matches:
+        return len(matches)
+        
+    return 1
 
 @app.route('/api/generate-bdd-code', methods=['POST'])
 @login_required()
 def generate_bdd_code():
     try:
+        existing_steps_count = 0
         project_path = request.form.get('project_path')
         tool = request.form.get('tool')
         language = request.form.get('language')
@@ -2209,7 +2297,9 @@ def generate_bdd_code():
                             if f.endswith(('.py', '.java', '.ts', '.js', '.cs')):
                                 try:
                                     with open(os.path.join(root, f), 'r', encoding='utf-8', errors='ignore') as st_file:
-                                        existing_steps.append(f"--- {f} ---\n{st_file.read()}")
+                                        st_content = st_file.read()
+                                        existing_steps.append(f"--- {f} ---\n{st_content}")
+                                        existing_steps_count += _count_step_definitions(st_content)
                                 except Exception:
                                     pass
                     if existing_steps:
@@ -2299,6 +2389,10 @@ def generate_bdd_code():
         
         parsed_files = loop.run_until_complete(generator.generate(scenarios_text, support_content, ""))
         
+        new_step_definitions_count = 0
+        step_def_files_count = 0
+        scenarios_count = _count_scenarios(scenarios_text, file_type)
+
         if isinstance(parsed_files, dict):
             # Enforce selective generation output
             keys_to_delete = []
@@ -2313,6 +2407,13 @@ def generate_bdd_code():
                     keys_to_delete.append(k)
             for k in keys_to_delete:
                 del parsed_files[k]
+
+            # Calculate stats for remaining files
+            for k, v in parsed_files.items():
+                k_norm = k.replace('\\', '/').lower()
+                if k_norm.endswith(('.py', '.java', '.ts', '.js', '.cs')) and ('step' in k_norm or 'definition' in k_norm):
+                    step_def_files_count += 1
+                    new_step_definitions_count += _count_step_definitions(v)
                 
         result_files = []
         if isinstance(parsed_files, dict):
@@ -2321,7 +2422,14 @@ def generate_bdd_code():
         else:
             result_files.append({'filename': 'generated_code.txt', 'content': "// AI Failed to return valid dict formats.", 'path': os.path.join(project_path, 'generated_code.txt')})
 
-        return jsonify({'status': 'success', 'files': result_files})
+        stats = {
+            'new_step_definitions': new_step_definitions_count,
+            'existing_steps': existing_steps_count,
+            'step_def_files_generated': step_def_files_count,
+            'scenarios_count': scenarios_count
+        }
+
+        return jsonify({'status': 'success', 'files': result_files, 'stats': stats})
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
@@ -2517,16 +2625,6 @@ if __name__ == '__main__':
     app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 0  # serve fresh static files during dev
     # Only open the browser and launch backend once (prevents opening twice when Flask reloader is active)
     if not os.environ.get('WERKZEUG_RUN_MAIN'):
-        # Install python dependencies from root requirements.txt
-        req_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'requirements.txt'))
-        if os.path.exists(req_path):
-            print(f"Installing dependencies from {req_path}...", flush=True)
-            try:
-                subprocess.check_call([sys.executable, "-m", "pip", "install", "-r", req_path])
-                print("Dependencies installed successfully.", flush=True)
-            except Exception as e:
-                print(f"Failed to install dependencies: {e}", flush=True)
-
         if not check_and_initialize_db():
             sys.exit("Exiting: Database connection failed.")
         threading.Timer(1.25, lambda: open_browser(port)).start()

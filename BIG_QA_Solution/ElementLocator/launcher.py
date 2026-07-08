@@ -1,5 +1,6 @@
 import os
 import sys
+import hashlib
 import subprocess
 import platform
 from pathlib import Path
@@ -7,6 +8,64 @@ from pathlib import Path
 # Bypass GPU driver negotiation on Windows (safe — software rasterizer takes over as renderer)
 if platform.system() == "Windows":
     os.environ["QTWEBENGINE_CHROMIUM_FLAGS"] = "--disable-gpu --disable-gpu-compositing"
+
+def _requirements_signature(req_file: Path):
+    return hashlib.sha256(req_file.read_bytes()).hexdigest()
+
+def install_prerequisites(req_file: Path):
+    stamp_file = req_file.parent / ".requirements_installed"
+    req_signature = _requirements_signature(req_file)
+    if stamp_file.exists():
+        try:
+            if stamp_file.read_text(encoding="utf-8").strip() == req_signature:
+                return
+        except OSError:
+            pass
+
+    env = os.environ.copy()
+    env.setdefault("PIP_DISABLE_PIP_VERSION_CHECK", "1")
+
+    def run_cmd(cmd):
+        return subprocess.run(cmd, capture_output=True, text=True, env=env)
+
+    pip_check = run_cmd([sys.executable, "-m", "pip", "--version"])
+    if pip_check.returncode != 0:
+        ensure_pip = run_cmd([sys.executable, "-m", "ensurepip", "--upgrade"])
+        if ensure_pip.returncode != 0:
+            ensure_error = (ensure_pip.stderr or ensure_pip.stdout or "").strip()
+            raise RuntimeError(f"Failed to prepare pip: {ensure_error}")
+
+    install_cmd = [sys.executable, "-m", "pip", "install", "-q", "-r", str(req_file)]
+    result = run_cmd(install_cmd)
+    error_text = (result.stderr or result.stdout or "").lower()
+
+    if result.returncode != 0 and "externally-managed-environment" in error_text:
+        fallback_cmd = install_cmd[:]
+        fallback_cmd.insert(-2, "--break-system-packages")
+        result = run_cmd(fallback_cmd)
+        error_text = (result.stderr or result.stdout or "").lower()
+
+    if result.returncode != 0 and sys.prefix == getattr(sys, "base_prefix", sys.prefix):
+        permission_markers = (
+            "permission denied",
+            "access is denied",
+            "not writable",
+            "errno 13",
+            "winerror 5",
+        )
+        if any(marker in error_text for marker in permission_markers):
+            fallback_cmd = install_cmd[:]
+            fallback_cmd.insert(-2, "--user")
+            result = run_cmd(fallback_cmd)
+
+    if result.returncode != 0:
+        error_text = (result.stderr or result.stdout or "").strip()
+        raise RuntimeError(f"Failed to install dependencies: {error_text}")
+
+    try:
+        stamp_file.write_text(req_signature, encoding="utf-8")
+    except OSError:
+        pass
 
 def main():
     print("Initializing Antigravity Locator Studio...")
@@ -21,7 +80,7 @@ def main():
         import PyQt6.QtWebEngineWidgets
     except ImportError:
         print("Missing dependencies! Installing requirements...")
-        subprocess.check_call([sys.executable, "-m", "pip", "install", "-r", str(base_dir / "requirements.txt")])
+        install_prerequisites(base_dir / "requirements.txt")
 
     # OS Detection for window specific handling (optional)
     current_os = platform.system()

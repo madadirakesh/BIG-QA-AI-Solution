@@ -776,6 +776,7 @@ class MergeWindow(QMainWindow):
     def __init__(self, parent, locators, tool, lang, bypass_style=False):
         super().__init__(parent)
         self.setWindowTitle("Smart Merge")
+        self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, True)
         self.locators = locators
         self.tool = tool
         self.lang = lang
@@ -803,9 +804,9 @@ class MergeWindow(QMainWindow):
         self.view.setPage(self.page_obj)
 
         # NOTE: QWebChannel is NOT used for button actions (it fails to connect reliably).
-        # Buttons use a Python-side polling timer instead (see _start_action_poll).
+        # Buttons use a Python-side polling timer instead.
         # We still keep the channel so JS initBridge() doesn't crash, but buttons
-        # go via _pendingAction / getPendingAction() polling.
+        # go via the pending-action queue / getPendingAction() polling.
         self._bridge = MergeBridge()
         self._bridge._window = self
         self.channel = QWebChannel()
@@ -969,6 +970,93 @@ class MergeWindow(QMainWindow):
             return
         self._poll_timer.stop()
         super().closeEvent(event)
+        if hasattr(self._parent_studio, "merge_window"):
+            self._parent_studio.merge_window = None
+
+    def _select_merge_target_file(self):
+        """Open the target-file picker using a single dialog strategy per OS."""
+        dialog_title = "Select existing Page Object file to merge with"
+        file_filter = "All Files (*)"
+        use_qt_dialog = platform.system() == "Linux"
+
+        try:
+            if use_qt_dialog:
+                dialog = QFileDialog(self, dialog_title, "", file_filter)
+                dialog.setFileMode(QFileDialog.FileMode.ExistingFile)
+                dialog.setAcceptMode(QFileDialog.AcceptMode.AcceptOpen)
+                dialog.setOption(QFileDialog.Option.DontUseNativeDialog, True)
+                if dialog.exec():
+                    files = dialog.selectedFiles()
+                    if files:
+                        return files[0]
+                return ""
+
+            fname, _ = QFileDialog.getOpenFileName(self, dialog_title, "", file_filter)
+            return fname or ""
+        except Exception as e:
+            logging.error(f"Merge file dialog failed: {e}")
+            self.view.page().runJavaScript(
+                f"showLightboxAlert({json.dumps(f'Could not open file browser: {e}')});"
+            )
+            return ""
+
+    def _build_merge_preview_payload(self, fname, locators, tool, lang):
+        """Generate Smart Merge preview data without letting style/project errors abort the flow."""
+        with open(fname, "r", encoding="utf-8") as f:
+            current_code = f.read()
+
+        try:
+            page_title = self._parent_studio.browser_ctrl.view.page().title()
+        except Exception:
+            page_title = ""
+
+        title_cl = "".join(c for c in page_title if c.isalnum()) or "MyPage"
+        new_code = None
+        merged_code = None
+
+        # Try style-aware generation first, but never let it block the file load.
+        if not self.bypass_style and self._parent_studio.project_path:
+            try:
+                existing_pos = find_existing_page_objects(self._parent_studio.project_path, lang)
+                if existing_pos:
+                    sample_codes = []
+                    for path in existing_pos[:2]:
+                        try:
+                            with open(path, "r", encoding="utf-8") as f:
+                                sample_codes.append(f.read())
+                        except Exception:
+                            pass
+                    if sample_codes and self._parent_studio.ai_api_key:
+                        combined_samples = "\n\n--- NEXT SAMPLE ---\n\n".join(sample_codes)
+                        new_code = self._parent_studio.ai_service.generate_styled_page_object(
+                            tool, lang, title_cl, locators, combined_samples
+                        )
+                        merged_code = self._parent_studio.ai_service.merge_locators_with_style(
+                            tool, lang, current_code, locators
+                        )
+            except Exception as e:
+                logging.error(f"Smart Merge style generation failed; falling back to default merge: {e}")
+
+        if not new_code:
+            try:
+                new_code = CodeGenerator.generate_class_content(tool, lang, title_cl, locators)
+            except Exception as e:
+                logging.error(f"Smart Merge code generation failed; using current file as preview fallback: {e}")
+                new_code = current_code
+
+        if not merged_code:
+            try:
+                merged_code = MergeEngine.merge_locators(current_code, locators, tool, lang)
+            except Exception as e:
+                logging.error(f"Smart Merge merge generation failed; using current file as preview fallback: {e}")
+                merged_code = current_code
+
+        return {
+            "target_file": fname,
+            "new_code": new_code,
+            "merged_code": merged_code,
+            "original_code": current_code
+        }
 
     def update_data(self, locators, tool, lang, bypass_style=False):
         self.locators = locators
@@ -1021,9 +1109,7 @@ class MergeWindow(QMainWindow):
 
                 # Use self as parent so the dialog is modal to this window, and focus
                 # naturally returns here when dismissed (especially important on macOS).
-                fname, _ = QFileDialog.getOpenFileName(
-                    self, "Select existing Page Object file to merge with", "", "All Files (*)"
-                )
+                fname = self._select_merge_target_file()
 
                 # Explicitly raise and activate the window to ensure it comes to foreground
                 # after the file dialog is dismissed.
@@ -1042,63 +1128,38 @@ class MergeWindow(QMainWindow):
                         "window._browseActive = false;"
                         " var cb = document.getElementById('merge-cancel-btn');"
                         " if (cb) cb.disabled = false;"
-                        " if (typeof _pendingAction !== 'undefined') { _pendingAction = null; _pendingPayload = null; }",
+                        " if (typeof _pendingActions !== 'undefined') { _pendingActions = []; }",
                         _restart_poll
                     )
 
                 QTimer.singleShot(500, _re_enable)
                 if fname:
-                    try:
-                        with open(fname, "r", encoding="utf-8") as f:
-                            current_code = f.read()
-                        title_cl = "".join(
-                            c for c in self._parent_studio.browser_ctrl.view.page().title()
-                            if c.isalnum()
-                        )
-                        if not title_cl:
-                            title_cl = "MyPage"
-                            
-                        new_code = None
-                        merged_code = None
-                        
-                        # Scenario A: Style inheritance
-                        if not self.bypass_style and self._parent_studio.project_path:
-                            existing_pos = find_existing_page_objects(self._parent_studio.project_path, lang)
-                            if existing_pos:
-                                sample_codes = []
-                                for path in existing_pos[:2]:
-                                    try:
-                                        with open(path, "r", encoding="utf-8") as f:
-                                            sample_codes.append(f.read())
-                                    except Exception:
-                                        pass
-                                if sample_codes and self._parent_studio.ai_api_key:
-                                    combined_samples = "\n\n--- NEXT SAMPLE ---\n\n".join(sample_codes)
-                                    new_code = self._parent_studio.ai_service.generate_styled_page_object(
-                                        tool, lang, title_cl, locators, combined_samples
-                                    )
-                                    merged_code = self._parent_studio.ai_service.merge_locators_with_style(
-                                        tool, lang, current_code, locators
-                                    )
-                        
-                        # Scenario B: Fallbacks
-                        if not new_code:
-                            new_code = CodeGenerator.generate_class_content(tool, lang, title_cl, locators)
-                        if not merged_code:
-                            merged_code = MergeEngine.merge_locators(current_code, locators, tool, lang)
+                    self.view.page().runJavaScript(
+                        "if (typeof showLoading === 'function') { showLoading('Loading target file preview...'); }"
+                    )
+                    QApplication.processEvents()
 
-                        result_json = json.dumps({
-                            "target_file":   fname,
-                            "new_code":      new_code,
-                            "merged_code":   merged_code,
-                            "original_code": current_code
-                        })
-                        self.view.page().runJavaScript(
-                            f"(function(){{ try{{ loadMergedFile({result_json}); }}"
-                            f" catch(e){{ console.error('loadMergedFile error:',e); }} }})()"
-                        )
-                    except Exception as e:
-                        self.view.page().runJavaScript(f"showLightboxAlert({json.dumps(f'Failed to read file: {e}')});")
+                    def _load_selected_file_preview():
+                        try:
+                            result_json = json.dumps(
+                                self._build_merge_preview_payload(fname, locators, tool, lang)
+                            )
+                            self.view.page().runJavaScript(
+                                f"(function(){{ try{{ loadMergedFile({result_json}); }}"
+                                f" catch(e){{ console.error('loadMergedFile error:',e); }} }})()"
+                            )
+                        except Exception as e:
+                            logging.error(f"Smart Merge browse flow failed for {fname}: {e}")
+                            self.view.page().runJavaScript(
+                                f"if (typeof hideLoading === 'function') hideLoading();"
+                                f"showLightboxAlert({json.dumps(f'Failed to load selected file: {e}')});"
+                            )
+
+                    QTimer.singleShot(0, _load_selected_file_preview)
+                else:
+                    self.view.page().runJavaScript(
+                        "if (typeof hideLoading === 'function') { hideLoading(); }"
+                    )
 
             elif action == "refresh_merge_preview":
                 locators = payload.get("locators", [])
@@ -1108,59 +1169,63 @@ class MergeWindow(QMainWindow):
                 locators = filter_locators(locators, tool)
 
                 bypass_style = payload.get("bypass_style", self.bypass_style)
+                QApplication.processEvents()
 
-                title_cl = "".join(
-                    c for c in self._parent_studio.browser_ctrl.view.page().title()
-                    if c.isalnum()
-                )
-                if not title_cl:
-                    title_cl = "MyPage"
+                def _refresh_merge_preview():
+                    title_cl = "".join(
+                        c for c in self._parent_studio.browser_ctrl.view.page().title()
+                        if c.isalnum()
+                    )
+                    if not title_cl:
+                        title_cl = "MyPage"
 
-                new_code = None
-                merged_code = None
-                current_code = ""
+                    new_code = None
+                    merged_code = None
+                    current_code = ""
 
-                if file_path:
-                    try:
-                        with open(file_path, "r", encoding="utf-8") as f:
-                            current_code = f.read()
-                    except Exception as e:
-                        print(f"Error reading file for preview: {e}")
+                    if file_path:
+                        try:
+                            with open(file_path, "r", encoding="utf-8") as f:
+                                current_code = f.read()
+                        except Exception as e:
+                            print(f"Error reading file for preview: {e}")
 
-                if not bypass_style and self._parent_studio.project_path:
-                    existing_pos = find_existing_page_objects(self._parent_studio.project_path, lang)
-                    if existing_pos:
-                        sample_codes = []
-                        for path in existing_pos[:2]:
-                            try:
-                                with open(path, "r", encoding="utf-8") as f:
-                                    sample_codes.append(f.read())
-                            except Exception:
-                                pass
-                        if sample_codes and self._parent_studio.ai_api_key:
-                            combined_samples = "\n\n--- NEXT SAMPLE ---\n\n".join(sample_codes)
-                            new_code = self._parent_studio.ai_service.generate_styled_page_object(
-                                tool, lang, title_cl, locators, combined_samples
-                            )
-                            if file_path:
-                                merged_code = self._parent_studio.ai_service.merge_locators_with_style(
-                                    tool, lang, current_code, locators
+                    if not bypass_style and self._parent_studio.project_path:
+                        existing_pos = find_existing_page_objects(self._parent_studio.project_path, lang)
+                        if existing_pos:
+                            sample_codes = []
+                            for path in existing_pos[:2]:
+                                try:
+                                    with open(path, "r", encoding="utf-8") as f:
+                                        sample_codes.append(f.read())
+                                except Exception:
+                                    pass
+                            if sample_codes and self._parent_studio.ai_api_key:
+                                combined_samples = "\n\n--- NEXT SAMPLE ---\n\n".join(sample_codes)
+                                new_code = self._parent_studio.ai_service.generate_styled_page_object(
+                                    tool, lang, title_cl, locators, combined_samples
                                 )
+                                if file_path:
+                                    merged_code = self._parent_studio.ai_service.merge_locators_with_style(
+                                        tool, lang, current_code, locators
+                                    )
 
-                if not new_code:
-                    new_code = CodeGenerator.generate_class_content(tool, lang, title_cl, locators)
-                if file_path and not merged_code:
-                    merged_code = MergeEngine.merge_locators(current_code, locators, tool, lang)
+                    if not new_code:
+                        new_code = CodeGenerator.generate_class_content(tool, lang, title_cl, locators)
+                    if file_path and not merged_code:
+                        merged_code = MergeEngine.merge_locators(current_code, locators, tool, lang)
 
-                result_json = json.dumps({
-                    "target_file":   file_path,
-                    "new_code":      new_code,
-                    "merged_code":   merged_code,
-                    "original_code": current_code
-                })
-                self.view.page().runJavaScript(
-                    f"(function(){{ try{{ loadMergedFile({result_json}); }} catch(e){{ console.error('loadMergedFile error:',e); }} }})()"
-                )
+                    result_json = json.dumps({
+                        "target_file":   file_path,
+                        "new_code":      new_code,
+                        "merged_code":   merged_code,
+                        "original_code": current_code
+                    })
+                    self.view.page().runJavaScript(
+                        f"(function(){{ try{{ loadMergedFile({result_json}); }} catch(e){{ console.error('loadMergedFile error:',e); }} }})()"
+                    )
+
+                QTimer.singleShot(0, _refresh_merge_preview)
 
             elif action == "smart_merge_confirm":
                 file_path   = payload.get("file_path")
@@ -1179,6 +1244,9 @@ class MergeWindow(QMainWindow):
         except Exception as e:
             print(f"[MergeWindow] _handle_command ERROR ({action}): {e}")
             logging.error(f"Error handling MergeWindow command {action}: {e}")
+            self.view.page().runJavaScript(
+                "if (typeof hideLoading === 'function') { hideLoading(); }"
+            )
 
 
 class SessionWatcher(QObject):
@@ -1827,7 +1895,11 @@ class LocatorStudio(QMainWindow):
                             bypass_style = True
 
                 if proceed:
-                    if not hasattr(self, 'merge_window') or self.merge_window is None:
+                    if (
+                        not hasattr(self, 'merge_window')
+                        or self.merge_window is None
+                        or not self.merge_window.isVisible()
+                    ):
                         self.merge_window = MergeWindow(self, locators, tool, lang, bypass_style=bypass_style)
                     else:
                         self.merge_window.update_data(locators, tool, lang, bypass_style=bypass_style)
