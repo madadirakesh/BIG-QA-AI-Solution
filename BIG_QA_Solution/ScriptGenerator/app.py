@@ -2,6 +2,7 @@ import os
 import sys
 import json
 import hashlib
+import importlib.util
 import subprocess
 import threading
 import webbrowser
@@ -14,6 +15,10 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent
 ROOT_DIR = BASE_DIR.parent
 PROJECT_BOOTSTRAPPER_DIR = ROOT_DIR / "ProjectBootstrapper"
+VENV_DIR = ROOT_DIR / ".venv"
+VENV_PYTHON = VENV_DIR / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
+VENV_BOOTSTRAP_FLAG = "SCRIPTGENERATOR_VENV_READY"
+DEFAULT_APP_TIMEZONE = os.environ.get("APP_TIMEZONE", "America/New_York")
 
 def get_flask_secret_key():
     """Return a stable Flask session key, creating a local dev key when needed."""
@@ -41,8 +46,76 @@ def get_env_bool(name, default=False):
         return default
     return value.strip().lower() in ("1", "true", "yes", "on")
 
+
+def get_local_timezone():
+    """Return the configured app timezone with a safe fallback."""
+    try:
+        return pytz.timezone(DEFAULT_APP_TIMEZONE)
+    except pytz.UnknownTimeZoneError:
+        print(
+            f"Warning: Unknown APP_TIMEZONE '{DEFAULT_APP_TIMEZONE}'. "
+            "Falling back to America/New_York."
+        )
+        return pytz.timezone("America/New_York")
+
 def _requirements_signature(req_file: Path):
     return hashlib.sha256(req_file.read_bytes()).hexdigest()
+
+
+def _missing_boot_dependencies():
+    """Return boot-critical modules that are currently unavailable."""
+    required_modules = {
+        "flask": "Flask",
+        "dotenv": "python-dotenv",
+        "pytz": "pytz",
+    }
+    missing = []
+    for module_name, package_name in required_modules.items():
+        if importlib.util.find_spec(module_name) is None:
+            missing.append(package_name)
+    return missing
+
+
+def _run_subprocess(cmd, env=None):
+    return subprocess.run(cmd, capture_output=True, text=True, env=env)
+
+
+def _ensure_local_venv():
+    """Create the project-local virtualenv when missing and return its python path."""
+    env = os.environ.copy()
+    env.setdefault("PIP_DISABLE_PIP_VERSION_CHECK", "1")
+
+    if not VENV_PYTHON.exists():
+        create_venv = _run_subprocess([sys.executable, "-m", "venv", str(VENV_DIR)], env=env)
+        if create_venv.returncode != 0:
+            error_text = (create_venv.stderr or create_venv.stdout or "").strip()
+            print(f"Warning: Failed to create local virtual environment: {error_text}")
+            return None
+
+    return VENV_PYTHON if VENV_PYTHON.exists() else None
+
+
+def _maybe_relaunch_in_venv():
+    """Relaunch the app from the project-local virtualenv for consistent installs."""
+    if os.environ.get(VENV_BOOTSTRAP_FLAG) == "1":
+        return
+
+    venv_python = _ensure_local_venv()
+    if not venv_python:
+        return
+
+    try:
+        same_python = Path(sys.executable).resolve() == venv_python.resolve()
+    except OSError:
+        same_python = False
+
+    if same_python:
+        os.environ[VENV_BOOTSTRAP_FLAG] = "1"
+        return
+
+    relaunch_env = os.environ.copy()
+    relaunch_env[VENV_BOOTSTRAP_FLAG] = "1"
+    os.execve(str(venv_python), [str(venv_python), str(Path(__file__).resolve()), *sys.argv[1:]], relaunch_env)
   
 def is_headless():
     """Detect if running in a headless container, virtual, or cloud environment (SaaS)."""
@@ -56,6 +129,8 @@ def is_headless():
 
 
 def install_prerequisites():
+    _maybe_relaunch_in_venv()
+
     if os.environ.get("SCRIPTGENERATOR_PREREQS_INSTALLED") == "1":
         return
 
@@ -63,38 +138,44 @@ def install_prerequisites():
     stamp_file = BASE_DIR / ".requirements_installed"
     if req_file.exists():
         req_signature = _requirements_signature(req_file)
+        missing_boot_dependencies = _missing_boot_dependencies()
         if stamp_file.exists():
             try:
-                if stamp_file.read_text(encoding="utf-8").strip() == req_signature:
+                if (
+                    stamp_file.read_text(encoding="utf-8").strip() == req_signature
+                    and not missing_boot_dependencies
+                ):
                     os.environ["SCRIPTGENERATOR_PREREQS_INSTALLED"] = "1"
                     return
             except OSError:
                 pass
 
         print(f"Checking prerequisites from {req_file}...")
+        if missing_boot_dependencies:
+            print(
+                "Missing boot dependencies detected despite matching install stamp: "
+                + ", ".join(missing_boot_dependencies)
+            )
         env = os.environ.copy()
         env.setdefault("PIP_DISABLE_PIP_VERSION_CHECK", "1")
 
-        def run_cmd(cmd):
-            return subprocess.run(cmd, capture_output=True, text=True, env=env)
-
-        pip_check = run_cmd([sys.executable, '-m', 'pip', '--version'])
+        pip_check = _run_subprocess([sys.executable, '-m', 'pip', '--version'], env=env)
         if pip_check.returncode != 0:
-            ensure_pip = run_cmd([sys.executable, '-m', 'ensurepip', '--upgrade'])
+            ensure_pip = _run_subprocess([sys.executable, '-m', 'ensurepip', '--upgrade'], env=env)
             if ensure_pip.returncode != 0:
                 ensure_error = (ensure_pip.stderr or ensure_pip.stdout or "").strip()
                 print(f"Warning: Failed to prepare pip for prerequisites installation: {ensure_error}")
                 return
 
         install_cmd = [sys.executable, '-m', 'pip', 'install', '-q', '-r', str(req_file)]
-        result = run_cmd(install_cmd)
+        result = _run_subprocess(install_cmd, env=env)
         error_text = (result.stderr or result.stdout or "").lower()
 
         # Debian/Ubuntu system Python can block installs unless pip is told to proceed explicitly.
         if result.returncode != 0 and "externally-managed-environment" in error_text:
             fallback_cmd = install_cmd[:]
             fallback_cmd.insert(-2, '--break-system-packages')
-            result = run_cmd(fallback_cmd)
+            result = _run_subprocess(fallback_cmd, env=env)
             error_text = (result.stderr or result.stdout or "").lower()
 
         # macOS/Windows global Python installs often fail without a user-site fallback.
@@ -109,7 +190,7 @@ def install_prerequisites():
             if any(marker in error_text for marker in permission_markers):
                 fallback_cmd = install_cmd[:]
                 fallback_cmd.insert(-2, '--user')
-                result = run_cmd(fallback_cmd)
+                result = _run_subprocess(fallback_cmd, env=env)
 
         if result.returncode == 0:
             os.environ["SCRIPTGENERATOR_PREREQS_INSTALLED"] = "1"
@@ -289,7 +370,7 @@ def login():
                 session['user_name'] = user['name']
                 session['user_role'] = user['role']
 
-                local_tz = pytz.timezone('US/Eastern')
+                local_tz = get_local_timezone()
                 current_time = datetime.now(local_tz)
 
                 # Update session table
@@ -310,7 +391,7 @@ def login():
 def logout():
     user_id = session.get('user_id')
     if user_id:
-        local_tz = pytz.timezone('US/Eastern')
+        local_tz = get_local_timezone()
         current_time = datetime.now(local_tz)
         update_data("UPDATE SessionDetails SET SessionActive = ?, SessionTime = ? WHERE userid = ?",
                     (0, current_time, user_id))

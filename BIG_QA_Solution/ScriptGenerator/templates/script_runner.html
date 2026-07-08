@@ -671,6 +671,12 @@
         handleHashChange();
     });
 
+    function getSelectedProjectPath() {
+        const sel = document.getElementById('runProject');
+        const opt = sel.options[sel.selectedIndex];
+        return (opt && opt.getAttribute('data-path')) ? opt.getAttribute('data-path').trim() : '';
+    }
+
     function onProjectSelect(autoSetMode = true) {
         const sel = document.getElementById('runProject');
         const opt = sel.options[sel.selectedIndex];
@@ -681,17 +687,7 @@
             if (document.getElementById('executionAction')) document.getElementById('executionAction').style.display = 'block';
 
             // Load Git config if any
-            const pPath = opt.getAttribute('data-path');
-            const pName = sel.value;
-            let fullPath = pPath;
-            if (pPath && pName) {
-                const pathNormalized = pPath.replace(/\\/g, '/');
-                const nameNormalized = pName.replace(/\\/g, '/');
-                if (!pathNormalized.endsWith('/' + nameNormalized) && !pathNormalized.endsWith(nameNormalized)) {
-                    const sep = pPath.includes('\\') ? '\\' : '/';
-                    fullPath = pPath.endsWith(sep) ? pPath + pName : pPath + sep + pName;
-                }
-            }
+            const fullPath = getSelectedProjectPath();
             loadGitConfig(fullPath);
             checkProjectDependencies(fullPath,
                 document.getElementById('runDepCheckRow'),
@@ -768,17 +764,7 @@
         const opt = sel.options[sel.selectedIndex];
         if (!opt.value) return showToast('Please select a project first', 'error');
 
-        const pPath = opt.getAttribute('data-path');
-        const pName = sel.value;
-        let projectPath = pPath;
-        if (pPath && pName) {
-            const pathNormalized = pPath.replace(/\\/g, '/');
-            const nameNormalized = pName.replace(/\\/g, '/');
-            if (!pathNormalized.endsWith('/' + nameNormalized) && !pathNormalized.endsWith(nameNormalized)) {
-                const sep = pPath.includes('\\') ? '\\' : '/';
-                projectPath = pPath.endsWith(sep) ? pPath + pName : pPath + sep + pName;
-            }
-        }
+        const projectPath = getSelectedProjectPath();
         const repoUrl = document.getElementById('gitRepoUrl').value;
         const username = document.getElementById('gitUsername').value;
         const token = document.getElementById('gitToken').value;
@@ -832,17 +818,7 @@
         input.value = 'Executing...';
         input.disabled = true;
 
-        const pPath = opt.getAttribute('data-path');
-        const pName = sel.value;
-        let projectPath = pPath;
-        if (pPath && pName) {
-            const pathNormalized = pPath.replace(/\\/g, '/');
-            const nameNormalized = pName.replace(/\\/g, '/');
-            if (!pathNormalized.endsWith('/' + nameNormalized) && !pathNormalized.endsWith(nameNormalized)) {
-                const sep = pPath.includes('\\') ? '\\' : '/';
-                projectPath = pPath.endsWith(sep) ? pPath + pName : pPath + sep + pName;
-            }
-        }
+        const projectPath = getSelectedProjectPath();
 
         try {
             const response = await fetch('/api/git/execute-command', {
@@ -907,17 +883,7 @@
         const opt = sel.options[sel.selectedIndex];
         if (!opt.value) return showToast('Please select a project first', 'error');
 
-        const pPath = opt.getAttribute('data-path');
-        const pName = sel.value;
-        let projectPath = pPath;
-        if (pPath && pName) {
-            const pathNormalized = pPath.replace(/\\/g, '/');
-            const nameNormalized = pName.replace(/\\/g, '/');
-            if (!pathNormalized.endsWith('/' + nameNormalized) && !pathNormalized.endsWith(nameNormalized)) {
-                const sep = pPath.includes('\\') ? '\\' : '/';
-                projectPath = pPath.endsWith(sep) ? pPath + pName : pPath + sep + pName;
-            }
-        }
+        const projectPath = getSelectedProjectPath();
         addLog(`[Git] Executing native action: ${action.toUpperCase()}...`, "log-cmd");
 
         try {
@@ -952,17 +918,7 @@
         const prompt = input.value.trim();
         if (!prompt) return showToast('Please enter a prompt for the AI', 'warning');
 
-        const pPath = opt.getAttribute('data-path');
-        const pName = sel.value;
-        let projectPath = pPath;
-        if (pPath && pName) {
-            const pathNormalized = pPath.replace(/\\/g, '/');
-            const nameNormalized = pName.replace(/\\/g, '/');
-            if (!pathNormalized.endsWith('/' + nameNormalized) && !pathNormalized.endsWith(nameNormalized)) {
-                const sep = pPath.includes('\\') ? '\\' : '/';
-                projectPath = pPath.endsWith(sep) ? pPath + pName : pPath + sep + pName;
-            }
-        }
+        const projectPath = getSelectedProjectPath();
         input.value = '';
         input.disabled = true;
 
