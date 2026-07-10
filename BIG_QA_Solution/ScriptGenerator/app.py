@@ -1729,7 +1729,8 @@ def git_mcp_action():
         if not prompt or not project_path:
             return jsonify({"status": "error", "message": "Prompt and project_path are required"}), 400
             
-        # Dynamically sync git config prior to MCP execution to make sure git credentials & user identity are utilized
+        # Sync git config before the MCP assistant runs so local repo credentials
+        # and git identity are available to MCP-backed Git operations.
         existing = fetch_data("SELECT id FROM ProjectDetails WHERE project_path = ?", (project_path,))
         if existing:
             p_id = existing[0]['id']

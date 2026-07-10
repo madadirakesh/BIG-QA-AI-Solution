@@ -39,6 +39,7 @@
                     margin-bottom: 2px;
                     font-family: 'JetBrains Mono', 'Fira Code', 'Courier New', monospace;
                     font-size: 0.9rem;
+                    white-space: pre-wrap;
                 }
 
                 .log-system {
@@ -932,9 +933,12 @@
             });
             const json = await res.json();
             if (json.success) {
-                addLog(`[MCP Success] ${json.message}`, "log-success");
+                const isNotice = json.mode === 'notice';
+                const headerLabel = isNotice ? '[MCP Notice]' : '[MCP Success]';
+                const headerClass = isNotice ? 'log-system' : 'log-success';
+                addLog(`${headerLabel} ${json.message}`, headerClass);
                 if (json.output) {
-                    addLog(json.output, "log-default");
+                    addLog(json.output, isNotice ? 'log-system' : 'log-default');
                 }
             } else {
                 addLog(`[MCP Error] ${json.message}`, "log-error");
@@ -953,11 +957,13 @@
         const line = document.createElement('div');
         line.className = 'log-line';
 
-        let colorClass = 'log-default';
-        if (msg.includes('[Step')) colorClass = 'log-cmd';
-        else if (msg.includes('[Error]') || msg.includes('Failed') || msg.includes('Critical')) colorClass = 'log-error';
-        else if (msg.includes('[Success]') || msg.includes('Completed Successfully')) colorClass = 'log-success';
-        else if (msg.includes('[System]') || msg.includes('[Sequential Mode]')) colorClass = 'log-system';
+        let colorClass = type && type !== 'default' ? type : 'log-default';
+        if (colorClass === 'log-default') {
+            if (msg.includes('[Step')) colorClass = 'log-cmd';
+            else if (msg.includes('[Error]') || msg.includes('[MCP Error]') || msg.includes('Failed') || msg.includes('Critical')) colorClass = 'log-error';
+            else if (msg.includes('[Success]') || msg.includes('[MCP Success]') || msg.includes('Completed Successfully')) colorClass = 'log-success';
+            else if (msg.includes('[System]') || msg.includes('[Sequential Mode]')) colorClass = 'log-system';
+        }
 
         line.classList.add(colorClass);
         line.textContent = msg;
