@@ -178,6 +178,7 @@ class GenerateTestCasesRequest(BaseModel):
     requirements: str
     template:     str
     ai_provider:  str = ""
+    steps_format: str = "single_cell"
 
 
 class GeneratedFilesResponse(BaseModel):
@@ -1506,8 +1507,9 @@ async def generate_formatted_test_cases(req: GenerateTestCasesRequest):
     import prompts.test_case_generation_prompts as tcg_prompts
 
     provider = req.ai_provider.strip().lower() if req.ai_provider.strip() else DEFAULT_AI_PROVIDER
+    steps_format = req.steps_format.strip().lower() if req.steps_format else "single_cell"
     
-    prompt = tcg_prompts.get_test_case_generation_prompt(req.requirements, req.template)
+    prompt = tcg_prompts.get_test_case_generation_prompt(req.requirements, req.template, steps_format=steps_format)
     
     try:
         content = await call_ai(prompt, provider, expect_json=True)
