@@ -19,6 +19,11 @@ VENV_DIR = ROOT_DIR / ".venv"
 VENV_PYTHON = VENV_DIR / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
 VENV_BOOTSTRAP_FLAG = "SCRIPTGENERATOR_VENV_READY"
 DEFAULT_APP_TIMEZONE = os.environ.get("APP_TIMEZONE", "America/New_York")
+DEFAULT_AI_MODELS = {
+    "gemini": "gemini-2.5-flash",
+    "anthropic": "claude-sonnet-4-6",
+    "openai": "gpt-4.1-mini",
+}
 
 def get_flask_secret_key():
     """Return a stable Flask session key, creating a local dev key when needed."""
@@ -57,6 +62,110 @@ def get_local_timezone():
             "Falling back to America/New_York."
         )
         return pytz.timezone("America/New_York")
+
+
+def get_default_ai_model(ai_tool_value=None, ai_provider_value=None):
+    """Return a safe default model for the selected AI tool/provider."""
+    normalized = str(ai_provider_value or ai_tool_value or "").strip().lower()
+    if normalized in ("google", "gemini"):
+        return DEFAULT_AI_MODELS["gemini"]
+    if normalized in ("claude", "anthropic"):
+        return DEFAULT_AI_MODELS["anthropic"]
+    if normalized in ("copilot", "openai"):
+        return DEFAULT_AI_MODELS["openai"]
+    return DEFAULT_AI_MODELS["openai"]
+
+
+def read_ai_config(env_path):
+    """Read AI configuration from .env and expose both raw and effective values."""
+    config = {
+        'AI_TOOL': '',
+        'AI_MODEL': '',
+        'API_KEY': '',
+        'AI_PROVIDER': '',
+    }
+    if os.path.exists(env_path):
+        with open(env_path, 'r') as f:
+            for line in f:
+                if line.startswith('AI_TOOL'):
+                    config['AI_TOOL'] = line.split('=', 1)[1].strip().strip('"').strip("'")
+                elif line.startswith('AI_MODEL'):
+                    config['AI_MODEL'] = line.split('=', 1)[1].strip().strip('"').strip("'")
+                elif line.startswith('API_KEY'):
+                    config['API_KEY'] = line.split('=', 1)[1].strip().strip('"').strip("'")
+                elif line.startswith('AI_PROVIDER'):
+                    config['AI_PROVIDER'] = line.split('=', 1)[1].strip().strip('"').strip("'")
+
+    raw_model = config['AI_MODEL']
+    effective_model = raw_model or get_default_ai_model(config['AI_TOOL'], config['AI_PROVIDER'])
+    missing_fields = []
+    if not config['AI_TOOL']:
+        missing_fields.append('AI tool')
+    if not raw_model:
+        missing_fields.append('AI model')
+    if not config['API_KEY']:
+        missing_fields.append('API key')
+
+    config['AI_MODEL'] = effective_model
+    return {
+        'config': config,
+        'raw_model': raw_model,
+        'missing_fields': missing_fields,
+        'is_complete': len(missing_fields) == 0,
+    }
+
+
+def build_ai_configuration_message(missing_fields):
+    missing = set(missing_fields or [])
+    if 'AI key' in missing or 'API key' in missing:
+        if 'AI model' in missing:
+            return "AI configuration is incomplete. Please open Configure AI and add both the AI model and API key before generating the script."
+        return "AI API key is missing. Please open Configure AI and add your API key before generating the script."
+    if 'AI model' in missing:
+        return "AI model is missing. Please open Configure AI and select a model before generating the script."
+    if 'AI tool' in missing:
+        return "AI tool is missing. Please open Configure AI and choose your AI provider before generating the script."
+    return "AI configuration is incomplete. Please open Configure AI and complete the setup before generating the script."
+
+
+def normalize_ai_error_message(raw_error):
+    """Translate low-level provider/SDK errors into user-friendly guidance."""
+    text = str(raw_error or "").strip()
+    lowered = text.lower()
+
+    if (
+        "model: string should have at least 1 character" in lowered
+        or ("invalid_request_error" in lowered and "'model'" in lowered)
+        or ('invalid_request_error' in lowered and '"model"' in lowered)
+        or "model is required" in lowered
+    ):
+        return {
+            "message": "AI model is missing. Please open Configure AI and select a model before generating the script.",
+            "action": "configure_ai",
+            "reason": "missing_model",
+        }
+
+    if (
+        "invalid api key" in lowered
+        or "incorrect api key" in lowered
+        or "authentication failed" in lowered
+        or "unauthorized" in lowered
+        or "401" in lowered
+        or "403" in lowered
+        or "access token" in lowered
+        or "api key not configured" in lowered
+    ):
+        return {
+            "message": "AI API key is invalid or missing. Please open Configure AI and update the API key before generating the script.",
+            "action": "configure_ai",
+            "reason": "invalid_api_key",
+        }
+
+    return {
+        "message": text or "Script generation failed. Please try again.",
+        "action": None,
+        "reason": None,
+    }
 
 def _requirements_signature(req_file: Path):
     return hashlib.sha256(req_file.read_bytes()).hexdigest()
@@ -851,7 +960,52 @@ def version_profiles():
     lang = request.args.get('language', '')
     fw = request.args.get('framework', '')
     profiles = profiles_for(tool, lang, fw)
-    return jsonify({"profiles": [p["label"] for p in profiles]})
+    labels = [p["label"] for p in profiles]
+    recommended = None
+    reason = ""
+
+    if profiles:
+        ranked = []
+        # Prefer the most modern profile the local machine can satisfy. If none are fully
+        # satisfied, fall back to the profile with the fewest blockers so the UI can still guide
+        # the user toward the closest match.
+        for idx, profile in enumerate(profiles):
+            profile_versions = {k: v for k, v in profile.items() if k != "label"}
+            deps = EnvironmentSetup.required_dependencies(tool, lang, fw, profile_versions)
+            missing = sum(1 for d in deps if d['status'] == 'missing')
+            mismatches = sum(1 for d in deps if d['status'] == 'mismatch')
+            ok = sum(1 for d in deps if d['status'] == 'ok')
+            ranked.append({
+                "label": profile["label"],
+                "idx": idx,
+                "deps": deps,
+                "missing": missing,
+                "mismatches": mismatches,
+                "ok": ok,
+            })
+
+        fully_ok = [r for r in ranked if r["missing"] == 0 and r["mismatches"] == 0]
+        if fully_ok:
+            # Higher idx means later/current profile because the catalog is ordered baseline->current.
+            best = max(fully_ok, key=lambda r: r["idx"])
+            recommended = best["label"]
+            reason = "Recommended for this machine: all prerequisites meet this profile."
+        else:
+            best = sorted(
+                ranked,
+                key=lambda r: (r["missing"], r["mismatches"], -r["ok"], -r["idx"])
+            )[0]
+            recommended = best["label"]
+            if best["missing"] > 0:
+                reason = "Closest match for this machine right now; some prerequisites still need to be installed."
+            else:
+                reason = "Closest match for this machine right now; some installed tool versions are below this profile."
+
+    return jsonify({
+        "profiles": labels,
+        "recommended": recommended,
+        "recommendationReason": reason,
+    })
 
 @app.route('/api/preflight-dependencies', methods=['POST'])
 @login_required()
@@ -1147,7 +1301,16 @@ def launch_element_locator():
         print(f"[App] Launching command: {cmd} (logging to {log_path})")
         return jsonify({'status': 'success', 'message': 'Element Locator Studio launched.'})
     except Exception as e:
-        return jsonify({'status': 'error', 'message': str(e)}), 500
+        normalized_error = normalize_ai_error_message(e)
+        payload = {
+            'status': 'error',
+            'message': normalized_error['message'],
+        }
+        if normalized_error['action']:
+            payload['action'] = normalized_error['action']
+        if normalized_error['reason']:
+            payload['reason'] = normalized_error['reason']
+        return jsonify(payload), 500
 
 @app.route('/api/locator-heartbeat', methods=['GET'])
 def locator_heartbeat():
@@ -1698,6 +1861,8 @@ def git_native_action():
         action = data.get('action')
         project_path = data.get('project_path')
         commit_message = data.get('commit_message')
+        merge_source_branch = data.get('merge_source_branch')
+        merge_target_branch = data.get('merge_target_branch')
         
         if not action or not project_path:
             return jsonify({"status": "error", "message": "Action and project_path are required"}), 400
@@ -1710,7 +1875,14 @@ def git_native_action():
         git_config = fetch_data("SELECT repo_url, username, access_token FROM ProjectGitConfig WHERE project_details_id = ?", (p_id,))
         auth_config = git_config[0] if git_config else {}
         
-        result = GitService.execute_native_action(action, project_path, auth_config, commit_message=commit_message)
+        result = GitService.execute_native_action(
+            action,
+            project_path,
+            auth_config,
+            commit_message=commit_message,
+            merge_source_branch=merge_source_branch,
+            merge_target_branch=merge_target_branch,
+        )
         return jsonify(result)
         
     except Exception as e:
@@ -1944,26 +2116,23 @@ def configure_ai_endpoint():
         return tool or 'openai'
     
     if request.method == 'GET':
-        config = {'AI_TOOL': '', 'AI_MODEL': '', 'API_KEY': '', 'AI_PROVIDER': ''}
-        if os.path.exists(env_path):
-            with open(env_path, 'r') as f:
-                for line in f:
-                    if line.startswith('AI_TOOL'):
-                        config['AI_TOOL'] = line.split('=', 1)[1].strip().strip('"').strip("'")
-                    elif line.startswith('AI_MODEL'):
-                        config['AI_MODEL'] = line.split('=', 1)[1].strip().strip('"').strip("'")
-                    elif line.startswith('API_KEY'):
-                        config['API_KEY'] = line.split('=', 1)[1].strip().strip('"').strip("'")
-                    elif line.startswith('AI_PROVIDER'):
-                        config['AI_PROVIDER'] = line.split('=', 1)[1].strip().strip('"').strip("'")
-        return jsonify({"status": "success", "config": config})
+        ai_state = read_ai_config(env_path)
+        return jsonify({
+            "status": "success",
+            "config": ai_state['config'],
+            "missing_fields": ai_state['missing_fields'],
+            "is_complete": ai_state['is_complete'],
+            "model_was_missing": not bool(ai_state['raw_model']),
+        })
         
     # POST
-    data = request.json
-    ai_tool = data.get('ai_tool')
-    ai_model = data.get('ai_model')
-    api_key = data.get('api_key')
+    data = request.json or {}
+    ai_tool = str(data.get('ai_tool') or '').strip().upper()
+    ai_model = str(data.get('ai_model') or '').strip()
+    api_key = str(data.get('api_key') or '').strip()
     ai_provider = normalize_ai_provider(ai_tool)
+    if not ai_model:
+        ai_model = get_default_ai_model(ai_tool, ai_provider)
     
     env_lines = []
     if os.path.exists(env_path):
@@ -2295,6 +2464,16 @@ def _count_scenarios(text: str, file_type: str) -> int:
 def generate_bdd_code():
     try:
         existing_steps_count = 0
+        ai_state = read_ai_config(os.path.join(BASE_DIR, '.env'))
+        if not ai_state['is_complete']:
+            return jsonify({
+                'status': 'error',
+                'message': build_ai_configuration_message(ai_state['missing_fields']),
+                'missing_fields': ai_state['missing_fields'],
+                'action': 'configure_ai',
+                'reason': 'missing_config',
+            }), 400
+
         project_path = request.form.get('project_path')
         tool = request.form.get('tool')
         language = request.form.get('language')
@@ -2513,7 +2692,16 @@ def generate_bdd_code():
 
         return jsonify({'status': 'success', 'files': result_files, 'stats': stats})
     except Exception as e:
-        return jsonify({'status': 'error', 'message': str(e)}), 500
+        normalized_error = normalize_ai_error_message(e)
+        payload = {
+            'status': 'error',
+            'message': normalized_error['message'],
+        }
+        if normalized_error['action']:
+            payload['action'] = normalized_error['action']
+        if normalized_error['reason']:
+            payload['reason'] = normalized_error['reason']
+        return jsonify(payload), 500
 
 @app.route('/api/save-generated-files', methods=['POST'])
 @login_required()
@@ -2714,8 +2902,15 @@ if __name__ == '__main__':
         seed()
         launch_backend()
 
-    # When enabled, watch templates/static too so HTML/CSS/JS edits also restart the server.
-    extra_files = [str(p) for sub in ('templates', 'static')
+    # When enabled, also watch the scaffold template sources + version catalog so local SQLite
+    # gets reseeded on restart after template/profile edits.
+    watch_roots = (
+        'templates',
+        'static',
+        'scripts/templates',
+        'ProjectBootstrapper',
+    )
+    extra_files = [str(p) for sub in watch_roots
                    for p in (BASE_DIR / sub).rglob('*') if p.is_file()]
     use_reloader = get_env_bool("USE_RELOADER", default=False)
     app.run(debug=True, use_reloader=use_reloader, port=port, threaded=True, extra_files=extra_files)

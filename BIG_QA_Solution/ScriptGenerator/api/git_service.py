@@ -49,6 +49,11 @@ class GitService:
         return "main"
 
     @staticmethod
+    def _has_uncommitted_changes(project_path):
+        res = GitService._run_cmd("git status --porcelain", project_path)
+        return bool(res["success"] and res["stdout"].strip())
+
+    @staticmethod
     def sync_git_config(project_path, auth_config):
         """
         Synchronizes the local repository's .git/config with the database Git credentials.
@@ -196,7 +201,7 @@ class GitService:
         return {"success": True, "message": f"Successfully configured and downloaded project branch '{default_branch}'"}
 
     @staticmethod
-    def execute_native_action(action, project_path, auth_config, commit_message=None):
+    def execute_native_action(action, project_path, auth_config, commit_message=None, merge_source_branch=None, merge_target_branch=None):
         """
         Executes a standard deterministic Git command.
         auth_config is a dict containing repo_url, username, access_token
@@ -318,6 +323,58 @@ class GitService:
                 GitService._run_cmd(f"git branch --set-upstream-to=origin/{pull_branch} {local_branch}", project_path)
 
             return {"success": True, "message": f"Pulled branch '{pull_branch}' from remote successfully", "output": res["stdout"] or "Already up to date."}
+
+        elif action == "merge":
+            source_branch = (merge_source_branch or "").strip()
+            target_branch = (merge_target_branch or "").strip() or GitService._get_current_branch(project_path)
+
+            if not source_branch:
+                return {"success": False, "message": "Merge failed: source branch is required."}
+
+            if source_branch == target_branch:
+                return {"success": False, "message": "Merge failed: source and target branches must be different."}
+
+            if GitService._has_uncommitted_changes(project_path):
+                return {
+                    "success": False,
+                    "message": "Merge blocked: working tree has uncommitted changes. Commit or stash them before merging."
+                }
+
+            fetch_res = GitService._run_cmd("git fetch origin --prune", project_path)
+            if not fetch_res["success"] and auth_config and auth_config.get('repo_url'):
+                return {"success": False, "message": f"Merge failed during remote refresh: {fetch_res['stderr'] or fetch_res['stdout']}"}
+
+            current_branch = GitService._get_current_branch(project_path)
+            if current_branch != target_branch:
+                checkout_target = GitService._run_cmd(f"git checkout {target_branch}", project_path)
+                if not checkout_target["success"]:
+                    return {"success": False, "message": f"Merge failed: could not checkout target branch '{target_branch}': {checkout_target['stderr'] or checkout_target['stdout']}"}
+
+            branch_check = GitService._run_cmd(f"git rev-parse --verify {source_branch}", project_path)
+            merge_ref = source_branch
+            if not branch_check["success"]:
+                remote_branch_check = GitService._run_cmd(f"git rev-parse --verify origin/{source_branch}", project_path)
+                if remote_branch_check["success"]:
+                    merge_ref = f"origin/{source_branch}"
+                else:
+                    return {"success": False, "message": f"Merge failed: source branch '{source_branch}' was not found locally or on origin."}
+
+            merge_res = GitService._run_cmd(f"git merge --no-ff --no-edit {merge_ref}", project_path)
+            if not merge_res["success"]:
+                abort_res = GitService._run_cmd("git merge --abort", project_path)
+                abort_hint = ""
+                if not abort_res["success"]:
+                    abort_hint = " Automatic merge abort may require manual cleanup."
+                return {
+                    "success": False,
+                    "message": f"Merge failed: {merge_res['stderr'] or merge_res['stdout']}.{abort_hint}"
+                }
+
+            return {
+                "success": True,
+                "message": f"Merged '{source_branch}' into '{target_branch}' successfully",
+                "output": merge_res["stdout"] or merge_res["stderr"] or "Merge completed successfully."
+            }
             
         else:
             return {"success": False, "message": f"Unknown action: {action}"}

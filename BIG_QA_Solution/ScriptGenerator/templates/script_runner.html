@@ -203,6 +203,9 @@
                         <button type="button" class="btn git-action-btn git-btn-commit" onclick="runGitAction('commit')">
                             <i class="fas fa-check"></i> Commit All
                         </button>
+                        <button type="button" class="btn git-action-btn git-btn-merge" onclick="runGitAction('merge')">
+                            <i class="fas fa-code-branch"></i> Merge
+                        </button>
                         <button type="button" class="btn git-action-btn git-btn-push" onclick="runGitAction('push')">
                             <i class="fas fa-arrow-up"></i> Push
                         </button>
@@ -232,14 +235,13 @@
                 <div class="git-widget-body">
                     <div style="display: flex; gap: 10px;">
                         <input type="text" id="gitMcpInput" class="form-control"
-                            placeholder="e.g., 'Analyze my uncommitted changes and write a semantic commit message...'"
+                            placeholder="e.g., 'Check my local changes, selected project path, and live remote status...'"
                             style="flex: 1;">
                         <button type="button" class="btn btn-primary" onclick="runMcpGitAction()"
                             style="background: #4f46e5; border: none; width: 120px;"><i class="fas fa-magic"></i> Ask
                             AI</button>
                     </div>
-                    <p style="font-size: 0.8rem; color: #94a3b8; margin-top: 10px; margin-bottom: 0;">The AI will use MCP tools to manage your
-                        repository based on your prompt.</p>
+                    <p style="font-size: 0.8rem; color: #94a3b8; margin-top: 10px; margin-bottom: 0;">The AI will use MCP tools to inspect the selected local project path, compare it with the tracked remote, and help with repository actions based on your prompt.</p>
                 </div>
             </div>
         </div>
@@ -306,6 +308,28 @@
         </div>
     </div>
 </div>
+<div id="mergeBranchModal" class="commit-modal-backdrop">
+    <div class="commit-modal-dialog glassmorphism">
+        <h4><i class="fas fa-code-branch" style="color: #f59e0b;"></i> Merge Branches</h4>
+        <p style="color: var(--text-secondary); font-size: 0.9rem; margin-bottom: 15px; line-height: 1.4;">
+            Merge one branch into another for the selected project. Commit or stash local changes first.
+        </p>
+        <div class="form-group" style="margin-bottom: 14px !important;">
+            <input type="text" id="mergeSourceBranchInput" class="form-control"
+                   placeholder="Source branch, e.g. feature/login-fix"
+                   onkeydown="handleMergeModalKey(event)">
+        </div>
+        <div class="form-group" style="margin-bottom: 25px !important;">
+            <input type="text" id="mergeTargetBranchInput" class="form-control"
+                   placeholder="Target branch, blank = current branch"
+                   onkeydown="handleMergeModalKey(event)">
+        </div>
+        <div style="display: flex; justify-content: flex-end; gap: 10px;">
+            <button type="button" class="btn" style="background: rgba(255,255,255,0.08); color: var(--text-primary);" onclick="closeMergeModal()">Cancel</button>
+            <button type="button" class="btn" onclick="submitMergeWithBranches()" style="background: linear-gradient(135deg, #f59e0b, #d97706); color: white; box-shadow: 0 4px 12px rgba(245, 158, 11, 0.25);">Merge Branches</button>
+        </div>
+    </div>
+</div>
 </div>
 </div>
 {% endblock %}
@@ -366,6 +390,19 @@
         transform: translateY(0);
     }
 
+    .git-btn-merge {
+        background: linear-gradient(135deg, #f59e0b, #d97706) !important;
+        box-shadow: 0 4px 12px rgba(245, 158, 11, 0.25) !important;
+    }
+    .git-btn-merge:hover {
+        background: linear-gradient(135deg, #fbbf24, #f59e0b) !important;
+        box-shadow: 0 6px 18px rgba(245, 158, 11, 0.45) !important;
+        transform: translateY(-2px);
+    }
+    .git-btn-merge:active {
+        transform: translateY(0);
+    }
+
     .git-btn-push {
         background: linear-gradient(135deg, #f97316, #ea580c) !important;
         box-shadow: 0 4px 12px rgba(249, 115, 22, 0.25) !important;
@@ -388,6 +425,9 @@
     }
     html[data-theme="light"] .git-btn-commit {
         box-shadow: 0 4px 12px rgba(16, 185, 129, 0.15) !important;
+    }
+    html[data-theme="light"] .git-btn-merge {
+        box-shadow: 0 4px 12px rgba(245, 158, 11, 0.15) !important;
     }
     html[data-theme="light"] .git-btn-push {
         box-shadow: 0 4px 12px rgba(249, 115, 22, 0.15) !important;
@@ -856,11 +896,34 @@
         modal.classList.remove('active');
     }
 
+    function openMergeModal() {
+        const modal = document.getElementById('mergeBranchModal');
+        modal.classList.add('active');
+        const sourceInput = document.getElementById('mergeSourceBranchInput');
+        const targetInput = document.getElementById('mergeTargetBranchInput');
+        sourceInput.value = '';
+        targetInput.value = '';
+        sourceInput.focus();
+    }
+
+    function closeMergeModal() {
+        const modal = document.getElementById('mergeBranchModal');
+        modal.classList.remove('active');
+    }
+
     function handleCommitModalKey(e) {
         if (e.key === 'Enter') {
             submitCommitWithMsg();
         } else if (e.key === 'Escape') {
             closeCommitModal();
+        }
+    }
+
+    function handleMergeModalKey(e) {
+        if (e.key === 'Enter') {
+            submitMergeWithBranches();
+        } else if (e.key === 'Escape') {
+            closeMergeModal();
         }
     }
 
@@ -871,15 +934,36 @@
         await runGitActionActual('commit', msg);
     }
 
+    async function submitMergeWithBranches() {
+        const sourceInput = document.getElementById('mergeSourceBranchInput');
+        const targetInput = document.getElementById('mergeTargetBranchInput');
+        const sourceBranch = sourceInput.value.trim();
+        const targetBranch = targetInput.value.trim();
+
+        if (!sourceBranch) {
+            showToast('Please enter a source branch to merge', 'warning');
+            sourceInput.focus();
+            return;
+        }
+
+        closeMergeModal();
+        await runGitActionActual('merge', null, {
+            merge_source_branch: sourceBranch,
+            merge_target_branch: targetBranch
+        });
+    }
+
     async function runGitAction(action) {
         if (action === 'commit') {
             openCommitModal();
+        } else if (action === 'merge') {
+            openMergeModal();
         } else {
             await runGitActionActual(action);
         }
     }
 
-    async function runGitActionActual(action, commitMessage = null) {
+    async function runGitActionActual(action, commitMessage = null, extraPayload = {}) {
         const sel = document.getElementById('runProject');
         const opt = sel.options[sel.selectedIndex];
         if (!opt.value) return showToast('Please select a project first', 'error');
@@ -888,7 +972,7 @@
         addLog(`[Git] Executing native action: ${action.toUpperCase()}...`, "log-cmd");
 
         try {
-            const payload = { action: action, project_path: projectPath };
+            const payload = { action: action, project_path: projectPath, ...extraPayload };
             if (action === 'commit' && commitMessage) {
                 payload.commit_message = commitMessage;
             }

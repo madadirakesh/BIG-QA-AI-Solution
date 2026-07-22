@@ -21,7 +21,7 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
     <PackageReference Include="Reqnroll.NUnit" Version="{{REQNROLL_VERSION}}" />
-    <PackageReference Include="NUnit" Version="4.2.2" />
+    <PackageReference Include="NUnit" Version="4.6.1" />
     <PackageReference Include="NUnit3TestAdapter" Version="4.6.0" />
     <PackageReference Include="Selenium.WebDriver" Version="{{SELENIUM_VERSION}}" />
     <PackageReference Include="Selenium.Support" Version="{{SELENIUM_VERSION}}" />

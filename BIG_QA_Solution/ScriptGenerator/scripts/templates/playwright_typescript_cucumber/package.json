@@ -7,6 +7,9 @@
     "test": "node test-runner.js",
     "report": "npx ts-node test/utils/reports.ts"
   },
+  "engines": {
+    "node": ">= {{NODE_VERSION}}"
+  },
   "devDependencies": {
     "@cucumber/cucumber": "^{{CUCUMBER_VERSION}}",
     "@playwright/test": "^{{PLAYWRIGHT_VERSION}}",
@@ -16,7 +19,6 @@
     "dotenv": "^16.3.1",
     "fs-extra": "^11.3.4",
     "install": "^0.13.0",
-    "npm": "^11.12.1",
     "ts-node": "^10.9.1",
     "tsx": "^4.21.0",
     "typescript": "^{{TYPESCRIPT_VERSION}}"

@@ -469,7 +469,7 @@
                             <select id="bsVersionProfile" class="form-control" onchange="clearFieldError('bsVersionProfile'); refreshDependencyCheck()">
                                 <!-- Dynamic -->
                             </select>
-                            <small class="help-text">Validated dependency versions for this stack.</small>
+                            <small class="help-text" id="bsVersionProfileHint">Validated dependency versions for this stack.</small>
                             <small class="error-text" id="bsVersionProfileError"></small>
                         </div>
                     </div>
@@ -1686,6 +1686,7 @@ function updateBsOptions() {
 function updateVersionProfiles() {
     const row = document.getElementById('bsVersionProfileRow');
     const select = document.getElementById('bsVersionProfile');
+    const hint = document.getElementById('bsVersionProfileHint');
     const params = new URLSearchParams({
         tool: document.getElementById('bsTool').value,
         language: document.getElementById('bsLanguage').value,
@@ -1695,21 +1696,35 @@ function updateVersionProfiles() {
         .then(r => r.json())
         .then(data => {
             const profiles = data.profiles || [];
+            const recommended = data.recommended || '';
+            const recommendationReason = data.recommendationReason || '';
             select.innerHTML = "";
             clearFieldError('bsVersionProfile');
-            // Placeholder so nothing is pre-selected — the user must choose explicitly.
+
+            if (hint) {
+                hint.textContent = recommendationReason || 'Validated dependency versions for this stack.';
+            }
+
+            // Placeholder so nothing is pre-selected when we cannot recommend a profile.
             const placeholder = new Option("-- Select a version --", "");
             placeholder.disabled = true;
-            placeholder.selected = true;
+            placeholder.selected = !recommended;
             select.add(placeholder);
             profiles.forEach(p => select.add(new Option(p, p)));
+            if (recommended && profiles.includes(recommended)) {
+                select.value = recommended;
+            }
             row.style.display = profiles.length ? '' : 'none';
-            // Stack just changed -> refresh the dependency pre-check. No profile is selected yet
-            // (the placeholder is), so version-pinned tools (e.g. JDK) show no required version
-            // until the user picks one; the per-profile refresh is wired on the select's onchange.
+            // Stack just changed -> refresh the dependency pre-check. When the backend can
+            // recommend a profile, it is auto-selected here; otherwise the placeholder stays.
             refreshDependencyCheck();
         })
-        .catch(() => { row.style.display = 'none'; });
+        .catch(() => {
+            if (hint) {
+                hint.textContent = 'Validated dependency versions for this stack.';
+            }
+            row.style.display = 'none';
+        });
 }
 
 // New-project wrapper over the shared runDependencyCheck; keeps bsLastDeps for the blocker gate.
@@ -2069,7 +2084,37 @@ function validateScenarioFile(input) {
     }
 }
 
-function generateCode() {
+async function ensureAiConfigurationReady() {
+    try {
+        const response = await fetch('/api/configure-ai');
+        const data = await response.json();
+        if (data.status !== 'success') {
+            return { ok: true };
+        }
+        if (data.is_complete) {
+            return { ok: true };
+        }
+        return {
+            ok: false,
+            message: data.missing_fields && data.missing_fields.includes('API key')
+                ? (data.missing_fields.includes('AI model')
+                    ? 'AI configuration is incomplete. Please configure both the AI model and API key before generating the script.'
+                    : 'AI API key is missing. Please configure it before generating the script.')
+                : 'AI model is missing. Please configure it before generating the script.',
+        };
+    } catch (error) {
+        return { ok: true };
+    }
+}
+
+function handleGenerationConfigurationError(message, shouldOpenModal = true) {
+    showToast(message, 'warning');
+    if (shouldOpenModal && typeof openConfigureAIModal === 'function') {
+        openConfigureAIModal();
+    }
+}
+
+async function generateCode() {
     const targetPath = document.getElementById('projectPath').value;
     const tool = document.getElementById('genTool').value;
     const language = document.getElementById('genLanguage').value;
@@ -2085,6 +2130,12 @@ function generateCode() {
 
     if(!scenarioFile) {
         showToast("Please upload your Scenario/Test Case file.", 'warning');
+        return;
+    }
+
+    const aiConfig = await ensureAiConfigurationReady();
+    if (!aiConfig.ok) {
+        handleGenerationConfigurationError(aiConfig.message);
         return;
     }
 
@@ -2191,7 +2242,11 @@ function generateCode() {
 
             renderCodeResults(res.files);
         } else {
-            showToast("Generation failed: " + res.message, 'error');
+            if (res.action === 'configure_ai') {
+                handleGenerationConfigurationError(res.message, res.reason === 'missing_config' || res.reason === 'missing_model');
+            } else {
+                showToast("Generation failed: " + res.message, 'error');
+            }
             nextStep(2);
         }
     })

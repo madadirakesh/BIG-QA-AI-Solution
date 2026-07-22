@@ -1419,6 +1419,10 @@ select option {
 .password-wrapper input {
     padding-right: 46px !important;
 }
+.password-wrapper input[type="password"]::-ms-reveal,
+.password-wrapper input[type="password"]::-ms-clear {
+    display: none;
+}
 .pwd-toggle {
     position: absolute;
     right: 12px;

@@ -5,7 +5,7 @@ Drivers are resolved automatically by WebDriverManager — nothing to download b
 
 ## Prerequisites
 
-- **Python 3.12+** (`python --version`)
+- **Python 3.10+** (`python --version`)
 - A local browser (Chrome by default)
 - Internet on first `pip install` (and first run, for the WebDriver binaries). Behind a corporate
   proxy, see `../../SETUP-PROXY.md`.
