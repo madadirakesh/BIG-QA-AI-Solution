@@ -34,6 +34,7 @@
         <h3>Add New User</h3>
         <hr>
         <form method="POST" action="{{ url_for('add_user') }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
             <input type="hidden" name="action" value="add">
             
             <div class="form-group row">

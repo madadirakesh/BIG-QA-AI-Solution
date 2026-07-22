@@ -104,6 +104,18 @@ def _maybe_relaunch_in_venv():
     if not venv_python:
         return
 
+    # Check if the virtual environment Python is healthy (e.g. Windows Python 3.14 alpha
+    # has known DLL/ctypes loading bugs inside virtualenvs).
+    try:
+        test_run = _run_subprocess([str(venv_python), "-c", "import ctypes"])
+        if test_run.returncode != 0:
+            print("Warning: Local virtual environment Python is unhealthy (DLL/ctypes load issue).")
+            print("Falling back to system Python interpreter...")
+            os.environ[VENV_BOOTSTRAP_FLAG] = "1"
+            return
+    except Exception:
+        pass
+
     try:
         same_python = Path(sys.executable).resolve() == venv_python.resolve()
     except OSError:
@@ -207,6 +219,7 @@ def install_prerequisites():
 install_prerequisites()
 
 from flask import Flask, render_template, request, redirect, url_for, session, flash, jsonify, Response, stream_with_context
+from flask_wtf.csrf import CSRFProtect, CSRFError
 import pytz
 from dotenv import load_dotenv
 from scripts.deploy_team_templates import seed
@@ -236,6 +249,15 @@ _locator_proc = None
 app = Flask(__name__)
 app.secret_key = get_flask_secret_key()
 app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 31536000  # Cache static files for 1 year
+
+# Enable CSRF protection globally
+csrf = CSRFProtect(app)
+
+@app.errorhandler(CSRFError)
+def handle_csrf_error(e):
+    if request.is_json or request.path.startswith('/api/'):
+        return jsonify({"status": "error", "message": "CSRF token validation failed: " + e.description}), 400
+    return f"CSRF validation failed: {e.description}", 400
 
 @app.teardown_appcontext
 def close_connection(exception):
@@ -313,13 +335,28 @@ def require_authentication():
     return None
 
 @app.after_request
-def add_no_cache_headers(response):
+def add_no_cache_and_security_headers(response):
     # no-store stops the browser cache/bfcache from re-showing authenticated
     # pages (and old login input) on the Back button after logout.
     if not request.path.startswith('/static/'):
         response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
         response.headers['Pragma'] = 'no-cache'
         response.headers['Expires'] = '0'
+    
+    # Prevent Clickjacking
+    response.headers['X-Frame-Options'] = 'DENY'
+    # Prevent MIME-type sniffing
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    # Define Content Security Policy
+    response.headers['Content-Security-Policy'] = (
+        "default-src 'self'; "
+        "script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com; "
+        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdnjs.cloudflare.com; "
+        "font-src 'self' https://fonts.gstatic.com https://cdnjs.cloudflare.com; "
+        "connect-src 'self' http://127.0.0.1:8000 http://localhost:8000 https://generativelanguage.googleapis.com https://api.openai.com https://api.anthropic.com;"
+    )
+    # Strip or override Server response header
+    response.headers['Server'] = 'BIG-AI-QA-Engine'
     return response
 
 @app.route('/')

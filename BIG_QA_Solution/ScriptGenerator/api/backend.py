@@ -7,8 +7,11 @@ import re
 import hashlib
 import logging
 from typing import Dict, List, Optional
-from fastapi import FastAPI, BackgroundTasks, HTTPException
+from fastapi import FastAPI, BackgroundTasks, HTTPException, Request, Depends
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi_csrf_protect import CsrfProtect
+from fastapi_csrf_protect.exceptions import CsrfProtectError
 from pydantic import BaseModel
 from dotenv import load_dotenv
 
@@ -145,13 +148,51 @@ def _get_jira_client():
     return _jira_client
 
 app = FastAPI(title="AI QA Backend")
+
+# CSRF Protection Configuration
+@CsrfProtect.load_config
+def get_csrf_config():
+    return [
+        ("secret_key", os.environ.get("FLASK_SECRET_KEY", "your-secure-random-local-key")),
+        ("cookie_samesite", "lax"),
+        ("cookie_secure", False),
+    ]
+
+@app.exception_handler(CsrfProtectError)
+def csrf_protect_exception_handler(request: Request, exc: CsrfProtectError):
+    return JSONResponse(status_code=exc.status_code, content={"detail": exc.message})
+
+# CORS Middleware (Regex allowed loopback for dynamic local ports, allow_credentials must be True)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origin_regex=r"http://(127\.0\.0\.1|localhost)(:\d+)?",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# HTTP Middleware for security headers
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'self'; "
+        "script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com; "
+        "connect-src 'self' https://generativelanguage.googleapis.com;"
+    )
+    # Strip/override Server version disclosure header
+    response.headers["Server"] = "BIG-AI-QA-Engine"
+    return response
+
+# GET Route to retrieve CSRF token and set CSRF Cookie
+@app.get("/csrf-token")
+async def get_csrf_token(csrf_protect: CsrfProtect = Depends()):
+    csrf_token, signed_token = csrf_protect.generate_csrf_tokens()
+    response = JSONResponse(content={"csrf_token": csrf_token})
+    csrf_protect.set_csrf_cookie(signed_token, response)
+    return response
 
 tasks_store = {}
 dedup_index = {}
@@ -1395,7 +1436,8 @@ async def async_task_generate_code(
 
 
 @app.post("/generate-agent-code")
-async def generate_agent_code(req: GenerateCodeRequest, background_tasks: BackgroundTasks):
+async def generate_agent_code(req: GenerateCodeRequest, background_tasks: BackgroundTasks, request: Request, csrf_protect: CsrfProtect = Depends()):
+    await csrf_protect.validate_csrf(request)
     provider = req.ai_provider.strip().lower() if req.ai_provider.strip() else DEFAULT_AI_PROVIDER
 
     hash_input = "|".join([
@@ -1462,7 +1504,8 @@ async def get_task(task_id: str):
 
 
 @app.delete("/task/{task_id}")
-async def clear_task(task_id: str):
+async def clear_task(task_id: str, request: Request, csrf_protect: CsrfProtect = Depends()):
+    await csrf_protect.validate_csrf(request)
     tasks_store.pop(task_id, None)
     to_remove = [h for h, tid in dedup_index.items() if tid == task_id]
     for h in to_remove:
@@ -1471,7 +1514,8 @@ async def clear_task(task_id: str):
 
 
 @app.post("/generate-bdd-scenarios")
-async def generate_bdd_scenarios(req: GenerateBDDScenariosRequest):
+async def generate_bdd_scenarios(req: GenerateBDDScenariosRequest, request: Request, csrf_protect: CsrfProtect = Depends()):
+    await csrf_protect.validate_csrf(request)
     import sys
     import os
     parent_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -1496,7 +1540,8 @@ async def generate_bdd_scenarios(req: GenerateBDDScenariosRequest):
 
 
 @app.post("/generate-formatted-test-cases")
-async def generate_formatted_test_cases(req: GenerateTestCasesRequest):
+async def generate_formatted_test_cases(req: GenerateTestCasesRequest, request: Request, csrf_protect: CsrfProtect = Depends()):
+    await csrf_protect.validate_csrf(request)
     import sys
     import os
     parent_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
