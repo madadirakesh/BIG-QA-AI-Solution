@@ -39,6 +39,11 @@ AI_TOOL     = os.getenv("AI_TOOL", "GEMINI").upper()
 AI_MODEL    = os.getenv("AI_MODEL", "gemini-2.5-flash")
 API_KEY     = os.getenv("API_KEY", "")
 AI_REQUEST_TIMEOUT_SECONDS = 90
+DEFAULT_AI_MODELS = {
+    "gemini": "gemini-2.5-flash",
+    "anthropic": "claude-sonnet-4-6",
+    "openai": "gpt-4.1-mini",
+}
 
 
 def _normalize_provider_name(provider: str) -> str:
@@ -50,6 +55,15 @@ def _normalize_provider_name(provider: str) -> str:
     if raw in ("claude", "anthropic"):
         return "anthropic"
     return raw
+
+
+def _resolve_default_model(provider: str = "", tool: str = "") -> str:
+    normalized = _normalize_provider_name(provider) or _normalize_provider_name(tool)
+    if normalized == "gemini":
+        return DEFAULT_AI_MODELS["gemini"]
+    if normalized == "anthropic":
+        return DEFAULT_AI_MODELS["anthropic"]
+    return DEFAULT_AI_MODELS["openai"]
 
 
 def get_effective_ai_provider() -> str:
@@ -67,6 +81,35 @@ def get_effective_ai_provider() -> str:
 DEFAULT_AI_PROVIDER = get_effective_ai_provider()
 
 
+def get_effective_ai_model() -> str:
+    configured_model = (os.getenv("AI_MODEL", "") or "").strip()
+    if configured_model:
+        return configured_model
+    return _resolve_default_model(os.getenv("AI_PROVIDER", ""), os.getenv("AI_TOOL", ""))
+
+
+AI_MODEL = get_effective_ai_model()
+
+
+def build_missing_ai_configuration_message(missing_model: bool = False, missing_key: bool = False) -> str:
+    if missing_model and missing_key:
+        return (
+            "AI configuration is incomplete. Please open Configure AI and add both "
+            "the AI model and API key before generating the script."
+        )
+    if missing_key:
+        return (
+            "AI API key is missing. Please open Configure AI and add your API key "
+            "before generating the script."
+        )
+    if missing_model:
+        return (
+            "AI model is missing. Please open Configure AI and select a model "
+            "before generating the script."
+        )
+    return "AI configuration is incomplete. Please open Configure AI and complete the setup."
+
+
 def _is_auth_error(exc: Exception) -> bool:
     """Detect invalid/missing credential errors so we can fail fast without retries."""
     text = str(exc or "").lower()
@@ -81,6 +124,11 @@ def _is_auth_error(exc: Exception) -> bool:
         "403",
         "401",
         "access token",
+        "invalid x-api-key",
+        "invalid_api_key",
+        "api key is invalid",
+        "api key not valid",
+        "bad api key",
     )
     return any(marker in text for marker in markers)
 
@@ -88,7 +136,7 @@ def reload_env():
     global AI_TOOL, AI_MODEL, API_KEY, DEFAULT_AI_PROVIDER
     load_dotenv(dotenv_path=env_path, override=True)
     AI_TOOL     = os.getenv("AI_TOOL", "GEMINI").upper()
-    AI_MODEL    = os.getenv("AI_MODEL", "gemini-2.5-flash")
+    AI_MODEL    = get_effective_ai_model()
     API_KEY     = os.getenv("API_KEY", "")
     DEFAULT_AI_PROVIDER = get_effective_ai_provider()
 
@@ -386,6 +434,14 @@ async def call_ai(prompt: str, provider: str = "", expect_json: bool = True, ret
     requested_provider = _normalize_provider_name(provider)
     configured_provider = get_effective_ai_provider()
     effective_provider = requested_provider or configured_provider
+    raw_model = (os.getenv("AI_MODEL", "") or "").strip()
+    if not raw_model or not API_KEY:
+        raise RuntimeError(
+            build_missing_ai_configuration_message(
+                missing_model=not raw_model,
+                missing_key=not bool(API_KEY),
+            )
+        )
 
     for attempt in range(retries):
         try:
@@ -394,20 +450,12 @@ async def call_ai(prompt: str, provider: str = "", expect_json: bool = True, ret
                 f"(requested={requested_provider or 'default'}, configured={configured_provider}, tool={AI_TOOL})"
             )
             if effective_provider == "gemini":
-                if not API_KEY:
-                    raise HTTPException(status_code=500, detail="API_KEY not configured in .env")
                 result = await call_gemini(prompt, expect_json)
             elif effective_provider == "openai":
-                if not API_KEY:
-                    raise HTTPException(status_code=500, detail="API_KEY not configured in .env")
                 result = await call_openai(prompt, expect_json)
             elif effective_provider == "anthropic":
-                if not API_KEY:
-                    raise HTTPException(status_code=500, detail="API_KEY not configured in .env")
                 result = await call_anthropic(prompt, expect_json)
             else:
-                if not API_KEY:
-                    raise HTTPException(status_code=500, detail="API_KEY not configured in .env")
                 logger.warning(
                     f"Unknown AI provider '{effective_provider}'. Falling back to configured provider '{configured_provider}'."
                 )
@@ -425,8 +473,8 @@ async def call_ai(prompt: str, provider: str = "", expect_json: bool = True, ret
             if _is_auth_error(e):
                 logger.error("Detected AI authentication/credential failure. Skipping retries.")
                 raise RuntimeError(
-                    "AI authentication failed. Please verify the configured AI provider "
-                    "and API key in Configurations."
+                    "AI API key is invalid or missing. Please open Configure AI and "
+                    "update the provider and API key before generating the script."
                 ) from e
             if attempt == retries - 1:
                 raise

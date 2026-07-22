@@ -5,7 +5,7 @@ Model layout that mirrors the Selenium/Python template — same folders, same st
 
 ## Prerequisites
 
-- **Python 3.12+** (`python --version`)
+- **Python 3.10+** (`python --version`)
 - Internet on first `pip install` and first `playwright install` (browser binaries). Behind a
   corporate proxy, see `../../SETUP-PROXY.md`.
 

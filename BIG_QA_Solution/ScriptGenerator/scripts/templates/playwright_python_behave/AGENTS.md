@@ -16,7 +16,7 @@
 | Aspect | Value |
 |--------|-------|
 | Automation tool | **Playwright for Python** (`playwright.sync_api`) |
-| Language | **Python 3.12+** |
+| Language | **Python 3.10+** |
 | BDD framework | **Behave** (Gherkin) |
 | Design pattern | **Page Object Model (POM)** |
 | Browser management | Playwright-managed (`playwright install` for browser binaries) |

@@ -3,6 +3,7 @@ import platform
 import os
 import re
 import logging
+import shlex
 from pathlib import Path
 import shutil
 
@@ -251,6 +252,56 @@ class EnvironmentSetup:
         return str(Path(resolved).resolve()) if resolved else None
 
     @classmethod
+    def _python_check_commands(cls):
+        if cls.is_windows():
+            return [
+                "py -3.14 --version",
+                "py -3.13 --version",
+                "py -3.12 --version",
+                "py -3 --version",
+                "python3.14 --version",
+                "python3 --version",
+                "python --version",
+            ]
+        return [
+            "python3.14 --version",
+            "python3.13 --version",
+            "python3.12 --version",
+            "python3 --version",
+            "python --version",
+        ]
+
+    @classmethod
+    def _pip_check_commands(cls):
+        if cls.is_windows():
+            return [
+                "py -3.14 -m pip --version",
+                "py -3.13 -m pip --version",
+                "py -3.12 -m pip --version",
+                "py -3 -m pip --version",
+                "python -m pip --version",
+                "pip --version",
+            ]
+        return [
+            "python3.14 -m pip --version",
+            "python3.13 -m pip --version",
+            "python3.12 -m pip --version",
+            "python3 -m pip --version",
+            "python -m pip --version",
+            "pip3 --version",
+            "pip --version",
+        ]
+
+    @classmethod
+    def _python_launcher_command(cls):
+        installed, _, executable_path, command_used = cls._probe(cls._python_check_commands())
+        if executable_path:
+            return f'"{executable_path}"' if cls.is_windows() else shlex.quote(executable_path)
+        if command_used:
+            return command_used.strip().split()[0]
+        return "python" if cls.is_windows() else "python3"
+
+    @classmethod
     def _try_check_commands(cls, check_cmds):
         commands = check_cmds if isinstance(check_cmds, (list, tuple)) else [check_cmds]
         saw_visible_binary = False
@@ -281,18 +332,10 @@ class EnvironmentSetup:
             if not cls.check_system_dependency("Java", "java -version"): missing.append("Java")
             if not cls.check_system_dependency("Maven", "mvn -version"): missing.append("Maven")
         elif language == "Python":
-            py_cmd = (
-                ["py -3.12 --version", "py -3 --version", "python --version", "python3 --version"]
-                if cls.is_windows()
-                else ["python3.12 --version", "python3 --version", "python --version"]
-            )
-            pip_cmd = (
-                ["py -3.12 -m pip --version", "py -3 -m pip --version", "python -m pip --version", "pip --version"]
-                if cls.is_windows()
-                else ["python3.12 -m pip --version", "python3 -m pip --version", "python -m pip --version", "pip3 --version", "pip --version"]
-            )
-            if not cls.check_system_dependency("Python", py_cmd): missing.append("Python 3.12")
-            if not cls.check_system_dependency("Pip", pip_cmd): missing.append("Pip 3.12")
+            py_cmd = cls._python_check_commands()
+            pip_cmd = cls._pip_check_commands()
+            if not cls.check_system_dependency("Python", py_cmd): missing.append("Python")
+            if not cls.check_system_dependency("Pip", pip_cmd): missing.append("Pip")
         elif language in ["JS / TS", "JavaScript", "TypeScript"]:
             if not cls.check_system_dependency("Node", "node -v"): missing.append("Node.js")
             if not cls.check_system_dependency("NPM", "npm -v"): missing.append("NPM")
@@ -436,16 +479,8 @@ class EnvironmentSetup:
                  "hint": "Install Maven from https://maven.apache.org/install.html and add 'mvn' to PATH."},
             ]
         if language == "Python":
-            py_cmd = (
-                ["py -3.12 --version", "py -3 --version", "python --version", "python3 --version"]
-                if cls.is_windows()
-                else ["python3.12 --version", "python3 --version", "python --version"]
-            )
-            pip_cmd = (
-                ["py -3.12 -m pip --version", "py -3 -m pip --version", "python -m pip --version", "pip --version"]
-                if cls.is_windows()
-                else ["python3.12 -m pip --version", "python3 -m pip --version", "python -m pip --version", "pip3 --version", "pip --version"]
-            )
+            py_cmd = cls._python_check_commands()
+            pip_cmd = cls._pip_check_commands()
             return [
                 {"key": "python", "name": "Python", "check_cmd": py_cmd,
                  "version_re": r"Python ([\d.]+)", "profile_key": "python", "compare": "min_version",
@@ -841,9 +876,10 @@ class EnvironmentSetup:
             return phases
 
         if "Pip" in package_manager:
+            python_cmd = EnvironmentSetup._python_launcher_command()
             if EnvironmentSetup.is_windows():
                 phases = [
-                    ("Creating Python virtual environment...", "python -m venv venv"),
+                    ("Creating Python virtual environment...", f"{python_cmd} -m venv venv"),
                     ("Installing Python packages from requirements.txt...",
                      "venv\\Scripts\\pip install -r requirements.txt"),
                 ]
@@ -854,7 +890,7 @@ class EnvironmentSetup:
                     ))
             else:
                 phases = [
-                    ("Creating Python virtual environment...", "python3.12 -m venv venv"),
+                    ("Creating Python virtual environment...", f"{python_cmd} -m venv venv"),
                     ("Upgrading pip / setuptools / wheel...",
                      "venv/bin/pip install --upgrade pip setuptools wheel"),
                     ("Installing Python packages from requirements.txt...",
@@ -863,7 +899,7 @@ class EnvironmentSetup:
                 if tool == "Playwright":
                     phases.append((
                         "Downloading Playwright Chromium browser (~130 MB)...",
-                        "venv/bin/python3.12 -m playwright install chromium",
+                        "venv/bin/python -m playwright install chromium",
                     ))
             return phases
 

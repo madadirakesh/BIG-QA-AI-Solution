@@ -1,12 +1,11 @@
-# Pinned dependencies for reproducible installs (Python 3.12). Support libraries are frozen to
-# specific releases so `pip install -r requirements.txt` resolves the same set every time. The
-# Selenium version is chosen at scaffold time from the version profile dropdown (Stable/Latest)
-# and substituted into {{SELENIUM_VERSION}} below. To bump a pinned lib: change it, run, commit if green.
+# Minimum tested dependencies for the Selenium + Behave template. Compatible ranges let pip pick
+# the newest packages that support the user's Python interpreter and OS while keeping a known-good
+# floor from the selected version profile.
 behave==1.2.6
 behave-html-formatter==0.9.10
-selenium=={{SELENIUM_VERSION}}
-webdriver-manager==4.0.2
-python-dotenv==1.0.1
-allure-behave==2.13.5
+selenium>={{SELENIUM_VERSION}},<5
+webdriver-manager>=4.0.2,<5
+python-dotenv>=1.0.1,<2
+allure-behave>=2.13.5,<3
 # Decrypts the AES-GCM "ENC:" password from .env at run time (see features/environment.py).
-cryptography==44.0.0
+cryptography>=44.0.0,<50

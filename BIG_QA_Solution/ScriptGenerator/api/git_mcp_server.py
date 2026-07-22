@@ -19,6 +19,18 @@ def create_server(host: str, port: int) -> FastMCP:
     def repository_overview() -> str:
         return git_tools.repository_overview()
 
+    @mcp.tool(description="Get the selected local project path and local repository status, including branch, staged and unstaged changes, local commits, and remotes.")
+    def local_repository_overview() -> str:
+        return git_tools.local_repository_overview()
+
+    @mcp.tool(description="Get the selected project path and live remote-tracking repository details, including remotes, upstream branch, ahead/behind status, latest local commit, and latest upstream commit. By default it refreshes remote refs with git fetch.")
+    def remote_repository_overview(refresh: bool = True) -> str:
+        return git_tools.remote_repository_overview(refresh=refresh)
+
+    @mcp.tool(description="Get a combined local and live repository context for the selected project path. Use this for broad questions about the repo, project path, local changes, push/pull status, or local-vs-remote comparisons.")
+    def repository_context(refresh_remote: bool = True) -> str:
+        return git_tools.repository_context(refresh_remote=refresh_remote)
+
     @mcp.tool(description="Show the current git status including branch tracking information and changed files.")
     def git_status() -> str:
         return git_tools.git_status()
@@ -46,6 +58,10 @@ def create_server(host: str, port: int) -> FastMCP:
     @mcp.tool(description="Commit all local changes using the provided commit message.")
     def commit_all(commit_message: str) -> str:
         return git_tools.commit_all(commit_message)
+
+    @mcp.tool(description="Merge a source branch into a target branch for the selected project path. Use only when the user explicitly asks to merge branches.")
+    def merge_branch(source_branch: str, target_branch: str = "") -> str:
+        return git_tools.merge_branch(source_branch=source_branch, target_branch=target_branch)
 
     @mcp.tool(description="Pull the current branch from origin with rebase.")
     def pull_current_branch() -> str:

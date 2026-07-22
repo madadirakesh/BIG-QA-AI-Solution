@@ -273,6 +273,27 @@
             document.getElementById('sidebarOverlay')?.classList.remove('active');
         }
 
+        function getDefaultAiModel(tool) {
+            const normalized = (tool || '').trim().toUpperCase();
+            if (normalized === 'GEMINI') return 'gemini-2.5-flash';
+            if (normalized === 'ANTHROPIC') return 'claude-sonnet-4-6';
+            if (normalized === 'OPENAI') return 'gpt-4.1-mini';
+            return '';
+        }
+
+        function suggestAiModel(force = false) {
+            const toolInput = document.getElementById('aiToolSelect');
+            const modelInput = document.getElementById('aiModelInput');
+            if (!toolInput || !modelInput) return;
+
+            const suggestedModel = getDefaultAiModel(toolInput.value);
+            if (!suggestedModel) return;
+
+            if (force || !modelInput.value.trim()) {
+                modelInput.value = suggestedModel;
+            }
+        }
+
         // ── H7: Configure AI link — active state when modal open ───────
         function openConfigureAIModal() {
             document.getElementById('configureAIModal').style.display = 'flex';
@@ -282,6 +303,7 @@
                     document.getElementById('aiToolSelect').value = d.config.AI_TOOL || '';
                     document.getElementById('aiModelInput').value = d.config.AI_MODEL || '';
                     document.getElementById('apiKeyInput').value = d.config.API_KEY || '';
+                    suggestAiModel();
                 }
             }).catch(() => {});
         }
