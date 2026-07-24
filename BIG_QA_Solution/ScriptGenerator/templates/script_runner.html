@@ -233,7 +233,7 @@
                         data-lang="{{ p.project_lang }}" data-fw="{{ p.project_fw }}" data-tool="{{ p.project_tool }}"
                         data-packager="{{ p.package_manager or '' }}"
                         data-cmds="{{ p.run_commands or p.default_run_commands or '' }}"
-                        {% if p.id == active_project_id %}selected{% endif %}>
+                        {% if p.id|string == active_project_id|string %}selected{% endif %}>
                         {{ p.project_name }} ({{ p.project_lang }} / {{ p.project_tool }})
                     </option>
                     {% endfor %}
@@ -843,6 +843,19 @@
         return (opt && opt.getAttribute('data-project-name')) ? opt.getAttribute('data-project-name').trim() : '';
     }
 
+    function syncRunnerSelectionToGlobalActiveProject() {
+        const runnerProjectId = getSelectedProjectId();
+        const globalSelect = document.getElementById('globalActiveProject');
+        if (!globalSelect || !runnerProjectId) return;
+        if (String(globalSelect.value || '') === String(runnerProjectId)) return;
+
+        const matchingOption = Array.from(globalSelect.options).find(opt => String(opt.value) === String(runnerProjectId));
+        if (!matchingOption) return;
+
+        globalSelect.value = String(runnerProjectId);
+        setGlobalActiveProject(globalSelect);
+    }
+
     async function loadRecommendedCommands(opt) {
         const seqCommands = document.getElementById('seqCommands');
         if (!opt || !seqCommands) return;
@@ -881,6 +894,7 @@
         const modeDiv = document.getElementById('modeSelection');
 
         if (sel.value) {
+            syncRunnerSelectionToGlobalActiveProject();
             modeDiv.style.display = 'flex';
             if (document.getElementById('executionAction')) document.getElementById('executionAction').style.display = 'block';
 

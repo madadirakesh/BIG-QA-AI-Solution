@@ -1590,6 +1590,18 @@ def resolve_project_record(project_id=None, project_path=None):
 
     return None
 
+
+def coalesce_non_empty(*values):
+    for value in values:
+        if value is None:
+            continue
+        if isinstance(value, str):
+            if value.strip():
+                return value.strip()
+        elif value:
+            return value
+    return ''
+
 def detect_project_settings_helper(path):
     if not path or not os.path.exists(path):
         return "Unknown", "Unknown", "Unknown", "Unknown", "Existing"
@@ -1685,16 +1697,29 @@ def save_project_config():
         data = request.json
         is_new_project = data.get('is_new_project', True)
         project_id = data.get('project_id')
-        project_name = data.get('project_name', '').strip()
+        has_project_name = 'project_name' in data
+        has_project_path = 'project_path' in data
+        has_baseurl = 'baseurl' in data
+        has_app_username = 'app_username' in data or 'username' in data
+        has_app_password = 'app_password' in data or 'password' in data
+        has_git_repo_url = 'git_repo_url' in data
+        has_git_username = 'git_username' in data
+        has_git_pa_token = 'git_pa_token' in data
+        has_run_commands = 'run_commands' in data
+
+        project_name = (data.get('project_name', '') or '').strip()
         project_path = normalize_project_path(data.get('project_path', ''))
-        baseurl = data.get('baseurl', '').strip()
-        app_username = data.get('app_username', data.get('username', '')).strip()
-        app_password = data.get('app_password', data.get('password', '')).strip()
-        git_repo_url = data.get('git_repo_url', '').strip()
-        git_username = data.get('git_username', '').strip()
-        git_pa_token = data.get('git_pa_token', '').strip()
-        run_commands = data.get('run_commands', '').strip()
+        baseurl = (data.get('baseurl', '') or '').strip()
+        app_username = (data.get('app_username', data.get('username', '')) or '').strip()
+        app_password = (data.get('app_password', data.get('password', '')) or '').strip()
+        git_repo_url = (data.get('git_repo_url', '') or '').strip()
+        git_username = (data.get('git_username', '') or '').strip()
+        git_pa_token = (data.get('git_pa_token', '') or '').strip()
+        run_commands = (data.get('run_commands', '') or '').strip()
         is_git_configured = data.get('is_git_configured', False)
+        existing_project = {}
+        existing_project_data = {}
+        existing_git_config = {}
 
         if git_repo_url and not project_path:
             return jsonify({"status": "error", "message": "Local Automation Directory path is mandatory when Git Repository URL is provided."}), 400
@@ -1707,6 +1732,39 @@ def save_project_config():
                 project_id = existing_path['id']
                 if not project_name:
                     project_name = existing_path['project_name']
+
+        if not is_new_project and project_id:
+            existing_rows = fetch_data("SELECT * FROM ProjectDetails WHERE id = ?", (project_id,))
+            existing_project = dict(existing_rows[0]) if existing_rows else {}
+            existing_data_rows = fetch_data(
+                "SELECT baseurl, username, password FROM ProjectData WHERE project_details_id = ?",
+                (project_id,)
+            )
+            existing_project_data = dict(existing_data_rows[0]) if existing_data_rows else {}
+            existing_git_rows = fetch_data(
+                "SELECT repo_url, username, access_token FROM ProjectGitConfig WHERE project_details_id = ?",
+                (project_id,)
+            )
+            existing_git_config = dict(existing_git_rows[0]) if existing_git_rows else {}
+
+            if not has_project_name:
+                project_name = (existing_project.get('project_name') or '').strip()
+            if not has_project_path:
+                project_path = normalize_project_path(existing_project.get('project_path', ''))
+            if not has_run_commands:
+                run_commands = (existing_project.get('run_commands') or '').strip()
+            if not has_baseurl:
+                baseurl = (existing_project_data.get('baseurl') or '').strip()
+            if not has_app_username:
+                app_username = (existing_project_data.get('username') or '').strip()
+            if not has_app_password and existing_project_data.get('password'):
+                app_password = decrypt_for_app(existing_project_data.get('password'))
+            if not has_git_repo_url:
+                git_repo_url = (existing_git_config.get('repo_url') or '').strip()
+            if not has_git_username:
+                git_username = (existing_git_config.get('username') or '').strip()
+            if not has_git_pa_token:
+                git_pa_token = (existing_git_config.get('access_token') or '').strip()
 
         # Auto-derive project name if not provided
         if not project_name and project_path:
@@ -1825,7 +1883,7 @@ def save_project_config():
             # Detected code wins; then payload-provided values; finally keep whatever is
             # already stored so an unresolved field is never blanked out on update.
             existing_settings = fetch_data(
-                "SELECT project_lang, project_fw, project_tool, package_manager FROM ProjectDetails WHERE id = ?",
+                "SELECT project_path, run_commands, project_lang, project_fw, project_tool, package_manager FROM ProjectDetails WHERE id = ?",
                 (project_id,)
             )
             cur = existing_settings[0] if existing_settings else {}
@@ -1833,10 +1891,14 @@ def save_project_config():
             final_framework = det_framework or prov_framework or (cur.get('project_fw') or '')
             final_tool = det_tool or prov_tool or (cur.get('project_tool') or '')
             final_packager = det_packager or prov_packager or (cur.get('package_manager') or '')
+            final_project_path = project_path or normalize_project_path(cur.get('project_path', ''))
+            final_run_commands = run_commands if has_run_commands else (cur.get('run_commands') or '')
             update_data(
                 "UPDATE ProjectDetails SET project_name=?, project_path=?, project_lang=?, project_fw=?, project_tool=?, package_manager=?, run_commands=? WHERE id=?",
-                (project_name, project_path, final_language, final_framework, final_tool, final_packager, run_commands, project_id)
+                (project_name, final_project_path, final_language, final_framework, final_tool, final_packager, final_run_commands, project_id)
             )
+            project_path = final_project_path
+            run_commands = final_run_commands
 
         # 5. Insert or Update ProjectData
         encrypted_password = encrypt_for_app(app_password)
@@ -1867,6 +1929,8 @@ def save_project_config():
                 (git_repo_url, git_username, git_pa_token, project_id)
             )
 
+        session['active_project_id'] = str(project_id)
+        session['active_project_name'] = project_name
         return jsonify({"status": "success", "message": "Project configuration saved successfully.", "project_id": project_id})
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
@@ -1932,10 +1996,13 @@ def save_git_config():
             project_id = int(project_id) if project_id not in (None, '') else None
         except (TypeError, ValueError):
             project_id = None
+        has_repo_url = 'repo_url' in data
+        has_username = 'username' in data
+        has_access_token = 'access_token' in data
         p_path = normalize_project_path(data.get('project_path', ''))
-        repo_url = data.get('repo_url', '')
-        username = data.get('username', '')
-        access_token = data.get('access_token', '')
+        repo_url = (data.get('repo_url') or '').strip()
+        username = (data.get('username') or '').strip()
+        access_token = (data.get('access_token') or '').strip()
         
         project = resolve_project_record(project_id=project_id, project_path=p_path)
         if not project:
@@ -1943,6 +2010,17 @@ def save_git_config():
 
         p_details_id = project['id']
         p_path = project.get('project_path', '')
+        existing_git = fetch_data(
+            "SELECT repo_url, username, access_token FROM ProjectGitConfig WHERE project_details_id = ?",
+            (p_details_id,)
+        )
+        existing_git = dict(existing_git[0]) if existing_git else {}
+        if not has_repo_url:
+            repo_url = (existing_git.get('repo_url') or '').strip()
+        if not has_username:
+            username = (existing_git.get('username') or '').strip()
+        if not has_access_token:
+            access_token = (existing_git.get('access_token') or '').strip()
                 
         if p_details_id:
             gc_existing = fetch_data("SELECT id FROM ProjectGitConfig WHERE project_details_id = ?", (p_details_id,))
@@ -1959,7 +2037,9 @@ def save_git_config():
                 GitService.sync_git_config(p_path, {"repo_url": repo_url, "username": username, "access_token": access_token})
             except Exception as sync_err:
                 app.logger.warning(f"Git config sync error: {sync_err}")
-                                
+
+        session['active_project_id'] = str(p_details_id)
+        session['active_project_name'] = project.get('project_name', '')
         return jsonify({
             "status": "success",
             "message": "Git configuration saved successfully.",
