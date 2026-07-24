@@ -988,10 +988,20 @@
                 addLog(json.output || "Done.", "log-default");
             } else {
                 addLog(`[Error] ${json.message}`, "log-error");
+                renderGitHints(json.hints);
             }
         } catch (e) {
             addLog(`[Error] ${e.message}`, "log-error");
         }
+    }
+
+    function renderGitHints(hints) {
+        if (!Array.isArray(hints) || hints.length === 0) return;
+
+        addLog("[Hint] Suggested next steps:", "log-system");
+        hints.forEach((hint, index) => {
+            addLog(`${index + 1}. ${hint}`, "log-system");
+        });
     }
 
     async function runMcpGitAction() {

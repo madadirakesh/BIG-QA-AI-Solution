@@ -54,6 +54,69 @@ class GitService:
         return bool(res["success"] and res["stdout"].strip())
 
     @staticmethod
+    def _default_branch(project_path):
+        default_branch = "main"
+        ls_res = GitService._run_cmd("git ls-remote --symref origin HEAD", project_path)
+        if ls_res["success"] and ls_res["stdout"]:
+            for line in ls_res["stdout"].splitlines():
+                if "refs/heads/" in line and "HEAD" in line:
+                    parts = line.split("refs/heads/")
+                    if len(parts) > 1:
+                        detected = parts[1].split()[0].strip()
+                        if detected:
+                            return detected
+
+        heads_res = GitService._run_cmd("git ls-remote --heads origin", project_path)
+        if heads_res["success"] and heads_res["stdout"]:
+            lines = heads_res["stdout"]
+            if "refs/heads/main" in lines:
+                default_branch = "main"
+            elif "refs/heads/master" in lines:
+                default_branch = "master"
+        return default_branch
+
+    @staticmethod
+    def _build_git_hints(action, branch, stderr_text):
+        text = (stderr_text or "").lower()
+        hints = []
+
+        if action == "push":
+            if (
+                "fetch first" in text
+                or "non-fast-forward" in text
+                or "failed to push some refs" in text
+                or "remote contains work that you do not have locally" in text
+            ):
+                hints.append("The remote repository already has commits. This usually happens when GitHub created the repo with a README.md or .gitignore.")
+                hints.append(f"Run `git pull origin {branch} --allow-unrelated-histories` to bring the remote starter commit into your local branch.")
+                hints.append("If Git reports conflicts in README.md or .gitignore, resolve them, then run `git add .` and `git commit -m \"Merge remote initial commit\"`.")
+                hints.append(f"After that, run `git push -u origin {branch}` again.")
+                hints.append("If you want your local codebase to fully replace the remote one, run `git fetch origin` first so Git has the latest remote state.")
+                hints.append(f"Then run `git push -u origin {branch} --force-with-lease` to overwrite the remote branch with your local history.")
+                hints.append("Use the force option only when you are sure the GitHub repository should be overwritten, because it rewrites remote history.")
+            elif "no upstream branch" in text:
+                hints.append(f"Run `git push -u origin {branch}` to create the upstream tracking branch.")
+
+        elif action == "pull":
+            if "unrelated histories" in text:
+                hints.append(f"Your local branch and `origin/{branch}` do not share history yet.")
+                hints.append(f"Run `git pull origin {branch} --allow-unrelated-histories` and resolve any conflicts before pushing again.")
+            elif "please commit your changes or stash them" in text:
+                hints.append("Your working tree has local changes that would be overwritten by pull.")
+                hints.append("Run `git status` to inspect them, then either commit them with `git add .` and `git commit -m \"...\"`, or stash them with `git stash`.")
+                hints.append(f"After that, run `git pull origin {branch}` again.")
+
+        elif action == "merge":
+            if "merge conflict" in text or "automatic merge failed" in text:
+                hints.append("Git found conflicts while merging branches.")
+                hints.append("Run `git status` to see the conflicted files, resolve them manually, then run `git add .` and `git commit` to finish the merge.")
+            elif "working tree has uncommitted changes" in text:
+                hints.append("Commit or stash your local changes before merging branches.")
+                hints.append("Use `git add . && git commit -m \"...\"` or `git stash`, then retry the merge.")
+
+        return hints
+
+    @staticmethod
     def sync_git_config(project_path, auth_config):
         """
         Synchronizes the local repository's .git/config with the database Git credentials.
@@ -165,23 +228,7 @@ class GitService:
             return {"success": False, "message": f"Failed to fetch from remote origin: {fetch_res['stderr'] or fetch_res['stdout']}"}
 
         # Determine default branch
-        default_branch = "main"
-        ls_res = GitService._run_cmd("git ls-remote --symref origin HEAD", project_path)
-        if ls_res["success"] and ls_res["stdout"]:
-            for line in ls_res["stdout"].splitlines():
-                if "refs/heads/" in line and "HEAD" in line:
-                    parts = line.split("refs/heads/")
-                    if len(parts) > 1:
-                        default_branch = parts[1].split()[0].strip()
-                        break
-        else:
-            heads_res = GitService._run_cmd("git ls-remote --heads origin", project_path)
-            if heads_res["success"] and heads_res["stdout"]:
-                lines = heads_res["stdout"]
-                if "refs/heads/main" in lines:
-                    default_branch = "main"
-                elif "refs/heads/master" in lines:
-                    default_branch = "master"
+        default_branch = GitService._default_branch(project_path)
 
         # Checkout default branch
         checkout_res = GitService._run_cmd(f"git checkout -f {default_branch}", project_path)
@@ -258,7 +305,12 @@ class GitService:
 
             res = GitService._run_cmd(f"git push -u origin {branch}", project_path)
             if not res["success"]:
-                return {"success": False, "message": f"Push failed: {res['stderr'] or res['stdout']}"}
+                error_text = res["stderr"] or res["stdout"]
+                return {
+                    "success": False,
+                    "message": f"Push failed: {error_text}",
+                    "hints": GitService._build_git_hints("push", branch, error_text),
+                }
             return {"success": True, "message": f"Pushed to remote branch '{branch}' successfully", "output": (res["stderr"] + "\n" + res["stdout"]).strip()}
             
         elif action == "pull":
@@ -316,7 +368,12 @@ class GitService:
                     res = GitService._run_cmd(f"git pull origin {pull_branch} --rebase --allow-unrelated-histories", project_path)
                 
                 if not res["success"]:
-                    return {"success": False, "message": f"Pull failed: {res['stderr'] or res['stdout']}"}
+                    error_text = res["stderr"] or res["stdout"]
+                    return {
+                        "success": False,
+                        "message": f"Pull failed: {error_text}",
+                        "hints": GitService._build_git_hints("pull", pull_branch, error_text),
+                    }
             
             # If pull branch was different from local branch and we succeeded, set tracking
             if pull_branch != local_branch:
@@ -367,7 +424,8 @@ class GitService:
                     abort_hint = " Automatic merge abort may require manual cleanup."
                 return {
                     "success": False,
-                    "message": f"Merge failed: {merge_res['stderr'] or merge_res['stdout']}.{abort_hint}"
+                    "message": f"Merge failed: {merge_res['stderr'] or merge_res['stdout']}.{abort_hint}",
+                    "hints": GitService._build_git_hints("merge", target_branch, merge_res["stderr"] or merge_res["stdout"]),
                 }
 
             return {
