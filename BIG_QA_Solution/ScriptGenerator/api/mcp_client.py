@@ -45,16 +45,26 @@ def _extract_text_from_tool_result(result) -> str:
     return "\n".join(text_parts).strip()
 
 
-def _build_tool_choice_prompt(prompt: str, tools: list[dict]) -> str:
+def _build_tool_choice_prompt(prompt: str, tools: list[dict], assistant_mode: str = "explain") -> str:
     # First AI pass: ask the configured model to choose exactly one MCP tool
     # and arguments based on the user's natural-language request.
+    normalized_mode = (assistant_mode or "explain").strip().lower()
+    mode_label = "Perform Action" if normalized_mode == "execute" else "Explain Only"
     return (
         "You are an AI Git Assistant using MCP tools.\n"
         "Choose exactly one MCP tool that best answers the user's request.\n"
         "Return ONLY raw JSON in one of these shapes:\n"
         '{"mode":"tool","tool":"tool_name","arguments":{"key":"value"}}\n'
         '{"mode":"answer","message":"direct answer"}\n\n'
+        f"Selected assistant mode: {mode_label}.\n"
         "Rules:\n"
+        "- Always honor the selected assistant mode.\n"
+        "- In Explain Only mode, return mode=answer unless the user is explicitly asking for repository inspection only. Do not execute mutating git actions in Explain Only mode.\n"
+        "- In Perform Action mode, choose a tool and perform the requested git action whenever the request is actionable and the needed details are clear.\n"
+        "- Distinguish between explanation requests and action requests.\n"
+        "- If the user is asking for guidance, hints, root-cause analysis, recommended commands, or what they should do next, return mode=answer and do not execute any git command.\n"
+        "- If the user explicitly asks you to perform, run, execute, apply, push, pull, merge, stash, fetch, checkout, switch, abort, continue, or resolve something in the repository, choose a tool and perform the action when the selected mode allows it.\n"
+        "- If the user asks both for diagnosis and action, prefer doing the action only when they clearly authorize it and the selected mode is Perform Action; otherwise return mode=answer with the exact commands or next steps.\n"
         "- Prefer repository_context for broad repo questions.\n"
         "- Use repository_context when the user asks about the selected project path, what repository/folder is being checked, or wants both local and live/remote context together.\n"
         "- Use local_repository_overview for explicitly local-only questions such as local path, local modified files, local staged changes, or local commits.\n"
@@ -63,7 +73,10 @@ def _build_tool_choice_prompt(prompt: str, tools: list[dict]) -> str:
         "- Use git_diff_summary for high-level change summaries.\n"
         "- Use merge_branch only when the user explicitly asks to merge one branch into another and the branch names are clear.\n"
         "- Use commit_all, pull_current_branch, or push_current_branch only when the user explicitly asks for those actions.\n"
+        "- Use execute_git_command for explicit git command-style requests and operational workflows such as fetch, checkout, switch, stash, rebase continue/abort, merge abort, cherry-pick continue/abort, force push, or other supported git terminal commands.\n"
         "- If the user asks to merge but does not clearly specify source and target branches, do not choose a tool. Return mode=answer and ask for the exact branch names.\n"
+        "- If the user asks to resolve a conflict but does not explicitly authorize you to make repository changes, return mode=answer with the safe resolution steps instead of executing commands.\n"
+        "- If the user asks to resolve conflicts automatically, do not pretend the conflict is fully resolved unless a command actually resolves it. Use a suitable tool to inspect or run an abort/continue command, then explain any remaining manual conflict work.\n"
         "- If the user asks about GitHub pull requests, PR reviews, or remote review metadata, do not choose a tool. Return mode=answer and explain that this MCP server only has local Git tools.\n\n"
         f"Available Tools:\n{json.dumps(tools, indent=2)}\n\n"
         f"User Request:\n{prompt}"
@@ -166,7 +179,7 @@ def _stop_process(process: subprocess.Popen | None) -> None:
             process.wait(timeout=5)
 
 
-async def run_mcp_git_prompt(prompt: str, project_path: str):
+async def run_mcp_git_prompt(prompt: str, project_path: str, assistant_mode: str = "explain"):
     # Main MCP assistant flow:
     # 1. start the Git MCP server for the selected repo
     # 2. let the global AI model choose the best MCP tool
@@ -193,7 +206,7 @@ async def run_mcp_git_prompt(prompt: str, project_path: str):
                     for tool in tools_response.tools
                 ]
 
-                selector_prompt = _build_tool_choice_prompt(prompt, available_tools)
+                selector_prompt = _build_tool_choice_prompt(prompt, available_tools, assistant_mode=assistant_mode)
                 selection_raw = await backend.call_ai(selector_prompt, expect_json=True)
                 try:
                     selection = _extract_json_block(selection_raw)

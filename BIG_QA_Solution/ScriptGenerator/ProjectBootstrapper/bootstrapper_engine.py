@@ -388,13 +388,17 @@ class BootstrapperEngine:
 
         if language == "Python":
             if "Behave" in framework or "Jbehave" in framework:
-                cmd = "venv\\Scripts\\python -m behave -f html" if os.name == 'nt' else "venv/bin/python3 -m behave -f html"
+                cmd = (
+                    "venv\\Scripts\\python -m behave -f json -o Results/behave_report.json -f html -o Results/report.html -f pretty"
+                    if os.name == 'nt' else
+                    "venv/bin/python3 -m behave -f json -o Results/behave_report.json -f html -o Results/report.html -f pretty"
+                )
             else:
                 cmd = "venv\\Scripts\\python -m pytest tests/ --html=Results/report.html" if os.name == 'nt' else "venv/bin/python3 -m pytest tests/ --html=Results/report.html"
         elif language == "Java":
             cmd = "mvn test"
         elif language == "C#":
-            cmd = 'dotnet test --logger "html;LogFileName=Results/report.html"'
+            cmd = 'dotnet test --results-directory Results --logger "html;LogFileName=report.html"'
         else:
             return False, "Smoke test not configured for this language."
 
@@ -403,20 +407,12 @@ class BootstrapperEngine:
         if not success:
             if language == "Python" and ("Behave" in framework or "Jbehave" in framework):
                 try:
-                    with open(os.path.join(project_path, "Results", "report.html"), "w", encoding="utf-8") as f:
+                    with open(os.path.join(project_path, "Results", "behave_report.txt"), "w", encoding="utf-8") as f:
                         f.write(output)
                 except Exception:
                     pass
                 return False, "Behave Smoke Test had failures. Check Results/report.html for detailed output."
             return False, output.strip()
-
-        if language == "Python" and ("Behave" in framework or "Jbehave" in framework):
-            try:
-                with open(os.path.join(project_path, "Results", "report.html"), "w", encoding="utf-8") as f:
-                    f.write(output)
-            except Exception:
-                pass
-            return True, "Behave Smoke Test completed successfully. HTML Report generated."
 
         return True, output.strip()
 
@@ -605,7 +601,20 @@ def test_login(driver):
 
             if "Behave" in framework or "Jbehave" in framework:
                 with open(os.path.join(target_dir, "behave.ini"), "w") as f:
-                    f.write("[behave.formatters]\nhtml = behave_html_formatter:HTMLFormatter\n")
+                    f.write(
+                        "[behave]\n"
+                        "paths = features\n"
+                        "default_tags = @smoke\n"
+                        "stop = true\n"
+                        "show_skipped = false\n"
+                        "format = pretty\n"
+                        "outfiles = Results/behave_report.txt\n"
+                        "stdout_capture = false\n"
+                        "stderr_capture = false\n"
+                        "log_capture = false\n\n"
+                        "[behave.formatters]\n"
+                        "html = behave_html_formatter:HTMLFormatter\n"
+                    )
                 with open(os.path.join(target_dir, "features", "smoke.feature"), "w") as f:
                     f.write("Feature: Smoke Test\n\n  Scenario: Load Application\n    Given I launch the application\n    Then The application loads\n")
                 with open(os.path.join(target_dir, "features", "environment.py"), "w") as f:

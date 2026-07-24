@@ -571,6 +571,36 @@ class EnvironmentSetup:
                 "executable_path": executable_path,
                 "command_used": command_used,
             })
+
+        # Playwright on Linux also needs a small set of host browser libraries in addition to the
+        # language/runtime toolchain. The most common missing package on our Ubuntu hosts is
+        # libwoff1, which triggers Playwright's "Host system is missing dependencies" warning even
+        # though the tests may still limp along. Surface it in the same pre-check panel so users
+        # see the actionable fix before execution rather than only in the test logs.
+        if tool == "Playwright" and platform.system().lower() == "linux":
+            lib_check = subprocess.run(
+                ["dpkg-query", "-W", "-f=${Status} ${Version}", "libwoff1"],
+                capture_output=True,
+                text=True,
+                timeout=15,
+            )
+            installed = lib_check.returncode == 0 and "install ok installed" in (lib_check.stdout or "")
+            detected = None
+            if installed:
+                parts = (lib_check.stdout or "").strip().split()
+                if parts:
+                    detected = parts[-1]
+            results.append({
+                "key": "playwright_linux_libwoff1",
+                "name": "Playwright Linux host lib (libwoff1)",
+                "required": None,
+                "detected": detected,
+                "installed": installed,
+                "status": "ok" if installed else "missing",
+                "hint": "Install with: sudo apt-get update && sudo apt-get install -y libwoff1",
+                "executable_path": "/var/lib/dpkg/status" if installed else "",
+                "command_used": "dpkg-query -W -f=${Status} ${Version} libwoff1",
+            })
         return results
 
     @staticmethod

@@ -71,6 +71,10 @@ def create_server(host: str, port: int) -> FastMCP:
     def push_current_branch() -> str:
         return git_tools.push_current_branch()
 
+    @mcp.tool(description="Execute a guarded git command for operational tasks such as checkout, switch, fetch, pull, push, stash, merge abort, rebase continue, cherry-pick continue, and similar repository workflows. Provide either the full command like 'git fetch origin' or the part after git like 'fetch origin'.")
+    def execute_git_command(command: str) -> str:
+        return git_tools.execute_git_command(command)
+
     return mcp
 
 

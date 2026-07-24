@@ -4,5 +4,5 @@
   "language": "Python",
   "framework": "Behave",
   "description": "Enterprise Selenium Python Behave BDD Template",
-  "default_run_commands": "behave\nbehave --tags=@smoke"
+  "default_run_commands": "behave -f json -o Results/behave_report.json -f html -o Results/report.html -f pretty"
 }

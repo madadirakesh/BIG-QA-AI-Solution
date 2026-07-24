@@ -4,7 +4,6 @@
 behave==1.2.6
 behave-html-formatter==0.9.10
 selenium>={{SELENIUM_VERSION}},<5
-webdriver-manager>=4.0.2,<5
 python-dotenv>=1.0.1,<2
 allure-behave>=2.13.5,<3
 # Decrypts the AES-GCM "ENC:" password from .env at run time (see features/environment.py).

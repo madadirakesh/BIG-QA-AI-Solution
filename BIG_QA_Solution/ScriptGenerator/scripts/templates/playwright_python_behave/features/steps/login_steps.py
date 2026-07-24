@@ -1,7 +1,7 @@
-import os
 from behave import given, when, then
 from pages.login_page import LoginPage
 from pages.home_page import HomePage
+from utils.config_reader import ConfigReader
 
 
 @given("I launch the application")
@@ -12,8 +12,8 @@ def step_launch_application(context):
 
 @when("I enter valid Username and Password")
 def step_enter_credentials(context):
-    username = os.getenv("USER", "standard_user")
-    password = os.getenv("PASSWORD", "secret_sauce")
+    username = ConfigReader.get("USER", "standard_user")
+    password = ConfigReader.get("PASSWORD", "secret_sauce")
     context.login_page.enter_username(username)
     context.login_page.enter_password(password)
 

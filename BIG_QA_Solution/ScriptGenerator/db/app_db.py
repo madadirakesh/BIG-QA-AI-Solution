@@ -2,6 +2,8 @@ import sqlite3
 import os
 
 DB_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "local_database.db")
+TRANSIENT_PROJECT_NAME_PREFIXES = ("mcp-test-", "strict-")
+TRANSIENT_PROJECT_PATH_PREFIXES = ("/tmp/mcp-git-e2e-",)
 
 
 def _seed_admin_password():
@@ -73,6 +75,55 @@ def update_data(query, params=None):
 
 def insert_data(query, params=None):
     return execute_update(query, params)
+
+
+def purge_transient_test_projects():
+    """
+    Remove only known transient MCP verification project records.
+
+    This is intentionally narrow so legitimate user projects are never touched.
+    It only targets the temporary project names and /tmp paths used by local
+    verification harnesses.
+    """
+    name_conditions = " OR ".join("project_name LIKE ?" for _ in TRANSIENT_PROJECT_NAME_PREFIXES)
+    path_conditions = " OR ".join("project_path LIKE ?" for _ in TRANSIENT_PROJECT_PATH_PREFIXES)
+    where_clause = " OR ".join(filter(None, [name_conditions, path_conditions]))
+    if not where_clause:
+        return 0
+
+    params = [f"{prefix}%" for prefix in TRANSIENT_PROJECT_NAME_PREFIXES]
+    params.extend(f"{prefix}%" for prefix in TRANSIENT_PROJECT_PATH_PREFIXES)
+
+    conn = get_db()
+    try:
+        with conn:
+            cursor = conn.cursor()
+            cursor.execute(f"SELECT id FROM ProjectDetails WHERE {where_clause}", params)
+            ids = [row[0] for row in cursor.fetchall()]
+            if not ids:
+                return 0
+
+            placeholders = ",".join("?" for _ in ids)
+            for table, column in (
+                ("ProjectGitConfig", "project_details_id"),
+                ("ProjectData", "project_details_id"),
+                ("ProjectInputs", "projectId"),
+                ("Backupfiles", "Project_ID"),
+                ("Locators", "project_id"),
+            ):
+                cursor.execute(f"DELETE FROM {table} WHERE {column} IN ({placeholders})", ids)
+            cursor.execute(f"DELETE FROM ProjectDetails WHERE id IN ({placeholders})", ids)
+            return len(ids)
+    except Exception as e:
+        print(f"Error purging transient test projects: {e}")
+        return 0
+    finally:
+        try:
+            from flask import g, has_app_context
+            if not (has_app_context() and hasattr(g, 'db') and g.db is conn):
+                conn.close()
+        except ImportError:
+            conn.close()
 
 def init_db():
     create_users_table = """

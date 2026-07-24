@@ -412,9 +412,12 @@
                     <div class="form-col">
                         <div class="form-group">
                             <label><i class="fas fa-tag"></i> Project Name <span class="required-mark">*</span></label>
-                            <select id="bsProjectName" class="form-control" onchange="handleBsProjectSelect()">
-                                <option value="">-- Choose Project --</option>
-                            </select>
+                            <div class="select-shell">
+                                <select id="bsProjectName" class="form-control" onchange="handleBsProjectSelect()">
+                                    <option value="">-- Choose Project --</option>
+                                </select>
+                                <span class="select-shell-icon" aria-hidden="true"><i class="fas fa-chevron-down"></i></span>
+                            </div>
                             <small class="error-text" id="bsProjectNameError"></small>
                             <small class="help-text" style="margin-top: 8px;">
                                 <i class="fas fa-info-circle" style="color: var(--accent-primary); margin-right: 4px;"></i>if the project name not found, please configure the project in configurations module.
@@ -437,19 +440,25 @@
                     <div class="form-col">
                         <div class="form-group">
                             <label><i class="fas fa-tools"></i> Automation Tool</label>
-                            <select id="bsTool" class="form-control" onchange="updateBsOptions()">
-                                <option value="Selenium">Selenium</option>
-                                <option value="Playwright">Playwright</option>
-                            </select>
+                            <div class="select-shell">
+                                <select id="bsTool" class="form-control" onchange="updateBsOptions()">
+                                    <option value="Selenium">Selenium</option>
+                                    <option value="Playwright">Playwright</option>
+                                </select>
+                                <span class="select-shell-icon" aria-hidden="true"><i class="fas fa-chevron-down"></i></span>
+                            </div>
                             <small class="help-text">Choose your core automation engine.</small>
                         </div>
                     </div>
                     <div class="form-col">
                         <div class="form-group">
                             <label><i class="fas fa-code"></i> Language</label>
-                            <select id="bsLanguage" class="form-control" onchange="updateBsOptions()">
-                                <!-- Dynamic -->
-                            </select>
+                            <div class="select-shell">
+                                <select id="bsLanguage" class="form-control" onchange="updateBsOptions()">
+                                    <!-- Dynamic -->
+                                </select>
+                                <span class="select-shell-icon" aria-hidden="true"><i class="fas fa-chevron-down"></i></span>
+                            </div>
                             <small class="help-text">Primary coding language.</small>
                         </div>
                     </div>
@@ -458,18 +467,24 @@
                     <div class="form-col">
                         <div class="form-group">
                             <label><i class="fas fa-vial"></i> BDD / Framework</label>
-                            <select id="bsFramework" class="form-control">
-                                <!-- Dynamic -->
-                            </select>
+                            <div class="select-shell">
+                                <select id="bsFramework" class="form-control">
+                                    <!-- Dynamic -->
+                                </select>
+                                <span class="select-shell-icon" aria-hidden="true"><i class="fas fa-chevron-down"></i></span>
+                            </div>
                             <small class="help-text">Test runner and structure.</small>
                         </div>
                     </div>
                     <div class="form-col">
                         <div class="form-group">
                             <label><i class="fas fa-box-open"></i> Package Manager</label>
-                            <select id="bsPackageManager" class="form-control">
-                                <!-- Dynamic -->
-                            </select>
+                            <div class="select-shell">
+                                <select id="bsPackageManager" class="form-control">
+                                    <!-- Dynamic -->
+                                </select>
+                                <span class="select-shell-icon" aria-hidden="true"><i class="fas fa-chevron-down"></i></span>
+                            </div>
                             <small class="help-text">How libraries are installed.</small>
                         </div>
                     </div>
@@ -480,9 +495,12 @@
                     <div class="form-col">
                         <div class="form-group">
                             <label><i class="fas fa-layer-group"></i> Version Profile <span style="color:#e74c3c">*</span></label>
-                            <select id="bsVersionProfile" class="form-control" onchange="clearFieldError('bsVersionProfile'); refreshDependencyCheck()">
-                                <!-- Dynamic -->
-                            </select>
+                            <div class="select-shell">
+                                <select id="bsVersionProfile" class="form-control" onchange="clearFieldError('bsVersionProfile'); refreshDependencyCheck()">
+                                    <!-- Dynamic -->
+                                </select>
+                                <span class="select-shell-icon" aria-hidden="true"><i class="fas fa-chevron-down"></i></span>
+                            </div>
                             <small class="help-text" id="bsVersionProfileHint">Validated dependency versions for this stack.</small>
                             <small class="error-text" id="bsVersionProfileError"></small>
                         </div>
@@ -1095,6 +1113,28 @@
         background-size: 18px !important;
         padding-right: 45px !important;
         cursor: pointer;
+    }
+    #bootstrapperModal .select-shell {
+        position: relative;
+        width: 100%;
+    }
+    #bootstrapperModal .select-shell-icon {
+        position: absolute;
+        top: 50%;
+        right: 16px;
+        transform: translateY(-50%);
+        pointer-events: none;
+        opacity: 0.95;
+        color: #ea6c0b;
+        font-size: 0.9rem;
+        line-height: 1;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+    }
+    #bootstrapperModal .select-shell > select.form-control {
+        background-image: none !important;
+        padding-right: 48px !important;
     }
 
     /* Force Stacking and Centering for Project Creator Card */
@@ -2242,8 +2282,15 @@ async function generateCode() {
     document.getElementById('resultContent').style.display = 'none';
     document.getElementById('generationStatsStep3').style.display = 'none';
 
+    const flaskCsrfToken = document.querySelector('meta[name="csrf-token"]')?.content || '';
+    if (flaskCsrfToken && !formData.has('csrf_token')) {
+        formData.append('csrf_token', flaskCsrfToken);
+    }
+
     fetch('/api/generate-bdd-code', {
         method: 'POST',
+        headers: flaskCsrfToken ? { 'X-CSRFToken': flaskCsrfToken } : {},
+        credentials: 'same-origin',
         body: formData
     })
     .then(r => r.json())

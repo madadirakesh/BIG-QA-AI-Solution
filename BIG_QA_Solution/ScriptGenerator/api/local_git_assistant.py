@@ -2,17 +2,69 @@
 
 import os
 import re
+import shlex
 
 from api.git_service import GitService
+from db.app_db import fetch_data
 
 DEFAULT_COMMIT_LIMIT = 5
 MAX_COMMIT_LIMIT = 20
+REMOTE_GIT_COMMANDS = {"fetch", "pull", "push"}
+ALLOWED_GIT_COMMANDS = {
+    "status",
+    "diff",
+    "log",
+    "show",
+    "branch",
+    "checkout",
+    "switch",
+    "fetch",
+    "pull",
+    "push",
+    "merge",
+    "rebase",
+    "stash",
+    "add",
+    "restore",
+    "commit",
+    "cherry-pick",
+    "rev-parse",
+    "remote",
+}
+REJECTED_GIT_COMMANDS = {"reset", "clean", "config", "credential"}
+REJECTED_GIT_TOKENS = {";", "&&", "||", "|", ">", ">>", "<", "$(", "`"}
 
 
 def _project_path() -> str:
     """Resolve the current repository work tree from the active request context."""
     work_tree = (os.environ.get("GIT_WORK_TREE") or "").strip()
     return work_tree or os.getcwd()
+
+
+def _project_git_auth() -> dict:
+    """Load the saved Git auth config for the selected project, if any."""
+    project_path = _project_path()
+    existing = fetch_data("SELECT id FROM ProjectDetails WHERE project_path = ?", (project_path,))
+    if not existing:
+        return {}
+
+    project_id = existing[0].get("id")
+    if not project_id:
+        return {}
+
+    git_config = fetch_data(
+        "SELECT repo_url, username, access_token FROM ProjectGitConfig WHERE project_details_id = ?",
+        (project_id,),
+    )
+    return dict(git_config[0]) if git_config else {}
+
+
+def _sync_project_git_auth() -> dict:
+    """Ensure the selected repo uses the saved remote URL and token before Git operations."""
+    auth_config = _project_git_auth()
+    if auth_config:
+        GitService.sync_git_config(_project_path(), auth_config)
+    return auth_config
 
 
 def _sanitize_git_output(text: str) -> str:
@@ -84,6 +136,54 @@ def _format_overview(title: str, body: str) -> str:
     return f"{title}:\n{body.strip() if body else '(none)'}"
 
 
+def _format_native_result(result: dict, fallback_success: str) -> str:
+    """Convert native Git action results into MCP-friendly text."""
+    if result.get("success"):
+        return result.get("output") or result.get("message") or fallback_success
+
+    message = _sanitize_git_output(result.get("message") or "Git action failed.")
+    hints = result.get("hints") or []
+    if hints:
+        message = f"{message}\nSuggested next steps:\n" + "\n".join(f"- {hint}" for hint in hints)
+    raise RuntimeError(message)
+
+
+def _validate_git_command(tokens: list[str]) -> None:
+    if not tokens:
+        raise RuntimeError("Please provide a git command to execute.")
+
+    for token in tokens:
+        if token in REJECTED_GIT_TOKENS:
+            raise RuntimeError("Shell operators are not supported in MCP Git commands. Please provide only the git command itself.")
+
+    command = tokens[0]
+    if command in REJECTED_GIT_COMMANDS:
+        raise RuntimeError(f"`git {command}` is not allowed through the MCP assistant.")
+    if command not in ALLOWED_GIT_COMMANDS:
+        raise RuntimeError(f"`git {command}` is not supported by the MCP assistant yet.")
+
+    if command == "branch" and any(flag in tokens[1:] for flag in ("-d", "-D", "--delete")):
+        raise RuntimeError("Branch deletion is not allowed through the MCP assistant.")
+
+    if command == "remote":
+        if len(tokens) > 1 and tokens[1] not in ("-v", "show", "get-url", "prune"):
+            raise RuntimeError("Only read-only remote commands are allowed through the MCP assistant.")
+
+    if command == "checkout" and any(flag in tokens[1:] for flag in ("--orphan",)):
+        raise RuntimeError("`git checkout --orphan` is not allowed through the MCP assistant.")
+
+    if command == "restore" and any(flag in tokens[1:] for flag in ("--source",)):
+        raise RuntimeError("Restoring from an arbitrary source is not allowed through the MCP assistant.")
+
+
+def _is_plain_push_command(tokens: list[str]) -> bool:
+    return tokens in (["push"], ["push", "origin"], ["push", "-u", "origin", current_branch()])
+
+
+def _is_plain_pull_command(tokens: list[str]) -> bool:
+    return tokens in (["pull"], ["pull", "origin"], ["pull", "origin", current_branch()])
+
+
 def local_repository_overview() -> str:
     """Return a compact snapshot of the selected local working tree."""
     project_path = _project_path()
@@ -107,6 +207,7 @@ def local_repository_overview() -> str:
 def remote_repository_overview(refresh: bool = True) -> str:
     """Return the live/cached remote-tracking view for the selected repository."""
     project_path = _project_path()
+    _sync_project_git_auth()
     branch = _resolve_current_branch()
     remotes = _readable_output(_run_git_result("remote", "-v"), "No remotes configured.")
     upstream = _upstream_branch()
@@ -227,6 +328,7 @@ def commit_all(commit_message: str) -> str:
     # The MCP commit tool uses one safe path for staging and committing so the
     # behavior is consistent whether the action is triggered by UI or AI flow.
     normalized_message = (commit_message or "").strip() or "chore: Update project scripts via BIG-QA"
+    _sync_project_git_auth()
     GitService._run_cmd(["git", "add", "."], _project_path())
     result = GitService._run_cmd(["git", "commit", "-m", normalized_message], _project_path())
     if result["success"]:
@@ -244,30 +346,70 @@ def merge_branch(source_branch: str, target_branch: str = "") -> str:
     if not normalized_source:
         raise RuntimeError("Source branch is required for merge.")
 
+    auth_config = _sync_project_git_auth()
     result = GitService.execute_native_action(
         "merge",
         _project_path(),
-        auth_config={},
+        auth_config=auth_config,
         merge_source_branch=normalized_source,
         merge_target_branch=normalized_target,
     )
-    if result.get("success"):
-        return result.get("output") or result.get("message") or "Merge completed successfully."
-    raise RuntimeError(_sanitize_git_output(result.get("message") or "Merge failed."))
+    return _format_native_result(result, "Merge completed successfully.")
 
 
 def pull_current_branch() -> str:
-    # Try the local tracking configuration first, then fall back to origin/<branch>
-    # so repositories with incomplete upstream setup still have a useful path.
-    branch = current_branch()
-    try:
-        return _run_git("pull", "--rebase")
-    except RuntimeError:
-        return _run_git("pull", "origin", branch, "--rebase")
+    auth_config = _sync_project_git_auth()
+    result = GitService.execute_native_action("pull", _project_path(), auth_config=auth_config)
+    return _format_native_result(result, "Pull completed successfully.")
 
 
 def push_current_branch() -> str:
-    # Always push the currently checked-out branch and set upstream so the first
-    # successful push also establishes tracking for future native Git actions.
-    branch = current_branch()
-    return _run_git("push", "-u", "origin", branch)
+    auth_config = _sync_project_git_auth()
+    result = GitService.execute_native_action("push", _project_path(), auth_config=auth_config)
+    return _format_native_result(result, "Push completed successfully.")
+
+
+def execute_git_command(command: str) -> str:
+    """Run a guarded git command for common operational workflows."""
+    raw_command = (command or "").strip()
+    if not raw_command:
+        raise RuntimeError("Please provide the git command you want to run.")
+
+    try:
+        tokens = shlex.split(raw_command)
+    except ValueError as exc:
+        raise RuntimeError(f"Unable to parse git command: {exc}") from exc
+
+    if tokens and tokens[0].lower() == "git":
+        tokens = tokens[1:]
+
+    _validate_git_command(tokens)
+    command_name = tokens[0]
+    auth_config = _sync_project_git_auth()
+
+    if command_name == "push" and _is_plain_push_command(tokens):
+        result = GitService.execute_native_action("push", _project_path(), auth_config=auth_config)
+        return _format_native_result(result, "Push completed successfully.")
+
+    if command_name == "pull" and _is_plain_pull_command(tokens):
+        result = GitService.execute_native_action("pull", _project_path(), auth_config=auth_config)
+        return _format_native_result(result, "Pull completed successfully.")
+
+    if command_name == "merge":
+        if len(tokens) == 2 and not tokens[1].startswith("-"):
+            return merge_branch(tokens[1], "")
+        if len(tokens) == 3 and not tokens[1].startswith("-") and not tokens[2].startswith("-"):
+            return merge_branch(tokens[1], tokens[2])
+
+    result = GitService._run_cmd(["git", *tokens], _project_path())
+    stdout = _sanitize_git_output((result.get("stdout") or "").strip())
+    stderr = _sanitize_git_output((result.get("stderr") or "").strip())
+    if result.get("success"):
+        return stdout or stderr or f"`git {' '.join(tokens)}` completed successfully."
+
+    error_text = stderr or stdout or "unknown git error"
+    if command_name in REMOTE_GIT_COMMANDS:
+        hints = GitService._build_git_hints(command_name, current_branch(), error_text)
+        if hints:
+            error_text = f"{error_text}\nSuggested next steps:\n" + "\n".join(f"- {hint}" for hint in hints)
+    raise RuntimeError(error_text)

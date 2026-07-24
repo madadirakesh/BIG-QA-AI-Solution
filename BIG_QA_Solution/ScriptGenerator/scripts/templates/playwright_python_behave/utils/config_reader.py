@@ -1,7 +1,7 @@
 import os
-from dotenv import load_dotenv
+from dotenv import dotenv_values
 
-load_dotenv()
+ENV_VALUES = dotenv_values()
 
 
 class ConfigReader:
@@ -13,7 +13,7 @@ class ConfigReader:
 
     @staticmethod
     def get(key: str, default: str = None) -> str:
-        value = os.getenv(key, default)
+        value = ENV_VALUES.get(key, os.getenv(key, default))
         if value is None:
             raise EnvironmentError(
                 f"Required environment variable '{key}' is not set in .env"

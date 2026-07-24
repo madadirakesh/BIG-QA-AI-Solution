@@ -344,31 +344,24 @@ def get_pytest_new_suite_prompt(file_templates: dict, support_content: str, bdd_
             def enter_username(browser):
                 LoginPage(browser).enter_username()
 
-            # QUOTING RULE: use double-quoted decorator string so single quotes
-            # inside step text work correctly, e.g.:
-            @when("I click on the 'Monitoring' tab")
-            def click_monitoring_tab(browser):
-                LoginPage(browser).click_monitoring_tab()
-
         ── FEATURE FILE RULES ─────────────────────────────────────────────────────────
         - Reproduce the BDD Content EXACTLY as the feature file — do not invent new steps.
-        - NEVER use double quotes (") anywhere inside Gherkin step text.
-          Double quotes inside a step break pytest-bdd's step matching regex.
-        - Use single quotes (') for any element/button/field name references inside steps.
-          CORRECT:   When I click on the 'Monitoring' tab
-          CORRECT:   And I enter 'username' in the 'Email' field
-          INCORRECT: When I click on the "Monitoring" tab   ← breaks regex matching
-          INCORRECT: And I enter "username" in the "Email" field
+        - Preserve the exact parameter quote style already present in the BDD content.
+        - If a feature step uses "value", keep "value" in the feature output.
+        - If a feature step uses 'value', keep 'value' in the feature output.
 
         ── STEP DEFINITION RULES ──────────────────────────────────────────────────────
         - Step decorator strings MUST match the feature file step text CHARACTER-FOR-CHARACTER.
-        - Use single-quoted decorator strings: @when('I click on the \\'Monitoring\\' tab')
-          OR escape with curly-brace parsers if using parse/cfparse.
-        - NEVER use double quotes inside the step decorator text.
+        - Preserve exactly one quote convention for equivalent placeholders across the file.
+        - If the feature step uses double-quoted parameters, the decorator step text must use the
+          same double-quoted parameters.
+        - If the feature step uses single-quoted parameters, the decorator step text must use the
+          same single-quoted parameters.
+        - Choose the outer Python string quotes accordingly so the decorator remains valid Python.
         - Example mapping:
-            Feature step:  When I click on the 'Monitoring' tab
-            Step def:      @when("I click on the 'Monitoring' tab")
-            Function:      def click_monitoring_tab(browser): ...
+            Feature step:  When I enter "standard_user" in the "Username" field
+            Step def:      @when('I enter "standard_user" in the "Username" field')
+            Function:      def enter_username(browser): ...
 
         ── GENERAL RULES ──────────────────────────────────────────────────────────────
         - Every BDD step MUST have a corresponding step-def function and page method.
@@ -493,13 +486,10 @@ def get_pytest_extend_existing_file_prompt(file_type: str, bdd_steps_text: str, 
 
                     7. STEP DECORATOR QUOTING — CRITICAL FOR pytest-bdd.
                        Step decorator text must EXACTLY match the feature file step text.
-                       NEVER use double quotes (") inside step decorator strings — they break
-                       pytest-bdd's regex step matcher.
-                       Use single quotes inside decorators for any named references:
-                         CORRECT:   @when("I click on the 'Monitoring' tab")
-                         INCORRECT: @when('I click on the "Monitoring" tab')
-                       If the feature file step already uses double quotes, you MUST rewrite
-                       both the feature file step AND the decorator to use single quotes.
+                       Preserve the exact parameter quote style already present in the BDD Content.
+                       If the feature step uses "value", the decorator step text must also use "value".
+                       If the feature step uses 'value', the decorator step text must also use 'value'.
+                       Never mix quote styles for equivalent parameter placeholders in the same file.
 
                     ══ FILE-TYPE-SPECIFIC INSTRUCTIONS ═════════════════════════════════════════
                     {file_type_instructions}
@@ -536,6 +526,16 @@ def get_python_behave_prompt(support_content: str, bdd_content: str) -> str:
         You are an expert QA automation engineer specialized in Python Behave framework with Selenium WebDriver.
         Based on the following BDD content, generate a complete Behave test structure.
 
+        CRITICAL QUOTING RULES FOR PYTHON BDD:
+        - Preserve the exact Gherkin parameter quote style already present in the BDD Content.
+        - If a step in the feature uses double quotes, the generated @given/@when/@then decorator text
+          must use the same double quotes in the step text.
+        - If a step in the feature uses single quotes, the generated decorator text must use the same
+          single quotes in the step text.
+        - Never mix single-quoted and double-quoted parameter styles for equivalent placeholders in the
+          same generated step-definition file.
+        - Step decorator text must match the feature step text character-for-character.
+
         {SELENIUM_STANDARDS_PYTHON}
         {LOCATOR_USAGE_STANDARDS}
 
@@ -552,6 +552,21 @@ def get_universal_script_generation_prompt(framework: str, tool: str, language: 
     # Used in file: BIG_QA_Solution/ScriptGenerator/api/backend.py
     # Used under function: UniversalScriptGenerator.generate
     """
+    framework_lower = str(framework or "").lower()
+    language_lower = str(language or "").lower()
+    python_bdd_quote_rules = ""
+    if language_lower == "python" and ("behave" in framework_lower or "pytest" in framework_lower):
+        python_bdd_quote_rules = """
+        9. PYTHON BDD QUOTING IS STRICT.
+           Preserve the exact quote convention already used in the BDD Content for parameterized step text.
+           If the BDD step uses "value", the generated decorator must also use "value" inside the step text.
+           If the BDD step uses 'value', the generated decorator must also use 'value' inside the step text.
+           Do NOT mix single-quoted and double-quoted parameter placeholders across decorators in the same
+           generated step-definition file.
+           When the .feature file is omitted from output, the step definitions MUST still match the existing
+           feature/Bdd Content character-for-character.
+        """
+
     return f"""
         You are an expert QA automation engineer specialized in the {framework} framework using {tool} with {language}.
         Your task: generate a COMPLETE, FULLY WORKING test suite based on the provided content.
@@ -568,6 +583,7 @@ def get_universal_script_generation_prompt(framework: str, tool: str, language: 
         6. Follow the 'Project Layout Mappings (CRITICAL)' to exactly match the directory structure of the generated files. Check these mappings before formatting the JSON file keys. E.g., if Feature Files must go to 'src/test/resources/features', the output JSON key must be 'src/test/resources/features/MyFeature.feature'.
         7. Do not generate Step definitions if the step definition is already defined in 'EXISTING STEP DEFINITIONS' in the Supporting Information. Only generate NEW step definitions that are missing.
         8. For BDD Step Definitions, NEVER use 'And', 'Or', or 'But' as the step annotation keyword (e.g., @And, @But). Always substitute them with the appropriate 'Given', 'When', or 'Then' keyword that logically corresponds to the step's preceding context in the scenario.
+        {python_bdd_quote_rules}
 
         {standards}
         {LOCATOR_USAGE_STANDARDS}

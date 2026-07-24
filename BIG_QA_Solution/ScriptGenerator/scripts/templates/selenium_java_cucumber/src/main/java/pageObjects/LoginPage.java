@@ -19,8 +19,8 @@ public class LoginPage {
 
     // Team standard-app locators first (txtUserID / txtPassword / sub), then generic fallbacks.
     private static final By USERNAME = By.cssSelector(
-            "#txtUserID, input[type='email'], input[name*='user' i], input[id*='user' i], input[type='text']");
-    private static final By PASSWORD = By.cssSelector("#txtPassword, input[type='password']");
+            "#txtUserID, input[autocomplete='username'], input[placeholder*='username' i], input[placeholder*='email' i], input[type='email'], input[name*='user' i], input[id*='user' i], input[type='text']");
+    private static final By PASSWORD = By.cssSelector("#txtPassword, input[autocomplete='current-password'], input[placeholder*='password' i], input[type='password']");
     private static final By LOGIN_BUTTON = By.cssSelector(
             "#sub, button[type='submit'], input[type='submit'], button[id*='login' i], button[name*='login' i]");
 

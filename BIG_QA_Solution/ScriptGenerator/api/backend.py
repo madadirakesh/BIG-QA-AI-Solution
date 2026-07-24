@@ -590,12 +590,38 @@ def parse_json_result(result: str, fallback_key: str) -> dict:
 
     return parsed
 
-def sanitize_step_quoting(files: dict) -> dict:
+def _detect_bdd_parameter_quote_style(feature_text: str) -> str:
+    for line in (feature_text or "").splitlines():
+        if not re.match(r'^\s*(Given|When|Then|And|But)\b', line, re.IGNORECASE):
+            continue
+        if re.search(r'"[^"\n]*"', line):
+            return '"'
+        if re.search(r"'[^'\n]*'", line):
+            return "'"
+    return ""
+
+
+def _normalize_gherkin_parameter_quotes(text: str, preferred_quote: str) -> str:
+    if preferred_quote == '"':
+        return re.sub(r"'([^'\n]*)'", r'"\1"', text)
+    if preferred_quote == "'":
+        return re.sub(r'"([^"\n]*)"', r"'\1'", text)
+    return text
+
+
+def sanitize_step_quoting(files: dict, reference_bdd_text: str = "") -> dict:
+    preferred_quote = ""
+    for fname, code in files.items():
+        if isinstance(code, str) and fname.endswith(".feature"):
+            preferred_quote = _detect_bdd_parameter_quote_style(code)
+            if preferred_quote:
+                break
+    if not preferred_quote:
+        preferred_quote = _detect_bdd_parameter_quote_style(reference_bdd_text)
 
     def fix_feature_line(line: str) -> str:
-        if re.match(r'^\s*(Given|When|Then|And|But)\b', line, re.IGNORECASE):
-            # Replace "quoted text" with 'quoted text' inside step text
-            line = re.sub(r'"([^"]*)"', r"'\1'", line)
+        if preferred_quote and re.match(r'^\s*(Given|When|Then|And|But)\b', line, re.IGNORECASE):
+            line = _normalize_gherkin_parameter_quotes(line, preferred_quote)
         return line
 
     def fix_decorator_line(line: str) -> str:
@@ -605,13 +631,16 @@ def sanitize_step_quoting(files: dict) -> dict:
         )
         if not m:
             return line
-        prefix     = m.group(1)
-        quote_char = m.group(2)
-        step_text  = m.group(3)
-        rest       = m.group(4)
+        prefix = m.group(1)
+        step_text = m.group(3)
+        rest = m.group(4)
 
-        step_text = step_text.replace('"', "'")
-        return f'{prefix}("{step_text}"){rest}'
+        if preferred_quote:
+            step_text = _normalize_gherkin_parameter_quotes(step_text, preferred_quote)
+
+        outer_quote = "'" if preferred_quote == '"' else '"'
+        escaped_step_text = step_text.replace("\\", "\\\\").replace(outer_quote, f"\\{outer_quote}")
+        return f"{prefix}({outer_quote}{escaped_step_text}{outer_quote}){rest}"
 
     sanitized = {}
     for fname, code in files.items():
@@ -751,7 +780,7 @@ class PythonPytestGenerator(CodeGenerator):
 
             prompt = sg_prompts.get_pytest_new_suite_prompt(file_templates, support_content, bdd_content)
             parsed = await self._call_ai_and_parse(prompt, "tests/generated_test.py")
-            return sanitize_step_quoting(parsed)
+            return sanitize_step_quoting(parsed, bdd_content)
 
         elif file_mode == "Existing":
             # (Simplified Existing logic for brevity in this step, but I'll migrate it fully below)
@@ -998,31 +1027,24 @@ def navigate_to_login_page(browser):
             def enter_username(browser):
                 LoginPage(browser).enter_username()
 
-            # QUOTING RULE: use double-quoted decorator string so single quotes
-            # inside step text work correctly, e.g.:
-            @when("I click on the 'Monitoring' tab")
-            def click_monitoring_tab(browser):
-                LoginPage(browser).click_monitoring_tab()
-
         ── FEATURE FILE RULES ─────────────────────────────────────────────────────────
         - Reproduce the BDD Content EXACTLY as the feature file — do not invent new steps.
-        - NEVER use double quotes (") anywhere inside Gherkin step text.
-          Double quotes inside a step break pytest-bdd's step matching regex.
-        - Use single quotes (') for any element/button/field name references inside steps.
-          CORRECT:   When I click on the 'Monitoring' tab
-          CORRECT:   And I enter 'username' in the 'Email' field
-          INCORRECT: When I click on the "Monitoring" tab   ← breaks regex matching
-          INCORRECT: And I enter "username" in the "Email" field
+        - Preserve the exact parameter quote style already present in the BDD content.
+        - If a feature step uses "value", keep "value" in the feature output.
+        - If a feature step uses 'value', keep 'value' in the feature output.
 
         ── STEP DEFINITION RULES ──────────────────────────────────────────────────────
         - Step decorator strings MUST match the feature file step text CHARACTER-FOR-CHARACTER.
-        - Use single-quoted decorator strings: @when('I click on the \'Monitoring\' tab')
-          OR escape with curly-brace parsers if using parse/cfparse.
-        - NEVER use double quotes inside the step decorator text.
+        - Preserve exactly one quote convention for equivalent placeholders across the file.
+        - If the feature step uses double-quoted parameters, the decorator step text must use the
+          same double-quoted parameters.
+        - If the feature step uses single-quoted parameters, the decorator step text must use the
+          same single-quoted parameters.
+        - Choose the outer Python string quotes accordingly so the decorator remains valid Python.
         - Example mapping:
-            Feature step:  When I click on the 'Monitoring' tab
-            Step def:      @when("I click on the 'Monitoring' tab")
-            Function:      def click_monitoring_tab(browser): ...
+            Feature step:  When I enter "standard_user" in the "Username" field
+            Step def:      @when('I enter "standard_user" in the "Username" field')
+            Function:      def enter_username(browser): ...
 
         ── GENERAL RULES ──────────────────────────────────────────────────────────────
         - Every BDD step MUST have a corresponding step-def function and page method.
@@ -1443,7 +1465,7 @@ class UniversalScriptGenerator(CodeGenerator):
         
         parsed = await self._call_ai_and_parse(prompt, fallback)
         if self.language.lower() == "python":
-            return sanitize_step_quoting(parsed)
+            return sanitize_step_quoting(parsed, bdd_content)
         return parsed
 
 async def route_code_generation(

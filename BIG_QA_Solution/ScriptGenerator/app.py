@@ -128,6 +128,63 @@ def build_ai_configuration_message(missing_fields):
     return "AI configuration is incomplete. Please open Configure AI and complete the setup before generating the script."
 
 
+def sync_project_env_credentials(project_path, baseurl, app_username, app_password):
+    """Keep a generated project's .env aligned with Project Configuration credentials."""
+    project_path = (project_path or "").strip()
+    if not project_path:
+        return
+
+    env_file = Path(project_path) / ".env"
+    if not env_file.exists():
+        return
+
+    try:
+        existing_lines = env_file.read_text(encoding="utf-8").splitlines(keepends=True)
+    except OSError:
+        return
+
+    current_key = ""
+    for line in existing_lines:
+        stripped = line.strip()
+        if stripped and not stripped.startswith("#") and stripped.startswith("CRED_KEY="):
+            current_key = stripped.split("=", 1)[1].strip()
+            break
+    if not current_key:
+        current_key = generate_key()
+
+    updates = {
+        "APP_URL": (baseurl or "").strip(),
+        "USER": (app_username or "").strip(),
+        "CRED_KEY": current_key,
+        "PASSWORD": encrypt_secret(app_password or "", current_key) if app_password else "",
+    }
+
+    new_lines = []
+    seen = set()
+    for line in existing_lines:
+        stripped = line.strip()
+        if stripped and not stripped.startswith("#") and "=" in line:
+            key = line.split("=", 1)[0].strip()
+            if key in updates:
+                new_lines.append(f"{key}={updates[key]}\n")
+                seen.add(key)
+            else:
+                new_lines.append(line)
+        else:
+            new_lines.append(line)
+
+    for key, value in updates.items():
+        if key not in seen:
+            if new_lines and not new_lines[-1].endswith("\n"):
+                new_lines[-1] += "\n"
+            new_lines.append(f"{key}={value}\n")
+
+    try:
+        env_file.write_text("".join(new_lines), encoding="utf-8")
+    except OSError:
+        return
+
+
 def normalize_ai_error_message(raw_error):
     """Translate low-level provider/SDK errors into user-friendly guidance."""
     text = str(raw_error or "").strip()
@@ -338,10 +395,10 @@ if str(PROJECT_BOOTSTRAPPER_DIR) not in sys.path:
 
 from ProjectBootstrapper.bootstrapper_engine import BootstrapperEngine
 from ProjectBootstrapper.environment_setup import EnvironmentSetup
-from db.app_db import fetch_data, insert_data, update_data, init_db, get_db
+from db.app_db import fetch_data, insert_data, update_data, init_db, get_db, purge_transient_test_projects
 # encrypt_for_app / decrypt_for_app protect the password stored in ProjectData with an app master
 # key (Flask .env). decrypt_for_app passes legacy plaintext rows through unchanged.
-from utils.crypto_util import encrypt_for_app, decrypt_for_app
+from utils.crypto_util import decrypt_for_app, encrypt_for_app, encrypt_secret, generate_key
 from utils.password_util import hash_password, verify_password, is_hashed
 
 # Load environment variables early
@@ -432,6 +489,10 @@ def _locator_logout_event(user_id):
 
 @app.before_request
 def require_authentication():
+    # Defensive cleanup: strip only known transient MCP verification projects
+    # so local test artifacts never appear in project selectors or the DB viewer.
+    purge_transient_test_projects()
+
     # Central guard: enforce login for every route except the public ones.
     endpoint = request.endpoint
     if endpoint is None or endpoint in PUBLIC_ENDPOINTS:
@@ -1498,6 +1559,37 @@ def is_valid_git_url(url):
         return True
     return False
 
+
+def normalize_project_path(project_path):
+    project_path = (project_path or '').strip()
+    if not project_path:
+        return ''
+    return os.path.normpath(project_path)
+
+
+def resolve_project_record(project_id=None, project_path=None):
+    if project_id:
+        rows = fetch_data(
+            "SELECT id, project_name, project_path FROM ProjectDetails WHERE id = ?",
+            (project_id,)
+        )
+        if rows:
+            row = dict(rows[0])
+            row['project_path'] = normalize_project_path(row.get('project_path'))
+            return row
+
+    normalized_path = normalize_project_path(project_path)
+    if normalized_path:
+        rows = fetch_data("SELECT id, project_name, project_path FROM ProjectDetails")
+        for row in rows:
+            current_path = normalize_project_path(row.get('project_path'))
+            if current_path and current_path == normalized_path:
+                resolved = dict(row)
+                resolved['project_path'] = current_path
+                return resolved
+
+    return None
+
 def detect_project_settings_helper(path):
     if not path or not os.path.exists(path):
         return "Unknown", "Unknown", "Unknown", "Unknown", "Existing"
@@ -1594,7 +1686,7 @@ def save_project_config():
         is_new_project = data.get('is_new_project', True)
         project_id = data.get('project_id')
         project_name = data.get('project_name', '').strip()
-        project_path = data.get('project_path', '').strip()
+        project_path = normalize_project_path(data.get('project_path', ''))
         baseurl = data.get('baseurl', '').strip()
         app_username = data.get('app_username', data.get('username', '')).strip()
         app_password = data.get('app_password', data.get('password', '')).strip()
@@ -1609,12 +1701,12 @@ def save_project_config():
 
         # Auto-resolve if the project path already exists in the database
         if project_path:
-            existing_path = fetch_data("SELECT id, project_name FROM ProjectDetails WHERE project_path = ?", (project_path,))
+            existing_path = resolve_project_record(project_path=project_path)
             if existing_path:
                 is_new_project = False
-                project_id = existing_path[0]['id']
+                project_id = existing_path['id']
                 if not project_name:
-                    project_name = existing_path[0]['project_name']
+                    project_name = existing_path['project_name']
 
         # Auto-derive project name if not provided
         if not project_name and project_path:
@@ -1760,6 +1852,8 @@ def save_project_config():
                 (baseurl, app_username, encrypted_password, project_id)
             )
 
+        sync_project_env_credentials(project_path, baseurl, app_username, app_password)
+
         # 6. Insert or Update ProjectGitConfig
         pgc_existing = fetch_data("SELECT id FROM ProjectGitConfig WHERE project_details_id = ?", (project_id,))
         if pgc_existing:
@@ -1833,21 +1927,22 @@ def save_git_config():
         update_data(create_git_config_table)
         
         data = request.json
-        p_path = data.get('project_path', '').strip()
+        project_id = data.get('project_id')
+        try:
+            project_id = int(project_id) if project_id not in (None, '') else None
+        except (TypeError, ValueError):
+            project_id = None
+        p_path = normalize_project_path(data.get('project_path', ''))
         repo_url = data.get('repo_url', '')
         username = data.get('username', '')
         access_token = data.get('access_token', '')
         
-        if not p_path:
-            return jsonify({"status": "error", "message": "Project path is required."}), 400
-            
-        existing = fetch_data("SELECT id FROM ProjectDetails WHERE project_path = ?", (p_path,))
-        p_details_id = None
-        
-        if existing:
-            p_details_id = existing[0]['id']
-        else:
+        project = resolve_project_record(project_id=project_id, project_path=p_path)
+        if not project:
             return jsonify({"status": "error", "message": "Project not found in DB. Please select it properly."}), 404
+
+        p_details_id = project['id']
+        p_path = project.get('project_path', '')
                 
         if p_details_id:
             gc_existing = fetch_data("SELECT id FROM ProjectGitConfig WHERE project_details_id = ?", (p_details_id,))
@@ -1865,7 +1960,12 @@ def save_git_config():
             except Exception as sync_err:
                 app.logger.warning(f"Git config sync error: {sync_err}")
                                 
-        return jsonify({"status": "success", "message": "Git configuration saved successfully."})
+        return jsonify({
+            "status": "success",
+            "message": "Git configuration saved successfully.",
+            "project_id": p_details_id,
+            "project_path": p_path
+        })
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
@@ -1873,18 +1973,28 @@ def save_git_config():
 @login_required()
 def get_git_config():
     try:
-        p_path = request.args.get('project_path', '').strip()
-        if not p_path:
-            return jsonify({"status": "error", "message": "Project path required"}), 400
-            
-        existing = fetch_data("SELECT id FROM ProjectDetails WHERE project_path = ?", (p_path,))
-        if existing:
-            p_id = existing[0]['id']
+        project_id = request.args.get('project_id', '')
+        try:
+            project_id = int(project_id) if project_id not in (None, '') else None
+        except (TypeError, ValueError):
+            project_id = None
+        p_path = normalize_project_path(request.args.get('project_path', ''))
+
+        project = resolve_project_record(project_id=project_id, project_path=p_path)
+        if project:
+            p_id = project['id']
             data = fetch_data("SELECT repo_url, username, access_token FROM ProjectGitConfig WHERE project_details_id = ?", (p_id,))
             if data:
-                return jsonify({"status": "success", "data": data[0]})
+                return jsonify({"status": "success", "project_id": p_id, "data": data[0]})
         
-        return jsonify({"status": "success", "data": {"repo_url": "", "username": "", "access_token": ""}})
+        if not project_id and not p_path:
+            return jsonify({"status": "error", "message": "Project id or path required"}), 400
+
+        return jsonify({
+            "status": "success",
+            "project_id": project['id'] if project else None,
+            "data": {"repo_url": "", "username": "", "access_token": ""}
+        })
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
@@ -1896,19 +2006,25 @@ def git_native_action():
     try:
         data = request.json
         action = data.get('action')
-        project_path = data.get('project_path')
+        project_id = data.get('project_id')
+        try:
+            project_id = int(project_id) if project_id not in (None, '') else None
+        except (TypeError, ValueError):
+            project_id = None
+        project_path = normalize_project_path(data.get('project_path'))
         commit_message = data.get('commit_message')
         merge_source_branch = data.get('merge_source_branch')
         merge_target_branch = data.get('merge_target_branch')
         
-        if not action or not project_path:
-            return jsonify({"status": "error", "message": "Action and project_path are required"}), 400
-            
-        existing = fetch_data("SELECT id FROM ProjectDetails WHERE project_path = ?", (project_path,))
-        if not existing:
+        if not action or (not project_id and not project_path):
+            return jsonify({"status": "error", "message": "Action and project selection are required"}), 400
+
+        project = resolve_project_record(project_id=project_id, project_path=project_path)
+        if not project:
             return jsonify({"status": "error", "message": "Project not found"}), 404
             
-        p_id = existing[0]['id']
+        p_id = project['id']
+        project_path = project.get('project_path', '')
         git_config = fetch_data("SELECT repo_url, username, access_token FROM ProjectGitConfig WHERE project_details_id = ?", (p_id,))
         auth_config = git_config[0] if git_config else {}
         
@@ -1933,16 +2049,25 @@ def git_mcp_action():
     try:
         data = request.json
         prompt = data.get('prompt')
-        project_path = data.get('project_path')
+        project_id = data.get('project_id')
+        try:
+            project_id = int(project_id) if project_id not in (None, '') else None
+        except (TypeError, ValueError):
+            project_id = None
+        project_path = normalize_project_path(data.get('project_path'))
+        assistant_mode = str(data.get('assistant_mode') or 'explain').strip().lower()
         
-        if not prompt or not project_path:
-            return jsonify({"status": "error", "message": "Prompt and project_path are required"}), 400
+        if not prompt or (not project_id and not project_path):
+            return jsonify({"status": "error", "message": "Prompt and project selection are required"}), 400
+        if assistant_mode not in ('explain', 'execute'):
+            assistant_mode = 'explain'
             
         # Sync git config before the MCP assistant runs so local repo credentials
         # and git identity are available to MCP-backed Git operations.
-        existing = fetch_data("SELECT id FROM ProjectDetails WHERE project_path = ?", (project_path,))
-        if existing:
-            p_id = existing[0]['id']
+        project = resolve_project_record(project_id=project_id, project_path=project_path)
+        if project:
+            p_id = project['id']
+            project_path = project.get('project_path', '')
             git_config = fetch_data("SELECT repo_url, username, access_token FROM ProjectGitConfig WHERE project_details_id = ?", (p_id,))
             if git_config:
                 try:
@@ -1955,7 +2080,7 @@ def git_mcp_action():
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         try:
-            result = loop.run_until_complete(run_mcp_git_prompt(prompt, project_path))
+            result = loop.run_until_complete(run_mcp_git_prompt(prompt, project_path, assistant_mode=assistant_mode))
         finally:
             loop.close()
             
@@ -2041,6 +2166,28 @@ def script_runner_stream():
         print(f"DEBUG: Streaming route failed: {e}")
         return jsonify({"error": str(e)}), 500
 
+@app.route('/api/script-runner/project-commands', methods=['POST'])
+@login_required()
+def script_runner_project_commands():
+    try:
+        data = request.get_json() or {}
+        full_path = (data.get('project_path') or '').strip()
+        language = (data.get('language') or '').strip()
+        framework = (data.get('framework') or '').strip()
+        tool = (data.get('tool') or '').strip()
+        saved_commands = data.get('saved_commands', '')
+
+        resolved = ScriptRunnerService.resolve_project_commands(
+            full_path=full_path,
+            language=language,
+            framework=framework,
+            tool=tool,
+            saved_commands=saved_commands,
+        )
+        return jsonify({"status": "success", "data": resolved})
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
 @app.route('/api/script-runner/stop', methods=['POST'])
 @login_required()
 def script_runner_stop():
@@ -2089,8 +2236,507 @@ def git_execute_command():
     except Exception as e:
         return jsonify({"output": f"Error: {str(e)}"}), 500
 
+def _format_report_duration(seconds):
+    try:
+        seconds = float(seconds or 0)
+    except Exception:
+        seconds = 0.0
+    if seconds < 60:
+        return f"{seconds:.2f}s"
+    minutes, rem = divmod(seconds, 60)
+    if minutes < 60:
+        return f"{int(minutes)}m {rem:.1f}s"
+    hours, rem_minutes = divmod(minutes, 60)
+    return f"{int(hours)}h {int(rem_minutes)}m"
 
 
+def _render_behave_dashboard(json_path: str, display_path: str):
+    import html
+    import json
+
+    with open(json_path, 'r', encoding='utf-8', errors='ignore') as f:
+        raw_text = (f.read() or '').strip()
+    if not raw_text:
+        raise ValueError(f"Behave JSON report is empty: {json_path}")
+    json_start = raw_text.find('[')
+    if json_start > 0:
+        raw_text = raw_text[json_start:]
+    raw = json.loads(raw_text)
+
+    features = raw if isinstance(raw, list) else []
+    features_count = len(features)
+    scenarios_count = 0
+    steps_count = 0
+    duration_total = 0.0
+    step_counts = {"passed": 0, "failed": 0, "skipped": 0, "undefined": 0, "untested": 0}
+    scenario_counts = {"passed": 0, "failed": 0, "skipped": 0, "undefined": 0, "untested": 0}
+    feature_blocks = []
+
+    def normalize_status(status):
+        value = str(status or '').strip().lower()
+        if value in step_counts:
+            return value
+        if value == 'error':
+            return 'failed'
+        return 'untested'
+
+    def badge(text, tone):
+        return f'<span class="badge badge-{tone}">{html.escape(text)}</span>'
+
+    for feature in features:
+        feature_name = feature.get("name") or "Unnamed Feature"
+        feature_location = feature.get("location") or ""
+        feature_tags = feature.get("tags") or []
+        feature_duration = 0.0
+        scenario_cards = []
+
+        for scenario in feature.get("elements") or []:
+            scenarios_count += 1
+            scenario_status = normalize_status(scenario.get("status"))
+            scenario_counts[scenario_status] += 1
+            scenario_duration = 0.0
+            step_rows = []
+            for step in scenario.get("steps") or []:
+                result = step.get("result") or {}
+                step_status = normalize_status(result.get("status") or step.get("status"))
+                duration = float(result.get("duration") or 0.0)
+                match = step.get("match") or {}
+                step_counts[step_status] += 1
+                steps_count += 1
+                duration_total += duration
+                scenario_duration += duration
+                step_rows.append(
+                    f"""<div class="step-row status-{html.escape(step_status)}" data-status="{html.escape(step_status)}">
+<div class="step-main"><span class="step-pill">{html.escape(step.get("keyword") or "")}</span><span class="step-text">{html.escape(step.get("name") or "")}</span></div>
+<div class="step-meta"><span>{html.escape(_format_report_duration(duration))}</span><span>{html.escape(match.get("location") or step.get("location") or "")}</span></div>
+</div>"""
+                )
+            feature_duration += scenario_duration
+            scenario_tags = "".join(badge(f"@{tag}" if not str(tag).startswith("@") else str(tag), "info") for tag in (scenario.get("tags") or []))
+            scenario_cards.append(
+                f"""<article class="scenario-card status-{html.escape(scenario_status)}" data-status="{html.escape(scenario_status)}">
+<div class="scenario-head" role="button" tabindex="0" aria-expanded="true">
+<div><div class="scenario-title-row"><button type="button" class="status-chip badge badge-{html.escape(scenario_status)}" data-filter-status="{html.escape(scenario_status)}">{html.escape(scenario_status.title())}</button><span class="scenario-title">{html.escape(scenario.get("name") or "Unnamed Scenario")}</span></div><div class="scenario-subtitle">{scenario_tags}<span>{html.escape(scenario.get("location") or "")}</span></div></div>
+<div class="scenario-duration">{html.escape(_format_report_duration(scenario_duration))}</div>
+</div>
+<div class="steps-wrap">{''.join(step_rows)}</div>
+</article>"""
+            )
+
+        feature_tag_html = "".join(badge(f"@{tag}" if not str(tag).startswith("@") else str(tag), "info") for tag in feature_tags)
+        feature_blocks.append(
+            f"""<section class="feature-card">
+<div class="feature-head"><div><div class="feature-kicker">Feature</div><h2>{html.escape(feature_name)}</h2><div class="feature-meta">{feature_tag_html}<span>{html.escape(feature_location)}</span></div></div><div class="feature-duration">{html.escape(_format_report_duration(feature_duration))}</div></div>
+<div class="scenario-list">{''.join(scenario_cards)}</div>
+</section>"""
+        )
+
+    passed_steps = step_counts["passed"]
+    failed_steps = step_counts["failed"]
+    skipped_steps = step_counts["skipped"] + step_counts["untested"]
+    undefined_steps = step_counts["undefined"]
+    total_step_buckets = max(passed_steps + failed_steps + skipped_steps + undefined_steps, 1)
+    scenario_total = max(sum(scenario_counts.values()), 1)
+    pass_rate = round((passed_steps / total_step_buckets) * 100, 1)
+    donut_style = (
+        f"conic-gradient(#2ea44f 0 {(passed_steps / total_step_buckets) * 100:.2f}%, "
+        f"#d73a49 {(passed_steps / total_step_buckets) * 100:.2f}% {((passed_steps + failed_steps) / total_step_buckets) * 100:.2f}%, "
+        f"#d29922 {((passed_steps + failed_steps) / total_step_buckets) * 100:.2f}% {((passed_steps + failed_steps + skipped_steps) / total_step_buckets) * 100:.2f}%, "
+        f"#1f8acb {((passed_steps + failed_steps + skipped_steps) / total_step_buckets) * 100:.2f}% 100%)"
+    )
+
+    def percent(value, total):
+        return f"{(value / max(total, 1)) * 100:.1f}%"
+
+    safe_display_path = html.escape(display_path)
+    return f"""<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Behave Execution Dashboard</title>
+  <style>
+    :root {{
+      --bg:#f3f7fc; --panel:#fff; --line:rgba(74,107,155,.16); --text:#1d2a3b; --muted:#667892;
+      --accent:#0b7cff; --success:#2ea44f; --danger:#d73a49; --warning:#d29922; --info:#1f8acb;
+    }}
+    * {{ box-sizing:border-box; }} body {{ margin:0; font-family:"Segoe UI",Arial,sans-serif; color:var(--text); background:linear-gradient(180deg,#fff 0%,var(--bg) 100%); }}
+    .page {{ max-width:1380px; margin:0 auto; padding:28px 20px 48px; }} .hero,.cards {{ display:grid; gap:22px; }} .hero {{ grid-template-columns:1.6fr 1fr; margin-bottom:22px; }} .cards {{ grid-template-columns:repeat(4,minmax(0,1fr)); margin-bottom:22px; }}
+    .panel,.feature-card {{ background:var(--panel); border:1px solid var(--line); border-radius:22px; box-shadow:0 18px 48px rgba(23,43,77,.08); }}
+    .hero-copy,.hero-side,.stat-card,.bar-panel {{ padding:24px; }} .eyebrow,.feature-kicker {{ display:inline-flex; padding:6px 10px; border-radius:999px; background:rgba(11,124,255,.10); color:var(--accent); font-size:12px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; }}
+    h1 {{ margin:14px 0 10px; font-size:clamp(28px,4vw,42px); line-height:1.05; }} .sub,.path,.feature-meta,.scenario-subtitle,.step-meta {{ color:var(--muted); }} .path {{ margin-top:18px; font-size:13px; word-break:break-all; }}
+    .donut-wrap {{ display:grid; grid-template-columns:170px 1fr; gap:18px; align-items:center; }} .donut {{ width:170px; height:170px; border-radius:50%; background:{donut_style}; position:relative; margin:0 auto; }} .donut:after {{ content:""; position:absolute; inset:18px; border-radius:50%; background:linear-gradient(180deg,#fff,#eef4fb); border:1px solid rgba(74,107,155,.12); }} .donut-center {{ position:absolute; inset:0; display:grid; place-items:center; z-index:1; text-align:center; }} .donut-center strong {{ font-size:34px; }}
+    .legend {{ display:grid; gap:10px; }} .legend-button {{ display:flex; justify-content:space-between; gap:16px; width:100%; border:1px solid var(--line); border-radius:14px; background:#f8fbff; color:var(--text); font-size:14px; padding:10px 12px; cursor:pointer; }} .legend-button.active,.legend-button:hover {{ background:#eef6ff; border-color:rgba(11,124,255,.28); }} .left {{ display:inline-flex; align-items:center; gap:10px; }} .dot {{ width:10px; height:10px; border-radius:50%; display:inline-block; }}
+    .stat-label {{ color:var(--muted); font-size:13px; text-transform:uppercase; letter-spacing:.06em; }} .stat-value {{ margin-top:10px; font-size:34px; font-weight:700; }} .stat-foot {{ margin-top:8px; color:#6f8198; font-size:13px; }}
+    .bars,.scenario-list,.steps-wrap {{ display:grid; gap:12px; }} .bar-panel {{ margin-bottom:22px; }} .bar-row {{ display:grid; grid-template-columns:120px 1fr 90px; gap:16px; align-items:center; }} .bar-track {{ height:12px; border-radius:999px; background:#edf3fa; overflow:hidden; }} .bar-fill {{ height:100%; border-radius:inherit; }}
+    .feature-card {{ padding:22px; margin-bottom:18px; }} .feature-head,.scenario-head,.step-row {{ display:flex; justify-content:space-between; gap:18px; align-items:flex-start; }} .feature-head {{ margin-bottom:16px; }} .feature-head h2 {{ margin:0 0 8px; font-size:24px; }} .feature-duration,.scenario-duration {{ color:#36506f; font-weight:700; white-space:nowrap; }}
+    .scenario-card {{ background:#fbfdff; border:1px solid rgba(74,107,155,.12); border-radius:18px; overflow:hidden; }} .scenario-head {{ padding:16px 18px; cursor:pointer; }} .scenario-head:focus-visible,.status-chip:focus-visible{{ outline:2px solid rgba(11,124,255,.35); outline-offset:2px; }} .scenario-title-row {{ display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-bottom:8px; }} .scenario-title {{ font-weight:700; font-size:17px; }}
+    .steps-wrap {{ border-top:1px solid rgba(74,107,155,.10); padding:4px 16px 16px; }} .scenario-card.is-collapsed .steps-wrap {{ display:none; }} .step-row {{ align-items:center; padding:12px 14px; border-radius:14px; background:#f6f9fd; border-left:4px solid transparent; }} .step-main {{ display:flex; gap:10px; align-items:center; min-width:0; }} .step-pill {{ padding:5px 9px; border-radius:999px; background:#e9f1fb; color:#29415f; font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:.04em; }} .step-text {{ overflow-wrap:anywhere; }} .step-meta {{ display:flex; flex-direction:column; gap:4px; text-align:right; font-size:12px; }}
+    .badge {{ display:inline-flex; align-items:center; padding:5px 9px; border-radius:999px; font-size:12px; font-weight:700; letter-spacing:.02em; }} .status-chip {{ border:none; cursor:pointer; font-family:inherit; }} .badge-passed {{ background:rgba(46,164,79,.16); color:#1b7b39; }} .badge-failed {{ background:rgba(215,58,73,.14); color:#b42335; }} .badge-skipped,.badge-untested {{ background:rgba(210,153,34,.16); color:#986d11; }} .badge-undefined,.badge-info {{ background:rgba(31,138,203,.12); color:#176d9f; }}
+    .status-passed {{ border-left-color:var(--success); }} .status-failed {{ border-left-color:var(--danger); }} .status-skipped,.status-untested {{ border-left-color:var(--warning); }} .status-undefined {{ border-left-color:var(--info); }} .is-hidden {{ display:none !important; }}
+    @media (max-width:1100px) {{ .hero,.cards {{ grid-template-columns:1fr; }} .donut-wrap {{ grid-template-columns:1fr; }} .bar-row {{ grid-template-columns:96px 1fr 72px; }} }}
+    @media (max-width:720px) {{ .page {{ padding:18px 12px 32px; }} .feature-head,.scenario-head,.step-row {{ flex-direction:column; align-items:flex-start; }} .step-meta {{ text-align:left; }} }}
+  </style>
+</head>
+<body>
+  <div class="page">
+    <section class="hero">
+      <div class="panel hero-copy"><span class="eyebrow">Behave Dashboard</span><h1>Python BDD Execution Report</h1><p class="sub">A lighter Script Runner report for Behave runs with quick status filtering and a cleaner always-open scenario view.</p><div class="path">{safe_display_path}</div></div>
+      <div class="panel hero-side"><div class="donut-wrap"><div class="donut"><div class="donut-center"><div><strong>{pass_rate:.1f}%</strong><br><span>step pass rate</span></div></div></div><div class="legend"><button type="button" class="legend-button active" data-filter="all"><span class="left"><span class="dot" style="background:#5d6f86"></span>All</span><strong>{steps_count}</strong></button><button type="button" class="legend-button" data-filter="passed"><span class="left"><span class="dot" style="background:#2ea44f"></span>Passed</span><strong>{passed_steps}</strong></button><button type="button" class="legend-button" data-filter="failed"><span class="left"><span class="dot" style="background:#d73a49"></span>Failed</span><strong>{failed_steps}</strong></button><button type="button" class="legend-button" data-filter="skipped"><span class="left"><span class="dot" style="background:#d29922"></span>Skipped</span><strong>{skipped_steps}</strong></button><button type="button" class="legend-button" data-filter="undefined"><span class="left"><span class="dot" style="background:#1f8acb"></span>Undefined</span><strong>{undefined_steps}</strong></button></div></div></div>
+    </section>
+    <section class="cards">
+      <div class="panel stat-card"><div class="stat-label">Features</div><div class="stat-value">{features_count}</div><div class="stat-foot">{scenario_counts['passed']} passing scenarios inside</div></div>
+      <div class="panel stat-card"><div class="stat-label">Scenarios</div><div class="stat-value">{scenarios_count}</div><div class="stat-foot">{percent(scenario_counts['passed'], scenario_total)} passed</div></div>
+      <div class="panel stat-card"><div class="stat-label">Steps</div><div class="stat-value">{steps_count}</div><div class="stat-foot">{passed_steps} passed, {failed_steps} failed</div></div>
+      <div class="panel stat-card"><div class="stat-label">Duration</div><div class="stat-value">{html.escape(_format_report_duration(duration_total))}</div><div class="stat-foot">Across all executed steps</div></div>
+    </section>
+    <section class="panel bar-panel"><div class="feature-kicker">Scenario Health</div><h2 style="margin:12px 0 8px;font-size:24px;">Scenario Status Breakdown</h2><div class="bars"><div class="bar-row"><span>Passed</span><div class="bar-track"><div class="bar-fill" style="width:{percent(scenario_counts['passed'], scenario_total)};background:#2ea44f;"></div></div><strong>{scenario_counts['passed']}</strong></div><div class="bar-row"><span>Failed</span><div class="bar-track"><div class="bar-fill" style="width:{percent(scenario_counts['failed'], scenario_total)};background:#d73a49;"></div></div><strong>{scenario_counts['failed']}</strong></div><div class="bar-row"><span>Skipped</span><div class="bar-track"><div class="bar-fill" style="width:{percent(scenario_counts['skipped'] + scenario_counts['untested'], scenario_total)};background:#d29922;"></div></div><strong>{scenario_counts['skipped'] + scenario_counts['untested']}</strong></div><div class="bar-row"><span>Undefined</span><div class="bar-track"><div class="bar-fill" style="width:{percent(scenario_counts['undefined'], scenario_total)};background:#1f8acb;"></div></div><strong>{scenario_counts['undefined']}</strong></div></div></section>
+    {''.join(feature_blocks)}
+  </div>
+  <script>
+    (() => {{
+      const normalize = (value) => value === 'untested' ? 'skipped' : value;
+      const buttons = Array.from(document.querySelectorAll('.legend-button'));
+      const scenarios = Array.from(document.querySelectorAll('.scenario-card'));
+      const heads = Array.from(document.querySelectorAll('.scenario-head'));
+      const applyFilter = (filter) => {{
+        buttons.forEach((button) => button.classList.toggle('active', button.dataset.filter === filter));
+        scenarios.forEach((scenario) => {{
+          const rows = Array.from(scenario.querySelectorAll('.step-row'));
+          let visibleRows = 0;
+          rows.forEach((row) => {{
+            const status = normalize(row.dataset.status || '');
+            const show = filter === 'all' || status === filter;
+            row.classList.toggle('is-hidden', !show);
+            if (show) visibleRows += 1;
+          }});
+          const scenarioStatus = normalize(scenario.dataset.status || '');
+          scenario.classList.toggle('is-hidden', !(filter === 'all' || scenarioStatus === filter || visibleRows > 0));
+        }});
+      }};
+      const toggleScenario = (head) => {{
+        const card = head.closest('.scenario-card');
+        if (!card) return;
+        const collapsed = card.classList.toggle('is-collapsed');
+        head.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+      }};
+      buttons.forEach((button) => button.addEventListener('click', () => applyFilter(button.dataset.filter || 'all')));
+      heads.forEach((head) => {{
+        head.addEventListener('click', () => toggleScenario(head));
+        head.addEventListener('keydown', (event) => {{
+          if (event.key === 'Enter' || event.key === ' ') {{
+            event.preventDefault();
+            toggleScenario(head);
+          }}
+        }});
+      }});
+      document.querySelectorAll('.status-chip').forEach((chip) => {{
+        chip.addEventListener('click', (event) => {{
+          event.stopPropagation();
+          applyFilter(normalize(chip.dataset.filterStatus || 'all'));
+        }});
+      }});
+      applyFilter('all');
+    }})();
+  </script>
+</body>
+</html>"""
+
+
+def _render_dotnet_html_dashboard(report_html: str, display_path: str):
+    import html
+    import re
+
+    def clean_text(value: str) -> str:
+        value = html.unescape(value or "")
+        value = value.replace("\ufeff", "").replace("\u200b", "").replace("\xa0", " ")
+        return " ".join(value.split())
+
+    def extract(pattern: str, default: str = "") -> str:
+        match = re.search(pattern, report_html, flags=re.IGNORECASE | re.DOTALL)
+        return clean_text(match.group(1)) if match else default
+
+    total_tests = extract(r'class="total-tests">([^<]+)<', "0")
+    passed_tests = extract(r'class="passedTests">([^<]+)<', "0")
+    failed_tests = extract(r'class="failedTests">([^<]+)<', "0")
+    skipped_tests = extract(r'class="skippedTests">([^<]+)<', "0")
+    pass_percentage = extract(r'class="pass-percentage">([^<]+)<', "0 %")
+    run_duration = extract(r'class="test-run-time">([^<]+)<', "0s")
+
+    result_blocks = re.findall(
+        r'<details><summary>(.*?)</summary><div class="inner-row".*?<div class="leaf-division">\s*<div><span class="(pass|fail|skip)">.*?</span><span>(.*?)</span><div class="duration"><span>(.*?)</span>.*?</div>\s*</div>\s*<div class="error-info">(.*?)</div>',
+        report_html,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    rendered_results = []
+    for assembly, status, name, duration, error_info in result_blocks:
+        status_lower = status.lower()
+        rendered_results.append({
+            "assembly": clean_text(assembly),
+            "status": "passed" if status_lower == "pass" else "skipped" if status_lower == "skip" else "failed",
+            "name": clean_text(name),
+            "duration": clean_text(duration),
+            "error": clean_text(re.sub(r"<[^>]+>", " ", error_info or "")),
+        })
+
+    info_match = re.search(r'<h2>Informational messages</h2>(.*?)</div>', report_html, flags=re.IGNORECASE | re.DOTALL)
+    info_lines = []
+    if info_match:
+        info_lines = [
+            clean_text(item)
+            for item in re.findall(r'<span>(.*?)</span>', info_match.group(1), flags=re.IGNORECASE | re.DOTALL)
+            if clean_text(item)
+        ]
+
+    try:
+        passed = int(passed_tests)
+        failed = int(failed_tests)
+        skipped = int(skipped_tests)
+        total = int(total_tests)
+    except Exception:
+        passed = failed = skipped = 0
+        total = max(len(rendered_results), 1)
+
+    donut_total = max(total, 1)
+    donut_style = (
+        f"conic-gradient(#2ea44f 0 {(passed / donut_total) * 100:.2f}%, "
+        f"#d73a49 {(passed / donut_total) * 100:.2f}% {((passed + failed) / donut_total) * 100:.2f}%, "
+        f"#d29922 {((passed + failed) / donut_total) * 100:.2f}% 100%)"
+    )
+
+    result_cards = []
+    for result in rendered_results:
+        error_html = f'<div class="result-error">{html.escape(result["error"])}</div>' if result["error"] else ""
+        card_classes = f"result-card status-{html.escape(result['status'])}"
+        attributes = f'class="{card_classes}" data-status="{html.escape(result["status"])}"'
+        if result["error"]:
+            attributes += ' data-expandable="true" role="button" tabindex="0" aria-expanded="false"'
+            card_classes += " has-details"
+            error_html = f'<div class="result-error">{html.escape(result["error"])}</div>'
+            attributes = f'class="{card_classes}" data-status="{html.escape(result["status"])}" data-expandable="true" role="button" tabindex="0" aria-expanded="false"'
+        result_cards.append(
+            f"""<div {attributes}>
+<div class="result-top"><div><div class="result-title-row"><button type="button" class="status-chip badge badge-{html.escape(result['status'])}" data-filter-status="{html.escape(result['status'])}">{html.escape(result['status'].title())}</button><span class="result-title">{html.escape(result['name'])}</span></div><div class="result-sub">{html.escape(result['assembly'])}</div></div><div class="result-duration">{html.escape(result['duration'])}</div></div>{error_html}</div>"""
+        )
+
+    log_rows = []
+    for line in info_lines:
+        tone = "neutral"
+        lower = line.lower()
+        if "started" in lower or "execution started" in lower:
+            tone = "info"
+        elif "complete" in lower or "successfully" in lower or "done:" in lower:
+            tone = "passed"
+        elif "error" in lower or "failed" in lower:
+            tone = "failed"
+        log_rows.append(f'<div class="log-row tone-{tone}">{html.escape(line)}</div>')
+
+    safe_display_path = html.escape(display_path)
+    return f"""<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>.NET Execution Dashboard</title>
+  <style>
+    :root {{ --bg:#f3f7fc; --panel:#fff; --line:rgba(74,107,155,.16); --text:#1d2a3b; --muted:#667892; --accent:#0b7cff; --success:#2ea44f; --danger:#d73a49; --warning:#d29922; }}
+    * {{ box-sizing:border-box; }} body {{ margin:0; font-family:"Segoe UI",Arial,sans-serif; color:var(--text); background:linear-gradient(180deg,#fff 0%,var(--bg) 100%); }}
+    .page {{ max-width:1380px; margin:0 auto; padding:28px 20px 48px; }} .hero,.cards {{ display:grid; gap:22px; }} .hero {{ grid-template-columns:1.6fr 1fr; margin-bottom:22px; }} .cards {{ grid-template-columns:repeat(4,minmax(0,1fr)); margin-bottom:22px; }}
+    .panel {{ background:var(--panel); border:1px solid var(--line); border-radius:22px; box-shadow:0 18px 48px rgba(23,43,77,.08); }} .hero-copy,.hero-side,.stat-card,.section {{ padding:24px; }}
+    .eyebrow {{ display:inline-flex; padding:6px 10px; border-radius:999px; background:rgba(11,124,255,.10); color:var(--accent); font-size:12px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; }} h1 {{ margin:14px 0 10px; font-size:clamp(28px,4vw,42px); line-height:1.05; }}
+    .sub,.path,.result-sub {{ color:var(--muted); }} .sub {{ margin:0; line-height:1.6; }} .path {{ margin-top:18px; font-size:13px; word-break:break-all; }}
+    .donut-wrap {{ display:grid; grid-template-columns:170px 1fr; gap:18px; align-items:center; }} .donut {{ width:170px; height:170px; border-radius:50%; background:{donut_style}; position:relative; margin:0 auto; }} .donut:after {{ content:""; position:absolute; inset:18px; border-radius:50%; background:linear-gradient(180deg,#fff,#eef4fb); border:1px solid rgba(74,107,155,.12); }} .donut-center {{ position:absolute; inset:0; display:grid; place-items:center; z-index:1; text-align:center; }} .donut-center strong {{ font-size:34px; }}
+    .legend {{ display:grid; gap:10px; }} .legend-button {{ display:flex; justify-content:space-between; gap:16px; width:100%; border:1px solid var(--line); border-radius:14px; background:#f8fbff; color:var(--text); font-size:14px; padding:10px 12px; cursor:pointer; }} .legend-button.active,.legend-button:hover {{ background:#eef6ff; border-color:rgba(11,124,255,.28); }} .left {{ display:inline-flex; align-items:center; gap:10px; }} .dot {{ width:10px; height:10px; border-radius:50%; display:inline-block; }}
+    .stat-label {{ color:var(--muted); font-size:13px; text-transform:uppercase; letter-spacing:.06em; }} .stat-value {{ margin-top:10px; font-size:34px; font-weight:700; }} .stat-foot {{ margin-top:8px; color:#6f8198; font-size:13px; }}
+    .section {{ margin-bottom:22px; }} .section h2 {{ margin:0 0 16px; font-size:24px; }} .result-list,.log-list {{ display:grid; gap:14px; }}
+    .result-card {{ background:#fbfdff; border:1px solid rgba(74,107,155,.12); border-left:4px solid transparent; border-radius:18px; padding:16px 18px; }} .result-card.has-details {{ cursor:pointer; }} .result-card:focus-visible,.status-chip:focus-visible {{ outline:2px solid rgba(11,124,255,.35); outline-offset:2px; }} .status-passed {{ border-left-color:var(--success); }} .status-failed {{ border-left-color:var(--danger); }} .status-skipped {{ border-left-color:var(--warning); }}
+    .result-top {{ display:flex; justify-content:space-between; gap:16px; align-items:flex-start; }} .result-title-row {{ display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-bottom:8px; }} .result-title {{ font-weight:700; font-size:18px; }} .result-duration {{ font-weight:700; white-space:nowrap; }}
+    .result-error {{ display:none; margin-top:12px; padding:12px 14px; border-radius:12px; background:rgba(215,58,73,.10); color:#a02332; white-space:pre-wrap; }} .result-card.is-open .result-error {{ display:block; }}
+    .badge {{ display:inline-flex; align-items:center; padding:5px 9px; border-radius:999px; font-size:12px; font-weight:700; }} .status-chip {{ border:none; cursor:pointer; font-family:inherit; }} .badge-passed {{ background:rgba(46,164,79,.16); color:#1b7b39; }} .badge-failed {{ background:rgba(215,58,73,.14); color:#b42335; }} .badge-skipped {{ background:rgba(210,153,34,.16); color:#986d11; }}
+    .log-row {{ padding:12px 14px; border-radius:14px; background:#f6f9fd; border-left:4px solid rgba(74,107,155,.12); color:var(--text); white-space:pre-wrap; }} .tone-info {{ border-left-color:var(--accent); }} .tone-passed {{ border-left-color:var(--success); }} .tone-failed {{ border-left-color:var(--danger); }} .is-hidden {{ display:none !important; }}
+    @media (max-width:1100px) {{ .hero,.cards {{ grid-template-columns:1fr; }} .donut-wrap {{ grid-template-columns:1fr; }} }} @media (max-width:720px) {{ .page {{ padding:18px 12px 32px; }} .result-top {{ flex-direction:column; align-items:flex-start; }} }}
+  </style>
+</head>
+<body>
+  <div class="page">
+    <section class="hero">
+      <div class="panel hero-copy"><span class="eyebrow">.NET Dashboard</span><h1>C# Test Execution Report</h1><p class="sub">A lighter Script Runner report for .NET runs with quick status filtering and clearer result cards.</p><div class="path">{safe_display_path}</div></div>
+      <div class="panel hero-side"><div class="donut-wrap"><div class="donut"><div class="donut-center"><div><strong>{html.escape(pass_percentage)}</strong><br><span>pass rate</span></div></div></div><div class="legend"><button type="button" class="legend-button active" data-filter="all"><span class="left"><span class="dot" style="background:#5d6f86"></span>All</span><strong>{html.escape(total_tests)}</strong></button><button type="button" class="legend-button" data-filter="passed"><span class="left"><span class="dot" style="background:#2ea44f"></span>Passed</span><strong>{html.escape(passed_tests)}</strong></button><button type="button" class="legend-button" data-filter="failed"><span class="left"><span class="dot" style="background:#d73a49"></span>Failed</span><strong>{html.escape(failed_tests)}</strong></button><button type="button" class="legend-button" data-filter="skipped"><span class="left"><span class="dot" style="background:#d29922"></span>Skipped</span><strong>{html.escape(skipped_tests)}</strong></button></div></div></div>
+    </section>
+    <section class="cards"><div class="panel stat-card"><div class="stat-label">Total Tests</div><div class="stat-value">{html.escape(total_tests)}</div><div class="stat-foot">Executed in this run</div></div><div class="panel stat-card"><div class="stat-label">Passed</div><div class="stat-value">{html.escape(passed_tests)}</div><div class="stat-foot">Successful assertions</div></div><div class="panel stat-card"><div class="stat-label">Failed</div><div class="stat-value">{html.escape(failed_tests)}</div><div class="stat-foot">Tests needing attention</div></div><div class="panel stat-card"><div class="stat-label">Duration</div><div class="stat-value">{html.escape(run_duration)}</div><div class="stat-foot">End-to-end run time</div></div></section>
+    <section class="panel section"><div class="eyebrow">Results</div><h2>Test Outcomes</h2><div class="result-list" id="dotnet-result-list">{''.join(result_cards) or '<div class="log-row">No test result entries were found in this report.</div>'}</div></section>
+    <section class="panel section"><div class="eyebrow">Diagnostics</div><h2>Execution Messages</h2><div class="log-list">{''.join(log_rows) or '<div class="log-row">No execution messages were found in this report.</div>'}</div></section>
+  </div>
+  <script>
+    (() => {{
+      const buttons = Array.from(document.querySelectorAll('.legend-button'));
+      const cards = Array.from(document.querySelectorAll('.result-card'));
+      const applyFilter = (filter) => {{
+        buttons.forEach((button) => button.classList.toggle('active', button.dataset.filter === filter));
+        cards.forEach((card) => card.classList.toggle('is-hidden', !(filter === 'all' || card.dataset.status === filter)));
+      }};
+      const toggleCard = (card) => {{
+        if (card.dataset.expandable !== 'true') return;
+        const opened = card.classList.toggle('is-open');
+        card.setAttribute('aria-expanded', opened ? 'true' : 'false');
+      }};
+      buttons.forEach((button) => button.addEventListener('click', () => applyFilter(button.dataset.filter || 'all')));
+      cards.forEach((card) => {{
+        card.addEventListener('click', () => toggleCard(card));
+        card.addEventListener('keydown', (event) => {{
+          if (event.key === 'Enter' || event.key === ' ') {{
+            event.preventDefault();
+            toggleCard(card);
+          }}
+        }});
+      }});
+      document.querySelectorAll('.status-chip').forEach((chip) => {{
+        chip.addEventListener('click', (event) => {{
+          event.stopPropagation();
+          applyFilter(chip.dataset.filterStatus || 'all');
+        }});
+      }});
+      applyFilter('all');
+    }})();
+  </script>
+</body>
+</html>"""
+
+
+def _render_cucumber_html_light(report_html: str, display_path: str):
+    import html
+
+    banner = f"""
+<div style="max-width:1380px;margin:0 auto;padding:24px 20px 0;font-family:'Segoe UI',Arial,sans-serif;">
+  <div style="background:#ffffff;border:1px solid rgba(74,107,155,.16);border-radius:22px;box-shadow:0 18px 48px rgba(23,43,77,.08);padding:24px 28px;">
+    <div style="display:inline-flex;padding:6px 10px;border-radius:999px;background:rgba(11,124,255,.10);color:#0b7cff;font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;">Cucumber Dashboard</div>
+    <h1 style="margin:14px 0 10px;font-size:clamp(28px,4vw,42px);line-height:1.05;color:#1d2a3b;">Java Test Execution Report</h1>
+    <p style="margin:0;color:#667892;line-height:1.6;">This report is shown in a forced light theme so Java/Cucumber output matches the other Script Runner report dashboards more closely.</p>
+    <div style="margin-top:18px;color:#6d8099;font-size:13px;word-break:break-all;">{html.escape(display_path)}</div>
+  </div>
+</div>"""
+    light_overrides = """
+<style>
+  :root,
+  .S07ZPK5i38Whpt0ARQ6p,
+  .pPHXjw4HiiEZ76UmW2np{
+    --cucumber-background-color:#f3f7fc !important;
+    --cucumber-text-color:#1d2a3b !important;
+    --cucumber-anchor-color:#0b7cff !important;
+    --cucumber-keyword-color:#0f4f9b !important;
+    --cucumber-parameter-color:#0b7cff !important;
+    --cucumber-tag-color:#6c8f39 !important;
+    --cucumber-docstring-color:#1f8a56 !important;
+    --cucumber-error-background-color:#fdecee !important;
+    --cucumber-error-text-color:#a02332 !important;
+    --cucumber-code-background-color:#f6f9fd !important;
+    --cucumber-code-text-color:#29415f !important;
+    --cucumber-panel-background-color:#ffffff !important;
+    --cucumber-panel-accent-color:#e3ebf5 !important;
+    --cucumber-panel-text-color:#1d2a3b !important;
+  }
+  html,body{
+    background:linear-gradient(180deg,#ffffff 0%,#f3f7fc 100%) !important;
+    color:#1d2a3b !important;
+    margin:0 !important;
+  }
+  #content{
+    max-width:1380px !important;
+    margin:0 auto !important;
+    padding:20px !important;
+  }
+  .html-formatter{
+    max-width:1380px !important;
+    padding:0 !important;
+    background:transparent !important;
+  }
+  .g84sy6xgJUyJIzpsyG5S{
+    background:transparent !important;
+    color:#1d2a3b !important;
+  }
+  .XR3QM0DC8dUJX1FPQBu_,
+  .uH0tV61h4vEwGIdnLhmB,
+  .qCGgrwvVkkINDRfqpvsj{
+    background:#ffffff !important;
+    border-color:#e3ebf5 !important;
+    color:#1d2a3b !important;
+    box-shadow:0 18px 48px rgba(23,43,77,.08) !important;
+  }
+  .oxCzU1rC8VLhLfVMMrX2,
+  .qCGgrwvVkkINDRfqpvsj,
+  .XhufRLVTP4kJj55pWlZQ{
+    background:#ffffff !important;
+    color:#1d2a3b !important;
+  }
+  .oxCzU1rC8VLhLfVMMrX2:hover{
+    background:#eef6ff !important;
+  }
+  .oxCzU1rC8VLhLfVMMrX2,
+  .pzfx7tCRXyytC6g9SDxg,
+  .Fdmm0s4soB2pkvNYXQbv tbody tr,
+  .XhufRLVTP4kJj55pWlZQ,
+  .PUJ_q_3Y8RQhAcXxakiL a,
+  .Pj6CVtDA4EslW8OfcTI9 a,
+  .AEvAM9M_0ZxmJghPdVQs,
+  .gUbOxW8Yux5FNeSfsI2O,
+  .qCGgrwvVkkINDRfqpvsj{
+    cursor:pointer !important;
+  }
+  .aSGVb3Tv5B8Nz24vToKW,
+  .rfv832DGvJuGyzFuMjXC{
+    background:#ffffff !important;
+    color:#1d2a3b !important;
+  }
+  .Cbm1hRh_nuzVXaBR2dZ0,
+  .buWCECLHpnDfpwKwugOX{
+    background:#f6f9fd !important;
+    color:#29415f !important;
+  }
+  .gXG0xG1TJk_4pdoSxoAf{
+    background:#fdecee !important;
+    color:#a02332 !important;
+  }
+  .VlpRuYBlXtcShawgxgzA[data-status=PASSED]{background:#2ea44f !important;}
+  .VlpRuYBlXtcShawgxgzA[data-status=FAILED]{background:#d73a49 !important;}
+  .VlpRuYBlXtcShawgxgzA[data-status=SKIPPED]{background:#d29922 !important;}
+  .XhufRLVTP4kJj55pWlZQ{
+    border-color:#d5dfeb !important;
+  }
+</style>"""
+    content = report_html.replace('theme:"auto"', 'theme:"light"')
+    if "<body>" in content:
+        content = content.replace("<body>", f"<body>{banner}", 1)
+    if "</head>" in content:
+        content = content.replace("</head>", f"{light_overrides}</head>", 1)
+    return content
+
+
+def _inject_report_cursor_affordances(report_html: str):
+    pointer_overrides = """
+<style id="bigqa-report-pointer-affordances">
+  button,
+  [role="button"],
+  summary,
+  .btn,
+  .button,
+  .legend-button,
+  .scenario-head,
+  .result-card,
+  [data-filter],
+  [onclick],
+  input[type="button"],
+  input[type="submit"],
+  input[type="reset"]{
+    cursor:pointer !important;
+  }
+</style>"""
+    if 'id="bigqa-report-pointer-affordances"' in report_html:
+        return report_html
+    if "</head>" in report_html:
+        return report_html.replace("</head>", f"{pointer_overrides}</head>", 1)
+    if "<body>" in report_html:
+        return report_html.replace("<body>", f"<body>{pointer_overrides}", 1)
+    return f"{pointer_overrides}{report_html}"
 
 
 @app.route('/api/script-runner/report', methods=['GET'])
@@ -2129,13 +2775,133 @@ def serve_report():
     if not is_allowed or not os.path.exists(abs_path):
         return "Report not found or access denied", 404
     
+    import html
+    import json
     import mimetypes
     from flask import Response
     with open(abs_path, 'r', encoding='utf-8', errors='ignore') as f:
         content = f.read()
     
     mime_type, _ = mimetypes.guess_type(abs_path)
-    return Response(content, mimetype=mime_type or 'text/html')
+    extension = os.path.splitext(abs_path)[1].lower()
+
+    behave_json_path = os.path.join(os.path.dirname(abs_path), 'behave_report.json')
+    behave_dashboard_names = {'report.html', 'behave_report.json', 'behave_report.txt'}
+    if os.path.basename(abs_path).lower() in behave_dashboard_names and os.path.exists(behave_json_path):
+        try:
+            return Response(_render_behave_dashboard(behave_json_path, abs_path), mimetype='text/html')
+        except Exception:
+            pass
+
+    if extension in {'.html', '.htm'}:
+        if "Test run details</h1>" in content and 'class="total-tests"' in content and 'class="passedTests"' in content:
+            return Response(_render_dotnet_html_dashboard(content, abs_path), mimetype='text/html')
+        if "window.CUCUMBER_MESSAGES" in content or "<title>Cucumber</title>" in content:
+            return Response(_render_cucumber_html_light(content, abs_path), mimetype='text/html')
+        return Response(_inject_report_cursor_affordances(content), mimetype=mime_type or 'text/html')
+
+    if extension == '.json' and os.path.basename(abs_path).lower() == 'behave_report.json':
+        try:
+            return Response(_render_behave_dashboard(abs_path, abs_path), mimetype='text/html')
+        except Exception:
+            pass
+
+    display_content = content
+    if extension == '.json':
+        try:
+            display_content = json.dumps(json.loads(content), indent=2)
+        except Exception:
+            display_content = content
+
+    title = f"Script Runner Report - {os.path.basename(abs_path)}"
+    safe_title = html.escape(title)
+    safe_path = html.escape(abs_path)
+    safe_body = html.escape(display_content)
+    viewer_html = f"""<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{safe_title}</title>
+  <style>
+    :root {{
+      color-scheme: dark;
+      --bg: #0b1220;
+      --panel: #131c2f;
+      --panel-border: rgba(120, 154, 220, 0.22);
+      --text: #e8eefc;
+      --muted: #8da1c5;
+      --accent: #25b4ff;
+    }}
+    * {{ box-sizing: border-box; }}
+    body {{
+      margin: 0;
+      font-family: "Segoe UI", Arial, sans-serif;
+      background: radial-gradient(circle at top, #16233d 0%, var(--bg) 55%);
+      color: var(--text);
+    }}
+    .page {{
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 32px 20px;
+    }}
+    .card {{
+      background: rgba(19, 28, 47, 0.94);
+      border: 1px solid var(--panel-border);
+      border-radius: 16px;
+      overflow: hidden;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.35);
+    }}
+    .header {{
+      padding: 20px 24px 14px;
+      border-bottom: 1px solid rgba(120, 154, 220, 0.16);
+    }}
+    .eyebrow {{
+      color: var(--accent);
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      margin-bottom: 8px;
+    }}
+    h1 {{
+      margin: 0;
+      font-size: 24px;
+      line-height: 1.2;
+    }}
+    .path {{
+      margin-top: 8px;
+      color: var(--muted);
+      font-size: 13px;
+      word-break: break-all;
+    }}
+    pre {{
+      margin: 0;
+      padding: 24px;
+      overflow: auto;
+      font-family: "Cascadia Code", "Consolas", monospace;
+      font-size: 14px;
+      line-height: 1.55;
+      white-space: pre-wrap;
+      word-break: break-word;
+      background: linear-gradient(180deg, rgba(7, 12, 23, 0.25), rgba(7, 12, 23, 0.45));
+    }}
+  </style>
+</head>
+<body>
+  <div class="page">
+    <section class="card">
+      <div class="header">
+        <div class="eyebrow">Script Runner Report Viewer</div>
+        <h1>{safe_title}</h1>
+        <div class="path">{safe_path}</div>
+      </div>
+      <pre>{safe_body}</pre>
+    </section>
+  </div>
+</body>
+</html>"""
+    return Response(viewer_html, mimetype='text/html')
 
 @app.route('/api/configure-ai', methods=['GET', 'POST'])
 @login_required()

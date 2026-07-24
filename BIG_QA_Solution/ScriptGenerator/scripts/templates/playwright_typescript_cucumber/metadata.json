@@ -4,5 +4,5 @@
   "language": "TypeScript",
   "framework": "Cucumber",
   "description": "Enterprise Playwright TS BDD Template",
-  "default_run_commands": "npm test -- --tags \"@smoke\"\nnpm run report"
+  "default_run_commands": "npm test\nnpm run report"
 }

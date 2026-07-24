@@ -5,20 +5,26 @@ from pages.base_page import BasePage
 class LoginPage(BasePage):
     """Page Object for the Login page."""
 
-    # Locators
-    USERNAME_INPUT = (By.ID, "txtUserID")
-    PASSWORD_INPUT = (By.ID, "txtPassword")
-    LOGIN_BUTTON   = (By.ID, "sub")
-    ERROR_MESSAGE  = (By.CSS_SELECTOR, "[data-test='error']")
+    USERNAME_INPUT = (
+        By.CSS_SELECTOR,
+        "#txtUserID, input[autocomplete='username'], input[placeholder*='username' i], "
+        "input[placeholder*='email' i], input[type='email'], input[name*='user' i], "
+        "input[id*='user' i], input[type='text']",
+    )
+    PASSWORD_INPUT = (
+        By.CSS_SELECTOR,
+        "#txtPassword, input[autocomplete='current-password'], input[placeholder*='password' i], input[type='password']",
+    )
+    LOGIN_BUTTON = (
+        By.CSS_SELECTOR,
+        "#sub, button[type='submit'], input[type='submit'], button[id*='login' i], button[name*='login' i]",
+    )
 
     def enter_username(self, username: str):
-        self.type_text(*self.USERNAME_INPUT, username)
+        self.type_text_if_present(*self.USERNAME_INPUT, username)
 
     def enter_password(self, password: str):
-        self.type_text(*self.PASSWORD_INPUT, password)
+        self.type_text_if_present(*self.PASSWORD_INPUT, password)
 
     def click_login(self):
-        self.click(*self.LOGIN_BUTTON)
-
-    def get_error_message(self) -> str:
-        return self.find(*self.ERROR_MESSAGE).text
+        self.click_if_present(*self.LOGIN_BUTTON)
