@@ -20,3 +20,4 @@ package-lock.json
 backend.log
 studio_error.log
 debug_poll.log
+LastAIResponse_Universal.txt
