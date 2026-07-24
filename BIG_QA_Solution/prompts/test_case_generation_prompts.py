@@ -26,6 +26,9 @@ f"""
     4. Generate Scenario outlines as applicable
     5. Parameterise the steps for reuse with different data
     6. Do NOT include markdown code fences (```gherkin) or any other conversational text.
+    7. Use one consistent quote style for equivalent parameter placeholders across the .feature file.
+    8. If you introduce placeholder values in parameterized steps, keep the same quote convention for
+       that placeholder everywhere it appears in the generated feature content.
     """
     
     

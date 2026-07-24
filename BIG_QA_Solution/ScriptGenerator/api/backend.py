@@ -1243,6 +1243,11 @@ def navigate_to_login_page(browser):
                     - Do NOT add steps that are not in the BDD content.
                     - Do NOT duplicate steps that are already covered elsewhere.
                     - Step decorator text must match the BDD step text character-for-character.
+                    - Preserve the exact parameter quote style already present in the BDD content.
+                    - If the feature/BDD step uses "value", the generated decorator step text must also use "value".
+                    - If the feature/BDD step uses 'value', the generated decorator step text must also use 'value'.
+                    - Use one consistent quote convention for equivalent placeholders across this step-definition file.
+                    - Choose the outer language string quotes accordingly so the decorator remains syntactically valid.
 
                     New File Supporting Content (additional context if provided):
                     {new_file_support_content}
