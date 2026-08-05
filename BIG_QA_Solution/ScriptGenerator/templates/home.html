@@ -22,17 +22,17 @@
     function updatePill(elementId, status) {
         const container = document.getElementById(elementId);
         const pill = container.querySelector('.status-value-pill');
-        pill.classList.remove('loading', 'healthy', 'error', 'warning');
+        pill.classList.remove('loading', 'healthy', 'error', 'warning', 'status-pill--loading', 'status-pill--healthy', 'status-pill--warning', 'status-pill--error');
         
         if (status === 'Healthy' || status === 'Configured') {
-            pill.classList.add('healthy');
-            pill.innerHTML = `<i class="fas fa-check-circle"></i> ${status}`;
+            pill.classList.add('healthy', 'status-pill--healthy');
+            pill.innerHTML = `<span class="status-pill__icon" aria-hidden="true"><i class="fas fa-check-circle"></i></span><span class="status-pill__text"><span class="status-pill__value">${status}</span></span>`;
         } else if (status === 'Key Missing' || status === 'Warning') {
-            pill.classList.add('warning');
-            pill.innerHTML = `<i class="fas fa-exclamation-triangle"></i> ${status}`;
+            pill.classList.add('warning', 'status-pill--warning');
+            pill.innerHTML = `<span class="status-pill__icon" aria-hidden="true"><i class="fas fa-exclamation-triangle"></i></span><span class="status-pill__text"><span class="status-pill__value">${status}</span></span>`;
         } else {
-            pill.classList.add('error');
-            pill.innerHTML = `<i class="fas fa-times-circle"></i> ${status}`;
+            pill.classList.add('error', 'status-pill--error');
+            pill.innerHTML = `<span class="status-pill__icon" aria-hidden="true"><i class="fas fa-times-circle"></i></span><span class="status-pill__text"><span class="status-pill__value">${status}</span></span>`;
         }
     }
 
@@ -88,15 +88,24 @@
     <div class="status-grid">
         <div class="status-item" id="status-db">
             <span class="status-label">Database:</span>
-            <span class="status-value-pill loading"><i class="fas fa-spinner fa-spin"></i> Checking...</span>
+            <span class="status-value-pill status-pill status-pill--loading loading">
+                <span class="status-pill__icon" aria-hidden="true"><i class="fas fa-spinner fa-spin"></i></span>
+                <span class="status-pill__text"><span class="status-pill__value">Checking...</span></span>
+            </span>
         </div>
         <div class="status-item" id="status-ai">
             <span class="status-label">AI Engine:</span>
-            <span class="status-value-pill loading"><i class="fas fa-spinner fa-spin"></i> Checking...</span>
+            <span class="status-value-pill status-pill status-pill--loading loading">
+                <span class="status-pill__icon" aria-hidden="true"><i class="fas fa-spinner fa-spin"></i></span>
+                <span class="status-pill__text"><span class="status-pill__value">Checking...</span></span>
+            </span>
         </div>
         <div class="status-item" id="status-server">
             <span class="status-label">Backend:</span>
-            <span class="status-value-pill healthy">Healthy</span>
+            <span class="status-value-pill status-pill status-pill--healthy healthy">
+                <span class="status-pill__icon" aria-hidden="true"><i class="fas fa-check-circle"></i></span>
+                <span class="status-pill__text"><span class="status-pill__value">Healthy</span></span>
+            </span>
         </div>
     </div>
 </div>

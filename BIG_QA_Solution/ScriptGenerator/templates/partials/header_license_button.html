@@ -1,0 +1,54 @@
+{% set license_state = header_license_state or {} %}
+{% set status = license_state.get('status', 'unknown') %}
+{% if license_state.get('valid') %}
+    {% set status_label = 'Active' %}
+    {% set status_class = 'is-valid' %}
+{% elif status == 'missing' %}
+    {% set status_label = 'Required' %}
+    {% set status_class = 'is-missing' %}
+{% elif status == 'invalid' %}
+    {% set status_label = 'Needs Update' %}
+    {% set status_class = 'is-invalid' %}
+{% elif status == 'error' %}
+    {% set status_label = 'Check Service' %}
+    {% set status_class = 'is-error' %}
+{% else %}
+    {% set status_label = status|replace('_', ' ')|title %}
+    {% set status_class = 'is-invalid' %}
+{% endif %}
+
+<div class="header-license-group">
+    <button
+        type="button"
+        class="status-pill status-pill--header status-pill--loading header-version-pill"
+        id="headerVersionButton"
+        title="Current application version: {{ header_app_version or 'Unavailable' }}"
+        aria-label="Current application version: {{ header_app_version or 'Unavailable' }}"
+        data-current-version="{{ header_app_version or 'Unavailable' }}"
+    >
+        <span class="status-pill__icon" aria-hidden="true">
+            <i class="fas fa-code-branch"></i>
+        </span>
+        <span class="status-pill__text">
+            <span class="status-pill__label">Version:</span>
+            <span class="status-pill__value" id="headerVersionValue">{{ header_app_version or 'Unavailable' }}</span>
+        </span>
+    </button>
+
+    <button
+        type="button"
+        class="status-pill status-pill--header status-pill--interactive header-license-pill {{ status_class }}"
+        id="headerLicenseButton"
+        title="{{ license_state.get('message', 'View current license status') }}"
+        aria-label="View current license status"
+        onclick="openHeaderLicenseModal()"
+    >
+        <span class="status-pill__icon" aria-hidden="true">
+            <i class="fas fa-shield-halved"></i>
+        </span>
+        <span class="status-pill__text">
+            <span class="status-pill__label">License:</span>
+            <span class="status-pill__value" id="headerLicenseValue">{{ status_label }}</span>
+        </span>
+    </button>
+</div>

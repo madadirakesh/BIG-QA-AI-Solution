@@ -1,0 +1,512 @@
+{% set license_state = header_license_state or {} %}
+{% set status = license_state.get('status', 'unknown') %}
+{% if license_state.get('valid') %}
+    {% set status_label = 'Active' %}
+    {% set status_pill_class = 'healthy' %}
+{% elif status == 'missing' %}
+    {% set status_label = 'Required' %}
+    {% set status_pill_class = 'warning' %}
+{% else %}
+    {% set status_label = status|replace('_', ' ')|title %}
+    {% set status_pill_class = 'error' %}
+{% endif %}
+
+<div class="confirm-backdrop" id="headerLicenseModal">
+    <div class="header-license-modal glassmorphism">
+        <div class="header-license-modal-head">
+            <div>
+                <h3>Manage License</h3>
+                <p>Review the current activation details and update the stored key when you renew or replace the license.</p>
+            </div>
+            <button type="button" class="header-license-close" onclick="closeHeaderLicenseModal()" aria-label="Close license dialog">&times;</button>
+        </div>
+
+        <div class="header-license-modal-body">
+            <div class="status-container glassmorphism license-management-status">
+                <div class="status-header">
+                    <i class="fas fa-id-card"></i>
+                    <span>Current License Status</span>
+                </div>
+                <div class="license-management-status-list">
+                    <div class="status-item">
+                        <span class="status-label">Status:</span>
+                        <span class="status-value-pill {{ status_pill_class }}" id="headerLicenseModalStatusPill">
+                            <span id="headerLicenseModalStatusText">{{ status_label }}</span>
+                        </span>
+                    </div>
+                    <div class="status-item">
+                        <span class="status-label">Period:</span>
+                        <span class="license-management-value" id="headerLicenseModalPeriod">Checking period...</span>
+                    </div>
+                    <div class="status-item">
+                        <span class="status-label">Version:</span>
+                        <span class="license-management-value" id="headerLicenseModalVersion">Checking version...</span>
+                    </div>
+                    <div class="status-item">
+                        <span class="status-label">Licensed To:</span>
+                        <span class="license-management-value" id="headerLicenseModalLicensedTo">{{ license_state.get('licensed_to', '') or 'Unavailable' }}</span>
+                    </div>
+                    <div class="status-item">
+                        <span class="status-label">Saved Key:</span>
+                        <span class="license-management-value muted" id="headerLicenseModalSavedKey">{{ license_state.get('record', {}).get('masked_license_key', '') if license_state.get('record') else 'Unavailable' }}</span>
+                    </div>
+                    <div class="status-item status-message">
+                        <span class="status-label">Message:</span>
+                        <span class="license-management-value muted" id="headerLicenseModalMessage">{{ license_state.get('message', 'Loading current license status...') }}</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="status-container glassmorphism license-management-status release-availability-panel" id="releaseAvailabilityPanel" hidden>
+                <div class="status-header">
+                    <i class="fas fa-cloud-arrow-down"></i>
+                    <span>Release Update</span>
+                </div>
+                <div class="license-management-status-list">
+                    <div class="status-item">
+                        <span class="status-label">Latest Version:</span>
+                        <span class="license-management-value" id="releaseAvailabilityVersion">Unavailable</span>
+                    </div>
+                    <div class="status-item status-message">
+                        <span class="status-label">Update:</span>
+                        <span class="license-management-value muted" id="releaseAvailabilityMessage">A new release version is available.</span>
+                    </div>
+                </div>
+                <div class="license-management-actions release-availability-actions">
+                    <button type="button" class="btn btn-primary" id="releaseAvailabilityDownloadBtn">
+                        <i class="fas fa-circle-down"></i> Download New Version
+                    </button>
+                </div>
+            </div>
+
+            <form method="POST" action="{{ url_for('activate_license') }}" class="license-management-form" id="headerLicenseForm" novalidate>
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+                <input type="hidden" name="next" id="headerLicenseNext" value=""/>
+                <div class="form-group">
+                    <label for="header_license_key">
+                        <span><i class="fas fa-key"></i> License Key</span>
+                        <span class="license-management-help">Paste a new key to replace the current activation</span>
+                    </label>
+                    <textarea
+                        id="header_license_key"
+                        name="license_key"
+                        rows="4"
+                        required
+                        placeholder="Paste the license key here"
+                        class="license-management-textarea"
+                    >{{ license_state.get('record', {}).get('license_key', '') if license_state.get('record') else '' }}</textarea>
+                    <div class="field-error" id="headerLicenseErr"></div>
+                </div>
+
+                <div class="license-management-actions">
+                    <button type="submit" class="btn btn-primary" id="headerLicenseSubmitBtn">
+                        <span id="headerLicenseBtnText"><i class="fas fa-shield-check"></i> Update License</span>
+                        <span id="headerLicenseBtnLoading" style="display:none;"><i class="fas fa-spinner fa-spin"></i> Saving...</span>
+                    </button>
+                    <button type="button" class="btn license-management-refresh" onclick="refreshHeaderLicenseState(true)">
+                        <i class="fas fa-rotate-right"></i> Refresh Status
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<div class="confirm-backdrop" id="mandatoryUpdateModal">
+    <div class="header-license-modal glassmorphism mandatory-update-modal">
+        <div class="header-license-modal-head mandatory-update-modal-head">
+            <div>
+                <h3><i class="fas fa-download"></i> Mandatory Update Required</h3>
+                <p id="mandatoryUpdateSummary">A required update is available for this device.</p>
+            </div>
+        </div>
+
+        <div class="header-license-modal-body mandatory-update-modal-body">
+            <div class="status-container glassmorphism license-management-status mandatory-update-card">
+                <div class="license-management-status-list">
+                    <div class="status-item">
+                        <span class="status-label">Current Version:</span>
+                        <span class="license-management-value" id="mandatoryUpdateCurrent">Unavailable</span>
+                    </div>
+                    <div class="status-item">
+                        <span class="status-label">Latest Version:</span>
+                        <span class="license-management-value" id="mandatoryUpdateLatest">Unavailable</span>
+                    </div>
+                    <div class="status-item">
+                        <span class="status-label">Platform:</span>
+                        <span class="license-management-value" id="mandatoryUpdatePlatform">Unavailable</span>
+                    </div>
+                    <div class="status-item status-message">
+                        <span class="status-label">Action:</span>
+                        <span class="license-management-value muted" id="mandatoryUpdateMessage">Download and install the latest version to continue.</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="license-management-actions mandatory-update-actions">
+                <button type="button" class="btn btn-primary" id="mandatoryUpdateDownloadBtn">
+                    <i class="fas fa-circle-down"></i> Download Latest Version
+                </button>
+                <button type="button" class="btn license-management-refresh" id="mandatoryUpdateRefreshBtn">
+                    <i class="fas fa-rotate-right"></i> Recheck Update
+                </button>
+                <a href="/logout" class="btn mandatory-update-logout">
+                    <i class="fas fa-right-from-bracket"></i> Logout
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    (function() {
+        const button = document.getElementById('headerLicenseButton');
+        const versionButton = document.getElementById('headerVersionButton');
+        const versionButtonValue = document.getElementById('headerVersionValue');
+        const statusValue = document.getElementById('headerLicenseValue');
+        const modal = document.getElementById('headerLicenseModal');
+        const modalStatusPill = document.getElementById('headerLicenseModalStatusPill');
+        const modalStatusText = document.getElementById('headerLicenseModalStatusText');
+        const modalPeriod = document.getElementById('headerLicenseModalPeriod');
+        const modalVersion = document.getElementById('headerLicenseModalVersion');
+        const modalLicensedTo = document.getElementById('headerLicenseModalLicensedTo');
+        const modalSavedKey = document.getElementById('headerLicenseModalSavedKey');
+        const modalMessage = document.getElementById('headerLicenseModalMessage');
+        const releaseAvailabilityPanel = document.getElementById('releaseAvailabilityPanel');
+        const releaseAvailabilityVersion = document.getElementById('releaseAvailabilityVersion');
+        const releaseAvailabilityMessage = document.getElementById('releaseAvailabilityMessage');
+        const releaseAvailabilityDownloadBtn = document.getElementById('releaseAvailabilityDownloadBtn');
+        const mandatoryModal = document.getElementById('mandatoryUpdateModal');
+        const mandatorySummary = document.getElementById('mandatoryUpdateSummary');
+        const mandatoryCurrent = document.getElementById('mandatoryUpdateCurrent');
+        const mandatoryLatest = document.getElementById('mandatoryUpdateLatest');
+        const mandatoryPlatform = document.getElementById('mandatoryUpdatePlatform');
+        const mandatoryMessage = document.getElementById('mandatoryUpdateMessage');
+        const mandatoryDownloadBtn = document.getElementById('mandatoryUpdateDownloadBtn');
+        const mandatoryRefreshBtn = document.getElementById('mandatoryUpdateRefreshBtn');
+        const nextInput = document.getElementById('headerLicenseNext');
+        const form = document.getElementById('headerLicenseForm');
+        const keyInput = document.getElementById('header_license_key');
+        const errorEl = document.getElementById('headerLicenseErr');
+        const classNames = ['status-pill--healthy', 'status-pill--warning', 'status-pill--error', 'status-pill--loading', 'is-valid', 'is-renewing-soon', 'is-missing', 'is-invalid', 'is-error'];
+        const pillNames = ['healthy', 'warning', 'error'];
+        const initialCurrentVersion = versionButton ? (versionButton.dataset.currentVersion || '').trim() : '';
+        let activeMandatoryReleaseUrl = '';
+        let activeMandatorySignature = '';
+        let activeReleaseUrl = '';
+
+        if (!button || !versionButton || !versionButtonValue || !statusValue || !modal || !form) return;
+
+        function getLocalCurrentVersion() {
+            return (
+                initialCurrentVersion ||
+                (versionButton.dataset.currentVersion || '').trim() ||
+                (versionButtonValue.textContent || '').trim() ||
+                'Unavailable'
+            );
+        }
+
+        function formatDateLabel(value, options) {
+            const date = new Date(value + 'T00:00:00');
+            if (Number.isNaN(date.getTime())) return value;
+            return date.toLocaleDateString('en-US', options);
+        }
+
+        function formatPeriodLabel(payload, mode = 'compact') {
+            const start = payload.period_start || '';
+            const end = payload.period_end || '';
+            if (!start && !end) return payload.period_label || 'Period unavailable';
+
+            const compactOptions = { year: 'numeric', month: 'short', day: '2-digit' };
+            const detailedOptions = { year: 'numeric', month: 'short', day: '2-digit' };
+            const options = mode === 'detailed' ? detailedOptions : compactOptions;
+            const formatDate = (value) => formatDateLabel(value, options);
+
+            if (start && end) return `${formatDate(start)} - ${formatDate(end)}`;
+            if (start) return `Starts ${formatDate(start)}`;
+            return `Until ${formatDate(end)}`;
+        }
+
+        function getDaysUntil(endDateValue) {
+            if (!endDateValue) return null;
+
+            const endDate = new Date(endDateValue + 'T23:59:59');
+            if (Number.isNaN(endDate.getTime())) return null;
+
+            const now = new Date();
+            const diffMs = endDate.getTime() - now.getTime();
+            return Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+        }
+
+        function getStatusPresentation(payload) {
+            const status = (payload.license_status || 'unknown').toLowerCase();
+            const isValid = Boolean(payload.license_valid);
+            const daysUntilExpiry = getDaysUntil(payload.period_end || '');
+
+            if (isValid && daysUntilExpiry !== null && daysUntilExpiry >= 0 && daysUntilExpiry <= 7) {
+                return { label: 'Renew Soon', className: 'is-renewing-soon status-pill--warning', pillClass: 'warning' };
+            }
+            if (isValid) return { label: 'Active', className: 'is-valid status-pill--healthy', pillClass: 'healthy' };
+            if (status === 'missing') return { label: 'Required', className: 'is-missing status-pill--warning', pillClass: 'warning' };
+            if (status === 'invalid') return { label: 'Needs Update', className: 'is-invalid status-pill--error', pillClass: 'error' };
+            if (status === 'error') return { label: 'Check Service', className: 'is-error status-pill--error', pillClass: 'error' };
+            return {
+                label: status && status !== 'unknown' ? status.replaceAll('_', ' ').replace(/\b\w/g, char => char.toUpperCase()) : 'Unknown',
+                className: 'is-invalid status-pill--error',
+                pillClass: 'error'
+            };
+        }
+
+        function detectClientPlatform() {
+            const platform = (navigator.userAgentData && Array.isArray(navigator.userAgentData.platform))
+                ? navigator.userAgentData.platform.join(' ')
+                : (navigator.userAgentData && navigator.userAgentData.platform)
+                    ? navigator.userAgentData.platform
+                    : (navigator.platform || navigator.userAgent || '');
+            const normalized = String(platform || '').toLowerCase();
+
+            if (normalized.includes('win')) return 'windows';
+            if (normalized.includes('mac') || normalized.includes('darwin') || normalized.includes('os x')) return 'mac';
+            if (normalized.includes('linux') || normalized.includes('x11')) return 'linux';
+            return 'linux';
+        }
+
+        function applyReleaseState(payload) {
+            const severityClass = payload.severity === 'healthy'
+                ? 'status-pill--healthy'
+                : payload.severity === 'error'
+                    ? 'status-pill--error'
+                    : 'status-pill--warning';
+            const currentVersion = payload.current_version || getLocalCurrentVersion();
+            const latestVersion = payload.latest_version || 'Unavailable';
+            const versionsMatch = currentVersion === latestVersion;
+            const interactive = Boolean(payload.release_url) && Boolean(payload.update_available || payload.requires_download);
+
+            versionButton.classList.remove(...classNames, 'status-pill--interactive');
+            versionButton.classList.add(severityClass);
+            if (interactive) versionButton.classList.add('status-pill--interactive');
+
+            const buttonText = payload.status === 'update_available'
+                ? `${latestVersion} Available`
+                : (payload.badge_value || currentVersion);
+            versionButton.dataset.currentVersion = currentVersion;
+            versionButtonValue.textContent = buttonText;
+            versionButton.title = payload.title || 'Version information unavailable';
+            versionButton.setAttribute('aria-label', versionButton.title);
+            versionButton.dataset.releaseUrl = payload.release_url || '';
+            activeReleaseUrl = payload.release_url || '';
+
+            if (versionsMatch) {
+                modalVersion.textContent = currentVersion;
+            } else if (payload.status === 'no_release_for_platform') {
+                modalVersion.textContent = `${currentVersion} (${payload.message || 'No release available for this platform.'})`;
+            } else {
+                modalVersion.textContent = `${currentVersion} (latest: ${latestVersion})`;
+            }
+
+            syncMandatoryUpdateModal(payload, currentVersion, latestVersion);
+            syncReleaseAvailabilityPanel(payload, currentVersion, latestVersion);
+        }
+
+        function applyReleaseFallback(currentVersion, message) {
+            const safeVersion = currentVersion || getLocalCurrentVersion();
+            const safeMessage = message || 'Release information is unavailable.';
+
+            versionButton.classList.remove(...classNames, 'status-pill--interactive');
+            versionButton.classList.add('status-pill--warning');
+            versionButton.dataset.currentVersion = safeVersion;
+            versionButtonValue.textContent = safeVersion;
+            versionButton.title = safeMessage;
+            versionButton.setAttribute('aria-label', safeMessage);
+            versionButton.dataset.releaseUrl = '';
+            activeReleaseUrl = '';
+            modalVersion.textContent = safeVersion;
+            syncMandatoryUpdateModal(null, safeVersion, 'Unavailable');
+            syncReleaseAvailabilityPanel(null, safeVersion, 'Unavailable');
+        }
+
+        function syncReleaseAvailabilityPanel(payload, currentVersion, latestVersion) {
+            if (!releaseAvailabilityPanel) return;
+            const isOptionalUpdate = Boolean(payload && payload.status === 'update_available' && payload.release_url);
+            if (!isOptionalUpdate) {
+                releaseAvailabilityPanel.hidden = true;
+                return;
+            }
+
+            if (!latestVersion || latestVersion === 'Unavailable' || latestVersion === currentVersion) {
+                releaseAvailabilityPanel.hidden = true;
+                return;
+            }
+
+            releaseAvailabilityPanel.hidden = false;
+            releaseAvailabilityVersion.textContent = latestVersion || 'Unavailable';
+            releaseAvailabilityMessage.textContent = `A new release version is available. Current version is ${currentVersion}. Click below to download version ${latestVersion}.`;
+        }
+
+        function syncMandatoryUpdateModal(payload, currentVersion, latestVersion) {
+            if (!mandatoryModal) return;
+
+            const requiresDownload = Boolean(payload && payload.status === 'update_required' && payload.release_url);
+            if (!requiresDownload) {
+                mandatoryModal.classList.remove('active');
+                activeMandatoryReleaseUrl = '';
+                activeMandatorySignature = '';
+                return;
+            }
+
+            const signature = `${payload.os_name || 'unknown'}|${currentVersion}|${latestVersion}|${payload.release_url}`;
+            activeMandatoryReleaseUrl = payload.release_url || '';
+            mandatorySummary.textContent = payload.title || 'A required update is available for this device.';
+            mandatoryCurrent.textContent = currentVersion || 'Unavailable';
+            mandatoryLatest.textContent = latestVersion || 'Unavailable';
+            mandatoryPlatform.textContent = (payload.os_name || 'unknown').toUpperCase();
+            mandatoryMessage.textContent = payload.message || 'Download and install the latest version to continue.';
+
+            if (activeMandatorySignature !== signature) {
+                mandatoryModal.classList.add('active');
+                activeMandatorySignature = signature;
+            } else {
+                mandatoryModal.classList.add('active');
+            }
+        }
+
+        function applyLicenseState(payload) {
+            const presentation = getStatusPresentation(payload);
+            const compactPeriodLabel = formatPeriodLabel(payload, 'compact');
+            const detailedPeriodLabel = formatPeriodLabel(payload, 'detailed');
+
+            button.classList.remove(...classNames);
+            button.classList.add(...presentation.className.split(' '));
+            statusValue.textContent = presentation.label;
+            button.title = payload.message
+                ? `License ${presentation.label}. ${compactPeriodLabel}. ${payload.message}`
+                : `License ${presentation.label}. ${compactPeriodLabel}.`;
+            button.setAttribute('aria-label', button.title);
+
+            modalStatusPill.classList.remove(...pillNames);
+            modalStatusPill.classList.add(presentation.pillClass);
+            modalStatusText.textContent = presentation.label;
+            modalPeriod.textContent = detailedPeriodLabel;
+            modalLicensedTo.textContent = payload.licensed_to || 'Unavailable';
+            modalSavedKey.textContent = payload.masked_license_key || 'Unavailable';
+            modalMessage.textContent = payload.message || 'No status message available.';
+        }
+
+        async function refreshStatus(showToastOnError = false) {
+            try {
+                const clientPlatform = detectClientPlatform();
+                const [licenseResponse, releaseResponse] = await Promise.all([
+                    fetch('/api/license-status?refresh=1', { credentials: 'same-origin' }),
+                    fetch(`/api/release-status?os_name=${encodeURIComponent(clientPlatform)}`, { credentials: 'same-origin' })
+                ]);
+                if (!licenseResponse.ok) return;
+                const payload = await licenseResponse.json();
+                if (payload.status !== 'success') return;
+                if (releaseResponse.ok) {
+                    const releasePayload = await releaseResponse.json();
+                    const hasReleaseState = Boolean(
+                        releasePayload &&
+                        typeof releasePayload === 'object' &&
+                        ('current_version' in releasePayload || 'latest_version' in releasePayload || 'severity' in releasePayload)
+                    );
+                    if (hasReleaseState) {
+                        applyReleaseState(releasePayload);
+                    } else {
+                        applyReleaseFallback(getLocalCurrentVersion(), 'Release status is unavailable right now.');
+                    }
+                } else {
+                    let currentVersion = getLocalCurrentVersion();
+                    try {
+                        const healthResponse = await fetch('/api/health-status', { credentials: 'same-origin' });
+                        if (healthResponse.ok) {
+                            const healthPayload = await healthResponse.json();
+                            currentVersion = healthPayload.app_version || currentVersion;
+                        }
+                    } catch (healthError) {
+                        console.warn('Unable to load health status fallback:', healthError);
+                    }
+                    applyReleaseFallback(currentVersion, 'Release endpoint is unavailable. Restart the app server to load the latest release route.');
+                }
+                applyLicenseState(payload);
+            } catch (error) {
+                applyReleaseFallback(getLocalCurrentVersion(), 'Unable to refresh release information right now.');
+                if (showToastOnError && typeof showToast === 'function') {
+                    showToast('Unable to refresh license status right now.', 'error');
+                }
+                console.warn('Unable to refresh header license state:', error);
+            }
+        }
+
+        window.openHeaderLicenseModal = function() {
+            nextInput.value = window.location.pathname + window.location.search;
+            modal.classList.add('active');
+            refreshStatus(false);
+        };
+
+        window.closeHeaderLicenseModal = function() {
+            modal.classList.remove('active');
+        };
+
+        window.refreshHeaderLicenseState = function(showToastOnError = false) {
+            refreshStatus(showToastOnError);
+        };
+
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', function() {
+                refreshStatus(false);
+            });
+        } else {
+            refreshStatus(false);
+        }
+
+        versionButton.addEventListener('click', function() {
+            const releaseUrl = versionButton.dataset.releaseUrl || '';
+            if (!releaseUrl) return;
+            window.open(releaseUrl, '_blank', 'noopener');
+        });
+
+        if (mandatoryDownloadBtn) {
+            mandatoryDownloadBtn.addEventListener('click', function() {
+                if (!activeMandatoryReleaseUrl) return;
+                window.open(activeMandatoryReleaseUrl, '_blank', 'noopener');
+            });
+        }
+
+        if (releaseAvailabilityDownloadBtn) {
+            releaseAvailabilityDownloadBtn.addEventListener('click', function() {
+                if (!activeReleaseUrl) return;
+                window.open(activeReleaseUrl, '_blank', 'noopener');
+            });
+        }
+
+        if (mandatoryRefreshBtn) {
+            mandatoryRefreshBtn.addEventListener('click', function() {
+                refreshStatus(true);
+            });
+        }
+
+        form.addEventListener('submit', function(e) {
+            const value = keyInput.value.trim();
+            if (!value) {
+                e.preventDefault();
+                keyInput.classList.add('input-error');
+                errorEl.textContent = 'License key is required.';
+                errorEl.classList.add('visible');
+                keyInput.focus();
+                return;
+            }
+
+            keyInput.classList.remove('input-error');
+            errorEl.classList.remove('visible');
+            document.getElementById('headerLicenseBtnText').style.display = 'none';
+            document.getElementById('headerLicenseBtnLoading').style.display = 'inline-flex';
+            document.getElementById('headerLicenseSubmitBtn').disabled = true;
+        });
+
+        modal.addEventListener('click', function(event) {
+            if (event.target === modal) closeHeaderLicenseModal();
+        });
+
+        refreshStatus(false);
+    })();
+</script>

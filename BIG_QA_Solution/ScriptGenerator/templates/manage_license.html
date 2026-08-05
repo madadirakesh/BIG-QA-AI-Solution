@@ -1,0 +1,121 @@
+{% extends "base.html" %}
+
+{% block title %}Manage License - BIG AI QA Solution{% endblock %}
+{% block page_title %}License{% endblock %}
+{% block header_breadcrumb %}
+<a href="{{ url_for('home') }}">Home</a>
+<span class="sep">/</span>
+<span class="current">License</span>
+{% endblock %}
+
+{% block content %}
+<div class="license-management-page">
+    <div class="form-panel glassmorphism license-management-panel">
+        <div class="license-management-intro">
+            <h2>Current License</h2>
+            <p>Review the current activation status and update the stored key when you need to renew or replace the license.</p>
+        </div>
+
+        <div class="status-container glassmorphism license-management-status">
+            <div class="status-header">
+                <i class="fas fa-id-card"></i>
+                <span>Current License Status</span>
+            </div>
+            <div class="license-management-status-list">
+                <div class="status-item">
+                    <span class="status-label">Status:</span>
+                    <span class="status-value-pill {% if license_state.status == 'valid' %}healthy{% elif license_state.status == 'missing' %}warning{% else %}error{% endif %}">
+                        {% if license_state.status == 'valid' %}
+                            <i class="fas fa-check-circle"></i> Valid
+                        {% elif license_state.status == 'missing' %}
+                            <i class="fas fa-exclamation-triangle"></i> License Required
+                        {% else %}
+                            <i class="fas fa-times-circle"></i> {{ license_state.status|replace('_', ' ')|title }}
+                        {% endif %}
+                    </span>
+                </div>
+                {% if license_state.record and license_state.record.masked_license_key %}
+                <div class="status-item">
+                    <span class="status-label">Saved Key:</span>
+                    <span class="license-management-value muted">{{ license_state.record.masked_license_key }}</span>
+                </div>
+                {% endif %}
+                {% if license_state.licensed_to %}
+                <div class="status-item">
+                    <span class="status-label">Licensed To:</span>
+                    <span class="license-management-value">{{ license_state.licensed_to }}</span>
+                </div>
+                {% endif %}
+                <div class="status-item status-message">
+                    <span class="status-label">Message:</span>
+                    <span class="license-management-value muted">{{ license_state.message }}</span>
+                </div>
+            </div>
+        </div>
+
+        <form method="POST" action="{{ url_for('activate_license') }}" class="license-management-form" id="manageLicenseForm" novalidate>
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+            <input type="hidden" name="next" value="manage_license"/>
+            <div class="form-group">
+                <label for="manage_license_key">
+                    <span><i class="fas fa-key"></i> License Key</span>
+                    <span class="license-management-help">Paste a new key to replace the current activation</span>
+                </label>
+                <textarea
+                    id="manage_license_key"
+                    name="license_key"
+                    rows="4"
+                    required
+                    placeholder="Paste the license key here"
+                    class="license-management-textarea"
+                >{{ request.form.get('license_key', license_state.record.license_key if license_state.record else '') }}</textarea>
+                <div class="field-error" id="manageLicenseErr"></div>
+            </div>
+
+            <div class="license-management-actions">
+                <button type="submit" class="btn btn-primary" id="manageLicenseSubmitBtn">
+                    <span id="manageLicenseBtnText"><i class="fas fa-shield-check"></i> Update License</span>
+                    <span id="manageLicenseBtnLoading" style="display:none;"><i class="fas fa-spinner fa-spin"></i> Saving...</span>
+                </button>
+                <button type="button" class="btn license-management-refresh" onclick="refreshManagedLicenseStatus()">
+                    <i class="fas fa-rotate-right"></i> Refresh Status
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    document.getElementById('manageLicenseForm').addEventListener('submit', function(e) {
+        const keyInput = document.getElementById('manage_license_key');
+        const errorEl = document.getElementById('manageLicenseErr');
+        const value = keyInput.value.trim();
+
+        if (!value) {
+            e.preventDefault();
+            keyInput.classList.add('input-error');
+            errorEl.textContent = 'License key is required.';
+            errorEl.classList.add('visible');
+            keyInput.focus();
+            return;
+        }
+
+        keyInput.classList.remove('input-error');
+        errorEl.classList.remove('visible');
+
+        document.getElementById('manageLicenseBtnText').style.display = 'none';
+        document.getElementById('manageLicenseBtnLoading').style.display = 'inline-flex';
+        document.getElementById('manageLicenseSubmitBtn').disabled = true;
+    });
+
+    async function refreshManagedLicenseStatus() {
+        const response = await fetch('/api/license-status?refresh=1');
+        const data = await response.json();
+        if (data.status === 'success') {
+            window.location.reload();
+        }
+    }
+</script>
+{% endblock %}

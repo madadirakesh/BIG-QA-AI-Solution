@@ -6,6 +6,7 @@ import json
 import re
 import hashlib
 import logging
+from pathlib import Path
 from typing import Dict, List, Optional
 from fastapi import FastAPI, BackgroundTasks, HTTPException, Request, Depends
 from fastapi.responses import JSONResponse
@@ -14,6 +15,7 @@ from fastapi_csrf_protect import CsrfProtect
 from fastapi_csrf_protect.exceptions import CsrfProtectError
 from pydantic import BaseModel
 from dotenv import load_dotenv
+from utils.app_versioning import get_app_version_label
 
 try:
     from jira import JIRA
@@ -80,6 +82,8 @@ def get_effective_ai_provider() -> str:
 
 DEFAULT_AI_PROVIDER = get_effective_ai_provider()
 
+APP_ROOT_DIR = Path(__file__).resolve().parent.parent
+
 
 def get_effective_ai_model() -> str:
     configured_model = (os.getenv("AI_MODEL", "") or "").strip()
@@ -89,7 +93,6 @@ def get_effective_ai_model() -> str:
 
 
 AI_MODEL = get_effective_ai_model()
-
 
 def build_missing_ai_configuration_message(missing_model: bool = False, missing_key: bool = False) -> str:
     if missing_model and missing_key:
@@ -313,6 +316,7 @@ async def health_check():
         "service":           "AI QA Backend",
         "ai_provider":       AI_TOOL,
         "ai_configured": bool(API_KEY),
+        "app_version":       get_app_version_label(APP_ROOT_DIR),
 
     }
 

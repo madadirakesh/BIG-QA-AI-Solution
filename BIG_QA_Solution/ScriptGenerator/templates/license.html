@@ -1,0 +1,357 @@
+{% extends "base.html" %}
+
+{% block title %}License Activation - BIG AI QA Solution{% endblock %}
+
+{% block extra_css %}
+<style>
+    .license-screen {
+        padding-block: clamp(12px, 2vh, 24px);
+    }
+
+    .license-card {
+        width: min(100%, 560px);
+        max-height: calc(100vh - clamp(24px, 4vh, 48px));
+        padding: clamp(1.2rem, 2vw, 1.75rem);
+        display: flex;
+        flex-direction: column;
+        gap: 1rem;
+        overflow-y: auto;
+        scrollbar-width: thin;
+    }
+
+    .license-card::-webkit-scrollbar {
+        width: 8px;
+    }
+
+    .license-card::-webkit-scrollbar-thumb {
+        background: rgba(148, 163, 184, 0.28);
+        border-radius: 999px;
+    }
+
+    .license-header {
+        margin-bottom: 0;
+    }
+
+    .license-logo {
+        height: clamp(60px, 10vh, 104px);
+        margin-bottom: 0.75rem;
+    }
+
+    .license-title-row {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.55rem;
+        margin-bottom: 0.45rem;
+    }
+
+    .license-title-row h1 {
+        margin: 0;
+    }
+
+    .license-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.35rem;
+        padding: 0.28rem 0.65rem;
+        border-radius: 999px;
+        border: 1px solid rgba(56, 189, 248, 0.24);
+        background: rgba(14, 165, 233, 0.12);
+        color: #7dd3fc;
+        font-size: 0.72rem;
+        font-weight: 600;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+    }
+
+    .license-intro {
+        margin: 0;
+        line-height: 1.55;
+    }
+
+    .license-panel {
+        margin: 0;
+        padding: 1rem;
+        gap: 0.85rem;
+        border: 1px solid rgba(148, 163, 184, 0.16);
+        background:
+            linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.02)),
+            rgba(15, 23, 42, 0.58);
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+    }
+
+    .license-panel .status-header {
+        padding-bottom: 0.2rem;
+    }
+
+    .license-status-list {
+        display: grid;
+        gap: 0.65rem;
+    }
+
+    .license-status-list .status-item {
+        align-items: flex-start;
+        gap: 0.8rem;
+        padding: 0.85rem 0.95rem;
+        border: 1px solid rgba(148, 163, 184, 0.08);
+        background: rgba(255, 255, 255, 0.035);
+    }
+
+    .license-status-list .status-item.message {
+        display: block;
+    }
+
+    .license-status-list .status-item.message .status-label {
+        display: block;
+        margin-bottom: 0.35rem;
+    }
+
+    .license-status-content {
+        flex: 1;
+        min-width: 0;
+        text-align: right;
+        color: var(--text-primary);
+        line-height: 1.45;
+        word-break: break-word;
+    }
+
+    .license-status-content.muted {
+        color: var(--text-secondary);
+    }
+
+    .license-status-list .status-item.message .license-status-content {
+        text-align: left;
+    }
+
+    .license-form {
+        display: grid;
+        gap: 1rem;
+    }
+
+    .license-form .form-group {
+        margin-bottom: 0;
+    }
+
+    .license-form label {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.75rem;
+    }
+
+    .license-hint {
+        color: var(--text-secondary);
+        font-size: 0.78rem;
+        font-weight: 400;
+    }
+
+    .license-textarea {
+        min-height: 96px;
+        max-height: min(22vh, 160px);
+        resize: vertical;
+        line-height: 1.45;
+    }
+
+    .license-actions {
+        display: grid;
+        grid-template-columns: minmax(0, 1.5fr) minmax(180px, 1fr);
+        gap: 0.85rem;
+    }
+
+    .license-btn-secondary {
+        background: rgba(255, 255, 255, 0.08);
+        color: var(--text-primary);
+    }
+
+    .license-note {
+        margin-top: 0;
+        padding: 0.85rem 1rem;
+        border-radius: 14px;
+        background: rgba(15, 23, 42, 0.38);
+        color: var(--text-secondary);
+        font-size: 0.88rem;
+        line-height: 1.5;
+    }
+
+    @media (max-width: 560px) {
+        .license-card {
+            max-height: calc(100vh - 24px);
+            padding: 1rem;
+            gap: 0.85rem;
+        }
+
+        .license-title-row {
+            flex-direction: column;
+            gap: 0.45rem;
+        }
+
+        .license-actions {
+            grid-template-columns: 1fr;
+        }
+
+        .license-status-list .status-item {
+            flex-direction: column;
+        }
+
+        .license-status-content {
+            text-align: left;
+        }
+    }
+
+    @media (max-height: 820px) {
+        .license-screen {
+            padding-block: 10px;
+        }
+
+        .license-card {
+            gap: 0.8rem;
+            padding: 1rem;
+        }
+
+        .license-logo {
+            height: 58px;
+            margin-bottom: 0.55rem;
+        }
+
+        .license-panel {
+            padding: 0.85rem;
+        }
+
+        .license-textarea {
+            min-height: 84px;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block login_content %}
+<div class="login-container license-screen">
+    <div class="login-card glassmorphism license-card">
+        <div class="login-header license-header">
+            <img src="{{ url_for('static', filename='images/big_logo_stacked_light.png') }}" alt="BIG Logo" class="login-logo license-logo">
+            <div class="license-title-row">
+                <h1>Activate Your License</h1>
+                <span class="license-badge"><i class="fas fa-shield-halved"></i> Secure Access</span>
+            </div>
+            <p class="license-intro">Validate your BIG AI QA Solution license to unlock the application and continue to sign in.</p>
+        </div>
+
+        {% with messages = get_flashed_messages(with_categories=true) %}
+          {% if messages %}
+            <div class="login-flash">
+              {% for category, message in messages %}
+                <div class="alert alert-{{ category }}">{{ message }}</div>
+              {% endfor %}
+            </div>
+          {% endif %}
+        {% endwith %}
+
+        <div class="status-container glassmorphism license-panel">
+            <div class="status-header">
+                <i class="fas fa-id-card"></i>
+                <span>Current License Status</span>
+            </div>
+            <div class="license-status-list">
+                <div class="status-item">
+                    <span class="status-label">Status:</span>
+                    <span class="status-value-pill {% if license_state.status == 'valid' %}healthy{% elif license_state.status == 'missing' %}warning{% else %}error{% endif %}">
+                        {% if license_state.status == 'valid' %}
+                            <i class="fas fa-check-circle"></i> Valid
+                        {% elif license_state.status == 'missing' %}
+                            <i class="fas fa-exclamation-triangle"></i> License Required
+                        {% else %}
+                            <i class="fas fa-times-circle"></i> {{ license_state.status|replace('_', ' ')|title }}
+                        {% endif %}
+                    </span>
+                </div>
+                {% if license_state.record and license_state.record.masked_license_key %}
+                <div class="status-item">
+                    <span class="status-label">Saved Key:</span>
+                    <span class="license-status-content muted">{{ license_state.record.masked_license_key }}</span>
+                </div>
+                {% endif %}
+                {% if license_state.licensed_to %}
+                <div class="status-item">
+                    <span class="status-label">Licensed To:</span>
+                    <span class="license-status-content">{{ license_state.licensed_to }}</span>
+                </div>
+                {% endif %}
+                <div class="status-item message">
+                    <span class="status-label">Message:</span>
+                    <span class="license-status-content muted">{{ license_state.message }}</span>
+                </div>
+            </div>
+        </div>
+
+        <form method="POST" action="{{ url_for('activate_license') }}" class="login-form license-form" id="licenseForm" novalidate>
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+            <div class="form-group">
+                <label for="license_key">
+                    <span><i class="fas fa-key"></i> License Key</span>
+                    <span class="license-hint">Paste the full key exactly as provided</span>
+                </label>
+                <textarea
+                    id="license_key"
+                    name="license_key"
+                    rows="3"
+                    required
+                    placeholder="Paste the license key here"
+                    class="license-textarea"
+                >{{ request.form.get('license_key', license_state.record.license_key if license_state.record else '') }}</textarea>
+                <div class="field-error" id="licenseErr"></div>
+            </div>
+
+            <div class="form-actions license-actions">
+                <button type="submit" class="btn btn-primary" id="licenseSubmitBtn">
+                    <span id="licenseBtnText"><i class="fas fa-shield-check"></i> Validate License</span>
+                    <span id="licenseBtnLoading" style="display:none;"><i class="fas fa-spinner fa-spin"></i> Validating...</span>
+                </button>
+                <button type="button" class="btn license-btn-secondary" onclick="refreshLicenseStatus()">
+                    <i class="fas fa-rotate-right"></i> Refresh Status
+                </button>
+            </div>
+        </form>
+
+        <div class="login-footer">
+            <div class="license-note">
+                Once the license is validated, the application will automatically continue to the normal sign-in flow.
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    document.getElementById('licenseForm').addEventListener('submit', function(e) {
+        const keyInput = document.getElementById('license_key');
+        const errorEl = document.getElementById('licenseErr');
+        const value = keyInput.value.trim();
+
+        if (!value) {
+            e.preventDefault();
+            keyInput.classList.add('input-error');
+            errorEl.textContent = 'License key is required.';
+            errorEl.classList.add('visible');
+            keyInput.focus();
+            return;
+        }
+
+        keyInput.classList.remove('input-error');
+        errorEl.classList.remove('visible');
+
+        document.getElementById('licenseBtnText').style.display = 'none';
+        document.getElementById('licenseBtnLoading').style.display = 'inline-flex';
+        document.getElementById('licenseSubmitBtn').disabled = true;
+    });
+
+    async function refreshLicenseStatus() {
+        const response = await fetch('/api/license-status?refresh=1');
+        const data = await response.json();
+        if (data.license_valid) {
+            window.location.href = '{{ url_for("login") }}';
+            return;
+        }
+        window.location.reload();
+    }
+</script>
+{% endblock %}

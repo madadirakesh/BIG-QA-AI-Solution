@@ -6,10 +6,17 @@ import importlib.util
 import subprocess
 import threading
 import webbrowser
-import uuid
 import secrets
 from datetime import datetime
 from pathlib import Path
+
+from dotenv import load_dotenv
+from utils.app_versioning import (
+    UNAVAILABLE_VERSION,
+    build_release_status,
+    get_app_version_label,
+    get_release_download_url,
+)
 
 # Path setup
 BASE_DIR = Path(__file__).resolve().parent
@@ -18,6 +25,10 @@ PROJECT_BOOTSTRAPPER_DIR = ROOT_DIR / "ProjectBootstrapper"
 VENV_DIR = ROOT_DIR / ".venv"
 VENV_PYTHON = VENV_DIR / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
 VENV_BOOTSTRAP_FLAG = "SCRIPTGENERATOR_VENV_READY"
+
+# Load environment variables before any module-level config reads.
+load_dotenv(BASE_DIR / ".env")
+
 DEFAULT_APP_TIMEZONE = os.environ.get("APP_TIMEZONE", "America/New_York")
 DEFAULT_AI_MODELS = {
     "gemini": "gemini-2.5-flash",
@@ -384,10 +395,9 @@ def install_prerequisites():
 
 install_prerequisites()
 
-from flask import Flask, render_template, request, redirect, url_for, session, flash, jsonify, Response, stream_with_context
+from flask import Flask, render_template, request, redirect, url_for, session, flash, jsonify, Response, stream_with_context, g
 from flask_wtf.csrf import CSRFProtect, CSRFError
 import pytz
-from dotenv import load_dotenv
 from scripts.deploy_team_templates import seed
 
 if str(PROJECT_BOOTSTRAPPER_DIR) not in sys.path:
@@ -396,13 +406,11 @@ if str(PROJECT_BOOTSTRAPPER_DIR) not in sys.path:
 from ProjectBootstrapper.bootstrapper_engine import BootstrapperEngine
 from ProjectBootstrapper.environment_setup import EnvironmentSetup
 from db.app_db import fetch_data, insert_data, update_data, init_db, get_db, purge_transient_test_projects
+from api.license_service import assess_license_state, fetch_latest_release_info, normalize_release_platform_name, save_license_record
 # encrypt_for_app / decrypt_for_app protect the password stored in ProjectData with an app master
 # key (Flask .env). decrypt_for_app passes legacy plaintext rows through unchanged.
 from utils.crypto_util import decrypt_for_app, encrypt_for_app, encrypt_secret, generate_key
 from utils.password_util import hash_password, verify_password, is_hashed
-
-# Load environment variables early
-load_dotenv(BASE_DIR / ".env")
 
 # Global dictionary for background bootstrapper jobs
 bootstrapper_jobs = {}
@@ -423,18 +431,33 @@ csrf = CSRFProtect(app)
 def handle_csrf_error(e):
     if request.is_json or request.path.startswith('/api/'):
         return jsonify({"status": "error", "message": "CSRF token validation failed: " + e.description}), 400
-    return f"CSRF validation failed: {e.description}", 400
+    flash("Your form session expired or was refreshed. Please try again.", "error")
+    if request.endpoint == 'activate_license':
+        return redirect(url_for('license_page'))
+    if request.endpoint == 'login':
+        return redirect(url_for('login'))
+    return redirect(request.url)
 
 @app.teardown_appcontext
 def close_connection(exception):
-    from flask import g
     db = getattr(g, 'db', None)
     if db is not None:
         db.close()
 
 @app.context_processor
 def inject_user():
-
+    license_state = getattr(g, 'current_license_state', None)
+    if license_state is None:
+        try:
+            license_state = assess_license_state(force_refresh=False)
+        except Exception:
+            license_state = {
+                "valid": False,
+                "status": "error",
+                "message": "Unable to load license status.",
+                "licensed_to": "",
+                "record": None,
+            }
     projects = []
     if session.get('user_id'):
         try:
@@ -447,8 +470,12 @@ def inject_user():
         user_role=session.get('user_role', 'guest').lower(),
         global_projects=projects,
         active_project_id=session.get('active_project_id'),
-        active_project_name=session.get('active_project_name')
+        active_project_name=session.get('active_project_name'),
+        header_app_version=get_app_version_label(BASE_DIR, allow_git_fallback=False),
+        header_license_state=license_state,
+        header_license_manage_url='/license/manage',
     )
+
 
 def login_required(role=None):
     def wrapper(f):
@@ -467,7 +494,16 @@ def login_required(role=None):
 # Endpoints reachable without login; everything else needs a session.
 # locator_heartbeat is public: the detached Locator Studio process has no
 # session cookie, so it authenticates with a one-time launch token instead.
-PUBLIC_ENDPOINTS = {'login', 'logout', 'index', 'static', 'locator_heartbeat'}
+PUBLIC_ENDPOINTS = {
+    'login',
+    'logout',
+    'index',
+    'static',
+    'locator_heartbeat',
+    'license_page',
+    'activate_license',
+    'license_status',
+}
 
 # launch token -> user_id of whoever launched Locator Studio. The studio polls
 # the heartbeat with its token; we report active only while that user's session
@@ -493,8 +529,25 @@ def require_authentication():
     # so local test artifacts never appear in project selectors or the DB viewer.
     purge_transient_test_projects()
 
-    # Central guard: enforce login for every route except the public ones.
     endpoint = request.endpoint
+    if endpoint is None:
+        return None
+
+    license_state = assess_license_state(force_refresh=endpoint in {'index', 'login', 'home'})
+    g.current_license_state = license_state
+    license_allowed = endpoint in {'license_page', 'activate_license', 'license_status', 'static', 'logout'}
+    if not license_state["valid"] and not license_allowed:
+        if 'user_id' in session:
+            session.clear()
+        if request.path.startswith('/api/'):
+            return jsonify({
+                'error': 'License validation required',
+                'redirect': url_for('license_page'),
+                'message': license_state["message"],
+            }), 403
+        return redirect(url_for('license_page'))
+
+    # Central guard: enforce login for every route except the public ones.
     if endpoint is None or endpoint in PUBLIC_ENDPOINTS:
         return None
     if 'user_id' not in session:
@@ -531,9 +584,92 @@ def add_no_cache_and_security_headers(response):
 
 @app.route('/')
 def index():
+    license_state = assess_license_state(force_refresh=True)
+    if not license_state["valid"]:
+        return redirect(url_for('license_page'))
     if 'user_id' in session:
         return redirect(url_for('home'))
     return redirect(url_for('login'))
+
+@app.route('/license', methods=['GET'])
+def license_page():
+    license_state = assess_license_state(force_refresh=False)
+    if license_state["valid"]:
+        if 'user_id' in session:
+            return redirect(url_for('home'))
+        return redirect(url_for('login'))
+    return render_template('license.html', license_state=license_state)
+
+
+@app.route('/license/manage', methods=['GET'])
+@login_required()
+def manage_license():
+    license_state = assess_license_state(force_refresh=False)
+    return render_template('manage_license.html', license_state=license_state)
+
+
+@app.route('/license', methods=['POST'])
+def activate_license():
+    submitted_key = (request.form.get('license_key') or "").strip()
+    return_target = (request.form.get('next') or "").strip()
+    redirect_target = return_target if return_target.startswith('/') else ""
+    if not submitted_key:
+        flash('License key is required.', 'error')
+        if return_target == 'manage_license' and 'user_id' in session:
+            return redirect(url_for('manage_license'))
+        if redirect_target:
+            return redirect(redirect_target)
+        return redirect(url_for('license_page'))
+
+    save_license_record(
+        submitted_key,
+        "pending",
+        "Validating license key...",
+    )
+    license_state = assess_license_state(force_refresh=True)
+    if license_state["valid"]:
+        flash('License verified successfully. You can continue into the application.', 'success')
+        if return_target == 'manage_license' and 'user_id' in session:
+            return redirect(url_for('manage_license'))
+        if redirect_target:
+            return redirect(redirect_target)
+        if 'user_id' in session:
+            return redirect(url_for('home'))
+        return redirect(url_for('login'))
+
+    flash(license_state["message"], 'error')
+    if redirect_target and 'user_id' in session:
+        return redirect(redirect_target)
+    return redirect(url_for('license_page'))
+
+
+@app.route('/api/license-status', methods=['GET'])
+def license_status():
+    license_state = assess_license_state(force_refresh=request.args.get('refresh') == '1')
+    record = license_state.get("record") or {}
+    period = license_state.get("license_period") or {}
+    start_date = period.get("start_date") or ""
+    end_date = period.get("end_date") or ""
+    if start_date and end_date:
+        period_label = f"{start_date} to {end_date}"
+    elif start_date:
+        period_label = f"Starts {start_date}"
+    elif end_date:
+        period_label = f"Until {end_date}"
+    else:
+        period_label = "Period unavailable"
+    return jsonify({
+        "status": "success",
+        "license_valid": license_state["valid"],
+        "license_status": license_state["status"],
+        "message": license_state["message"],
+        "licensed_to": license_state.get("licensed_to") or "",
+        "period_start": start_date,
+        "period_end": end_date,
+        "period_label": period_label,
+        "masked_license_key": record.get("masked_license_key", ""),
+        "last_checked_at": record.get("last_checked_at"),
+    })
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
@@ -541,6 +677,9 @@ def login():
     # button after login). Without this, base.html still sees a live session and
     # renders the dashboard chrome at the /login URL — the broken empty-dashboard
     # state. Send authenticated users straight to their dashboard instead.
+    license_state = assess_license_state(force_refresh=False)
+    if not license_state["valid"]:
+        return redirect(url_for('license_page'))
     if 'user_id' in session:
         return redirect(url_for('home'))
     if request.method == 'POST':
@@ -3749,7 +3888,13 @@ def rollback_files():
 @app.route('/api/health-status')
 @login_required()
 def health_status():
-    status = {"db": "Healthy", "ai": "Healthy", "server": "Running"}
+    status = {
+        "db": "Healthy",
+        "ai": "Healthy",
+        "server": "Running",
+        "app_version": get_app_version_label(BASE_DIR),
+        "backend_version": UNAVAILABLE_VERSION,
+    }
     
     # Check Database
     try:
@@ -3760,8 +3905,80 @@ def health_status():
     # Check AI Config
     if not os.getenv("API_KEY"):
         status["ai"] = "Key Missing"
+
+    # Check backend health + current release/version
+    try:
+        import urllib.request
+        req = urllib.request.Request('http://127.0.0.1:8000/health')
+        with urllib.request.urlopen(req, timeout=3) as response:
+            backend_status = json.loads(response.read().decode())
+        if isinstance(backend_status, dict):
+            status["server"] = backend_status.get("status", status["server"]).title()
+            status["backend_version"] = backend_status.get("app_version") or "Unavailable"
+    except Exception:
+        status["server"] = "Error"
         
     return jsonify(status)
+
+
+@app.route('/api/release-status')
+@login_required()
+def release_status():
+    current_version = get_app_version_label(BASE_DIR, allow_git_fallback=False)
+    release_url = get_release_download_url()
+    backend_version = UNAVAILABLE_VERSION
+    backend_status = "Unavailable"
+    requested_os_name = request.args.get('os_name', '')
+    normalized_os_name = normalize_release_platform_name(requested_os_name)
+    release_message = "Version information is unavailable."
+    no_release_for_platform = False
+    mandatory_update = False
+    release_error = ""
+
+    try:
+        release_info = fetch_latest_release_info(normalized_os_name)
+        if release_info:
+            backend_status = "Ok"
+            release_message = release_info.get("message") or release_message
+            no_release_for_platform = bool(release_info.get("not_found"))
+            mandatory_update = bool(release_info.get("mandatory_update"))
+            if not no_release_for_platform:
+                backend_version = release_info.get("version") or UNAVAILABLE_VERSION
+                release_url = release_info.get("download_url") or release_url
+    except Exception as exc:
+        try:
+            import urllib.request
+            req = urllib.request.Request('http://127.0.0.1:8000/health')
+            with urllib.request.urlopen(req, timeout=3) as response:
+                payload = json.loads(response.read().decode())
+            if isinstance(payload, dict):
+                backend_status = payload.get("status", backend_status).title()
+                backend_version = payload.get("app_version") or UNAVAILABLE_VERSION
+        except Exception:
+            pass
+        release_error = str(exc or "").strip()
+
+    release_payload = build_release_status(
+        current_version,
+        backend_version,
+        release_url,
+        mandatory_update=mandatory_update,
+    )
+    if no_release_for_platform:
+        release_payload.update({
+            "severity": "warning",
+            "status": "no_release_for_platform",
+            "badge_value": current_version,
+            "message": release_message or "No release available for this platform.",
+            "title": f"No release available for this platform ({normalized_os_name or 'unknown'}).",
+            "release_url": "",
+            "update_available": False,
+            "requires_download": False,
+        })
+    release_payload["backend_status"] = backend_status
+    release_payload["os_name"] = normalized_os_name
+    release_payload["release_error"] = release_error
+    return jsonify({"status": "success", **release_payload})
 
 @app.route('/sample-app/login', methods=['GET', 'POST'])
 def sample_app_login():

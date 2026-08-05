@@ -114,6 +114,7 @@
                     <nav class="breadcrumb" aria-label="breadcrumb">{% block header_breadcrumb %}{% endblock %}</nav>
                 </div>
                 <div class="user-greeting">
+                    {% include 'partials/header_license_button.html' %}
                     <!-- Global Active Project Selector -->
                     {% if global_projects %}
                     <div class="global-project-selector" style="margin-right: 15px; display: inline-flex; align-items: center; gap: 8px;" title="Set Global Active Project">
@@ -190,6 +191,7 @@
 
     <!-- M11: Theme Toggle FAB -->
     {% if session.get('user_id') %}
+    {% include 'partials/header_license_modal.html' %}
     <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()" title="Toggle light/dark mode" aria-label="Toggle theme">
         <i class="fas fa-moon" id="themeIcon"></i>
     </button>

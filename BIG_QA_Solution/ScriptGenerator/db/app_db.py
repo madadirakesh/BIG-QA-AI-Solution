@@ -242,6 +242,18 @@ def init_db():
     );
     """
 
+    create_app_license_table = """
+    CREATE TABLE IF NOT EXISTS AppLicense (
+        id INTEGER PRIMARY KEY CHECK (id = 1),
+        license_key TEXT,
+        status TEXT,
+        message TEXT,
+        licensed_to TEXT,
+        last_checked_at TEXT,
+        updated_at TEXT
+    );
+    """
+
     try:
         with get_db() as conn:
             cursor = conn.cursor()
@@ -255,6 +267,7 @@ def init_db():
             cursor.execute(create_backupfiles_table)
             cursor.execute(create_project_inputs_table)
             cursor.execute(create_project_git_config_table)
+            cursor.execute(create_app_license_table)
             
             # Indexes
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_locators_project_id ON Locators(project_id)")
@@ -281,6 +294,18 @@ def init_db():
 
             try:
                 cursor.execute("ALTER TABLE Locators ADD COLUMN project_id INTEGER")
+            except Exception: pass
+
+            try:
+                cursor.execute("ALTER TABLE AppLicense ADD COLUMN licensed_to TEXT")
+            except Exception: pass
+
+            try:
+                cursor.execute("ALTER TABLE AppLicense ADD COLUMN last_checked_at TEXT")
+            except Exception: pass
+
+            try:
+                cursor.execute("ALTER TABLE AppLicense ADD COLUMN updated_at TEXT")
             except Exception: pass
             
             # Insert admin user if not exists
