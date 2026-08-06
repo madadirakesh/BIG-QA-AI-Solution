@@ -7,7 +7,7 @@ import subprocess
 import threading
 import webbrowser
 import secrets
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -423,6 +423,9 @@ _locator_proc = None
 app = Flask(__name__)
 app.secret_key = get_flask_secret_key()
 app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 31536000  # Cache static files for 1 year
+app.config['SESSION_PERMANENT'] = True
+app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(hours=8)
+app.config['SESSION_REFRESH_EACH_REQUEST'] = True
 
 # Enable CSRF protection globally
 csrf = CSRFProtect(app)
@@ -712,6 +715,7 @@ def login():
                     update_data("UPDATE users SET password = ? WHERE id = ?",
                                 (hash_password(password), user['id']))
 
+                session.permanent = True
                 session['user_id'] = user['id']
                 session['user_name'] = user['name']
                 session['user_role'] = user['role']

@@ -505,6 +505,11 @@ def extract_license_reason(payload, fallback=None):
     return fallback or "License validation failed."
 
 
+def is_transient_license_response(status_code):
+    """Return True when the verifier response looks temporarily unavailable."""
+    return status_code in (408, 425, 429) or status_code >= 500
+
+
 def get_license_record():
     rows = fetch_data("SELECT * FROM AppLicense WHERE id = ?", (APP_LICENSE_ROW_ID,))
     if not rows:
@@ -711,6 +716,20 @@ def assess_license_state(force_refresh=False):
         }
 
     status = "valid" if verification["valid"] else "invalid"
+    previous_status = (record.get("status") or "").strip().lower()
+    if previous_status == "valid" and not verification["valid"] and is_transient_license_response(verification.get("status_code", 0)):
+        return {
+            "valid": True,
+            "status": "valid",
+            "message": "Last successful license validation is still being used because the license service is temporarily unavailable.",
+            "licensed_to": record.get("licensed_to") or "",
+            "license_period": verification.get("license_period") or {
+                "start_date": "",
+                "end_date": "",
+            },
+            "record": record,
+        }
+
     save_license_record(
         record.get("license_key"),
         status,
