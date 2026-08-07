@@ -8,7 +8,11 @@ import sys
 import time
 
 from mcp import ClientSession
-from mcp.client.streamable_http import streamablehttp_client
+try:
+    # MCP 2.x uses the PEP 8 name and yields two transport streams.
+    from mcp.client.streamable_http import streamable_http_client
+except ImportError:  # Compatibility with older MCP releases.
+    from mcp.client.streamable_http import streamablehttp_client as streamable_http_client
 
 from api import backend
 
@@ -193,7 +197,10 @@ async def run_mcp_git_prompt(prompt: str, project_path: str, assistant_mode: str
         process, server_url = await _start_mcp_server(project_path)
         await _wait_for_server(server_url, process)
 
-        async with streamablehttp_client(server_url) as (read_stream, write_stream, _):
+        # Older MCP versions yielded a third callback value; MCP 2.x yields only
+        # the read and write streams. Indexing keeps this client compatible with both.
+        async with streamable_http_client(server_url) as transport_streams:
+            read_stream, write_stream = transport_streams[:2]
             async with ClientSession(read_stream, write_stream) as session:
                 await session.initialize()
                 tools_response = await session.list_tools()

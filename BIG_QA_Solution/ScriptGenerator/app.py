@@ -7,6 +7,7 @@ import subprocess
 import threading
 import webbrowser
 import secrets
+import uuid
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -540,8 +541,11 @@ def require_authentication():
     g.current_license_state = license_state
     license_allowed = endpoint in {'license_page', 'activate_license', 'license_status', 'static', 'logout'}
     if not license_state["valid"] and not license_allowed:
-        if 'user_id' in session:
-            session.clear()
+        # A license refresh may fail temporarily (for example, because the
+        # validation service or network is unavailable). Block application
+        # access while the license is invalid, but preserve the authenticated
+        # session. Once validation recovers, an already signed-in user should
+        # return to the application instead of being forced to log in again.
         if request.path.startswith('/api/'):
             return jsonify({
                 'error': 'License validation required',
@@ -2560,12 +2564,53 @@ def _render_behave_dashboard(json_path: str, display_path: str):
     undefined_steps = step_counts["undefined"]
     total_step_buckets = max(passed_steps + failed_steps + skipped_steps + undefined_steps, 1)
     scenario_total = max(sum(scenario_counts.values()), 1)
-    pass_rate = round((passed_steps / total_step_buckets) * 100, 1)
+
+    # Behave's JSON formatter includes only scenarios selected by the active tag filter. Its
+    # console summary also counts scenarios/steps excluded by that filter as skipped. The runner
+    # persists those totals so the dashboard can agree with the execution log while still showing
+    # detailed cards only for scenarios that actually ran.
+    execution_summary = {}
+    summary_path = os.path.join(os.path.dirname(json_path), 'runner_summary.json')
+    try:
+        if (
+            os.path.isfile(summary_path)
+            and os.path.getmtime(summary_path) + 5 >= os.path.getmtime(json_path)
+        ):
+            with open(summary_path, 'r', encoding='utf-8') as summary_file:
+                execution_summary = json.load(summary_file) or {}
+    except (OSError, ValueError, TypeError):
+        execution_summary = {}
+
+    reported_features = execution_summary.get('features') or {}
+    reported_scenarios = execution_summary.get('scenarios') or {}
+    reported_steps = execution_summary.get('steps') or {}
+
+    def reported_total(bucket, fallback):
+        if not bucket:
+            return fallback
+        return sum(int(bucket.get(status) or 0) for status in ('passed', 'failed', 'skipped', 'undefined'))
+
+    feature_total_display = reported_total(reported_features, features_count)
+    scenario_total_display = reported_total(reported_scenarios, scenarios_count)
+    step_total_display = reported_total(reported_steps, steps_count)
+    scenario_passed_display = int(reported_scenarios.get('passed', scenario_counts['passed']))
+    scenario_failed_display = int(reported_scenarios.get('failed', scenario_counts['failed']))
+    scenario_skipped_display = int(reported_scenarios.get('skipped', scenario_counts['skipped'] + scenario_counts['untested']))
+    scenario_undefined_display = int(reported_scenarios.get('undefined', scenario_counts['undefined']))
+    step_passed_display = int(reported_steps.get('passed', passed_steps))
+    step_failed_display = int(reported_steps.get('failed', failed_steps))
+    step_skipped_display = int(reported_steps.get('skipped', skipped_steps))
+    step_undefined_display = int(reported_steps.get('undefined', undefined_steps))
+    display_step_buckets = max(
+        step_passed_display + step_failed_display + step_skipped_display + step_undefined_display,
+        1,
+    )
+    pass_rate = round((step_passed_display / display_step_buckets) * 100, 1)
     donut_style = (
-        f"conic-gradient(#2ea44f 0 {(passed_steps / total_step_buckets) * 100:.2f}%, "
-        f"#d73a49 {(passed_steps / total_step_buckets) * 100:.2f}% {((passed_steps + failed_steps) / total_step_buckets) * 100:.2f}%, "
-        f"#d29922 {((passed_steps + failed_steps) / total_step_buckets) * 100:.2f}% {((passed_steps + failed_steps + skipped_steps) / total_step_buckets) * 100:.2f}%, "
-        f"#1f8acb {((passed_steps + failed_steps + skipped_steps) / total_step_buckets) * 100:.2f}% 100%)"
+        f"conic-gradient(#2ea44f 0 {(step_passed_display / display_step_buckets) * 100:.2f}%, "
+        f"#d73a49 {(step_passed_display / display_step_buckets) * 100:.2f}% {((step_passed_display + step_failed_display) / display_step_buckets) * 100:.2f}%, "
+        f"#d29922 {((step_passed_display + step_failed_display) / display_step_buckets) * 100:.2f}% {((step_passed_display + step_failed_display + step_skipped_display) / display_step_buckets) * 100:.2f}%, "
+        f"#1f8acb {((step_passed_display + step_failed_display + step_skipped_display) / display_step_buckets) * 100:.2f}% 100%)"
     )
 
     def percent(value, total):
@@ -2605,15 +2650,15 @@ def _render_behave_dashboard(json_path: str, display_path: str):
   <div class="page">
     <section class="hero">
       <div class="panel hero-copy"><span class="eyebrow">Behave Dashboard</span><h1>Python BDD Execution Report</h1><p class="sub">A lighter Script Runner report for Behave runs with quick status filtering and a cleaner always-open scenario view.</p><div class="path">{safe_display_path}</div></div>
-      <div class="panel hero-side"><div class="donut-wrap"><div class="donut"><div class="donut-center"><div><strong>{pass_rate:.1f}%</strong><br><span>step pass rate</span></div></div></div><div class="legend"><button type="button" class="legend-button active" data-filter="all"><span class="left"><span class="dot" style="background:#5d6f86"></span>All</span><strong>{steps_count}</strong></button><button type="button" class="legend-button" data-filter="passed"><span class="left"><span class="dot" style="background:#2ea44f"></span>Passed</span><strong>{passed_steps}</strong></button><button type="button" class="legend-button" data-filter="failed"><span class="left"><span class="dot" style="background:#d73a49"></span>Failed</span><strong>{failed_steps}</strong></button><button type="button" class="legend-button" data-filter="skipped"><span class="left"><span class="dot" style="background:#d29922"></span>Skipped</span><strong>{skipped_steps}</strong></button><button type="button" class="legend-button" data-filter="undefined"><span class="left"><span class="dot" style="background:#1f8acb"></span>Undefined</span><strong>{undefined_steps}</strong></button></div></div></div>
+      <div class="panel hero-side"><div class="donut-wrap"><div class="donut"><div class="donut-center"><div><strong>{pass_rate:.1f}%</strong><br><span>discovered step pass rate</span></div></div></div><div class="legend"><button type="button" class="legend-button active" data-filter="all"><span class="left"><span class="dot" style="background:#5d6f86"></span>Discovered</span><strong>{step_total_display}</strong></button><button type="button" class="legend-button" data-filter="passed"><span class="left"><span class="dot" style="background:#2ea44f"></span>Passed</span><strong>{step_passed_display}</strong></button><button type="button" class="legend-button" data-filter="failed"><span class="left"><span class="dot" style="background:#d73a49"></span>Failed</span><strong>{step_failed_display}</strong></button><button type="button" class="legend-button" data-filter="skipped"><span class="left"><span class="dot" style="background:#d29922"></span>Skipped / not run</span><strong>{step_skipped_display}</strong></button><button type="button" class="legend-button" data-filter="undefined"><span class="left"><span class="dot" style="background:#1f8acb"></span>Undefined</span><strong>{step_undefined_display}</strong></button></div></div><p class="stat-foot" style="margin:14px 0 0;">Detailed rows below show {steps_count} executed steps; {step_skipped_display} were skipped or excluded by filters.</p></div>
     </section>
     <section class="cards">
-      <div class="panel stat-card"><div class="stat-label">Features</div><div class="stat-value">{features_count}</div><div class="stat-foot">{scenario_counts['passed']} passing scenarios inside</div></div>
-      <div class="panel stat-card"><div class="stat-label">Scenarios</div><div class="stat-value">{scenarios_count}</div><div class="stat-foot">{percent(scenario_counts['passed'], scenario_total)} passed</div></div>
-      <div class="panel stat-card"><div class="stat-label">Steps</div><div class="stat-value">{steps_count}</div><div class="stat-foot">{passed_steps} passed, {failed_steps} failed</div></div>
+      <div class="panel stat-card"><div class="stat-label">Features Discovered</div><div class="stat-value">{feature_total_display}</div><div class="stat-foot">{features_count} included in this report</div></div>
+      <div class="panel stat-card"><div class="stat-label">Scenarios Discovered</div><div class="stat-value">{scenario_total_display}</div><div class="stat-foot">{scenario_passed_display} passed, {scenario_failed_display} failed, {scenario_skipped_display} skipped</div></div>
+      <div class="panel stat-card"><div class="stat-label">Steps Discovered</div><div class="stat-value">{step_total_display}</div><div class="stat-foot">{step_passed_display} passed, {step_failed_display} failed, {step_skipped_display} skipped</div></div>
       <div class="panel stat-card"><div class="stat-label">Duration</div><div class="stat-value">{html.escape(_format_report_duration(duration_total))}</div><div class="stat-foot">Across all executed steps</div></div>
     </section>
-    <section class="panel bar-panel"><div class="feature-kicker">Scenario Health</div><h2 style="margin:12px 0 8px;font-size:24px;">Scenario Status Breakdown</h2><div class="bars"><div class="bar-row"><span>Passed</span><div class="bar-track"><div class="bar-fill" style="width:{percent(scenario_counts['passed'], scenario_total)};background:#2ea44f;"></div></div><strong>{scenario_counts['passed']}</strong></div><div class="bar-row"><span>Failed</span><div class="bar-track"><div class="bar-fill" style="width:{percent(scenario_counts['failed'], scenario_total)};background:#d73a49;"></div></div><strong>{scenario_counts['failed']}</strong></div><div class="bar-row"><span>Skipped</span><div class="bar-track"><div class="bar-fill" style="width:{percent(scenario_counts['skipped'] + scenario_counts['untested'], scenario_total)};background:#d29922;"></div></div><strong>{scenario_counts['skipped'] + scenario_counts['untested']}</strong></div><div class="bar-row"><span>Undefined</span><div class="bar-track"><div class="bar-fill" style="width:{percent(scenario_counts['undefined'], scenario_total)};background:#1f8acb;"></div></div><strong>{scenario_counts['undefined']}</strong></div></div></section>
+    <section class="panel bar-panel"><div class="feature-kicker">Scenario Health</div><h2 style="margin:12px 0 8px;font-size:24px;">Scenario Status Breakdown</h2><div class="bars"><div class="bar-row"><span>Passed</span><div class="bar-track"><div class="bar-fill" style="width:{percent(scenario_passed_display, scenario_total_display)};background:#2ea44f;"></div></div><strong>{scenario_passed_display}</strong></div><div class="bar-row"><span>Failed</span><div class="bar-track"><div class="bar-fill" style="width:{percent(scenario_failed_display, scenario_total_display)};background:#d73a49;"></div></div><strong>{scenario_failed_display}</strong></div><div class="bar-row"><span>Skipped</span><div class="bar-track"><div class="bar-fill" style="width:{percent(scenario_skipped_display, scenario_total_display)};background:#d29922;"></div></div><strong>{scenario_skipped_display}</strong></div><div class="bar-row"><span>Undefined</span><div class="bar-track"><div class="bar-fill" style="width:{percent(scenario_undefined_display, scenario_total_display)};background:#1f8acb;"></div></div><strong>{scenario_undefined_display}</strong></div></div></section>
     {''.join(feature_blocks)}
   </div>
   <script>
@@ -3485,6 +3530,23 @@ def _count_scenarios(text: str, file_type: str) -> int:
         
     return 1
 
+def _python_syntax_issue(filename, content):
+    """Return a user-facing syntax issue for generated Python, or None when valid."""
+    if not str(filename or "").lower().endswith(".py"):
+        return None
+    if not isinstance(content, str):
+        return f"{filename}: generated content is not text."
+    try:
+        ast.parse(content, filename=str(filename or "<generated>"))
+        return None
+    except SyntaxError as exc:
+        location = f"line {exc.lineno}"
+        if exc.offset:
+            location += f", column {exc.offset}"
+        source_line = (exc.text or "").strip()
+        detail = f"{filename}: {exc.msg} ({location})"
+        return f"{detail}: {source_line}" if source_line else detail
+
 @app.route('/api/generate-bdd-code', methods=['POST'])
 @login_required()
 def generate_bdd_code():
@@ -3695,6 +3757,22 @@ def generate_bdd_code():
             for k in keys_to_delete:
                 del parsed_files[k]
 
+            syntax_issues = [
+                issue for k, v in parsed_files.items()
+                if (issue := _python_syntax_issue(k, v))
+            ]
+            if syntax_issues:
+                app.logger.warning("Rejected invalid generated Python: %s", "; ".join(syntax_issues))
+                return jsonify({
+                    'status': 'error',
+                    'message': (
+                        "The AI returned incomplete or invalid Python, so no files were accepted. "
+                        "Please generate again. " + "; ".join(syntax_issues)
+                    ),
+                    'reason': 'invalid_generated_syntax',
+                    'syntax_issues': syntax_issues,
+                }), 422
+
             # Calculate stats for remaining files
             for k, v in parsed_files.items():
                 k_norm = k.replace('\\', '/').lower()
@@ -3741,35 +3819,47 @@ def save_generated_files():
             return jsonify({'status': 'error', 'message': 'No files provided'}), 400
 
         backup_id = int(datetime.now().timestamp())
-        
+
+        # Prepare and validate the whole batch before backing up or writing any file.
+        # A malformed generated file must not leave the project partially updated.
+        prepared_files = []
         for f in files:
             target_path = f.get('target_path')
             content = f.get('content')
             filename = f.get('filename')
-            
-            # Create Backup
+
             if os.path.exists(target_path):
                 with open(target_path, 'r', encoding='utf-8') as exists_f:
                     existing_content = exists_f.read()
-                
-                # Insert DB Backup
+
+                lang = "python" if filename.endswith('.py') else "java" if filename.endswith('.java') else "ts"
+                final_content = CodeInjector.inject_methods_safely(existing_content, content, lang)
+            else:
+                existing_content = None
+                final_content = content
+
+            syntax_issue = _python_syntax_issue(filename or target_path, final_content)
+            if syntax_issue:
+                return jsonify({
+                    'status': 'error',
+                    'message': "File was not saved because its Python syntax is invalid. " + syntax_issue,
+                    'reason': 'invalid_generated_syntax',
+                }), 422
+
+            prepared_files.append((filename, target_path, existing_content, final_content))
+
+        for filename, target_path, existing_content, final_content in prepared_files:
+            if existing_content is not None:
                 insert_data(
                     "INSERT INTO Backupfiles (Project_ID, FileName, FileContent, FilePath, BackupID, CreatedOn, Type) VALUES (?, ?, ?, ?, ?, ?, ?)",
                     (project_id, filename, existing_content.encode('utf-8'), target_path, backup_id, datetime.now(), "Backup")
                 )
-                
-                # Safe Inject
-                lang = "python" if filename.endswith('.py') else "java" if filename.endswith('.java') else "ts"
-                final_content = CodeInjector.inject_methods_safely(existing_content, content, lang)
             else:
-                # Insert DB Backup marker for 'New'
                 insert_data(
                     "INSERT INTO Backupfiles (Project_ID, FileName, FileContent, FilePath, BackupID, CreatedOn, Type) VALUES (?, ?, ?, ?, ?, ?, ?)",
                     (project_id, filename, b'', target_path, backup_id, datetime.now(), "New")
                 )
-                final_content = content
-                
-            # Write
+
             os.makedirs(os.path.dirname(target_path), exist_ok=True)
             with open(target_path, 'w', encoding='utf-8') as out_f:
                 out_f.write(final_content)
@@ -4017,4 +4107,5 @@ if __name__ == '__main__':
     extra_files = [str(p) for sub in watch_roots
                    for p in (BASE_DIR / sub).rglob('*') if p.is_file()]
     use_reloader = get_env_bool("USE_RELOADER", default=False)
-    app.run(debug=True, use_reloader=use_reloader, port=port, threaded=True, extra_files=extra_files)
+    debug_mode = get_env_bool("FLASK_DEBUG", default=False)
+    app.run(debug=debug_mode, use_reloader=use_reloader, port=port, threaded=True, extra_files=extra_files)

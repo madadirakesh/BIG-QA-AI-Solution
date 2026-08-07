@@ -419,108 +419,12 @@ class BootstrapperEngine:
     @staticmethod
     def _inject_sample_test(target_dir, search_lang, tool, framework, url, username, password):
         """
-        Inject a sample login test for templates that don't already ship one.
+        Retained as an extension hook for future templates.
 
-        Currently only the TypeScript/Playwright/Cucumber template needs this — it ships empty
-        step/page folders and we generate the sample via AI here. Every other template (Java, C#,
-        and both Python templates) ships a complete runnable login sample in its on-disk files, so
-        this is a no-op for them. (url/username/password are accepted for parity and possible future
-        use by other branches; the AI flow reads them from the scaffolded .env instead.)
+        Every supported template now ships a deterministic sample test. Project creation must not
+        depend on an AI provider being configured or available.
         """
-        try:
-            if search_lang == "TypeScript" and tool == "Playwright" and "Cucumber" in framework:
-                import glob
-                import asyncio
-                import sys
-
-                # 1. Feature file
-                feature_path = os.path.join(target_dir, "test", "features", "loginFeature.feature")
-                if not os.path.exists(feature_path):
-                    feature_files = glob.glob(os.path.join(target_dir, "**", "*.feature"), recursive=True)
-                    if feature_files:
-                        feature_path = feature_files[0]
-                    else:
-                        logger.info("No feature file found to generate scripts.")
-                        return
-
-                with open(feature_path, "r", encoding="utf-8") as f:
-                    bdd_content = f.read()
-
-                sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-                try:
-                    from api.backend import route_code_generation
-                except ImportError as e:
-                    logger.error(f"Could not import backend for AI generation: {e}")
-                    return
-
-                support_content = (
-                    "File Mode: New\n"
-                    "DO NOT generate the .feature file\n"
-                    "DO NOT generate boilerplate configuration files\n"
-                    "Generate only stepdefinition file and pageobject file.\n"
-                    "For launching the application URL, read 'APP_URL' from the .env file "
-                    "and for credentials read 'USER' and 'PASSWORD' properties from the .env file "
-                    "while creating the stepdefinition file.\n"
-                    "Strickt Rules: DO NOT generate any comments or mock page code in the step definition file.\n"
-                    "Use exact casing for 'Given', 'When', 'Then' keywords. DO NOT use all caps like 'GIVEN'.\n"
-                    "DO NOT use 'And' or 'But' keywords; instead, substitute them with appropriate 'Given', 'When', or 'Then'.\n"
-                    "Ensure proper imports are present, including importing 'Page' from '@playwright/test' or 'page' from '../hooks/hooks' as needed.\n"
-                    "CRITICAL LOCATORS: Ensure to use the real and unique locators with out any hallucination for the elements in the page.\n"
-                    "CRITICAL VERIFICATION: For 'Then I should be redirected to the homepage', DO NOT check the URL for 'dashboard' or hallucinate URLs. Instead, verify that Log in or Sign in button captured in previous steps is not displayed"
-                )
-
-                try:
-                    logger.info(f"Dynamically generating sample script based on {feature_path}...")
-                    files_dict = asyncio.run(route_code_generation(
-                        language=search_lang,
-                        framework=framework,
-                        bdd_content=bdd_content,
-                        support_content=support_content,
-                        file_content="",
-                        provider="",
-                        tool=tool
-                    ))
-
-                    for rel_path, file_content in files_dict.items():
-                        if rel_path.endswith(".feature"):
-                            continue
-                        
-                        base_name = os.path.basename(rel_path)
-                        name_part, ext_part = os.path.splitext(base_name)
-                        base_name = name_part.replace(".", "_") + ext_part
-                        dest_rel_path = rel_path
-                        if "step" in rel_path.lower() or base_name.lower().endswith("steps.ts") or base_name.lower().endswith("steps.js"):
-                            dest_rel_path = f"test/stepDefinitions/{base_name}"
-                            import_line = 'import { ConfigReader } from "../utils/configReader";\n'
-                            if import_line not in file_content:
-                                file_content = import_line + file_content
-                            
-                            file_content = file_content.replace("../pageobjects/", "../pageObjects/")
-                            file_content = file_content.replace("../page_objects/", "../pageObjects/")
-                            file_content = file_content.replace("../pageobjects/", "../pageObjects/")
-                            file_content = file_content.replace("../pages/", "../pageObjects/")
-                            file_content = file_content.replace("../page/", "../pageObjects/")
-                            file_content = file_content.replace("../PageObjects/", "../pageObjects/")
-                        elif "page" in rel_path.lower() or base_name.lower().endswith("page.ts") or base_name.lower().endswith("page.js"):
-                            dest_rel_path = f"test/pageObjects/{base_name}"
-
-                        full_path = os.path.join(target_dir, dest_rel_path)
-                        os.makedirs(os.path.dirname(full_path), exist_ok=True)
-                        with open(full_path, "w", encoding="utf-8") as f:
-                            f.write(file_content)
-
-                    logger.info("Successfully generated sample scripts for feature file.")
-                except Exception as e:
-                    logger.error(f"Error during AI generation of sample scripts: {e}")
-
-
-            else:
-                # Java, C#, Selenium/Python and Playwright/Python all ship a complete, runnable
-                # login sample inside their on-disk template (pages + steps + feature), so there is
-                # nothing to inject here. Only the TypeScript template relies on AI generation above.
-                logger.info(f"Sample test injection not needed for {tool}/{search_lang}/{framework} (template ships a sample).")
-        except Exception as e:
-            logger.error(f"Failed to inject sample test: {e}")
+        logger.info(f"Sample test injection not needed for {tool}/{search_lang}/{framework} (template ships a sample).")
 
     @staticmethod
     def _generate_python_project(target_dir, tool, framework, url, username, password):

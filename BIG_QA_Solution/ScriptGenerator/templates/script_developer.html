@@ -1860,6 +1860,28 @@ function stopBsTimers() {
     }
 }
 
+async function readBootstrapJson(response) {
+    const contentType = response.headers.get('content-type') || '';
+    if (!contentType.includes('application/json')) {
+        // Never place an HTML error/debug page inside the modal. Besides being
+        // unreadable, Werkzeug pages can contain debugger implementation details.
+        await response.text();
+        if (response.redirected && response.url.includes('/login')) {
+            throw new Error('Your login session is no longer available. Refresh the page and sign in again.');
+        }
+        throw new Error(
+            `The server returned ${response.status} ${response.statusText || 'an unexpected response'}. `
+            + 'Check the application terminal for details, then try again.'
+        );
+    }
+
+    const data = await response.json();
+    if (!response.ok) {
+        throw new Error(data.message || data.error || `Request failed (${response.status}).`);
+    }
+    return data;
+}
+
 async function submitBootstrapper() {
     const data = {
         projectName: document.getElementById('bsProjectName').value,
@@ -1904,7 +1926,7 @@ async function submitBootstrapper() {
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify(data)
     })
-    .then(r => r.json())
+    .then(readBootstrapJson)
     .then(res => {
         if(res.job_id) {
             pollBootstrapper(res.job_id);
@@ -1922,7 +1944,7 @@ async function submitBootstrapper() {
 function pollBootstrapper(job_id) {
     bsPollInterval = setInterval(() => {
         fetch(`/api/bootstrap-status/${job_id}`)
-            .then(r => r.json())
+            .then(readBootstrapJson)
             .then(res => {
                 if(res.status === 'completed') {
                     stopBsTimers();
@@ -1941,6 +1963,10 @@ function pollBootstrapper(job_id) {
                     // browser binaries...". Keeps the user informed across minutes of work.
                     document.getElementById('bsLoadingText').innerText = res.message;
                 }
+            })
+            .catch(err => {
+                stopBsTimers();
+                showBsResult(false, "Setup Error", err.message);
             });
     }, 2000);
 }
