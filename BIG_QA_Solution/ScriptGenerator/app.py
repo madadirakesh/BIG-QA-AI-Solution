@@ -2,6 +2,7 @@ import os
 import sys
 import json
 import hashlib
+import importlib.util
 import subprocess
 import threading
 import webbrowser
@@ -14,6 +15,15 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent
 ROOT_DIR = BASE_DIR.parent
 PROJECT_BOOTSTRAPPER_DIR = ROOT_DIR / "ProjectBootstrapper"
+VENV_DIR = ROOT_DIR / ".venv"
+VENV_PYTHON = VENV_DIR / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
+VENV_BOOTSTRAP_FLAG = "SCRIPTGENERATOR_VENV_READY"
+DEFAULT_APP_TIMEZONE = os.environ.get("APP_TIMEZONE", "America/New_York")
+DEFAULT_AI_MODELS = {
+    "gemini": "gemini-2.5-flash",
+    "anthropic": "claude-sonnet-4-6",
+    "openai": "gpt-4.1-mini",
+}
 
 def get_flask_secret_key():
     """Return a stable Flask session key, creating a local dev key when needed."""
@@ -41,8 +51,249 @@ def get_env_bool(name, default=False):
         return default
     return value.strip().lower() in ("1", "true", "yes", "on")
 
+
+def get_local_timezone():
+    """Return the configured app timezone with a safe fallback."""
+    try:
+        return pytz.timezone(DEFAULT_APP_TIMEZONE)
+    except pytz.UnknownTimeZoneError:
+        print(
+            f"Warning: Unknown APP_TIMEZONE '{DEFAULT_APP_TIMEZONE}'. "
+            "Falling back to America/New_York."
+        )
+        return pytz.timezone("America/New_York")
+
+
+def get_default_ai_model(ai_tool_value=None, ai_provider_value=None):
+    """Return a safe default model for the selected AI tool/provider."""
+    normalized = str(ai_provider_value or ai_tool_value or "").strip().lower()
+    if normalized in ("google", "gemini"):
+        return DEFAULT_AI_MODELS["gemini"]
+    if normalized in ("claude", "anthropic"):
+        return DEFAULT_AI_MODELS["anthropic"]
+    if normalized in ("copilot", "openai"):
+        return DEFAULT_AI_MODELS["openai"]
+    return DEFAULT_AI_MODELS["openai"]
+
+
+def read_ai_config(env_path):
+    """Read AI configuration from .env and expose both raw and effective values."""
+    config = {
+        'AI_TOOL': '',
+        'AI_MODEL': '',
+        'API_KEY': '',
+        'AI_PROVIDER': '',
+    }
+    if os.path.exists(env_path):
+        with open(env_path, 'r') as f:
+            for line in f:
+                if line.startswith('AI_TOOL'):
+                    config['AI_TOOL'] = line.split('=', 1)[1].strip().strip('"').strip("'")
+                elif line.startswith('AI_MODEL'):
+                    config['AI_MODEL'] = line.split('=', 1)[1].strip().strip('"').strip("'")
+                elif line.startswith('API_KEY'):
+                    config['API_KEY'] = line.split('=', 1)[1].strip().strip('"').strip("'")
+                elif line.startswith('AI_PROVIDER'):
+                    config['AI_PROVIDER'] = line.split('=', 1)[1].strip().strip('"').strip("'")
+
+    raw_model = config['AI_MODEL']
+    effective_model = raw_model or get_default_ai_model(config['AI_TOOL'], config['AI_PROVIDER'])
+    missing_fields = []
+    if not config['AI_TOOL']:
+        missing_fields.append('AI tool')
+    if not raw_model:
+        missing_fields.append('AI model')
+    if not config['API_KEY']:
+        missing_fields.append('API key')
+
+    config['AI_MODEL'] = effective_model
+    return {
+        'config': config,
+        'raw_model': raw_model,
+        'missing_fields': missing_fields,
+        'is_complete': len(missing_fields) == 0,
+    }
+
+
+def build_ai_configuration_message(missing_fields):
+    missing = set(missing_fields or [])
+    if 'AI key' in missing or 'API key' in missing:
+        if 'AI model' in missing:
+            return "AI configuration is incomplete. Please open Configure AI and add both the AI model and API key before generating the script."
+        return "AI API key is missing. Please open Configure AI and add your API key before generating the script."
+    if 'AI model' in missing:
+        return "AI model is missing. Please open Configure AI and select a model before generating the script."
+    if 'AI tool' in missing:
+        return "AI tool is missing. Please open Configure AI and choose your AI provider before generating the script."
+    return "AI configuration is incomplete. Please open Configure AI and complete the setup before generating the script."
+
+
+def sync_project_env_credentials(project_path, baseurl, app_username, app_password):
+    """Keep a generated project's .env aligned with Project Configuration credentials."""
+    project_path = (project_path or "").strip()
+    if not project_path:
+        return
+
+    env_file = Path(project_path) / ".env"
+    if not env_file.exists():
+        return
+
+    try:
+        existing_lines = env_file.read_text(encoding="utf-8").splitlines(keepends=True)
+    except OSError:
+        return
+
+    current_key = ""
+    for line in existing_lines:
+        stripped = line.strip()
+        if stripped and not stripped.startswith("#") and stripped.startswith("CRED_KEY="):
+            current_key = stripped.split("=", 1)[1].strip()
+            break
+    if not current_key:
+        current_key = generate_key()
+
+    updates = {
+        "APP_URL": (baseurl or "").strip(),
+        "USER": (app_username or "").strip(),
+        "CRED_KEY": current_key,
+        "PASSWORD": encrypt_secret(app_password or "", current_key) if app_password else "",
+    }
+
+    new_lines = []
+    seen = set()
+    for line in existing_lines:
+        stripped = line.strip()
+        if stripped and not stripped.startswith("#") and "=" in line:
+            key = line.split("=", 1)[0].strip()
+            if key in updates:
+                new_lines.append(f"{key}={updates[key]}\n")
+                seen.add(key)
+            else:
+                new_lines.append(line)
+        else:
+            new_lines.append(line)
+
+    for key, value in updates.items():
+        if key not in seen:
+            if new_lines and not new_lines[-1].endswith("\n"):
+                new_lines[-1] += "\n"
+            new_lines.append(f"{key}={value}\n")
+
+    try:
+        env_file.write_text("".join(new_lines), encoding="utf-8")
+    except OSError:
+        return
+
+
+def normalize_ai_error_message(raw_error):
+    """Translate low-level provider/SDK errors into user-friendly guidance."""
+    text = str(raw_error or "").strip()
+    lowered = text.lower()
+
+    if (
+        "model: string should have at least 1 character" in lowered
+        or ("invalid_request_error" in lowered and "'model'" in lowered)
+        or ('invalid_request_error' in lowered and '"model"' in lowered)
+        or "model is required" in lowered
+    ):
+        return {
+            "message": "AI model is missing. Please open Configure AI and select a model before generating the script.",
+            "action": "configure_ai",
+            "reason": "missing_model",
+        }
+
+    if (
+        "invalid api key" in lowered
+        or "incorrect api key" in lowered
+        or "authentication failed" in lowered
+        or "unauthorized" in lowered
+        or "401" in lowered
+        or "403" in lowered
+        or "access token" in lowered
+        or "api key not configured" in lowered
+    ):
+        return {
+            "message": "AI API key is invalid or missing. Please open Configure AI and update the API key before generating the script.",
+            "action": "configure_ai",
+            "reason": "invalid_api_key",
+        }
+
+    return {
+        "message": text or "Script generation failed. Please try again.",
+        "action": None,
+        "reason": None,
+    }
+
 def _requirements_signature(req_file: Path):
     return hashlib.sha256(req_file.read_bytes()).hexdigest()
+
+
+def _missing_boot_dependencies():
+    """Return boot-critical modules that are currently unavailable."""
+    required_modules = {
+        "flask": "Flask",
+        "dotenv": "python-dotenv",
+        "pytz": "pytz",
+    }
+    missing = []
+    for module_name, package_name in required_modules.items():
+        if importlib.util.find_spec(module_name) is None:
+            missing.append(package_name)
+    return missing
+
+
+def _run_subprocess(cmd, env=None):
+    return subprocess.run(cmd, capture_output=True, text=True, env=env)
+
+
+def _ensure_local_venv():
+    """Create the project-local virtualenv when missing and return its python path."""
+    env = os.environ.copy()
+    env.setdefault("PIP_DISABLE_PIP_VERSION_CHECK", "1")
+
+    if not VENV_PYTHON.exists():
+        create_venv = _run_subprocess([sys.executable, "-m", "venv", str(VENV_DIR)], env=env)
+        if create_venv.returncode != 0:
+            error_text = (create_venv.stderr or create_venv.stdout or "").strip()
+            print(f"Warning: Failed to create local virtual environment: {error_text}")
+            return None
+
+    return VENV_PYTHON if VENV_PYTHON.exists() else None
+
+
+def _maybe_relaunch_in_venv():
+    """Relaunch the app from the project-local virtualenv for consistent installs."""
+    if os.environ.get(VENV_BOOTSTRAP_FLAG) == "1":
+        return
+
+    venv_python = _ensure_local_venv()
+    if not venv_python:
+        return
+
+    # Check if the virtual environment Python is healthy (e.g. Windows Python 3.14 alpha
+    # has known DLL/ctypes loading bugs inside virtualenvs).
+    try:
+        test_run = _run_subprocess([str(venv_python), "-c", "import ctypes"])
+        if test_run.returncode != 0:
+            print("Warning: Local virtual environment Python is unhealthy (DLL/ctypes load issue).")
+            print("Falling back to system Python interpreter...")
+            os.environ[VENV_BOOTSTRAP_FLAG] = "1"
+            return
+    except Exception:
+        pass
+
+    try:
+        same_python = Path(sys.executable).resolve() == venv_python.resolve()
+    except OSError:
+        same_python = False
+
+    if same_python:
+        os.environ[VENV_BOOTSTRAP_FLAG] = "1"
+        return
+
+    relaunch_env = os.environ.copy()
+    relaunch_env[VENV_BOOTSTRAP_FLAG] = "1"
+    os.execve(str(venv_python), [str(venv_python), str(Path(__file__).resolve()), *sys.argv[1:]], relaunch_env)
   
 def is_headless():
     """Detect if running in a headless container, virtual, or cloud environment (SaaS)."""
@@ -56,6 +307,8 @@ def is_headless():
 
 
 def install_prerequisites():
+    _maybe_relaunch_in_venv()
+
     if os.environ.get("SCRIPTGENERATOR_PREREQS_INSTALLED") == "1":
         return
 
@@ -63,38 +316,44 @@ def install_prerequisites():
     stamp_file = BASE_DIR / ".requirements_installed"
     if req_file.exists():
         req_signature = _requirements_signature(req_file)
+        missing_boot_dependencies = _missing_boot_dependencies()
         if stamp_file.exists():
             try:
-                if stamp_file.read_text(encoding="utf-8").strip() == req_signature:
+                if (
+                    stamp_file.read_text(encoding="utf-8").strip() == req_signature
+                    and not missing_boot_dependencies
+                ):
                     os.environ["SCRIPTGENERATOR_PREREQS_INSTALLED"] = "1"
                     return
             except OSError:
                 pass
 
         print(f"Checking prerequisites from {req_file}...")
+        if missing_boot_dependencies:
+            print(
+                "Missing boot dependencies detected despite matching install stamp: "
+                + ", ".join(missing_boot_dependencies)
+            )
         env = os.environ.copy()
         env.setdefault("PIP_DISABLE_PIP_VERSION_CHECK", "1")
 
-        def run_cmd(cmd):
-            return subprocess.run(cmd, capture_output=True, text=True, env=env)
-
-        pip_check = run_cmd([sys.executable, '-m', 'pip', '--version'])
+        pip_check = _run_subprocess([sys.executable, '-m', 'pip', '--version'], env=env)
         if pip_check.returncode != 0:
-            ensure_pip = run_cmd([sys.executable, '-m', 'ensurepip', '--upgrade'])
+            ensure_pip = _run_subprocess([sys.executable, '-m', 'ensurepip', '--upgrade'], env=env)
             if ensure_pip.returncode != 0:
                 ensure_error = (ensure_pip.stderr or ensure_pip.stdout or "").strip()
                 print(f"Warning: Failed to prepare pip for prerequisites installation: {ensure_error}")
                 return
 
         install_cmd = [sys.executable, '-m', 'pip', 'install', '-q', '-r', str(req_file)]
-        result = run_cmd(install_cmd)
+        result = _run_subprocess(install_cmd, env=env)
         error_text = (result.stderr or result.stdout or "").lower()
 
         # Debian/Ubuntu system Python can block installs unless pip is told to proceed explicitly.
         if result.returncode != 0 and "externally-managed-environment" in error_text:
             fallback_cmd = install_cmd[:]
             fallback_cmd.insert(-2, '--break-system-packages')
-            result = run_cmd(fallback_cmd)
+            result = _run_subprocess(fallback_cmd, env=env)
             error_text = (result.stderr or result.stdout or "").lower()
 
         # macOS/Windows global Python installs often fail without a user-site fallback.
@@ -109,7 +368,7 @@ def install_prerequisites():
             if any(marker in error_text for marker in permission_markers):
                 fallback_cmd = install_cmd[:]
                 fallback_cmd.insert(-2, '--user')
-                result = run_cmd(fallback_cmd)
+                result = _run_subprocess(fallback_cmd, env=env)
 
         if result.returncode == 0:
             os.environ["SCRIPTGENERATOR_PREREQS_INSTALLED"] = "1"
@@ -126,6 +385,7 @@ def install_prerequisites():
 install_prerequisites()
 
 from flask import Flask, render_template, request, redirect, url_for, session, flash, jsonify, Response, stream_with_context
+from flask_wtf.csrf import CSRFProtect, CSRFError
 import pytz
 from dotenv import load_dotenv
 from scripts.deploy_team_templates import seed
@@ -135,10 +395,10 @@ if str(PROJECT_BOOTSTRAPPER_DIR) not in sys.path:
 
 from ProjectBootstrapper.bootstrapper_engine import BootstrapperEngine
 from ProjectBootstrapper.environment_setup import EnvironmentSetup
-from db.app_db import fetch_data, insert_data, update_data, init_db, get_db
+from db.app_db import fetch_data, insert_data, update_data, init_db, get_db, purge_transient_test_projects
 # encrypt_for_app / decrypt_for_app protect the password stored in ProjectData with an app master
 # key (Flask .env). decrypt_for_app passes legacy plaintext rows through unchanged.
-from utils.crypto_util import encrypt_for_app, decrypt_for_app
+from utils.crypto_util import decrypt_for_app, encrypt_for_app, encrypt_secret, generate_key
 from utils.password_util import hash_password, verify_password, is_hashed
 
 # Load environment variables early
@@ -155,6 +415,15 @@ _locator_proc = None
 app = Flask(__name__)
 app.secret_key = get_flask_secret_key()
 app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 31536000  # Cache static files for 1 year
+
+# Enable CSRF protection globally
+csrf = CSRFProtect(app)
+
+@app.errorhandler(CSRFError)
+def handle_csrf_error(e):
+    if request.is_json or request.path.startswith('/api/'):
+        return jsonify({"status": "error", "message": "CSRF token validation failed: " + e.description}), 400
+    return f"CSRF validation failed: {e.description}", 400
 
 @app.teardown_appcontext
 def close_connection(exception):
@@ -220,6 +489,10 @@ def _locator_logout_event(user_id):
 
 @app.before_request
 def require_authentication():
+    # Defensive cleanup: strip only known transient MCP verification projects
+    # so local test artifacts never appear in project selectors or the DB viewer.
+    purge_transient_test_projects()
+
     # Central guard: enforce login for every route except the public ones.
     endpoint = request.endpoint
     if endpoint is None or endpoint in PUBLIC_ENDPOINTS:
@@ -232,13 +505,29 @@ def require_authentication():
     return None
 
 @app.after_request
-def add_no_cache_headers(response):
+def add_no_cache_and_security_headers(response):
     # no-store stops the browser cache/bfcache from re-showing authenticated
     # pages (and old login input) on the Back button after logout.
     if not request.path.startswith('/static/'):
         response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
         response.headers['Pragma'] = 'no-cache'
         response.headers['Expires'] = '0'
+    
+    # Prevent Clickjacking
+    response.headers['X-Frame-Options'] = 'DENY'
+    # Prevent MIME-type sniffing
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    response.headers['Content-Security-Policy'] = (
+        "default-src 'self'; "
+        "script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com; "
+        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdnjs.cloudflare.com; "
+        "font-src 'self' https://fonts.gstatic.com https://cdnjs.cloudflare.com; "
+        "connect-src 'self' http://127.0.0.1:8000 http://localhost:8000 https://generativelanguage.googleapis.com https://api.openai.com https://api.anthropic.com; "
+        "frame-ancestors 'none'; "
+        "form-action 'self';"
+    )
+    # Strip or override Server response header
+    response.headers['Server'] = 'BIG-AI-QA-Engine'
     return response
 
 @app.route('/')
@@ -289,7 +578,7 @@ def login():
                 session['user_name'] = user['name']
                 session['user_role'] = user['role']
 
-                local_tz = pytz.timezone('US/Eastern')
+                local_tz = get_local_timezone()
                 current_time = datetime.now(local_tz)
 
                 # Update session table
@@ -310,7 +599,7 @@ def login():
 def logout():
     user_id = session.get('user_id')
     if user_id:
-        local_tz = pytz.timezone('US/Eastern')
+        local_tz = get_local_timezone()
         current_time = datetime.now(local_tz)
         update_data("UPDATE SessionDetails SET SessionActive = ?, SessionTime = ? WHERE userid = ?",
                     (0, current_time, user_id))
@@ -770,7 +1059,52 @@ def version_profiles():
     lang = request.args.get('language', '')
     fw = request.args.get('framework', '')
     profiles = profiles_for(tool, lang, fw)
-    return jsonify({"profiles": [p["label"] for p in profiles]})
+    labels = [p["label"] for p in profiles]
+    recommended = None
+    reason = ""
+
+    if profiles:
+        ranked = []
+        # Prefer the most modern profile the local machine can satisfy. If none are fully
+        # satisfied, fall back to the profile with the fewest blockers so the UI can still guide
+        # the user toward the closest match.
+        for idx, profile in enumerate(profiles):
+            profile_versions = {k: v for k, v in profile.items() if k != "label"}
+            deps = EnvironmentSetup.required_dependencies(tool, lang, fw, profile_versions)
+            missing = sum(1 for d in deps if d['status'] == 'missing')
+            mismatches = sum(1 for d in deps if d['status'] == 'mismatch')
+            ok = sum(1 for d in deps if d['status'] == 'ok')
+            ranked.append({
+                "label": profile["label"],
+                "idx": idx,
+                "deps": deps,
+                "missing": missing,
+                "mismatches": mismatches,
+                "ok": ok,
+            })
+
+        fully_ok = [r for r in ranked if r["missing"] == 0 and r["mismatches"] == 0]
+        if fully_ok:
+            # Higher idx means later/current profile because the catalog is ordered baseline->current.
+            best = max(fully_ok, key=lambda r: r["idx"])
+            recommended = best["label"]
+            reason = "Recommended for this machine: all prerequisites meet this profile."
+        else:
+            best = sorted(
+                ranked,
+                key=lambda r: (r["missing"], r["mismatches"], -r["ok"], -r["idx"])
+            )[0]
+            recommended = best["label"]
+            if best["missing"] > 0:
+                reason = "Closest match for this machine right now; some prerequisites still need to be installed."
+            else:
+                reason = "Closest match for this machine right now; some installed tool versions are below this profile."
+
+    return jsonify({
+        "profiles": labels,
+        "recommended": recommended,
+        "recommendationReason": reason,
+    })
 
 @app.route('/api/preflight-dependencies', methods=['POST'])
 @login_required()
@@ -1066,7 +1400,16 @@ def launch_element_locator():
         print(f"[App] Launching command: {cmd} (logging to {log_path})")
         return jsonify({'status': 'success', 'message': 'Element Locator Studio launched.'})
     except Exception as e:
-        return jsonify({'status': 'error', 'message': str(e)}), 500
+        normalized_error = normalize_ai_error_message(e)
+        payload = {
+            'status': 'error',
+            'message': normalized_error['message'],
+        }
+        if normalized_error['action']:
+            payload['action'] = normalized_error['action']
+        if normalized_error['reason']:
+            payload['reason'] = normalized_error['reason']
+        return jsonify(payload), 500
 
 @app.route('/api/locator-heartbeat', methods=['GET'])
 def locator_heartbeat():
@@ -1217,6 +1560,49 @@ def is_valid_git_url(url):
         return True
     return False
 
+
+def normalize_project_path(project_path):
+    project_path = (project_path or '').strip()
+    if not project_path:
+        return ''
+    return os.path.normpath(project_path)
+
+
+def resolve_project_record(project_id=None, project_path=None):
+    if project_id:
+        rows = fetch_data(
+            "SELECT id, project_name, project_path FROM ProjectDetails WHERE id = ?",
+            (project_id,)
+        )
+        if rows:
+            row = dict(rows[0])
+            row['project_path'] = normalize_project_path(row.get('project_path'))
+            return row
+
+    normalized_path = normalize_project_path(project_path)
+    if normalized_path:
+        rows = fetch_data("SELECT id, project_name, project_path FROM ProjectDetails")
+        for row in rows:
+            current_path = normalize_project_path(row.get('project_path'))
+            if current_path and current_path == normalized_path:
+                resolved = dict(row)
+                resolved['project_path'] = current_path
+                return resolved
+
+    return None
+
+
+def coalesce_non_empty(*values):
+    for value in values:
+        if value is None:
+            continue
+        if isinstance(value, str):
+            if value.strip():
+                return value.strip()
+        elif value:
+            return value
+    return ''
+
 def detect_project_settings_helper(path):
     if not path or not os.path.exists(path):
         return "Unknown", "Unknown", "Unknown", "Unknown", "Existing"
@@ -1312,28 +1698,74 @@ def save_project_config():
         data = request.json
         is_new_project = data.get('is_new_project', True)
         project_id = data.get('project_id')
-        project_name = data.get('project_name', '').strip()
-        project_path = data.get('project_path', '').strip()
-        baseurl = data.get('baseurl', '').strip()
-        app_username = data.get('app_username', data.get('username', '')).strip()
-        app_password = data.get('app_password', data.get('password', '')).strip()
-        git_repo_url = data.get('git_repo_url', '').strip()
-        git_username = data.get('git_username', '').strip()
-        git_pa_token = data.get('git_pa_token', '').strip()
-        run_commands = data.get('run_commands', '').strip()
+        has_project_name = 'project_name' in data
+        has_project_path = 'project_path' in data
+        has_baseurl = 'baseurl' in data
+        has_app_username = 'app_username' in data or 'username' in data
+        has_app_password = 'app_password' in data or 'password' in data
+        has_git_repo_url = 'git_repo_url' in data
+        has_git_username = 'git_username' in data
+        has_git_pa_token = 'git_pa_token' in data
+        has_run_commands = 'run_commands' in data
+
+        project_name = (data.get('project_name', '') or '').strip()
+        project_path = normalize_project_path(data.get('project_path', ''))
+        baseurl = (data.get('baseurl', '') or '').strip()
+        app_username = (data.get('app_username', data.get('username', '')) or '').strip()
+        app_password = (data.get('app_password', data.get('password', '')) or '').strip()
+        git_repo_url = (data.get('git_repo_url', '') or '').strip()
+        git_username = (data.get('git_username', '') or '').strip()
+        git_pa_token = (data.get('git_pa_token', '') or '').strip()
+        run_commands = (data.get('run_commands', '') or '').strip()
         is_git_configured = data.get('is_git_configured', False)
+        existing_project = {}
+        existing_project_data = {}
+        existing_git_config = {}
 
         if git_repo_url and not project_path:
             return jsonify({"status": "error", "message": "Local Automation Directory path is mandatory when Git Repository URL is provided."}), 400
 
         # Auto-resolve if the project path already exists in the database
         if project_path:
-            existing_path = fetch_data("SELECT id, project_name FROM ProjectDetails WHERE project_path = ?", (project_path,))
+            existing_path = resolve_project_record(project_path=project_path)
             if existing_path:
                 is_new_project = False
-                project_id = existing_path[0]['id']
+                project_id = existing_path['id']
                 if not project_name:
-                    project_name = existing_path[0]['project_name']
+                    project_name = existing_path['project_name']
+
+        if not is_new_project and project_id:
+            existing_rows = fetch_data("SELECT * FROM ProjectDetails WHERE id = ?", (project_id,))
+            existing_project = dict(existing_rows[0]) if existing_rows else {}
+            existing_data_rows = fetch_data(
+                "SELECT baseurl, username, password FROM ProjectData WHERE project_details_id = ?",
+                (project_id,)
+            )
+            existing_project_data = dict(existing_data_rows[0]) if existing_data_rows else {}
+            existing_git_rows = fetch_data(
+                "SELECT repo_url, username, access_token FROM ProjectGitConfig WHERE project_details_id = ?",
+                (project_id,)
+            )
+            existing_git_config = dict(existing_git_rows[0]) if existing_git_rows else {}
+
+            if not has_project_name:
+                project_name = (existing_project.get('project_name') or '').strip()
+            if not has_project_path:
+                project_path = normalize_project_path(existing_project.get('project_path', ''))
+            if not has_run_commands:
+                run_commands = (existing_project.get('run_commands') or '').strip()
+            if not has_baseurl:
+                baseurl = (existing_project_data.get('baseurl') or '').strip()
+            if not has_app_username:
+                app_username = (existing_project_data.get('username') or '').strip()
+            if not has_app_password and existing_project_data.get('password'):
+                app_password = decrypt_for_app(existing_project_data.get('password'))
+            if not has_git_repo_url:
+                git_repo_url = (existing_git_config.get('repo_url') or '').strip()
+            if not has_git_username:
+                git_username = (existing_git_config.get('username') or '').strip()
+            if not has_git_pa_token:
+                git_pa_token = (existing_git_config.get('access_token') or '').strip()
 
         # Auto-derive project name if not provided
         if not project_name and project_path:
@@ -1452,7 +1884,7 @@ def save_project_config():
             # Detected code wins; then payload-provided values; finally keep whatever is
             # already stored so an unresolved field is never blanked out on update.
             existing_settings = fetch_data(
-                "SELECT project_lang, project_fw, project_tool, package_manager FROM ProjectDetails WHERE id = ?",
+                "SELECT project_path, run_commands, project_lang, project_fw, project_tool, package_manager FROM ProjectDetails WHERE id = ?",
                 (project_id,)
             )
             cur = existing_settings[0] if existing_settings else {}
@@ -1460,10 +1892,14 @@ def save_project_config():
             final_framework = det_framework or prov_framework or (cur.get('project_fw') or '')
             final_tool = det_tool or prov_tool or (cur.get('project_tool') or '')
             final_packager = det_packager or prov_packager or (cur.get('package_manager') or '')
+            final_project_path = project_path or normalize_project_path(cur.get('project_path', ''))
+            final_run_commands = run_commands if has_run_commands else (cur.get('run_commands') or '')
             update_data(
                 "UPDATE ProjectDetails SET project_name=?, project_path=?, project_lang=?, project_fw=?, project_tool=?, package_manager=?, run_commands=? WHERE id=?",
-                (project_name, project_path, final_language, final_framework, final_tool, final_packager, run_commands, project_id)
+                (project_name, final_project_path, final_language, final_framework, final_tool, final_packager, final_run_commands, project_id)
             )
+            project_path = final_project_path
+            run_commands = final_run_commands
 
         # 5. Insert or Update ProjectData
         encrypted_password = encrypt_for_app(app_password)
@@ -1479,6 +1915,8 @@ def save_project_config():
                 (baseurl, app_username, encrypted_password, project_id)
             )
 
+        sync_project_env_credentials(project_path, baseurl, app_username, app_password)
+
         # 6. Insert or Update ProjectGitConfig
         pgc_existing = fetch_data("SELECT id FROM ProjectGitConfig WHERE project_details_id = ?", (project_id,))
         if pgc_existing:
@@ -1492,6 +1930,8 @@ def save_project_config():
                 (git_repo_url, git_username, git_pa_token, project_id)
             )
 
+        session['active_project_id'] = str(project_id)
+        session['active_project_name'] = project_name
         return jsonify({"status": "success", "message": "Project configuration saved successfully.", "project_id": project_id})
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
@@ -1552,21 +1992,36 @@ def save_git_config():
         update_data(create_git_config_table)
         
         data = request.json
-        p_path = data.get('project_path', '').strip()
-        repo_url = data.get('repo_url', '')
-        username = data.get('username', '')
-        access_token = data.get('access_token', '')
+        project_id = data.get('project_id')
+        try:
+            project_id = int(project_id) if project_id not in (None, '') else None
+        except (TypeError, ValueError):
+            project_id = None
+        has_repo_url = 'repo_url' in data
+        has_username = 'username' in data
+        has_access_token = 'access_token' in data
+        p_path = normalize_project_path(data.get('project_path', ''))
+        repo_url = (data.get('repo_url') or '').strip()
+        username = (data.get('username') or '').strip()
+        access_token = (data.get('access_token') or '').strip()
         
-        if not p_path:
-            return jsonify({"status": "error", "message": "Project path is required."}), 400
-            
-        existing = fetch_data("SELECT id FROM ProjectDetails WHERE project_path = ?", (p_path,))
-        p_details_id = None
-        
-        if existing:
-            p_details_id = existing[0]['id']
-        else:
+        project = resolve_project_record(project_id=project_id, project_path=p_path)
+        if not project:
             return jsonify({"status": "error", "message": "Project not found in DB. Please select it properly."}), 404
+
+        p_details_id = project['id']
+        p_path = project.get('project_path', '')
+        existing_git = fetch_data(
+            "SELECT repo_url, username, access_token FROM ProjectGitConfig WHERE project_details_id = ?",
+            (p_details_id,)
+        )
+        existing_git = dict(existing_git[0]) if existing_git else {}
+        if not has_repo_url:
+            repo_url = (existing_git.get('repo_url') or '').strip()
+        if not has_username:
+            username = (existing_git.get('username') or '').strip()
+        if not has_access_token:
+            access_token = (existing_git.get('access_token') or '').strip()
                 
         if p_details_id:
             gc_existing = fetch_data("SELECT id FROM ProjectGitConfig WHERE project_details_id = ?", (p_details_id,))
@@ -1583,8 +2038,15 @@ def save_git_config():
                 GitService.sync_git_config(p_path, {"repo_url": repo_url, "username": username, "access_token": access_token})
             except Exception as sync_err:
                 app.logger.warning(f"Git config sync error: {sync_err}")
-                                
-        return jsonify({"status": "success", "message": "Git configuration saved successfully."})
+
+        session['active_project_id'] = str(p_details_id)
+        session['active_project_name'] = project.get('project_name', '')
+        return jsonify({
+            "status": "success",
+            "message": "Git configuration saved successfully.",
+            "project_id": p_details_id,
+            "project_path": p_path
+        })
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
@@ -1592,18 +2054,28 @@ def save_git_config():
 @login_required()
 def get_git_config():
     try:
-        p_path = request.args.get('project_path', '').strip()
-        if not p_path:
-            return jsonify({"status": "error", "message": "Project path required"}), 400
-            
-        existing = fetch_data("SELECT id FROM ProjectDetails WHERE project_path = ?", (p_path,))
-        if existing:
-            p_id = existing[0]['id']
+        project_id = request.args.get('project_id', '')
+        try:
+            project_id = int(project_id) if project_id not in (None, '') else None
+        except (TypeError, ValueError):
+            project_id = None
+        p_path = normalize_project_path(request.args.get('project_path', ''))
+
+        project = resolve_project_record(project_id=project_id, project_path=p_path)
+        if project:
+            p_id = project['id']
             data = fetch_data("SELECT repo_url, username, access_token FROM ProjectGitConfig WHERE project_details_id = ?", (p_id,))
             if data:
-                return jsonify({"status": "success", "data": data[0]})
+                return jsonify({"status": "success", "project_id": p_id, "data": data[0]})
         
-        return jsonify({"status": "success", "data": {"repo_url": "", "username": "", "access_token": ""}})
+        if not project_id and not p_path:
+            return jsonify({"status": "error", "message": "Project id or path required"}), 400
+
+        return jsonify({
+            "status": "success",
+            "project_id": project['id'] if project else None,
+            "data": {"repo_url": "", "username": "", "access_token": ""}
+        })
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
@@ -1615,21 +2087,36 @@ def git_native_action():
     try:
         data = request.json
         action = data.get('action')
-        project_path = data.get('project_path')
+        project_id = data.get('project_id')
+        try:
+            project_id = int(project_id) if project_id not in (None, '') else None
+        except (TypeError, ValueError):
+            project_id = None
+        project_path = normalize_project_path(data.get('project_path'))
         commit_message = data.get('commit_message')
+        merge_source_branch = data.get('merge_source_branch')
+        merge_target_branch = data.get('merge_target_branch')
         
-        if not action or not project_path:
-            return jsonify({"status": "error", "message": "Action and project_path are required"}), 400
-            
-        existing = fetch_data("SELECT id FROM ProjectDetails WHERE project_path = ?", (project_path,))
-        if not existing:
+        if not action or (not project_id and not project_path):
+            return jsonify({"status": "error", "message": "Action and project selection are required"}), 400
+
+        project = resolve_project_record(project_id=project_id, project_path=project_path)
+        if not project:
             return jsonify({"status": "error", "message": "Project not found"}), 404
             
-        p_id = existing[0]['id']
+        p_id = project['id']
+        project_path = project.get('project_path', '')
         git_config = fetch_data("SELECT repo_url, username, access_token FROM ProjectGitConfig WHERE project_details_id = ?", (p_id,))
         auth_config = git_config[0] if git_config else {}
         
-        result = GitService.execute_native_action(action, project_path, auth_config, commit_message=commit_message)
+        result = GitService.execute_native_action(
+            action,
+            project_path,
+            auth_config,
+            commit_message=commit_message,
+            merge_source_branch=merge_source_branch,
+            merge_target_branch=merge_target_branch,
+        )
         return jsonify(result)
         
     except Exception as e:
@@ -1643,15 +2130,25 @@ def git_mcp_action():
     try:
         data = request.json
         prompt = data.get('prompt')
-        project_path = data.get('project_path')
+        project_id = data.get('project_id')
+        try:
+            project_id = int(project_id) if project_id not in (None, '') else None
+        except (TypeError, ValueError):
+            project_id = None
+        project_path = normalize_project_path(data.get('project_path'))
+        assistant_mode = str(data.get('assistant_mode') or 'explain').strip().lower()
         
-        if not prompt or not project_path:
-            return jsonify({"status": "error", "message": "Prompt and project_path are required"}), 400
+        if not prompt or (not project_id and not project_path):
+            return jsonify({"status": "error", "message": "Prompt and project selection are required"}), 400
+        if assistant_mode not in ('explain', 'execute'):
+            assistant_mode = 'explain'
             
-        # Dynamically sync git config prior to MCP execution to make sure git credentials & user identity are utilized
-        existing = fetch_data("SELECT id FROM ProjectDetails WHERE project_path = ?", (project_path,))
-        if existing:
-            p_id = existing[0]['id']
+        # Sync git config before the MCP assistant runs so local repo credentials
+        # and git identity are available to MCP-backed Git operations.
+        project = resolve_project_record(project_id=project_id, project_path=project_path)
+        if project:
+            p_id = project['id']
+            project_path = project.get('project_path', '')
             git_config = fetch_data("SELECT repo_url, username, access_token FROM ProjectGitConfig WHERE project_details_id = ?", (p_id,))
             if git_config:
                 try:
@@ -1664,7 +2161,7 @@ def git_mcp_action():
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         try:
-            result = loop.run_until_complete(run_mcp_git_prompt(prompt, project_path))
+            result = loop.run_until_complete(run_mcp_git_prompt(prompt, project_path, assistant_mode=assistant_mode))
         finally:
             loop.close()
             
@@ -1750,6 +2247,28 @@ def script_runner_stream():
         print(f"DEBUG: Streaming route failed: {e}")
         return jsonify({"error": str(e)}), 500
 
+@app.route('/api/script-runner/project-commands', methods=['POST'])
+@login_required()
+def script_runner_project_commands():
+    try:
+        data = request.get_json() or {}
+        full_path = (data.get('project_path') or '').strip()
+        language = (data.get('language') or '').strip()
+        framework = (data.get('framework') or '').strip()
+        tool = (data.get('tool') or '').strip()
+        saved_commands = data.get('saved_commands', '')
+
+        resolved = ScriptRunnerService.resolve_project_commands(
+            full_path=full_path,
+            language=language,
+            framework=framework,
+            tool=tool,
+            saved_commands=saved_commands,
+        )
+        return jsonify({"status": "success", "data": resolved})
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
 @app.route('/api/script-runner/stop', methods=['POST'])
 @login_required()
 def script_runner_stop():
@@ -1798,8 +2317,507 @@ def git_execute_command():
     except Exception as e:
         return jsonify({"output": f"Error: {str(e)}"}), 500
 
+def _format_report_duration(seconds):
+    try:
+        seconds = float(seconds or 0)
+    except Exception:
+        seconds = 0.0
+    if seconds < 60:
+        return f"{seconds:.2f}s"
+    minutes, rem = divmod(seconds, 60)
+    if minutes < 60:
+        return f"{int(minutes)}m {rem:.1f}s"
+    hours, rem_minutes = divmod(minutes, 60)
+    return f"{int(hours)}h {int(rem_minutes)}m"
 
 
+def _render_behave_dashboard(json_path: str, display_path: str):
+    import html
+    import json
+
+    with open(json_path, 'r', encoding='utf-8', errors='ignore') as f:
+        raw_text = (f.read() or '').strip()
+    if not raw_text:
+        raise ValueError(f"Behave JSON report is empty: {json_path}")
+    json_start = raw_text.find('[')
+    if json_start > 0:
+        raw_text = raw_text[json_start:]
+    raw = json.loads(raw_text)
+
+    features = raw if isinstance(raw, list) else []
+    features_count = len(features)
+    scenarios_count = 0
+    steps_count = 0
+    duration_total = 0.0
+    step_counts = {"passed": 0, "failed": 0, "skipped": 0, "undefined": 0, "untested": 0}
+    scenario_counts = {"passed": 0, "failed": 0, "skipped": 0, "undefined": 0, "untested": 0}
+    feature_blocks = []
+
+    def normalize_status(status):
+        value = str(status or '').strip().lower()
+        if value in step_counts:
+            return value
+        if value == 'error':
+            return 'failed'
+        return 'untested'
+
+    def badge(text, tone):
+        return f'<span class="badge badge-{tone}">{html.escape(text)}</span>'
+
+    for feature in features:
+        feature_name = feature.get("name") or "Unnamed Feature"
+        feature_location = feature.get("location") or ""
+        feature_tags = feature.get("tags") or []
+        feature_duration = 0.0
+        scenario_cards = []
+
+        for scenario in feature.get("elements") or []:
+            scenarios_count += 1
+            scenario_status = normalize_status(scenario.get("status"))
+            scenario_counts[scenario_status] += 1
+            scenario_duration = 0.0
+            step_rows = []
+            for step in scenario.get("steps") or []:
+                result = step.get("result") or {}
+                step_status = normalize_status(result.get("status") or step.get("status"))
+                duration = float(result.get("duration") or 0.0)
+                match = step.get("match") or {}
+                step_counts[step_status] += 1
+                steps_count += 1
+                duration_total += duration
+                scenario_duration += duration
+                step_rows.append(
+                    f"""<div class="step-row status-{html.escape(step_status)}" data-status="{html.escape(step_status)}">
+<div class="step-main"><span class="step-pill">{html.escape(step.get("keyword") or "")}</span><span class="step-text">{html.escape(step.get("name") or "")}</span></div>
+<div class="step-meta"><span>{html.escape(_format_report_duration(duration))}</span><span>{html.escape(match.get("location") or step.get("location") or "")}</span></div>
+</div>"""
+                )
+            feature_duration += scenario_duration
+            scenario_tags = "".join(badge(f"@{tag}" if not str(tag).startswith("@") else str(tag), "info") for tag in (scenario.get("tags") or []))
+            scenario_cards.append(
+                f"""<article class="scenario-card status-{html.escape(scenario_status)}" data-status="{html.escape(scenario_status)}">
+<div class="scenario-head" role="button" tabindex="0" aria-expanded="true">
+<div><div class="scenario-title-row"><button type="button" class="status-chip badge badge-{html.escape(scenario_status)}" data-filter-status="{html.escape(scenario_status)}">{html.escape(scenario_status.title())}</button><span class="scenario-title">{html.escape(scenario.get("name") or "Unnamed Scenario")}</span></div><div class="scenario-subtitle">{scenario_tags}<span>{html.escape(scenario.get("location") or "")}</span></div></div>
+<div class="scenario-duration">{html.escape(_format_report_duration(scenario_duration))}</div>
+</div>
+<div class="steps-wrap">{''.join(step_rows)}</div>
+</article>"""
+            )
+
+        feature_tag_html = "".join(badge(f"@{tag}" if not str(tag).startswith("@") else str(tag), "info") for tag in feature_tags)
+        feature_blocks.append(
+            f"""<section class="feature-card">
+<div class="feature-head"><div><div class="feature-kicker">Feature</div><h2>{html.escape(feature_name)}</h2><div class="feature-meta">{feature_tag_html}<span>{html.escape(feature_location)}</span></div></div><div class="feature-duration">{html.escape(_format_report_duration(feature_duration))}</div></div>
+<div class="scenario-list">{''.join(scenario_cards)}</div>
+</section>"""
+        )
+
+    passed_steps = step_counts["passed"]
+    failed_steps = step_counts["failed"]
+    skipped_steps = step_counts["skipped"] + step_counts["untested"]
+    undefined_steps = step_counts["undefined"]
+    total_step_buckets = max(passed_steps + failed_steps + skipped_steps + undefined_steps, 1)
+    scenario_total = max(sum(scenario_counts.values()), 1)
+    pass_rate = round((passed_steps / total_step_buckets) * 100, 1)
+    donut_style = (
+        f"conic-gradient(#2ea44f 0 {(passed_steps / total_step_buckets) * 100:.2f}%, "
+        f"#d73a49 {(passed_steps / total_step_buckets) * 100:.2f}% {((passed_steps + failed_steps) / total_step_buckets) * 100:.2f}%, "
+        f"#d29922 {((passed_steps + failed_steps) / total_step_buckets) * 100:.2f}% {((passed_steps + failed_steps + skipped_steps) / total_step_buckets) * 100:.2f}%, "
+        f"#1f8acb {((passed_steps + failed_steps + skipped_steps) / total_step_buckets) * 100:.2f}% 100%)"
+    )
+
+    def percent(value, total):
+        return f"{(value / max(total, 1)) * 100:.1f}%"
+
+    safe_display_path = html.escape(display_path)
+    return f"""<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Behave Execution Dashboard</title>
+  <style>
+    :root {{
+      --bg:#f3f7fc; --panel:#fff; --line:rgba(74,107,155,.16); --text:#1d2a3b; --muted:#667892;
+      --accent:#0b7cff; --success:#2ea44f; --danger:#d73a49; --warning:#d29922; --info:#1f8acb;
+    }}
+    * {{ box-sizing:border-box; }} body {{ margin:0; font-family:"Segoe UI",Arial,sans-serif; color:var(--text); background:linear-gradient(180deg,#fff 0%,var(--bg) 100%); }}
+    .page {{ max-width:1380px; margin:0 auto; padding:28px 20px 48px; }} .hero,.cards {{ display:grid; gap:22px; }} .hero {{ grid-template-columns:1.6fr 1fr; margin-bottom:22px; }} .cards {{ grid-template-columns:repeat(4,minmax(0,1fr)); margin-bottom:22px; }}
+    .panel,.feature-card {{ background:var(--panel); border:1px solid var(--line); border-radius:22px; box-shadow:0 18px 48px rgba(23,43,77,.08); }}
+    .hero-copy,.hero-side,.stat-card,.bar-panel {{ padding:24px; }} .eyebrow,.feature-kicker {{ display:inline-flex; padding:6px 10px; border-radius:999px; background:rgba(11,124,255,.10); color:var(--accent); font-size:12px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; }}
+    h1 {{ margin:14px 0 10px; font-size:clamp(28px,4vw,42px); line-height:1.05; }} .sub,.path,.feature-meta,.scenario-subtitle,.step-meta {{ color:var(--muted); }} .path {{ margin-top:18px; font-size:13px; word-break:break-all; }}
+    .donut-wrap {{ display:grid; grid-template-columns:170px 1fr; gap:18px; align-items:center; }} .donut {{ width:170px; height:170px; border-radius:50%; background:{donut_style}; position:relative; margin:0 auto; }} .donut:after {{ content:""; position:absolute; inset:18px; border-radius:50%; background:linear-gradient(180deg,#fff,#eef4fb); border:1px solid rgba(74,107,155,.12); }} .donut-center {{ position:absolute; inset:0; display:grid; place-items:center; z-index:1; text-align:center; }} .donut-center strong {{ font-size:34px; }}
+    .legend {{ display:grid; gap:10px; }} .legend-button {{ display:flex; justify-content:space-between; gap:16px; width:100%; border:1px solid var(--line); border-radius:14px; background:#f8fbff; color:var(--text); font-size:14px; padding:10px 12px; cursor:pointer; }} .legend-button.active,.legend-button:hover {{ background:#eef6ff; border-color:rgba(11,124,255,.28); }} .left {{ display:inline-flex; align-items:center; gap:10px; }} .dot {{ width:10px; height:10px; border-radius:50%; display:inline-block; }}
+    .stat-label {{ color:var(--muted); font-size:13px; text-transform:uppercase; letter-spacing:.06em; }} .stat-value {{ margin-top:10px; font-size:34px; font-weight:700; }} .stat-foot {{ margin-top:8px; color:#6f8198; font-size:13px; }}
+    .bars,.scenario-list,.steps-wrap {{ display:grid; gap:12px; }} .bar-panel {{ margin-bottom:22px; }} .bar-row {{ display:grid; grid-template-columns:120px 1fr 90px; gap:16px; align-items:center; }} .bar-track {{ height:12px; border-radius:999px; background:#edf3fa; overflow:hidden; }} .bar-fill {{ height:100%; border-radius:inherit; }}
+    .feature-card {{ padding:22px; margin-bottom:18px; }} .feature-head,.scenario-head,.step-row {{ display:flex; justify-content:space-between; gap:18px; align-items:flex-start; }} .feature-head {{ margin-bottom:16px; }} .feature-head h2 {{ margin:0 0 8px; font-size:24px; }} .feature-duration,.scenario-duration {{ color:#36506f; font-weight:700; white-space:nowrap; }}
+    .scenario-card {{ background:#fbfdff; border:1px solid rgba(74,107,155,.12); border-radius:18px; overflow:hidden; }} .scenario-head {{ padding:16px 18px; cursor:pointer; }} .scenario-head:focus-visible,.status-chip:focus-visible{{ outline:2px solid rgba(11,124,255,.35); outline-offset:2px; }} .scenario-title-row {{ display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-bottom:8px; }} .scenario-title {{ font-weight:700; font-size:17px; }}
+    .steps-wrap {{ border-top:1px solid rgba(74,107,155,.10); padding:4px 16px 16px; }} .scenario-card.is-collapsed .steps-wrap {{ display:none; }} .step-row {{ align-items:center; padding:12px 14px; border-radius:14px; background:#f6f9fd; border-left:4px solid transparent; }} .step-main {{ display:flex; gap:10px; align-items:center; min-width:0; }} .step-pill {{ padding:5px 9px; border-radius:999px; background:#e9f1fb; color:#29415f; font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:.04em; }} .step-text {{ overflow-wrap:anywhere; }} .step-meta {{ display:flex; flex-direction:column; gap:4px; text-align:right; font-size:12px; }}
+    .badge {{ display:inline-flex; align-items:center; padding:5px 9px; border-radius:999px; font-size:12px; font-weight:700; letter-spacing:.02em; }} .status-chip {{ border:none; cursor:pointer; font-family:inherit; }} .badge-passed {{ background:rgba(46,164,79,.16); color:#1b7b39; }} .badge-failed {{ background:rgba(215,58,73,.14); color:#b42335; }} .badge-skipped,.badge-untested {{ background:rgba(210,153,34,.16); color:#986d11; }} .badge-undefined,.badge-info {{ background:rgba(31,138,203,.12); color:#176d9f; }}
+    .status-passed {{ border-left-color:var(--success); }} .status-failed {{ border-left-color:var(--danger); }} .status-skipped,.status-untested {{ border-left-color:var(--warning); }} .status-undefined {{ border-left-color:var(--info); }} .is-hidden {{ display:none !important; }}
+    @media (max-width:1100px) {{ .hero,.cards {{ grid-template-columns:1fr; }} .donut-wrap {{ grid-template-columns:1fr; }} .bar-row {{ grid-template-columns:96px 1fr 72px; }} }}
+    @media (max-width:720px) {{ .page {{ padding:18px 12px 32px; }} .feature-head,.scenario-head,.step-row {{ flex-direction:column; align-items:flex-start; }} .step-meta {{ text-align:left; }} }}
+  </style>
+</head>
+<body>
+  <div class="page">
+    <section class="hero">
+      <div class="panel hero-copy"><span class="eyebrow">Behave Dashboard</span><h1>Python BDD Execution Report</h1><p class="sub">A lighter Script Runner report for Behave runs with quick status filtering and a cleaner always-open scenario view.</p><div class="path">{safe_display_path}</div></div>
+      <div class="panel hero-side"><div class="donut-wrap"><div class="donut"><div class="donut-center"><div><strong>{pass_rate:.1f}%</strong><br><span>step pass rate</span></div></div></div><div class="legend"><button type="button" class="legend-button active" data-filter="all"><span class="left"><span class="dot" style="background:#5d6f86"></span>All</span><strong>{steps_count}</strong></button><button type="button" class="legend-button" data-filter="passed"><span class="left"><span class="dot" style="background:#2ea44f"></span>Passed</span><strong>{passed_steps}</strong></button><button type="button" class="legend-button" data-filter="failed"><span class="left"><span class="dot" style="background:#d73a49"></span>Failed</span><strong>{failed_steps}</strong></button><button type="button" class="legend-button" data-filter="skipped"><span class="left"><span class="dot" style="background:#d29922"></span>Skipped</span><strong>{skipped_steps}</strong></button><button type="button" class="legend-button" data-filter="undefined"><span class="left"><span class="dot" style="background:#1f8acb"></span>Undefined</span><strong>{undefined_steps}</strong></button></div></div></div>
+    </section>
+    <section class="cards">
+      <div class="panel stat-card"><div class="stat-label">Features</div><div class="stat-value">{features_count}</div><div class="stat-foot">{scenario_counts['passed']} passing scenarios inside</div></div>
+      <div class="panel stat-card"><div class="stat-label">Scenarios</div><div class="stat-value">{scenarios_count}</div><div class="stat-foot">{percent(scenario_counts['passed'], scenario_total)} passed</div></div>
+      <div class="panel stat-card"><div class="stat-label">Steps</div><div class="stat-value">{steps_count}</div><div class="stat-foot">{passed_steps} passed, {failed_steps} failed</div></div>
+      <div class="panel stat-card"><div class="stat-label">Duration</div><div class="stat-value">{html.escape(_format_report_duration(duration_total))}</div><div class="stat-foot">Across all executed steps</div></div>
+    </section>
+    <section class="panel bar-panel"><div class="feature-kicker">Scenario Health</div><h2 style="margin:12px 0 8px;font-size:24px;">Scenario Status Breakdown</h2><div class="bars"><div class="bar-row"><span>Passed</span><div class="bar-track"><div class="bar-fill" style="width:{percent(scenario_counts['passed'], scenario_total)};background:#2ea44f;"></div></div><strong>{scenario_counts['passed']}</strong></div><div class="bar-row"><span>Failed</span><div class="bar-track"><div class="bar-fill" style="width:{percent(scenario_counts['failed'], scenario_total)};background:#d73a49;"></div></div><strong>{scenario_counts['failed']}</strong></div><div class="bar-row"><span>Skipped</span><div class="bar-track"><div class="bar-fill" style="width:{percent(scenario_counts['skipped'] + scenario_counts['untested'], scenario_total)};background:#d29922;"></div></div><strong>{scenario_counts['skipped'] + scenario_counts['untested']}</strong></div><div class="bar-row"><span>Undefined</span><div class="bar-track"><div class="bar-fill" style="width:{percent(scenario_counts['undefined'], scenario_total)};background:#1f8acb;"></div></div><strong>{scenario_counts['undefined']}</strong></div></div></section>
+    {''.join(feature_blocks)}
+  </div>
+  <script>
+    (() => {{
+      const normalize = (value) => value === 'untested' ? 'skipped' : value;
+      const buttons = Array.from(document.querySelectorAll('.legend-button'));
+      const scenarios = Array.from(document.querySelectorAll('.scenario-card'));
+      const heads = Array.from(document.querySelectorAll('.scenario-head'));
+      const applyFilter = (filter) => {{
+        buttons.forEach((button) => button.classList.toggle('active', button.dataset.filter === filter));
+        scenarios.forEach((scenario) => {{
+          const rows = Array.from(scenario.querySelectorAll('.step-row'));
+          let visibleRows = 0;
+          rows.forEach((row) => {{
+            const status = normalize(row.dataset.status || '');
+            const show = filter === 'all' || status === filter;
+            row.classList.toggle('is-hidden', !show);
+            if (show) visibleRows += 1;
+          }});
+          const scenarioStatus = normalize(scenario.dataset.status || '');
+          scenario.classList.toggle('is-hidden', !(filter === 'all' || scenarioStatus === filter || visibleRows > 0));
+        }});
+      }};
+      const toggleScenario = (head) => {{
+        const card = head.closest('.scenario-card');
+        if (!card) return;
+        const collapsed = card.classList.toggle('is-collapsed');
+        head.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+      }};
+      buttons.forEach((button) => button.addEventListener('click', () => applyFilter(button.dataset.filter || 'all')));
+      heads.forEach((head) => {{
+        head.addEventListener('click', () => toggleScenario(head));
+        head.addEventListener('keydown', (event) => {{
+          if (event.key === 'Enter' || event.key === ' ') {{
+            event.preventDefault();
+            toggleScenario(head);
+          }}
+        }});
+      }});
+      document.querySelectorAll('.status-chip').forEach((chip) => {{
+        chip.addEventListener('click', (event) => {{
+          event.stopPropagation();
+          applyFilter(normalize(chip.dataset.filterStatus || 'all'));
+        }});
+      }});
+      applyFilter('all');
+    }})();
+  </script>
+</body>
+</html>"""
+
+
+def _render_dotnet_html_dashboard(report_html: str, display_path: str):
+    import html
+    import re
+
+    def clean_text(value: str) -> str:
+        value = html.unescape(value or "")
+        value = value.replace("\ufeff", "").replace("\u200b", "").replace("\xa0", " ")
+        return " ".join(value.split())
+
+    def extract(pattern: str, default: str = "") -> str:
+        match = re.search(pattern, report_html, flags=re.IGNORECASE | re.DOTALL)
+        return clean_text(match.group(1)) if match else default
+
+    total_tests = extract(r'class="total-tests">([^<]+)<', "0")
+    passed_tests = extract(r'class="passedTests">([^<]+)<', "0")
+    failed_tests = extract(r'class="failedTests">([^<]+)<', "0")
+    skipped_tests = extract(r'class="skippedTests">([^<]+)<', "0")
+    pass_percentage = extract(r'class="pass-percentage">([^<]+)<', "0 %")
+    run_duration = extract(r'class="test-run-time">([^<]+)<', "0s")
+
+    result_blocks = re.findall(
+        r'<details><summary>(.*?)</summary><div class="inner-row".*?<div class="leaf-division">\s*<div><span class="(pass|fail|skip)">.*?</span><span>(.*?)</span><div class="duration"><span>(.*?)</span>.*?</div>\s*</div>\s*<div class="error-info">(.*?)</div>',
+        report_html,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    rendered_results = []
+    for assembly, status, name, duration, error_info in result_blocks:
+        status_lower = status.lower()
+        rendered_results.append({
+            "assembly": clean_text(assembly),
+            "status": "passed" if status_lower == "pass" else "skipped" if status_lower == "skip" else "failed",
+            "name": clean_text(name),
+            "duration": clean_text(duration),
+            "error": clean_text(re.sub(r"<[^>]+>", " ", error_info or "")),
+        })
+
+    info_match = re.search(r'<h2>Informational messages</h2>(.*?)</div>', report_html, flags=re.IGNORECASE | re.DOTALL)
+    info_lines = []
+    if info_match:
+        info_lines = [
+            clean_text(item)
+            for item in re.findall(r'<span>(.*?)</span>', info_match.group(1), flags=re.IGNORECASE | re.DOTALL)
+            if clean_text(item)
+        ]
+
+    try:
+        passed = int(passed_tests)
+        failed = int(failed_tests)
+        skipped = int(skipped_tests)
+        total = int(total_tests)
+    except Exception:
+        passed = failed = skipped = 0
+        total = max(len(rendered_results), 1)
+
+    donut_total = max(total, 1)
+    donut_style = (
+        f"conic-gradient(#2ea44f 0 {(passed / donut_total) * 100:.2f}%, "
+        f"#d73a49 {(passed / donut_total) * 100:.2f}% {((passed + failed) / donut_total) * 100:.2f}%, "
+        f"#d29922 {((passed + failed) / donut_total) * 100:.2f}% 100%)"
+    )
+
+    result_cards = []
+    for result in rendered_results:
+        error_html = f'<div class="result-error">{html.escape(result["error"])}</div>' if result["error"] else ""
+        card_classes = f"result-card status-{html.escape(result['status'])}"
+        attributes = f'class="{card_classes}" data-status="{html.escape(result["status"])}"'
+        if result["error"]:
+            attributes += ' data-expandable="true" role="button" tabindex="0" aria-expanded="false"'
+            card_classes += " has-details"
+            error_html = f'<div class="result-error">{html.escape(result["error"])}</div>'
+            attributes = f'class="{card_classes}" data-status="{html.escape(result["status"])}" data-expandable="true" role="button" tabindex="0" aria-expanded="false"'
+        result_cards.append(
+            f"""<div {attributes}>
+<div class="result-top"><div><div class="result-title-row"><button type="button" class="status-chip badge badge-{html.escape(result['status'])}" data-filter-status="{html.escape(result['status'])}">{html.escape(result['status'].title())}</button><span class="result-title">{html.escape(result['name'])}</span></div><div class="result-sub">{html.escape(result['assembly'])}</div></div><div class="result-duration">{html.escape(result['duration'])}</div></div>{error_html}</div>"""
+        )
+
+    log_rows = []
+    for line in info_lines:
+        tone = "neutral"
+        lower = line.lower()
+        if "started" in lower or "execution started" in lower:
+            tone = "info"
+        elif "complete" in lower or "successfully" in lower or "done:" in lower:
+            tone = "passed"
+        elif "error" in lower or "failed" in lower:
+            tone = "failed"
+        log_rows.append(f'<div class="log-row tone-{tone}">{html.escape(line)}</div>')
+
+    safe_display_path = html.escape(display_path)
+    return f"""<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>.NET Execution Dashboard</title>
+  <style>
+    :root {{ --bg:#f3f7fc; --panel:#fff; --line:rgba(74,107,155,.16); --text:#1d2a3b; --muted:#667892; --accent:#0b7cff; --success:#2ea44f; --danger:#d73a49; --warning:#d29922; }}
+    * {{ box-sizing:border-box; }} body {{ margin:0; font-family:"Segoe UI",Arial,sans-serif; color:var(--text); background:linear-gradient(180deg,#fff 0%,var(--bg) 100%); }}
+    .page {{ max-width:1380px; margin:0 auto; padding:28px 20px 48px; }} .hero,.cards {{ display:grid; gap:22px; }} .hero {{ grid-template-columns:1.6fr 1fr; margin-bottom:22px; }} .cards {{ grid-template-columns:repeat(4,minmax(0,1fr)); margin-bottom:22px; }}
+    .panel {{ background:var(--panel); border:1px solid var(--line); border-radius:22px; box-shadow:0 18px 48px rgba(23,43,77,.08); }} .hero-copy,.hero-side,.stat-card,.section {{ padding:24px; }}
+    .eyebrow {{ display:inline-flex; padding:6px 10px; border-radius:999px; background:rgba(11,124,255,.10); color:var(--accent); font-size:12px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; }} h1 {{ margin:14px 0 10px; font-size:clamp(28px,4vw,42px); line-height:1.05; }}
+    .sub,.path,.result-sub {{ color:var(--muted); }} .sub {{ margin:0; line-height:1.6; }} .path {{ margin-top:18px; font-size:13px; word-break:break-all; }}
+    .donut-wrap {{ display:grid; grid-template-columns:170px 1fr; gap:18px; align-items:center; }} .donut {{ width:170px; height:170px; border-radius:50%; background:{donut_style}; position:relative; margin:0 auto; }} .donut:after {{ content:""; position:absolute; inset:18px; border-radius:50%; background:linear-gradient(180deg,#fff,#eef4fb); border:1px solid rgba(74,107,155,.12); }} .donut-center {{ position:absolute; inset:0; display:grid; place-items:center; z-index:1; text-align:center; }} .donut-center strong {{ font-size:34px; }}
+    .legend {{ display:grid; gap:10px; }} .legend-button {{ display:flex; justify-content:space-between; gap:16px; width:100%; border:1px solid var(--line); border-radius:14px; background:#f8fbff; color:var(--text); font-size:14px; padding:10px 12px; cursor:pointer; }} .legend-button.active,.legend-button:hover {{ background:#eef6ff; border-color:rgba(11,124,255,.28); }} .left {{ display:inline-flex; align-items:center; gap:10px; }} .dot {{ width:10px; height:10px; border-radius:50%; display:inline-block; }}
+    .stat-label {{ color:var(--muted); font-size:13px; text-transform:uppercase; letter-spacing:.06em; }} .stat-value {{ margin-top:10px; font-size:34px; font-weight:700; }} .stat-foot {{ margin-top:8px; color:#6f8198; font-size:13px; }}
+    .section {{ margin-bottom:22px; }} .section h2 {{ margin:0 0 16px; font-size:24px; }} .result-list,.log-list {{ display:grid; gap:14px; }}
+    .result-card {{ background:#fbfdff; border:1px solid rgba(74,107,155,.12); border-left:4px solid transparent; border-radius:18px; padding:16px 18px; }} .result-card.has-details {{ cursor:pointer; }} .result-card:focus-visible,.status-chip:focus-visible {{ outline:2px solid rgba(11,124,255,.35); outline-offset:2px; }} .status-passed {{ border-left-color:var(--success); }} .status-failed {{ border-left-color:var(--danger); }} .status-skipped {{ border-left-color:var(--warning); }}
+    .result-top {{ display:flex; justify-content:space-between; gap:16px; align-items:flex-start; }} .result-title-row {{ display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-bottom:8px; }} .result-title {{ font-weight:700; font-size:18px; }} .result-duration {{ font-weight:700; white-space:nowrap; }}
+    .result-error {{ display:none; margin-top:12px; padding:12px 14px; border-radius:12px; background:rgba(215,58,73,.10); color:#a02332; white-space:pre-wrap; }} .result-card.is-open .result-error {{ display:block; }}
+    .badge {{ display:inline-flex; align-items:center; padding:5px 9px; border-radius:999px; font-size:12px; font-weight:700; }} .status-chip {{ border:none; cursor:pointer; font-family:inherit; }} .badge-passed {{ background:rgba(46,164,79,.16); color:#1b7b39; }} .badge-failed {{ background:rgba(215,58,73,.14); color:#b42335; }} .badge-skipped {{ background:rgba(210,153,34,.16); color:#986d11; }}
+    .log-row {{ padding:12px 14px; border-radius:14px; background:#f6f9fd; border-left:4px solid rgba(74,107,155,.12); color:var(--text); white-space:pre-wrap; }} .tone-info {{ border-left-color:var(--accent); }} .tone-passed {{ border-left-color:var(--success); }} .tone-failed {{ border-left-color:var(--danger); }} .is-hidden {{ display:none !important; }}
+    @media (max-width:1100px) {{ .hero,.cards {{ grid-template-columns:1fr; }} .donut-wrap {{ grid-template-columns:1fr; }} }} @media (max-width:720px) {{ .page {{ padding:18px 12px 32px; }} .result-top {{ flex-direction:column; align-items:flex-start; }} }}
+  </style>
+</head>
+<body>
+  <div class="page">
+    <section class="hero">
+      <div class="panel hero-copy"><span class="eyebrow">.NET Dashboard</span><h1>C# Test Execution Report</h1><p class="sub">A lighter Script Runner report for .NET runs with quick status filtering and clearer result cards.</p><div class="path">{safe_display_path}</div></div>
+      <div class="panel hero-side"><div class="donut-wrap"><div class="donut"><div class="donut-center"><div><strong>{html.escape(pass_percentage)}</strong><br><span>pass rate</span></div></div></div><div class="legend"><button type="button" class="legend-button active" data-filter="all"><span class="left"><span class="dot" style="background:#5d6f86"></span>All</span><strong>{html.escape(total_tests)}</strong></button><button type="button" class="legend-button" data-filter="passed"><span class="left"><span class="dot" style="background:#2ea44f"></span>Passed</span><strong>{html.escape(passed_tests)}</strong></button><button type="button" class="legend-button" data-filter="failed"><span class="left"><span class="dot" style="background:#d73a49"></span>Failed</span><strong>{html.escape(failed_tests)}</strong></button><button type="button" class="legend-button" data-filter="skipped"><span class="left"><span class="dot" style="background:#d29922"></span>Skipped</span><strong>{html.escape(skipped_tests)}</strong></button></div></div></div>
+    </section>
+    <section class="cards"><div class="panel stat-card"><div class="stat-label">Total Tests</div><div class="stat-value">{html.escape(total_tests)}</div><div class="stat-foot">Executed in this run</div></div><div class="panel stat-card"><div class="stat-label">Passed</div><div class="stat-value">{html.escape(passed_tests)}</div><div class="stat-foot">Successful assertions</div></div><div class="panel stat-card"><div class="stat-label">Failed</div><div class="stat-value">{html.escape(failed_tests)}</div><div class="stat-foot">Tests needing attention</div></div><div class="panel stat-card"><div class="stat-label">Duration</div><div class="stat-value">{html.escape(run_duration)}</div><div class="stat-foot">End-to-end run time</div></div></section>
+    <section class="panel section"><div class="eyebrow">Results</div><h2>Test Outcomes</h2><div class="result-list" id="dotnet-result-list">{''.join(result_cards) or '<div class="log-row">No test result entries were found in this report.</div>'}</div></section>
+    <section class="panel section"><div class="eyebrow">Diagnostics</div><h2>Execution Messages</h2><div class="log-list">{''.join(log_rows) or '<div class="log-row">No execution messages were found in this report.</div>'}</div></section>
+  </div>
+  <script>
+    (() => {{
+      const buttons = Array.from(document.querySelectorAll('.legend-button'));
+      const cards = Array.from(document.querySelectorAll('.result-card'));
+      const applyFilter = (filter) => {{
+        buttons.forEach((button) => button.classList.toggle('active', button.dataset.filter === filter));
+        cards.forEach((card) => card.classList.toggle('is-hidden', !(filter === 'all' || card.dataset.status === filter)));
+      }};
+      const toggleCard = (card) => {{
+        if (card.dataset.expandable !== 'true') return;
+        const opened = card.classList.toggle('is-open');
+        card.setAttribute('aria-expanded', opened ? 'true' : 'false');
+      }};
+      buttons.forEach((button) => button.addEventListener('click', () => applyFilter(button.dataset.filter || 'all')));
+      cards.forEach((card) => {{
+        card.addEventListener('click', () => toggleCard(card));
+        card.addEventListener('keydown', (event) => {{
+          if (event.key === 'Enter' || event.key === ' ') {{
+            event.preventDefault();
+            toggleCard(card);
+          }}
+        }});
+      }});
+      document.querySelectorAll('.status-chip').forEach((chip) => {{
+        chip.addEventListener('click', (event) => {{
+          event.stopPropagation();
+          applyFilter(chip.dataset.filterStatus || 'all');
+        }});
+      }});
+      applyFilter('all');
+    }})();
+  </script>
+</body>
+</html>"""
+
+
+def _render_cucumber_html_light(report_html: str, display_path: str):
+    import html
+
+    banner = f"""
+<div style="max-width:1380px;margin:0 auto;padding:24px 20px 0;font-family:'Segoe UI',Arial,sans-serif;">
+  <div style="background:#ffffff;border:1px solid rgba(74,107,155,.16);border-radius:22px;box-shadow:0 18px 48px rgba(23,43,77,.08);padding:24px 28px;">
+    <div style="display:inline-flex;padding:6px 10px;border-radius:999px;background:rgba(11,124,255,.10);color:#0b7cff;font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;">Cucumber Dashboard</div>
+    <h1 style="margin:14px 0 10px;font-size:clamp(28px,4vw,42px);line-height:1.05;color:#1d2a3b;">Java Test Execution Report</h1>
+    <p style="margin:0;color:#667892;line-height:1.6;">This report is shown in a forced light theme so Java/Cucumber output matches the other Script Runner report dashboards more closely.</p>
+    <div style="margin-top:18px;color:#6d8099;font-size:13px;word-break:break-all;">{html.escape(display_path)}</div>
+  </div>
+</div>"""
+    light_overrides = """
+<style>
+  :root,
+  .S07ZPK5i38Whpt0ARQ6p,
+  .pPHXjw4HiiEZ76UmW2np{
+    --cucumber-background-color:#f3f7fc !important;
+    --cucumber-text-color:#1d2a3b !important;
+    --cucumber-anchor-color:#0b7cff !important;
+    --cucumber-keyword-color:#0f4f9b !important;
+    --cucumber-parameter-color:#0b7cff !important;
+    --cucumber-tag-color:#6c8f39 !important;
+    --cucumber-docstring-color:#1f8a56 !important;
+    --cucumber-error-background-color:#fdecee !important;
+    --cucumber-error-text-color:#a02332 !important;
+    --cucumber-code-background-color:#f6f9fd !important;
+    --cucumber-code-text-color:#29415f !important;
+    --cucumber-panel-background-color:#ffffff !important;
+    --cucumber-panel-accent-color:#e3ebf5 !important;
+    --cucumber-panel-text-color:#1d2a3b !important;
+  }
+  html,body{
+    background:linear-gradient(180deg,#ffffff 0%,#f3f7fc 100%) !important;
+    color:#1d2a3b !important;
+    margin:0 !important;
+  }
+  #content{
+    max-width:1380px !important;
+    margin:0 auto !important;
+    padding:20px !important;
+  }
+  .html-formatter{
+    max-width:1380px !important;
+    padding:0 !important;
+    background:transparent !important;
+  }
+  .g84sy6xgJUyJIzpsyG5S{
+    background:transparent !important;
+    color:#1d2a3b !important;
+  }
+  .XR3QM0DC8dUJX1FPQBu_,
+  .uH0tV61h4vEwGIdnLhmB,
+  .qCGgrwvVkkINDRfqpvsj{
+    background:#ffffff !important;
+    border-color:#e3ebf5 !important;
+    color:#1d2a3b !important;
+    box-shadow:0 18px 48px rgba(23,43,77,.08) !important;
+  }
+  .oxCzU1rC8VLhLfVMMrX2,
+  .qCGgrwvVkkINDRfqpvsj,
+  .XhufRLVTP4kJj55pWlZQ{
+    background:#ffffff !important;
+    color:#1d2a3b !important;
+  }
+  .oxCzU1rC8VLhLfVMMrX2:hover{
+    background:#eef6ff !important;
+  }
+  .oxCzU1rC8VLhLfVMMrX2,
+  .pzfx7tCRXyytC6g9SDxg,
+  .Fdmm0s4soB2pkvNYXQbv tbody tr,
+  .XhufRLVTP4kJj55pWlZQ,
+  .PUJ_q_3Y8RQhAcXxakiL a,
+  .Pj6CVtDA4EslW8OfcTI9 a,
+  .AEvAM9M_0ZxmJghPdVQs,
+  .gUbOxW8Yux5FNeSfsI2O,
+  .qCGgrwvVkkINDRfqpvsj{
+    cursor:pointer !important;
+  }
+  .aSGVb3Tv5B8Nz24vToKW,
+  .rfv832DGvJuGyzFuMjXC{
+    background:#ffffff !important;
+    color:#1d2a3b !important;
+  }
+  .Cbm1hRh_nuzVXaBR2dZ0,
+  .buWCECLHpnDfpwKwugOX{
+    background:#f6f9fd !important;
+    color:#29415f !important;
+  }
+  .gXG0xG1TJk_4pdoSxoAf{
+    background:#fdecee !important;
+    color:#a02332 !important;
+  }
+  .VlpRuYBlXtcShawgxgzA[data-status=PASSED]{background:#2ea44f !important;}
+  .VlpRuYBlXtcShawgxgzA[data-status=FAILED]{background:#d73a49 !important;}
+  .VlpRuYBlXtcShawgxgzA[data-status=SKIPPED]{background:#d29922 !important;}
+  .XhufRLVTP4kJj55pWlZQ{
+    border-color:#d5dfeb !important;
+  }
+</style>"""
+    content = report_html.replace('theme:"auto"', 'theme:"light"')
+    if "<body>" in content:
+        content = content.replace("<body>", f"<body>{banner}", 1)
+    if "</head>" in content:
+        content = content.replace("</head>", f"{light_overrides}</head>", 1)
+    return content
+
+
+def _inject_report_cursor_affordances(report_html: str):
+    pointer_overrides = """
+<style id="bigqa-report-pointer-affordances">
+  button,
+  [role="button"],
+  summary,
+  .btn,
+  .button,
+  .legend-button,
+  .scenario-head,
+  .result-card,
+  [data-filter],
+  [onclick],
+  input[type="button"],
+  input[type="submit"],
+  input[type="reset"]{
+    cursor:pointer !important;
+  }
+</style>"""
+    if 'id="bigqa-report-pointer-affordances"' in report_html:
+        return report_html
+    if "</head>" in report_html:
+        return report_html.replace("</head>", f"{pointer_overrides}</head>", 1)
+    if "<body>" in report_html:
+        return report_html.replace("<body>", f"<body>{pointer_overrides}", 1)
+    return f"{pointer_overrides}{report_html}"
 
 
 @app.route('/api/script-runner/report', methods=['GET'])
@@ -1838,13 +2856,133 @@ def serve_report():
     if not is_allowed or not os.path.exists(abs_path):
         return "Report not found or access denied", 404
     
+    import html
+    import json
     import mimetypes
     from flask import Response
     with open(abs_path, 'r', encoding='utf-8', errors='ignore') as f:
         content = f.read()
     
     mime_type, _ = mimetypes.guess_type(abs_path)
-    return Response(content, mimetype=mime_type or 'text/html')
+    extension = os.path.splitext(abs_path)[1].lower()
+
+    behave_json_path = os.path.join(os.path.dirname(abs_path), 'behave_report.json')
+    behave_dashboard_names = {'report.html', 'behave_report.json', 'behave_report.txt'}
+    if os.path.basename(abs_path).lower() in behave_dashboard_names and os.path.exists(behave_json_path):
+        try:
+            return Response(_render_behave_dashboard(behave_json_path, abs_path), mimetype='text/html')
+        except Exception:
+            pass
+
+    if extension in {'.html', '.htm'}:
+        if "Test run details</h1>" in content and 'class="total-tests"' in content and 'class="passedTests"' in content:
+            return Response(_render_dotnet_html_dashboard(content, abs_path), mimetype='text/html')
+        if "window.CUCUMBER_MESSAGES" in content or "<title>Cucumber</title>" in content:
+            return Response(_render_cucumber_html_light(content, abs_path), mimetype='text/html')
+        return Response(_inject_report_cursor_affordances(content), mimetype=mime_type or 'text/html')
+
+    if extension == '.json' and os.path.basename(abs_path).lower() == 'behave_report.json':
+        try:
+            return Response(_render_behave_dashboard(abs_path, abs_path), mimetype='text/html')
+        except Exception:
+            pass
+
+    display_content = content
+    if extension == '.json':
+        try:
+            display_content = json.dumps(json.loads(content), indent=2)
+        except Exception:
+            display_content = content
+
+    title = f"Script Runner Report - {os.path.basename(abs_path)}"
+    safe_title = html.escape(title)
+    safe_path = html.escape(abs_path)
+    safe_body = html.escape(display_content)
+    viewer_html = f"""<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{safe_title}</title>
+  <style>
+    :root {{
+      color-scheme: dark;
+      --bg: #0b1220;
+      --panel: #131c2f;
+      --panel-border: rgba(120, 154, 220, 0.22);
+      --text: #e8eefc;
+      --muted: #8da1c5;
+      --accent: #25b4ff;
+    }}
+    * {{ box-sizing: border-box; }}
+    body {{
+      margin: 0;
+      font-family: "Segoe UI", Arial, sans-serif;
+      background: radial-gradient(circle at top, #16233d 0%, var(--bg) 55%);
+      color: var(--text);
+    }}
+    .page {{
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 32px 20px;
+    }}
+    .card {{
+      background: rgba(19, 28, 47, 0.94);
+      border: 1px solid var(--panel-border);
+      border-radius: 16px;
+      overflow: hidden;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.35);
+    }}
+    .header {{
+      padding: 20px 24px 14px;
+      border-bottom: 1px solid rgba(120, 154, 220, 0.16);
+    }}
+    .eyebrow {{
+      color: var(--accent);
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      margin-bottom: 8px;
+    }}
+    h1 {{
+      margin: 0;
+      font-size: 24px;
+      line-height: 1.2;
+    }}
+    .path {{
+      margin-top: 8px;
+      color: var(--muted);
+      font-size: 13px;
+      word-break: break-all;
+    }}
+    pre {{
+      margin: 0;
+      padding: 24px;
+      overflow: auto;
+      font-family: "Cascadia Code", "Consolas", monospace;
+      font-size: 14px;
+      line-height: 1.55;
+      white-space: pre-wrap;
+      word-break: break-word;
+      background: linear-gradient(180deg, rgba(7, 12, 23, 0.25), rgba(7, 12, 23, 0.45));
+    }}
+  </style>
+</head>
+<body>
+  <div class="page">
+    <section class="card">
+      <div class="header">
+        <div class="eyebrow">Script Runner Report Viewer</div>
+        <h1>{safe_title}</h1>
+        <div class="path">{safe_path}</div>
+      </div>
+      <pre>{safe_body}</pre>
+    </section>
+  </div>
+</body>
+</html>"""
+    return Response(viewer_html, mimetype='text/html')
 
 @app.route('/api/configure-ai', methods=['GET', 'POST'])
 @login_required()
@@ -1862,26 +3000,23 @@ def configure_ai_endpoint():
         return tool or 'openai'
     
     if request.method == 'GET':
-        config = {'AI_TOOL': '', 'AI_MODEL': '', 'API_KEY': '', 'AI_PROVIDER': ''}
-        if os.path.exists(env_path):
-            with open(env_path, 'r') as f:
-                for line in f:
-                    if line.startswith('AI_TOOL'):
-                        config['AI_TOOL'] = line.split('=', 1)[1].strip().strip('"').strip("'")
-                    elif line.startswith('AI_MODEL'):
-                        config['AI_MODEL'] = line.split('=', 1)[1].strip().strip('"').strip("'")
-                    elif line.startswith('API_KEY'):
-                        config['API_KEY'] = line.split('=', 1)[1].strip().strip('"').strip("'")
-                    elif line.startswith('AI_PROVIDER'):
-                        config['AI_PROVIDER'] = line.split('=', 1)[1].strip().strip('"').strip("'")
-        return jsonify({"status": "success", "config": config})
+        ai_state = read_ai_config(env_path)
+        return jsonify({
+            "status": "success",
+            "config": ai_state['config'],
+            "missing_fields": ai_state['missing_fields'],
+            "is_complete": ai_state['is_complete'],
+            "model_was_missing": not bool(ai_state['raw_model']),
+        })
         
     # POST
-    data = request.json
-    ai_tool = data.get('ai_tool')
-    ai_model = data.get('ai_model')
-    api_key = data.get('api_key')
+    data = request.json or {}
+    ai_tool = str(data.get('ai_tool') or '').strip().upper()
+    ai_model = str(data.get('ai_model') or '').strip()
+    api_key = str(data.get('api_key') or '').strip()
     ai_provider = normalize_ai_provider(ai_tool)
+    if not ai_model:
+        ai_model = get_default_ai_model(ai_tool, ai_provider)
     
     env_lines = []
     if os.path.exists(env_path):
@@ -2211,8 +3346,28 @@ def _count_scenarios(text: str, file_type: str) -> int:
 @app.route('/api/generate-bdd-code', methods=['POST'])
 @login_required()
 def generate_bdd_code():
+    def _safe_decode(file_bytes):
+        if not file_bytes:
+            return ""
+        for encoding in ('utf-8', 'cp1252', 'latin-1'):
+            try:
+                return file_bytes.decode(encoding)
+            except UnicodeDecodeError:
+                continue
+        return file_bytes.decode('utf-8', errors='replace')
+
     try:
         existing_steps_count = 0
+        ai_state = read_ai_config(os.path.join(BASE_DIR, '.env'))
+        if not ai_state['is_complete']:
+            return jsonify({
+                'status': 'error',
+                'message': build_ai_configuration_message(ai_state['missing_fields']),
+                'missing_fields': ai_state['missing_fields'],
+                'action': 'configure_ai',
+                'reason': 'missing_config',
+            }), 400
+
         project_path = request.form.get('project_path')
         tool = request.form.get('tool')
         language = request.form.get('language')
@@ -2230,7 +3385,7 @@ def generate_bdd_code():
             
         scenarios_text = ""
         if file_type == 'BDD':
-            scenarios_text = scenario_file.read().decode('utf-8')
+            scenarios_text = _safe_decode(scenario_file.read())
         elif file_type == 'Excel':
             try:
                 # Need openpyxl for xlsx
@@ -2366,7 +3521,7 @@ def generate_bdd_code():
             support_content += "Local Page Object Files:\n"
             for po in po_files:
                 if po.filename:
-                    support_content += f"--- {po.filename} ---\n{po.read().decode('utf-8')}\n"
+                    support_content += f"--- {po.filename} ---\n{_safe_decode(po.read())}\n"
 
         # Scan for utilities
         support_content += "\nProject Reusable Utilities:\n"
@@ -2376,7 +3531,7 @@ def generate_bdd_code():
                 for uf in os.listdir(u_path):
                     if uf.endswith((".py", ".java", ".ts", ".js", ".cs")):
                         try:
-                            with open(os.path.join(u_path, uf), "r", encoding="utf-8") as f:
+                            with open(os.path.join(u_path, uf), "r", encoding="utf-8", errors="ignore") as f:
                                 support_content += f"--- {uf} ---\n{''.join(f.readlines()[:100])}\n"
                         except Exception:
                             pass
@@ -2431,7 +3586,16 @@ def generate_bdd_code():
 
         return jsonify({'status': 'success', 'files': result_files, 'stats': stats})
     except Exception as e:
-        return jsonify({'status': 'error', 'message': str(e)}), 500
+        normalized_error = normalize_ai_error_message(e)
+        payload = {
+            'status': 'error',
+            'message': normalized_error['message'],
+        }
+        if normalized_error['action']:
+            payload['action'] = normalized_error['action']
+        if normalized_error['reason']:
+            payload['reason'] = normalized_error['reason']
+        return jsonify(payload), 500
 
 @app.route('/api/save-generated-files', methods=['POST'])
 @login_required()
@@ -2632,8 +3796,15 @@ if __name__ == '__main__':
         seed()
         launch_backend()
 
-    # When enabled, watch templates/static too so HTML/CSS/JS edits also restart the server.
-    extra_files = [str(p) for sub in ('templates', 'static')
+    # When enabled, also watch the scaffold template sources + version catalog so local SQLite
+    # gets reseeded on restart after template/profile edits.
+    watch_roots = (
+        'templates',
+        'static',
+        'scripts/templates',
+        'ProjectBootstrapper',
+    )
+    extra_files = [str(p) for sub in watch_roots
                    for p in (BASE_DIR / sub).rglob('*') if p.is_file()]
     use_reloader = get_env_bool("USE_RELOADER", default=False)
     app.run(debug=True, use_reloader=use_reloader, port=port, threaded=True, extra_files=extra_files)

@@ -6,6 +6,7 @@ import shutil
 import subprocess
 import signal
 import time
+from urllib.parse import quote
 
 active_processes = {} # pid -> process object
 
@@ -54,6 +55,296 @@ def _runtime_env_for_command(cmd: str):
 
 class ScriptRunnerService:
     MAX_HEALING_RETRIES = 3
+    REPORT_EXTENSIONS = {'.html', '.htm', '.pdf', '.json', '.xml', '.png', '.txt'}
+    REPORT_DIR_HINTS = ("results", "reports", "outputs", "allure-results", "allure-report", "playwright-report")
+    REPORT_SKIP_DIRS = {
+        '.git', '.idea', '.venv', 'venv', 'env', 'node_modules', '__pycache__',
+        'site-packages', 'dist-packages', 'classes', 'test-classes', 'src',
+        'target', 'bin', 'obj'
+    }
+
+    @staticmethod
+    def _inspect_project_files(full_path: str) -> dict:
+        """Inspect key build/runtime files so commands can be validated before execution."""
+        manifests = {
+            "package_json": os.path.exists(os.path.join(full_path, "package.json")),
+            "requirements_txt": os.path.exists(os.path.join(full_path, "requirements.txt")),
+            "pyproject_toml": os.path.exists(os.path.join(full_path, "pyproject.toml")),
+            "pom_xml": os.path.exists(os.path.join(full_path, "pom.xml")),
+            "build_gradle": os.path.exists(os.path.join(full_path, "build.gradle")),
+            "dotnet_project": False,
+            "has_python_files": False,
+            "has_feature_files": False,
+        }
+
+        try:
+            for root, dirs, files in os.walk(full_path):
+                dirs[:] = [d for d in dirs if d not in {'.git', 'node_modules', 'venv', '.venv', 'target', 'bin', 'obj', '__pycache__'}]
+                if not manifests["dotnet_project"] and any(name.endswith('.csproj') for name in files):
+                    manifests["dotnet_project"] = True
+                if not manifests["has_python_files"] and any(name.endswith('.py') for name in files):
+                    manifests["has_python_files"] = True
+                if not manifests["has_feature_files"] and any(name.endswith('.feature') for name in files):
+                    manifests["has_feature_files"] = True
+                if manifests["dotnet_project"] and manifests["has_python_files"] and manifests["has_feature_files"]:
+                    break
+        except Exception:
+            pass
+
+        return manifests
+
+    @classmethod
+    def _iter_report_candidates(cls, full_path: str, start_time: float | None = None):
+        candidates = []
+        report_extensions = cls.REPORT_EXTENSIONS
+        skip_dirs = cls.REPORT_SKIP_DIRS
+
+        def should_skip_dir(root_path: str) -> bool:
+            parts = {part.lower() for part in root_path.replace('\\', '/').split('/') if part}
+            return any(part in skip_dirs for part in parts)
+
+        def path_priority(file_path: str, ext: str) -> tuple:
+            normalized = file_path.replace('\\', '/').lower()
+            filename = os.path.basename(normalized)
+            priority = 0
+            in_report_dir = any(segment in normalized for segment in ('/results/', '/reports/', '/allure-report/', '/playwright-report/'))
+            named_report_file = (
+                'report' in filename or
+                'cucumber' in filename or
+                'behave' in filename or
+                'allure' in filename or
+                filename == 'index.html'
+            )
+
+            if not in_report_dir and not named_report_file:
+                return (-1, os.path.getmtime(file_path))
+
+            if in_report_dir:
+                priority += 50
+            if filename in {'report.html', 'cucumber.html', 'cucumber_report.html', 'behave_report.html', 'index.html'}:
+                priority += 25
+            elif 'behave_report' in filename:
+                priority += 20
+            if ext in {'.html', '.htm', '.pdf'}:
+                priority += 10
+            elif ext in {'.txt', '.json', '.xml'}:
+                priority += 5
+
+            return (priority, os.path.getmtime(file_path))
+
+        report_roots = []
+        try:
+            for item in os.listdir(full_path):
+                item_path = os.path.join(full_path, item)
+                if not os.path.isdir(item_path):
+                    continue
+                item_lower = item.lower()
+                if any(hint in item_lower for hint in cls.REPORT_DIR_HINTS) and item_lower not in skip_dirs:
+                    report_roots.append(item_path)
+        except Exception:
+            pass
+
+        search_roots = report_roots or [full_path]
+        seen_paths = set()
+        for search_root in search_roots:
+            for root, dirs, files in os.walk(search_root):
+                dirs[:] = [d for d in dirs if d.lower() not in skip_dirs]
+                if should_skip_dir(root):
+                    dirs[:] = []
+                    continue
+                for file in files:
+                    ext = os.path.splitext(file)[1].lower()
+                    if ext not in report_extensions:
+                        continue
+                    file_path = os.path.join(root, file)
+                    if file_path in seen_paths:
+                        continue
+                    seen_paths.add(file_path)
+                    try:
+                        mtime = os.path.getmtime(file_path)
+                        if start_time is not None and mtime < start_time - 10:
+                            continue
+                        candidates.append((file_path, *path_priority(file_path, ext)))
+                    except Exception:
+                        continue
+
+        candidates.sort(key=lambda item: (item[1], item[2]), reverse=True)
+        return [item[0] for item in candidates]
+
+    @classmethod
+    def _suggest_commands(cls, language: str, framework: str, tool: str, manifests: dict) -> list:
+        language = (language or "").lower()
+        framework = (framework or "").lower()
+        tool = (tool or "").lower()
+
+        if manifests.get("package_json"):
+            if tool == "playwright":
+                return ['npm test', 'npm run report']
+            return ['npm test']
+        if manifests.get("pom_xml"):
+            return ['mvn test']
+        if manifests.get("build_gradle"):
+            return ['gradle test']
+        if manifests.get("dotnet_project"):
+            return ['dotnet test --results-directory Results --logger "html;LogFileName=report.html"']
+        if language == "python" or manifests.get("requirements_txt") or manifests.get("pyproject_toml") or manifests.get("has_python_files"):
+            if framework in {"behave", "cucumber"} or manifests.get("has_feature_files"):
+                return ['behave -f json -o Results/behave_report.json -f html -o Results/report.html -f pretty']
+            return ['pytest']
+        return []
+
+    @staticmethod
+    def _split_commands(commands_text: str) -> list:
+        return [line.strip() for line in (commands_text or "").splitlines() if line.strip()]
+
+    @staticmethod
+    def _command_family(cmd: str) -> str:
+        cmd_lower = (cmd or "").strip().lower()
+        if not cmd_lower:
+            return ""
+        if cmd_lower.startswith(("npm ", "npx ", "yarn ", "pnpm ")):
+            return "node"
+        if cmd_lower.startswith("mvn "):
+            return "maven"
+        if cmd_lower.startswith(("gradle ", "./gradlew", "gradlew ")):
+            return "gradle"
+        if cmd_lower.startswith("dotnet "):
+            return "dotnet"
+        if cmd_lower == "behave" or cmd_lower.startswith("behave "):
+            return "behave"
+        if cmd_lower == "pytest" or cmd_lower.startswith("pytest "):
+            return "pytest"
+        if cmd_lower.startswith("python -m pytest") or cmd_lower.startswith("python3 -m pytest"):
+            return "pytest"
+        return "generic"
+
+    @classmethod
+    def _normalize_command_for_execution(cls, cmd: str) -> str:
+        """Normalize commands so reports are generated consistently without changing suite scope."""
+        cmd = (cmd or "").strip()
+        family = cls._command_family(cmd)
+        cmd_lower = cmd.lower()
+
+        if family == "behave":
+            has_formatter = any(token in cmd_lower for token in (" -f ", " --format ", " -o ", " --outfile "))
+            if not has_formatter:
+                cmd = f"{cmd} -f json -o Results/behave_report.json -f html -o Results/report.html -f pretty"
+            return cmd
+
+        if family == "dotnet":
+            if '--logger' not in cmd_lower:
+                cmd = f'{cmd} --logger "html;LogFileName=report.html"'
+                cmd_lower = cmd.lower()
+            if '--results-directory' not in cmd_lower:
+                cmd = f'{cmd} --results-directory Results'
+            return cmd
+
+        return cmd
+
+    @classmethod
+    def _matches_legacy_default_commands(cls, commands: list, suggested_commands: list, tool: str) -> bool:
+        normalized = [' '.join((cmd or '').split()).strip().lower() for cmd in commands if (cmd or '').strip()]
+        suggested = [' '.join((cmd or '').split()).strip().lower() for cmd in suggested_commands if (cmd or '').strip()]
+        tool = (tool or '').strip().lower()
+
+        legacy_sets = [
+            ['behave'],
+            ['behave --tags=@smoke'],
+            ['behave', 'behave --tags=@smoke'],
+            ['behave -f html -o results/report.html -f pretty'],
+            ['behave --tags=@smoke -f html -o results/report.html -f pretty'],
+            ['behave -f pretty -o results/behave_report.txt -f html -o results/report.html'],
+            ['behave --tags=@smoke -f pretty -o results/behave_report.txt -f html -o results/report.html'],
+            ['behave -f json -o results/behave_report.json -f html -o results/report.html -f pretty'],
+            ['behave --stop -f pretty -o results/behave_report.txt -f html -o results/report.html',
+             'behave --tags=@smoke --stop -f pretty -o results/behave_report.txt -f html -o results/report.html'],
+        ]
+
+        if tool == 'playwright':
+            legacy_sets.extend([
+                ['npm test -- --tags "@smoke"', 'npm run report'],
+                ["npm test -- --tags '@smoke'", 'npm run report'],
+            ])
+        if tool == 'selenium':
+            legacy_sets.extend([
+                ['dotnet test'],
+            ])
+
+        normalized_legacy_sets = [
+            [' '.join(item.split()).strip().lower() for item in legacy]
+            for legacy in legacy_sets
+        ]
+        return normalized == suggested or normalized in normalized_legacy_sets
+
+    @classmethod
+    def resolve_project_commands(cls, full_path: str, language: str, framework: str, tool: str, saved_commands: str = "") -> dict:
+        manifests = cls._inspect_project_files(full_path)
+        suggested_commands = cls._suggest_commands(language, framework, tool, manifests)
+        saved_list = cls._split_commands(saved_commands)
+
+        if saved_list:
+            if cls._matches_legacy_default_commands(saved_list, suggested_commands, tool):
+                return {
+                    "commands": "\n".join(suggested_commands),
+                    "source": "inferred",
+                    "warning": "",
+                    "suggestions": suggested_commands,
+                }
+            is_valid, validation_msg = cls._validate_custom_commands(saved_list, full_path, language, framework, tool)
+            if is_valid:
+                return {
+                    "commands": "\n".join(saved_list),
+                    "source": "saved",
+                    "warning": "",
+                    "suggestions": suggested_commands,
+                }
+            return {
+                "commands": "\n".join(suggested_commands),
+                "source": "inferred",
+                "warning": validation_msg,
+                "suggestions": suggested_commands,
+            }
+
+        return {
+            "commands": "\n".join(suggested_commands),
+            "source": "inferred",
+            "warning": "",
+            "suggestions": suggested_commands,
+        }
+
+    @classmethod
+    def _validate_custom_commands(cls, commands: list, full_path: str, language: str, framework: str, tool: str):
+        if not os.path.isdir(full_path):
+            return False, f"[Validation] Project path does not exist: {full_path}"
+
+        manifests = cls._inspect_project_files(full_path)
+        suggestions = cls._suggest_commands(language, framework, tool, manifests)
+
+        for cmd in commands:
+            family = cls._command_family(cmd)
+            if not family:
+                continue
+            if family == "node" and not manifests.get("package_json"):
+                msg = f"[Validation] '{cmd}' requires a package.json in {full_path}, but this project does not have one."
+            elif family == "maven" and not manifests.get("pom_xml"):
+                msg = f"[Validation] '{cmd}' requires a pom.xml in {full_path}, but this project does not have one."
+            elif family == "gradle" and not manifests.get("build_gradle"):
+                msg = f"[Validation] '{cmd}' requires a build.gradle in {full_path}, but this project does not have one."
+            elif family == "dotnet" and not manifests.get("dotnet_project"):
+                msg = f"[Validation] '{cmd}' requires a .csproj project in {full_path}, but none was found."
+            elif family == "behave" and not (manifests.get("has_feature_files") or manifests.get("has_python_files")):
+                msg = f"[Validation] '{cmd}' looks like a Behave command, but this project does not look like a Python BDD project."
+            elif family == "pytest" and not (manifests.get("has_python_files") or manifests.get("requirements_txt") or manifests.get("pyproject_toml")):
+                msg = f"[Validation] '{cmd}' looks like a pytest command, but this project does not look like a Python test project."
+            else:
+                msg = ""
+
+            if msg:
+                if suggestions:
+                    msg += f" Try: {' ; '.join(suggestions)}"
+                return False, msg
+
+        return True, ""
 
     @staticmethod
     def _call_ai_sync_json(prompt: str) -> dict:
@@ -103,8 +394,13 @@ class ScriptRunnerService:
         
         # Mode A: Custom Sequential Commands
         if custom_commands.strip():
-            commands = [c.strip() for c in custom_commands.split('\n') if c.strip()]
+            commands = [cls._normalize_command_for_execution(c) for c in custom_commands.split('\n') if c.strip()]
             print(f"DEBUG: Found {len(commands)} custom commands")
+            is_valid, validation_msg = cls._validate_custom_commands(commands, full_path, language, framework, tool)
+            if not is_valid:
+                yield f"event: progress\ndata: {json.dumps({'msg': validation_msg, 'type': 'step_fail', 'step': 1})}\n\n"
+                yield f"event: result\ndata: {json.dumps({'status': 'error', 'report_url': ''})}\n\n"
+                return
             yield f"event: progress\ndata: {json.dumps({'msg': f'[Sequential Mode] Starting {len(commands)} commands...', 'type': 'system'})}\n\n"
             
             success = True
@@ -222,14 +518,6 @@ class ScriptRunnerService:
                     break
 
             # Finalize
-            if success and language and language.lower() == 'java':
-                yield f"event: progress\ndata: {json.dumps({'msg': '[System] Execution successful. Opening latest report file...', 'type': 'system'})}\n\n"
-                latest_report = cls._open_latest_report(full_path, start_time)
-                if latest_report:
-                    yield f"event: progress\ndata: {json.dumps({'msg': f'[System] Opened report: {os.path.basename(latest_report)}', 'type': 'system'})}\n\n"
-                else:
-                    yield f"event: progress\ndata: {json.dumps({'msg': '[System] No recently generated report files (.html, .pdf, etc.) found.', 'type': 'system'})}\n\n"
-
             report_url = cls._get_latest_report(full_path)
             yield f"event: result\ndata: {json.dumps({'status': 'success' if success else 'error', 'report_url': report_url})}\n\n"
             return
@@ -491,15 +779,6 @@ class ScriptRunnerService:
             else:
                 yield f"event: progress\ndata: {json.dumps({'msg': '[Fallback] No runner classes found in the project.', 'type': 'system'})}\n\n"
 
-        # Open latest result file if execution was successful and it is a Java project
-        if success and language and language.lower() == 'java':
-            yield f"event: progress\ndata: {json.dumps({'msg': '[System] Execution successful. Opening latest report file...', 'type': 'system'})}\n\n"
-            latest_report = cls._open_latest_report(full_path, start_time)
-            if latest_report:
-                yield f"event: progress\ndata: {json.dumps({'msg': f'[System] Opened report: {os.path.basename(latest_report)}', 'type': 'system'})}\n\n"
-            else:
-                yield f"event: progress\ndata: {json.dumps({'msg': '[System] No recently generated report files (.html, .pdf, etc.) found.', 'type': 'system'})}\n\n"
-
         # Step 3: Finalize
         report_url = cls._get_latest_report(full_path)
         yield f"event: result\ndata: {json.dumps({'status': 'success' if success else 'error', 'report_url': report_url})}\n\n"
@@ -507,70 +786,10 @@ class ScriptRunnerService:
 
     @classmethod
     def _open_latest_report(cls, full_path, start_time):
-        report_extensions = ['.html', '.htm', '.pdf', '.json', '.xml', '.png']
-        candidates = []
-
-        # 1. Target Directory Identification
-        possible_dirs = []
-        try:
-            for item in os.listdir(full_path):
-                item_path = os.path.join(full_path, item)
-                if os.path.isdir(item_path):
-                    item_lower = item.lower()
-                    if any(variation in item_lower for variation in ["results", "outputs", "reports", "target", "build"]):
-                        if not any(skip in item_lower for skip in [".git", ".idea", ".venv", "node_modules"]):
-                            possible_dirs.append(item_path)
-        except Exception:
-            pass
-
-        # Sort multiple matching directories by latest modification timestamp
-        if possible_dirs:
-            possible_dirs.sort(key=os.path.getmtime, reverse=True)
-            
-            # 2. Directory Traversal & Deep Search
-            target_dir = possible_dirs[0]
-            for root, dirs, files in os.walk(target_dir):
-                for file in files:
-                    ext = os.path.splitext(file)[1].lower()
-                    if ext in report_extensions:
-                        file_path = os.path.join(root, file)
-                        try:
-                            mtime = os.path.getmtime(file_path)
-                            if mtime >= start_time - 10:
-                                candidates.append((file_path, mtime, ext))
-                        except Exception:
-                            pass
-
-        # 3. Fallback (Else Condition)
-        if not candidates:
-            for root, dirs, files in os.walk(full_path):
-                if any(p in root.replace('\\', '/').split('/') for p in ['.git', '.idea', '.venv', 'node_modules', 'classes', 'test-classes', 'src']):
-                    continue
-                for file in files:
-                    ext = os.path.splitext(file)[1].lower()
-                    if ext in report_extensions:
-                        file_path = os.path.join(root, file)
-                        try:
-                            mtime = os.path.getmtime(file_path)
-                            if mtime >= start_time - 10:
-                                candidates.append((file_path, mtime, ext))
-                        except Exception:
-                            pass
-
+        candidates = cls._iter_report_candidates(full_path, start_time=start_time)
         if not candidates:
             return None
-
-        def sort_key(item):
-            path, mtime, ext = item
-            priority = 0
-            if ext in ['.html', '.htm', '.pdf']:
-                priority = 2
-            elif ext in ['.xml', '.json']:
-                priority = 1
-            return (priority, mtime)
-
-        candidates.sort(key=sort_key, reverse=True)
-        latest_report = candidates[0][0]
+        latest_report = candidates[0]
         try:
             is_windows = os.name == 'nt'
             if is_windows:
@@ -590,11 +809,10 @@ class ScriptRunnerService:
     def _get_latest_report(cls, full_path):
         report_url = ""
         try:
-            html_files = glob.glob(os.path.join(full_path, '**', '*.html'), recursive=True)
-            if html_files:
-                html_files.sort(key=os.path.getmtime, reverse=True)
-                report_file = html_files[0]
-                report_url = f"/api/script-runner/report?path={report_file}"
+            report_files = cls._iter_report_candidates(full_path)
+            if report_files:
+                report_file = report_files[0]
+                report_url = f"/api/script-runner/report?path={quote(report_file, safe='')}"
         except Exception: pass
         return report_url
 

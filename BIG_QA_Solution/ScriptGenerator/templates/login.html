@@ -23,6 +23,7 @@
         {% endwith %}
         
         <form method="POST" action="{{ url_for('login') }}" class="login-form" id="loginForm" autocomplete="off" novalidate>
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
             <div class="form-group">
                 <label for="email"><i class="fas fa-envelope"></i> Email Address</label>
                 <input type="email" id="email" name="email" required placeholder="name@company.com" autocomplete="off">

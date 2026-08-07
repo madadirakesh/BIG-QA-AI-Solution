@@ -1,6 +1,8 @@
 Flask
 flask-cors
+Flask-WTF
 fastapi
+fastapi-csrf-protect
 uvicorn
 requests
 openai

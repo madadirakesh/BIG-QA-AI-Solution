@@ -32,9 +32,9 @@ public class LoginPage {
     // Playwright "or" groups — the first match wins. Swap these for your app's real, unique
     // locators when you build real tests.
     private static final String USERNAME_SELECTOR =
-            "#txtUserID, input[type='email'], input[name*='user' i], input[id*='user' i], input[type='text']";
+            "#txtUserID, input[autocomplete='username'], input[placeholder*='username' i], input[placeholder*='email' i], input[type='email'], input[name*='user' i], input[id*='user' i], input[type='text']";
     private static final String PASSWORD_SELECTOR =
-            "#txtPassword, input[type='password']";
+            "#txtPassword, input[autocomplete='current-password'], input[placeholder*='password' i], input[type='password']";
     private static final String LOGIN_BUTTON_SELECTOR =
             "#sub, button[type='submit'], input[type='submit'], button:has-text('Login'), button:has-text('Sign in')";
 

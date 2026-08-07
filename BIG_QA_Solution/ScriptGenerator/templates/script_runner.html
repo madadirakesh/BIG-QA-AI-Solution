@@ -39,6 +39,7 @@
                     margin-bottom: 2px;
                     font-family: 'JetBrains Mono', 'Fira Code', 'Courier New', monospace;
                     font-size: 0.9rem;
+                    white-space: pre-wrap;
                 }
 
                 .log-system {
@@ -113,6 +114,113 @@
                     color: #34d399;
                     border-color: rgba(52, 211, 153, 0.3);
                 }
+
+                .mcp-input-row {
+                    display: flex;
+                    align-items: center;
+                    gap: 10px;
+                }
+
+                .mcp-mode-select-wrap {
+                    position: relative;
+                    width: 170px;
+                    min-width: 170px;
+                    flex-shrink: 0;
+                }
+
+                .mcp-mode-select-wrap::after {
+                    content: "";
+                    position: absolute;
+                    right: 12px;
+                    top: 50%;
+                    width: 8px;
+                    height: 8px;
+                    transform: translateY(-65%) rotate(45deg);
+                    border-right: 2px solid #94a3b8;
+                    border-bottom: 2px solid #94a3b8;
+                    pointer-events: none;
+                    z-index: 1;
+                }
+
+                .mcp-mode-select {
+                    width: 100%;
+                    min-width: 0;
+                    height: 40px;
+                    flex-shrink: 0;
+                    background-color: rgba(15, 23, 42, 0.88) !important;
+                    background-image: none !important;
+                    border: 1px solid rgba(129, 140, 248, 0.28) !important;
+                    color: #f8fafc !important;
+                    font-size: 0.82rem;
+                    font-weight: 600;
+                    padding-right: 40px !important;
+                    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+                }
+
+                .mcp-mode-select:focus {
+                    border-color: rgba(96, 165, 250, 0.8) !important;
+                    box-shadow: 0 0 0 3px rgba(96, 165, 250, 0.16) !important;
+                }
+
+                .mcp-mode-select option {
+                    background: #0f172a;
+                    color: #f8fafc;
+                }
+
+                .mode-toggle-btn {
+                    width: 180px;
+                    border-width: 1px;
+                    border-style: solid;
+                    font-weight: 600;
+                    white-space: nowrap;
+                    transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease, box-shadow 0.2s ease;
+                }
+
+                .mode-toggle-btn.mode-inactive {
+                    background: rgba(148, 163, 184, 0.12) !important;
+                    border-color: rgba(100, 116, 139, 0.28) !important;
+                    color: #334155 !important;
+                    box-shadow: none !important;
+                }
+
+                .mode-toggle-btn.mode-active-seq {
+                    background: #6366f1 !important;
+                    border-color: #4f46e5 !important;
+                    color: #ffffff !important;
+                    box-shadow: 0 8px 22px rgba(99, 102, 241, 0.22);
+                }
+
+                .mode-toggle-btn.mode-active-git {
+                    background: #ea580c !important;
+                    border-color: #c2410c !important;
+                    color: #ffffff !important;
+                    box-shadow: 0 8px 22px rgba(234, 88, 12, 0.22);
+                }
+
+                @media (prefers-color-scheme: dark) {
+                    .mode-toggle-btn.mode-inactive {
+                        background: rgba(255, 255, 255, 0.08) !important;
+                        border-color: rgba(148, 163, 184, 0.22) !important;
+                        color: #cbd5e1 !important;
+                    }
+                }
+
+                @media (max-width: 900px) {
+                    .mcp-input-row {
+                        flex-direction: column;
+                        align-items: stretch;
+                    }
+
+                    .mcp-mode-select-wrap {
+                        width: 100%;
+                        min-width: 0;
+                    }
+
+                    .mcp-mode-select {
+                        width: 100%;
+                        min-width: 0;
+                    }
+                }
             </style>
             <h3 class="premium-header">Test Execution Setup</h3>
 
@@ -121,10 +229,11 @@
                 <select id="runProject" class="form-control" onchange="onProjectSelect()">
                     <option value="">-- Choose Project --</option>
                     {% for p in projects %}
-                    <option value="{{ p.project_name }}" data-path="{{ p.project_path }}"
+                    <option value="{{ p.id }}" data-project-name="{{ p.project_name }}" data-path="{{ p.project_path }}"
                         data-lang="{{ p.project_lang }}" data-fw="{{ p.project_fw }}" data-tool="{{ p.project_tool }}"
+                        data-packager="{{ p.package_manager or '' }}"
                         data-cmds="{{ p.run_commands or p.default_run_commands or '' }}"
-                        {% if p.project_name == active_project_name %}selected{% endif %}>
+                        {% if p.id|string == active_project_id|string %}selected{% endif %}>
                         {{ p.project_name }} ({{ p.project_lang }} / {{ p.project_tool }})
                     </option>
                     {% endfor %}
@@ -139,12 +248,11 @@
 
             <div id="modeSelection"
                 style="display: none; margin-top: 25px; text-align: center; gap: 15px; justify-content: center; display: flex; flex-wrap: wrap;">
-                <button type="button" class="btn btn-primary" id="btnModeSeq" onclick="setMode('seq')"
-                    style="width: 180px; background: #6366f1; border-color: #4f46e5;"><i class="fas fa-list-ol"></i>
+                <button type="button" class="btn btn-primary mode-toggle-btn mode-active-seq" id="btnModeSeq" onclick="setMode('seq')">
+                    <i class="fas fa-list-ol"></i>
                     Sequential Run</button>
-                <button type="button" class="btn btn-secondary" id="btnModeGit" onclick="setMode('git')"
-                    style="width: 180px; background: #f97316; border-color: #ea580c; color: white;"><i
-                        class="fab fa-git-alt"></i> Version Control</button>
+                <button type="button" class="btn btn-secondary mode-toggle-btn mode-inactive" id="btnModeGit" onclick="setMode('git')">
+                    <i class="fab fa-git-alt"></i> Version Control</button>
             </div>
 
 
@@ -202,6 +310,9 @@
                         <button type="button" class="btn git-action-btn git-btn-commit" onclick="runGitAction('commit')">
                             <i class="fas fa-check"></i> Commit All
                         </button>
+                        <button type="button" class="btn git-action-btn git-btn-merge" onclick="runGitAction('merge')">
+                            <i class="fas fa-code-branch"></i> Merge
+                        </button>
                         <button type="button" class="btn git-action-btn git-btn-push" onclick="runGitAction('push')">
                             <i class="fas fa-arrow-up"></i> Push
                         </button>
@@ -229,16 +340,22 @@
                     <span class="git-widget-toggle"><i class="fas fa-chevron-down"></i></span>
                 </div>
                 <div class="git-widget-body">
-                    <div style="display: flex; gap: 10px;">
+                    <div class="mcp-input-row">
                         <input type="text" id="gitMcpInput" class="form-control"
-                            placeholder="e.g., 'Analyze my uncommitted changes and write a semantic commit message...'"
+                            placeholder="e.g., 'Check my local changes, selected project path, and live remote status...'"
                             style="flex: 1;">
+                        <div class="mcp-mode-select-wrap">
+                            <select id="gitMcpMode" class="form-control mcp-mode-select"
+                                title="Explain Only gives guidance. Perform Action lets MCP run Git steps.">
+                                <option value="explain">Explain Only</option>
+                                <option value="execute">Perform Action</option>
+                            </select>
+                        </div>
                         <button type="button" class="btn btn-primary" onclick="runMcpGitAction()"
                             style="background: #4f46e5; border: none; width: 120px;"><i class="fas fa-magic"></i> Ask
                             AI</button>
                     </div>
-                    <p style="font-size: 0.8rem; color: #94a3b8; margin-top: 10px; margin-bottom: 0;">The AI will use MCP tools to manage your
-                        repository based on your prompt.</p>
+                    <p style="font-size: 0.8rem; color: #94a3b8; margin-top: 10px; margin-bottom: 0;">The AI will use MCP tools to inspect the selected local project path, compare it with the tracked remote, and help with repository actions based on your prompt.</p>
                 </div>
             </div>
         </div>
@@ -267,7 +384,7 @@
 </div>
 
 <!-- Execution Terminal / Logs -->
-<div class="terminal-panel glassmorphism mt-4 mx-auto" style="max-width: 98%;">
+<div class="terminal-panel glassmorphism mt-4 mx-auto" id="executionLogsPanel" style="max-width: 98%;">
     <div class="terminal-header">
         <span><i class="fas fa-terminal"></i> Execution Logs</span>
         <div class="terminal-actions" style="display:flex;align-items:center;gap:12px;">
@@ -302,6 +419,28 @@
         <div style="display: flex; justify-content: flex-end; gap: 10px;">
             <button type="button" class="btn" style="background: rgba(255,255,255,0.08); color: var(--text-primary);" onclick="closeCommitModal()">Cancel</button>
             <button type="button" class="btn" onclick="submitCommitWithMsg()" style="background: linear-gradient(135deg, #10b981, #059669); color: white; box-shadow: 0 4px 12px rgba(16, 185, 129, 0.25);">Commit All</button>
+        </div>
+    </div>
+</div>
+<div id="mergeBranchModal" class="commit-modal-backdrop">
+    <div class="commit-modal-dialog glassmorphism">
+        <h4><i class="fas fa-code-branch" style="color: #f59e0b;"></i> Merge Branches</h4>
+        <p style="color: var(--text-secondary); font-size: 0.9rem; margin-bottom: 15px; line-height: 1.4;">
+            Merge one branch into another for the selected project. Commit or stash local changes first.
+        </p>
+        <div class="form-group" style="margin-bottom: 14px !important;">
+            <input type="text" id="mergeSourceBranchInput" class="form-control"
+                   placeholder="Source branch, e.g. feature/login-fix"
+                   onkeydown="handleMergeModalKey(event)">
+        </div>
+        <div class="form-group" style="margin-bottom: 25px !important;">
+            <input type="text" id="mergeTargetBranchInput" class="form-control"
+                   placeholder="Target branch, blank = current branch"
+                   onkeydown="handleMergeModalKey(event)">
+        </div>
+        <div style="display: flex; justify-content: flex-end; gap: 10px;">
+            <button type="button" class="btn" style="background: rgba(255,255,255,0.08); color: var(--text-primary);" onclick="closeMergeModal()">Cancel</button>
+            <button type="button" class="btn" onclick="submitMergeWithBranches()" style="background: linear-gradient(135deg, #f59e0b, #d97706); color: white; box-shadow: 0 4px 12px rgba(245, 158, 11, 0.25);">Merge Branches</button>
         </div>
     </div>
 </div>
@@ -365,6 +504,19 @@
         transform: translateY(0);
     }
 
+    .git-btn-merge {
+        background: linear-gradient(135deg, #f59e0b, #d97706) !important;
+        box-shadow: 0 4px 12px rgba(245, 158, 11, 0.25) !important;
+    }
+    .git-btn-merge:hover {
+        background: linear-gradient(135deg, #fbbf24, #f59e0b) !important;
+        box-shadow: 0 6px 18px rgba(245, 158, 11, 0.45) !important;
+        transform: translateY(-2px);
+    }
+    .git-btn-merge:active {
+        transform: translateY(0);
+    }
+
     .git-btn-push {
         background: linear-gradient(135deg, #f97316, #ea580c) !important;
         box-shadow: 0 4px 12px rgba(249, 115, 22, 0.25) !important;
@@ -387,6 +539,9 @@
     }
     html[data-theme="light"] .git-btn-commit {
         box-shadow: 0 4px 12px rgba(16, 185, 129, 0.15) !important;
+    }
+    html[data-theme="light"] .git-btn-merge {
+        box-shadow: 0 4px 12px rgba(245, 158, 11, 0.15) !important;
     }
     html[data-theme="light"] .git-btn-push {
         box-shadow: 0 4px 12px rgba(249, 115, 22, 0.15) !important;
@@ -671,36 +826,87 @@
         handleHashChange();
     });
 
+    function getSelectedProjectPath() {
+        const sel = document.getElementById('runProject');
+        const opt = sel.options[sel.selectedIndex];
+        return (opt && opt.getAttribute('data-path')) ? opt.getAttribute('data-path').trim() : '';
+    }
+
+    function getSelectedProjectId() {
+        const sel = document.getElementById('runProject');
+        return sel && sel.value ? parseInt(sel.value, 10) : null;
+    }
+
+    function getSelectedProjectName() {
+        const sel = document.getElementById('runProject');
+        const opt = sel.options[sel.selectedIndex];
+        return (opt && opt.getAttribute('data-project-name')) ? opt.getAttribute('data-project-name').trim() : '';
+    }
+
+    function syncRunnerSelectionToGlobalActiveProject() {
+        const runnerProjectId = getSelectedProjectId();
+        const globalSelect = document.getElementById('globalActiveProject');
+        if (!globalSelect || !runnerProjectId) return;
+        if (String(globalSelect.value || '') === String(runnerProjectId)) return;
+
+        const matchingOption = Array.from(globalSelect.options).find(opt => String(opt.value) === String(runnerProjectId));
+        if (!matchingOption) return;
+
+        globalSelect.value = String(runnerProjectId);
+        setGlobalActiveProject(globalSelect);
+    }
+
+    async function loadRecommendedCommands(opt) {
+        const seqCommands = document.getElementById('seqCommands');
+        if (!opt || !seqCommands) return;
+
+        const savedCommands = opt.getAttribute('data-cmds') || '';
+        try {
+            const res = await fetch('/api/script-runner/project-commands', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    project_path: getSelectedProjectPath(),
+                    language: opt.getAttribute('data-lang') || '',
+                    framework: opt.getAttribute('data-fw') || '',
+                    tool: opt.getAttribute('data-tool') || '',
+                    saved_commands: savedCommands
+                })
+            });
+            const json = await res.json();
+            if (json.status === 'success' && json.data) {
+                seqCommands.value = json.data.commands || '';
+                if (json.data.warning) {
+                    addLog(json.data.warning, 'log-warn');
+                }
+                return;
+            }
+        } catch (e) {
+            console.error('Failed to load recommended commands', e);
+        }
+
+        seqCommands.value = savedCommands;
+    }
+
     function onProjectSelect(autoSetMode = true) {
         const sel = document.getElementById('runProject');
         const opt = sel.options[sel.selectedIndex];
         const modeDiv = document.getElementById('modeSelection');
 
         if (sel.value) {
+            syncRunnerSelectionToGlobalActiveProject();
             modeDiv.style.display = 'flex';
             if (document.getElementById('executionAction')) document.getElementById('executionAction').style.display = 'block';
 
             // Load Git config if any
-            const pPath = opt.getAttribute('data-path');
-            const pName = sel.value;
-            let fullPath = pPath;
-            if (pPath && pName) {
-                const pathNormalized = pPath.replace(/\\/g, '/');
-                const nameNormalized = pName.replace(/\\/g, '/');
-                if (!pathNormalized.endsWith('/' + nameNormalized) && !pathNormalized.endsWith(nameNormalized)) {
-                    const sep = pPath.includes('\\') ? '\\' : '/';
-                    fullPath = pPath.endsWith(sep) ? pPath + pName : pPath + sep + pName;
-                }
-            }
-            loadGitConfig(fullPath);
+            const projectId = getSelectedProjectId();
+            const fullPath = getSelectedProjectPath();
+            loadGitConfig(projectId, fullPath);
             checkProjectDependencies(fullPath,
                 document.getElementById('runDepCheckRow'),
                 document.getElementById('runDepCheckList'));
 
-            const cmds = opt.getAttribute('data-cmds');
-            if (cmds && document.getElementById('seqCommands')) {
-                document.getElementById('seqCommands').value = cmds;
-            }
+            loadRecommendedCommands(opt);
             if (autoSetMode) {
                 setMode('seq');
             }
@@ -725,8 +931,8 @@
         const log = document.getElementById('logOutput');
 
         // Reset all buttons
-        if (btnSeq) btnSeq.style.background = 'rgba(255,255,255,0.1)';
-        if (btnGit) btnGit.style.background = 'rgba(255,255,255,0.1)';
+        if (btnSeq) btnSeq.className = 'btn btn-primary mode-toggle-btn mode-inactive';
+        if (btnGit) btnGit.className = 'btn btn-secondary mode-toggle-btn mode-inactive';
 
         // Hide all divs
         if (seqConfigDiv) seqConfigDiv.style.display = 'none';
@@ -736,22 +942,25 @@
         if (mode === 'seq') {
             if (seqConfigDiv) seqConfigDiv.style.display = 'block';
             if (document.getElementById('executionAction')) document.getElementById('executionAction').style.display = 'block';
-            if (btnSeq) btnSeq.style.background = '#6366f1';
+            if (btnSeq) btnSeq.className = 'btn btn-primary mode-toggle-btn mode-active-seq';
             log.innerHTML = `<div style="color: #94a3b8;">[System] Mode: Sequential Run. Enter the commands you want to run in sequence.</div>`;
             updateStepperActiveStep(3);
             if (window.location.hash !== '#execution') window.location.hash = 'execution';
         } else if (mode === 'git') {
             if (gitConfigDiv) gitConfigDiv.style.display = 'block';
-            if (btnGit) btnGit.style.background = '#ea580c';
+            if (btnGit) btnGit.className = 'btn btn-secondary mode-toggle-btn mode-active-git';
             log.innerHTML = `<div style="color: #cbd5e1;">[System] Version Control Mode activated. You can use Native Git buttons or Ask AI for assistance.</div>`;
             updateStepperActiveStep(4);
             if (window.location.hash !== '#git') window.location.hash = 'git';
         }
     }
 
-    async function loadGitConfig(projectPath) {
+    async function loadGitConfig(projectId, projectPath) {
         try {
-            const res = await fetch(`/api/get-git-config?project_path=${encodeURIComponent(projectPath)}`);
+            const params = new URLSearchParams();
+            if (projectId) params.append('project_id', String(projectId));
+            if (projectPath) params.append('project_path', projectPath);
+            const res = await fetch(`/api/get-git-config?${params.toString()}`);
             const json = await res.json();
             if (json.status === 'success' && json.data) {
                 document.getElementById('gitRepoUrl').value = json.data.repo_url || '';
@@ -768,17 +977,8 @@
         const opt = sel.options[sel.selectedIndex];
         if (!opt.value) return showToast('Please select a project first', 'error');
 
-        const pPath = opt.getAttribute('data-path');
-        const pName = sel.value;
-        let projectPath = pPath;
-        if (pPath && pName) {
-            const pathNormalized = pPath.replace(/\\/g, '/');
-            const nameNormalized = pName.replace(/\\/g, '/');
-            if (!pathNormalized.endsWith('/' + nameNormalized) && !pathNormalized.endsWith(nameNormalized)) {
-                const sep = pPath.includes('\\') ? '\\' : '/';
-                projectPath = pPath.endsWith(sep) ? pPath + pName : pPath + sep + pName;
-            }
-        }
+        const projectId = getSelectedProjectId();
+        const projectPath = getSelectedProjectPath();
         const repoUrl = document.getElementById('gitRepoUrl').value;
         const username = document.getElementById('gitUsername').value;
         const token = document.getElementById('gitToken').value;
@@ -788,7 +988,7 @@
             const res = await fetch('/api/save-git-config', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ project_path: projectPath, repo_url: repoUrl, username: username, access_token: token })
+                body: JSON.stringify({ project_id: projectId, project_path: projectPath, repo_url: repoUrl, username: username, access_token: token })
             });
             const json = await res.json();
             if (json.status === 'success') {
@@ -828,21 +1028,12 @@
         }
 
         const log = document.getElementById('logOutput');
+        focusExecutionLogs();
         log.innerHTML += `<div><span style="color: #34d399; font-weight: bold;">$</span> ${cmd}</div>`;
         input.value = 'Executing...';
         input.disabled = true;
 
-        const pPath = opt.getAttribute('data-path');
-        const pName = sel.value;
-        let projectPath = pPath;
-        if (pPath && pName) {
-            const pathNormalized = pPath.replace(/\\/g, '/');
-            const nameNormalized = pName.replace(/\\/g, '/');
-            if (!pathNormalized.endsWith('/' + nameNormalized) && !pathNormalized.endsWith(nameNormalized)) {
-                const sep = pPath.includes('\\') ? '\\' : '/';
-                projectPath = pPath.endsWith(sep) ? pPath + pName : pPath + sep + pName;
-            }
-        }
+        const projectPath = getSelectedProjectPath();
 
         try {
             const response = await fetch('/api/git/execute-command', {
@@ -879,11 +1070,34 @@
         modal.classList.remove('active');
     }
 
+    function openMergeModal() {
+        const modal = document.getElementById('mergeBranchModal');
+        modal.classList.add('active');
+        const sourceInput = document.getElementById('mergeSourceBranchInput');
+        const targetInput = document.getElementById('mergeTargetBranchInput');
+        sourceInput.value = '';
+        targetInput.value = '';
+        sourceInput.focus();
+    }
+
+    function closeMergeModal() {
+        const modal = document.getElementById('mergeBranchModal');
+        modal.classList.remove('active');
+    }
+
     function handleCommitModalKey(e) {
         if (e.key === 'Enter') {
             submitCommitWithMsg();
         } else if (e.key === 'Escape') {
             closeCommitModal();
+        }
+    }
+
+    function handleMergeModalKey(e) {
+        if (e.key === 'Enter') {
+            submitMergeWithBranches();
+        } else if (e.key === 'Escape') {
+            closeMergeModal();
         }
     }
 
@@ -894,34 +1108,47 @@
         await runGitActionActual('commit', msg);
     }
 
+    async function submitMergeWithBranches() {
+        const sourceInput = document.getElementById('mergeSourceBranchInput');
+        const targetInput = document.getElementById('mergeTargetBranchInput');
+        const sourceBranch = sourceInput.value.trim();
+        const targetBranch = targetInput.value.trim();
+
+        if (!sourceBranch) {
+            showToast('Please enter a source branch to merge', 'warning');
+            sourceInput.focus();
+            return;
+        }
+
+        closeMergeModal();
+        await runGitActionActual('merge', null, {
+            merge_source_branch: sourceBranch,
+            merge_target_branch: targetBranch
+        });
+    }
+
     async function runGitAction(action) {
         if (action === 'commit') {
             openCommitModal();
+        } else if (action === 'merge') {
+            openMergeModal();
         } else {
             await runGitActionActual(action);
         }
     }
 
-    async function runGitActionActual(action, commitMessage = null) {
+    async function runGitActionActual(action, commitMessage = null, extraPayload = {}) {
         const sel = document.getElementById('runProject');
         const opt = sel.options[sel.selectedIndex];
         if (!opt.value) return showToast('Please select a project first', 'error');
 
-        const pPath = opt.getAttribute('data-path');
-        const pName = sel.value;
-        let projectPath = pPath;
-        if (pPath && pName) {
-            const pathNormalized = pPath.replace(/\\/g, '/');
-            const nameNormalized = pName.replace(/\\/g, '/');
-            if (!pathNormalized.endsWith('/' + nameNormalized) && !pathNormalized.endsWith(nameNormalized)) {
-                const sep = pPath.includes('\\') ? '\\' : '/';
-                projectPath = pPath.endsWith(sep) ? pPath + pName : pPath + sep + pName;
-            }
-        }
+        const projectPath = getSelectedProjectPath();
+        const projectId = getSelectedProjectId();
+        focusExecutionLogs();
         addLog(`[Git] Executing native action: ${action.toUpperCase()}...`, "log-cmd");
 
         try {
-            const payload = { action: action, project_path: projectPath };
+            const payload = { action: action, project_id: projectId, project_path: projectPath, ...extraPayload };
             if (action === 'commit' && commitMessage) {
                 payload.commit_message = commitMessage;
             }
@@ -937,10 +1164,20 @@
                 addLog(json.output || "Done.", "log-default");
             } else {
                 addLog(`[Error] ${json.message}`, "log-error");
+                renderGitHints(json.hints);
             }
         } catch (e) {
             addLog(`[Error] ${e.message}`, "log-error");
         }
+    }
+
+    function renderGitHints(hints) {
+        if (!Array.isArray(hints) || hints.length === 0) return;
+
+        addLog("[Hint] Suggested next steps:", "log-system");
+        hints.forEach((hint, index) => {
+            addLog(`${index + 1}. ${hint}`, "log-system");
+        });
     }
 
     async function runMcpGitAction() {
@@ -949,36 +1186,35 @@
         if (!opt.value) return showToast('Select project first', 'error');
 
         const input = document.getElementById('gitMcpInput');
+        const modeSelect = document.getElementById('gitMcpMode');
         const prompt = input.value.trim();
         if (!prompt) return showToast('Please enter a prompt for the AI', 'warning');
 
-        const pPath = opt.getAttribute('data-path');
-        const pName = sel.value;
-        let projectPath = pPath;
-        if (pPath && pName) {
-            const pathNormalized = pPath.replace(/\\/g, '/');
-            const nameNormalized = pName.replace(/\\/g, '/');
-            if (!pathNormalized.endsWith('/' + nameNormalized) && !pathNormalized.endsWith(nameNormalized)) {
-                const sep = pPath.includes('\\') ? '\\' : '/';
-                projectPath = pPath.endsWith(sep) ? pPath + pName : pPath + sep + pName;
-            }
-        }
+        const projectPath = getSelectedProjectPath();
+        const projectId = getSelectedProjectId();
+        const assistantMode = (modeSelect && modeSelect.value) ? modeSelect.value : 'explain';
         input.value = '';
         input.disabled = true;
+        if (modeSelect) modeSelect.disabled = true;
 
-        addLog(`[MCP Assistant] Analyzing prompt: "${prompt}"...`, "log-cmd");
+        const modeLabel = assistantMode === 'execute' ? 'Perform Action' : 'Explain Only';
+        focusExecutionLogs();
+        addLog(`[MCP Assistant] Mode: ${modeLabel}. Prompt: "${prompt}"`, "log-cmd");
 
         try {
             const res = await fetch('/api/git/mcp-action', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ prompt: prompt, project_path: projectPath })
+                body: JSON.stringify({ prompt: prompt, project_id: projectId, project_path: projectPath, assistant_mode: assistantMode })
             });
             const json = await res.json();
             if (json.success) {
-                addLog(`[MCP Success] ${json.message}`, "log-success");
+                const isNotice = json.mode === 'notice';
+                const headerLabel = isNotice ? '[MCP Notice]' : '[MCP Success]';
+                const headerClass = isNotice ? 'log-system' : 'log-success';
+                addLog(`${headerLabel} ${json.message}`, headerClass);
                 if (json.output) {
-                    addLog(json.output, "log-default");
+                    addLog(json.output, isNotice ? 'log-system' : 'log-default');
                 }
             } else {
                 addLog(`[MCP Error] ${json.message}`, "log-error");
@@ -987,6 +1223,7 @@
             addLog(`[MCP Error] ${e.message}`, "log-error");
         } finally {
             input.disabled = false;
+            if (modeSelect) modeSelect.disabled = false;
         }
     }
 
@@ -997,16 +1234,32 @@
         const line = document.createElement('div');
         line.className = 'log-line';
 
-        let colorClass = 'log-default';
-        if (msg.includes('[Step')) colorClass = 'log-cmd';
-        else if (msg.includes('[Error]') || msg.includes('Failed') || msg.includes('Critical')) colorClass = 'log-error';
-        else if (msg.includes('[Success]') || msg.includes('Completed Successfully')) colorClass = 'log-success';
-        else if (msg.includes('[System]') || msg.includes('[Sequential Mode]')) colorClass = 'log-system';
+        let colorClass = type && type !== 'default' ? type : 'log-default';
+        if (colorClass === 'log-default') {
+            if (msg.includes('[Step')) colorClass = 'log-cmd';
+            else if (msg.includes('[Error]') || msg.includes('[MCP Error]') || msg.includes('Failed') || msg.includes('Critical')) colorClass = 'log-error';
+            else if (msg.includes('[Success]') || msg.includes('[MCP Success]') || msg.includes('Completed Successfully')) colorClass = 'log-success';
+            else if (msg.includes('[System]') || msg.includes('[Sequential Mode]')) colorClass = 'log-system';
+        }
 
         line.classList.add(colorClass);
         line.textContent = msg;
         log.appendChild(line);
         log.scrollTop = log.scrollHeight;
+    }
+
+    function focusExecutionLogs() {
+        const panel = document.getElementById('executionLogsPanel');
+        const log = document.getElementById('logOutput');
+        const scrollTarget = log || panel;
+        if (!scrollTarget) return;
+
+        requestAnimationFrame(() => {
+            if (log) {
+                log.scrollTop = log.scrollHeight;
+            }
+            scrollTarget.scrollIntoView({ behavior: 'smooth', block: 'end' });
+        });
     }
 
     function updateStepper(step, total, status) {
@@ -1087,7 +1340,8 @@
 
         const params = new URLSearchParams({
             project: JSON.stringify({
-                name: opt.value,
+                id: getSelectedProjectId(),
+                name: getSelectedProjectName(),
                 path: opt.getAttribute('data-path'),
                 lang: opt.getAttribute('data-lang'),
                 fw: opt.getAttribute('data-fw'),

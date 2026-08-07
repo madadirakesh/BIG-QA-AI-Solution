@@ -3,12 +3,6 @@ import base64
 from datetime import datetime
 from dotenv import load_dotenv
 from selenium import webdriver
-from selenium.webdriver.chrome.service import Service as ChromeService
-from selenium.webdriver.firefox.service import Service as FirefoxService
-from selenium.webdriver.edge.service import Service as EdgeService
-from webdriver_manager.chrome import ChromeDriverManager
-from webdriver_manager.firefox import GeckoDriverManager
-from webdriver_manager.microsoft import EdgeChromiumDriverManager
 
 
 def _decrypt_env_password():
@@ -55,21 +49,31 @@ def before_scenario(context, scenario):
 
 def after_scenario(context, scenario):
     """Capture screenshot on failure, then tear down the driver."""
+    driver = getattr(context, "driver", None)
+    if driver is None:
+        return
+
     if scenario.status == "failed":
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         safe_name = scenario.name.replace(" ", "_").replace("/", "-")
         screenshot_path = f"Results/screenshots/{safe_name}_{timestamp}.png"
-        context.driver.save_screenshot(screenshot_path)
-        # context.embed only exists when an embed-capable formatter (e.g. the HTML formatter) is
-        # active; with the plain/default formatter it is absent, so guard to avoid a hook crash.
-        if hasattr(context, "embed"):
-            with open(screenshot_path, "rb") as img_file:
-                context.embed(
-                    mime_type="image/png",
-                    data=base64.b64encode(img_file.read()).decode("utf-8"),
-                    caption=f"Failure screenshot: {scenario.name}",
-                )
-    context.driver.quit()
+        try:
+            driver.save_screenshot(screenshot_path)
+            # context.embed only exists when an embed-capable formatter (e.g. the HTML formatter) is
+            # active; with the plain/default formatter it is absent, so guard to avoid a hook crash.
+            if hasattr(context, "embed"):
+                with open(screenshot_path, "rb") as img_file:
+                    context.embed(
+                        mime_type="image/png",
+                        data=base64.b64encode(img_file.read()).decode("utf-8"),
+                        caption=f"Failure screenshot: {scenario.name}",
+                    )
+        except Exception:
+            pass
+    try:
+        driver.quit()
+    except Exception:
+        pass
 
 
 def after_all(context):
@@ -78,23 +82,21 @@ def after_all(context):
 
 
 def _create_driver(browser_name: str, headless: bool):
-    """Factory function to create the appropriate WebDriver instance."""
+    """Factory function to create the appropriate WebDriver instance.
+
+    Selenium 4 ships with Selenium Manager, so we avoid webdriver_manager network calls here.
+    That keeps local execution stable even when external driver downloads are flaky or blocked.
+    """
     if browser_name == "firefox":
         options = webdriver.FirefoxOptions()
         if headless:
             options.add_argument("--headless")
-        return webdriver.Firefox(
-            service=FirefoxService(GeckoDriverManager().install()),
-            options=options,
-        )
+        return webdriver.Firefox(options=options)
     elif browser_name == "edge":
         options = webdriver.EdgeOptions()
         if headless:
             options.add_argument("--headless")
-        return webdriver.Edge(
-            service=EdgeService(EdgeChromiumDriverManager().install()),
-            options=options,
-        )
+        return webdriver.Edge(options=options)
     else:  # Default: Chrome
         options = webdriver.ChromeOptions()
         if headless:
@@ -102,7 +104,4 @@ def _create_driver(browser_name: str, headless: bool):
         options.add_argument("--no-sandbox")
         options.add_argument("--disable-dev-shm-usage")
         options.add_argument("--ignore-certificate-errors")
-        return webdriver.Chrome(
-            service=ChromeService(ChromeDriverManager().install()),
-            options=options,
-        )
+        return webdriver.Chrome(options=options)

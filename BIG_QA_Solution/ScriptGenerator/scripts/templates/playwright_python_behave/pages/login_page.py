@@ -10,8 +10,8 @@ class LoginPage(BasePage):
     locators with real ones for genuine tests.
     """
 
-    USERNAME_INPUT = "#txtUserID, input[type='email'], input[name*='user' i], input[id*='user' i], input[type='text']"
-    PASSWORD_INPUT = "#txtPassword, input[type='password']"
+    USERNAME_INPUT = "#txtUserID, input[autocomplete='username'], input[placeholder*='username' i], input[placeholder*='email' i], input[type='email'], input[name*='user' i], input[id*='user' i], input[type='text']"
+    PASSWORD_INPUT = "#txtPassword, input[autocomplete='current-password'], input[placeholder*='password' i], input[type='password']"
     LOGIN_BUTTON = "#sub, button[type='submit'], input[type='submit'], button:has-text('Login'), button:has-text('Sign in')"
 
     def enter_username(self, username: str):

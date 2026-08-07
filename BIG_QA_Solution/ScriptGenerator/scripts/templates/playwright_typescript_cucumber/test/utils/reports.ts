@@ -4,14 +4,18 @@ const path = require('path');
 
 let resultDir = process.env.RESULT_DIR;
 if (!resultDir) {
-    // Find the latest timestamped folder
-    const resultsPath = path.join(process.cwd(), 'results');
-    const folders = fs.readdirSync(resultsPath).filter(f => fs.statSync(path.join(resultsPath, f)).isDirectory());
-    folders.sort((a, b) => fs.statSync(path.join(resultsPath, b)).mtime - fs.statSync(path.join(resultsPath, a)).mtime);
-    resultDir = folders.length > 0 ? path.join('results', folders[0]) : 'results';
+    // Find the latest timestamped folder that actually contains a JSON report.
+    const resultsPath = process.env.RESULTS_ROOT || path.join(process.cwd(), 'Results');
+    const folders = fs.readdirSync(resultsPath)
+        .filter(f => fs.statSync(path.join(resultsPath, f)).isDirectory())
+        .sort((a, b) => fs.statSync(path.join(resultsPath, b)).mtimeMs - fs.statSync(path.join(resultsPath, a)).mtimeMs);
+    const folderWithJson = folders.find((folder) =>
+        fs.existsSync(path.join(resultsPath, folder, 'cucumber_report.json'))
+    );
+    resultDir = folderWithJson ? path.join(resultsPath, folderWithJson) : resultsPath;
 }
 
-const jsonPath = path.join(process.cwd(), resultDir, 'cucumber_report.json');
+const jsonPath = path.join(resultDir, 'cucumber_report.json');
 
 // ARCHITECTURAL CHECK: Prevent crash if tests didn't run
 if (!fs.existsSync(jsonPath)) {
@@ -22,7 +26,7 @@ if (!fs.existsSync(jsonPath)) {
 const options = {
     theme: 'bootstrap',
     jsonFile: jsonPath,
-    output: path.join(process.cwd(), resultDir, 'cucumber_report.html'),
+    output: path.join(resultDir, 'cucumber_report.html'),
     reportSuiteAsScenarios: true,
     scenarioTimestamp: true,
     launchReport: true

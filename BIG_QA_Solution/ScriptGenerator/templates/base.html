@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="csrf-token" content="{{ csrf_token() }}">
     <title>{% block title %}BIG AI QA Solution{% endblock %}</title>
     <link rel="icon" type="image/png" href="{{ url_for('static', filename='favicon.png') }}">
     <!-- Resource Preconnects -->
@@ -13,10 +14,85 @@
     <!-- Google Fonts -->
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <!-- Font Awesome -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" integrity="sha512-iecdLmaskl7CVkqkXNQ/ZH/XLlvWZOJyj7Yy7tcenmpD1ypASozpmT/E0iPtmFIB46ZmdtAc9eNBvH0H/ZpiBw==" crossorigin="anonymous" referrerpolicy="no-referrer">
     <!-- Custom CSS -->
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=2.4">
     {% block extra_css %}{% endblock %}
+
+    <!-- Global Anti-CSRF Fetch Interceptor -->
+    <script>
+        (function() {
+            const originalFetch = window.fetch;
+            window.fetch = async function(input, init) {
+                init = init || {};
+                const method = (init.method || 'GET').toUpperCase();
+                
+                if (['POST', 'PUT', 'DELETE', 'PATCH'].includes(method)) {
+                    let urlString = "";
+                    if (typeof input === 'string') {
+                        urlString = input;
+                    } else if (input instanceof URL) {
+                        urlString = input.href;
+                    } else if (input && input.url) {
+                        urlString = input.url;
+                    }
+
+                    const isFastAPI = urlString.includes(':8000') || urlString.includes('/generate-') || urlString.includes('/task');
+                    
+                    init.headers = init.headers || {};
+                    let headersObj = init.headers;
+                    
+                    if (isFastAPI) {
+                        const fastapiToken = window.fastapiCsrfToken;
+                        if (fastapiToken) {
+                            if (headersObj instanceof Headers) {
+                                if (!headersObj.has('X-CSRF-Token')) {
+                                    headersObj.append('X-CSRF-Token', fastapiToken);
+                                }
+                            } else {
+                                if (!headersObj['X-CSRF-Token']) {
+                                    headersObj['X-CSRF-Token'] = fastapiToken;
+                                }
+                            }
+                        }
+                        init.credentials = 'include';
+                    } else {
+                        const tokenMeta = document.querySelector('meta[name="csrf-token"]');
+                        if (tokenMeta && tokenMeta.content) {
+                            if (headersObj instanceof Headers) {
+                                if (!headersObj.has('X-CSRFToken')) {
+                                    headersObj.append('X-CSRFToken', tokenMeta.content);
+                                }
+                            } else {
+                                if (!headersObj['X-CSRFToken']) {
+                                    headersObj['X-CSRFToken'] = tokenMeta.content;
+                                }
+                            }
+                        }
+                    }
+                }
+                return originalFetch(input, init);
+            };
+            
+            async function initFastAPICSRF() {
+                try {
+                    const r = await originalFetch('http://127.0.0.1:8000/csrf-token', { credentials: 'include' });
+                    if (r.ok) {
+                        const d = await r.json();
+                        window.fastapiCsrfToken = d.csrf_token;
+                    }
+                } catch (e) {
+                    console.warn("FastAPI CSRF initialization deferred or failed:", e);
+                }
+            }
+            
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', initFastAPICSRF);
+            } else {
+                initFastAPICSRF();
+            }
+        })();
+    </script>
 </head>
 <body class="{% if not session.get('user_id') %}login-bg{% else %}app-bg{% endif %} dark-theme">
 
@@ -197,6 +273,27 @@
             document.getElementById('sidebarOverlay')?.classList.remove('active');
         }
 
+        function getDefaultAiModel(tool) {
+            const normalized = (tool || '').trim().toUpperCase();
+            if (normalized === 'GEMINI') return 'gemini-2.5-flash';
+            if (normalized === 'ANTHROPIC') return 'claude-sonnet-4-6';
+            if (normalized === 'OPENAI') return 'gpt-4.1-mini';
+            return '';
+        }
+
+        function suggestAiModel(force = false) {
+            const toolInput = document.getElementById('aiToolSelect');
+            const modelInput = document.getElementById('aiModelInput');
+            if (!toolInput || !modelInput) return;
+
+            const suggestedModel = getDefaultAiModel(toolInput.value);
+            if (!suggestedModel) return;
+
+            if (force || !modelInput.value.trim()) {
+                modelInput.value = suggestedModel;
+            }
+        }
+
         // ── H7: Configure AI link — active state when modal open ───────
         function openConfigureAIModal() {
             document.getElementById('configureAIModal').style.display = 'flex';
@@ -206,6 +303,7 @@
                     document.getElementById('aiToolSelect').value = d.config.AI_TOOL || '';
                     document.getElementById('aiModelInput').value = d.config.AI_MODEL || '';
                     document.getElementById('apiKeyInput').value = d.config.API_KEY || '';
+                    suggestAiModel();
                 }
             }).catch(() => {});
         }

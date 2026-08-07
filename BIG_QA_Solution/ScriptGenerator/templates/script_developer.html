@@ -361,7 +361,21 @@
             <div id="resultContent" style="display: none;">
                 <div class="alert alert-success"><i class="fas fa-check-circle"></i> Code generated successfully!</div>
 
-                <div class="code-results mt-4" id="codeBlocksContainer">
+                <div class="d-flex justify-content-between align-items-center mt-4 mb-2" style="flex-wrap: wrap; gap: 10px;">
+                    <h4 class="text-light mb-0" style="font-size: 1.1rem; font-weight: 600; display: flex; align-items: center; gap: 8px;">
+                        <i class="fas fa-file-code text-primary"></i> Generated Files
+                    </h4>
+                    <div class="d-flex gap-2">
+                        <button type="button" class="copy-btn" onclick="toggleAllCodeWindows(false)">
+                            <i class="fas fa-compress-alt"></i> Collapse All
+                        </button>
+                        <button type="button" class="copy-btn" onclick="toggleAllCodeWindows(true)">
+                            <i class="fas fa-expand-alt"></i> Expand All
+                        </button>
+                    </div>
+                </div>
+
+                <div class="code-results" id="codeBlocksContainer" style="margin-top: 10px;">
                     <!-- Dynamic code blocks will be injected here -->
                 </div>
 
@@ -398,9 +412,12 @@
                     <div class="form-col">
                         <div class="form-group">
                             <label><i class="fas fa-tag"></i> Project Name <span class="required-mark">*</span></label>
-                            <select id="bsProjectName" class="form-control" onchange="handleBsProjectSelect()">
-                                <option value="">-- Choose Project --</option>
-                            </select>
+                            <div class="select-shell">
+                                <select id="bsProjectName" class="form-control" onchange="handleBsProjectSelect()">
+                                    <option value="">-- Choose Project --</option>
+                                </select>
+                                <span class="select-shell-icon" aria-hidden="true"><i class="fas fa-chevron-down"></i></span>
+                            </div>
                             <small class="error-text" id="bsProjectNameError"></small>
                             <small class="help-text" style="margin-top: 8px;">
                                 <i class="fas fa-info-circle" style="color: var(--accent-primary); margin-right: 4px;"></i>if the project name not found, please configure the project in configurations module.
@@ -423,19 +440,25 @@
                     <div class="form-col">
                         <div class="form-group">
                             <label><i class="fas fa-tools"></i> Automation Tool</label>
-                            <select id="bsTool" class="form-control" onchange="updateBsOptions()">
-                                <option value="Selenium">Selenium</option>
-                                <option value="Playwright">Playwright</option>
-                            </select>
+                            <div class="select-shell">
+                                <select id="bsTool" class="form-control" onchange="updateBsOptions()">
+                                    <option value="Selenium">Selenium</option>
+                                    <option value="Playwright">Playwright</option>
+                                </select>
+                                <span class="select-shell-icon" aria-hidden="true"><i class="fas fa-chevron-down"></i></span>
+                            </div>
                             <small class="help-text">Choose your core automation engine.</small>
                         </div>
                     </div>
                     <div class="form-col">
                         <div class="form-group">
                             <label><i class="fas fa-code"></i> Language</label>
-                            <select id="bsLanguage" class="form-control" onchange="updateBsOptions()">
-                                <!-- Dynamic -->
-                            </select>
+                            <div class="select-shell">
+                                <select id="bsLanguage" class="form-control" onchange="updateBsOptions()">
+                                    <!-- Dynamic -->
+                                </select>
+                                <span class="select-shell-icon" aria-hidden="true"><i class="fas fa-chevron-down"></i></span>
+                            </div>
                             <small class="help-text">Primary coding language.</small>
                         </div>
                     </div>
@@ -444,18 +467,24 @@
                     <div class="form-col">
                         <div class="form-group">
                             <label><i class="fas fa-vial"></i> BDD / Framework</label>
-                            <select id="bsFramework" class="form-control">
-                                <!-- Dynamic -->
-                            </select>
+                            <div class="select-shell">
+                                <select id="bsFramework" class="form-control">
+                                    <!-- Dynamic -->
+                                </select>
+                                <span class="select-shell-icon" aria-hidden="true"><i class="fas fa-chevron-down"></i></span>
+                            </div>
                             <small class="help-text">Test runner and structure.</small>
                         </div>
                     </div>
                     <div class="form-col">
                         <div class="form-group">
                             <label><i class="fas fa-box-open"></i> Package Manager</label>
-                            <select id="bsPackageManager" class="form-control">
-                                <!-- Dynamic -->
-                            </select>
+                            <div class="select-shell">
+                                <select id="bsPackageManager" class="form-control">
+                                    <!-- Dynamic -->
+                                </select>
+                                <span class="select-shell-icon" aria-hidden="true"><i class="fas fa-chevron-down"></i></span>
+                            </div>
                             <small class="help-text">How libraries are installed.</small>
                         </div>
                     </div>
@@ -466,10 +495,13 @@
                     <div class="form-col">
                         <div class="form-group">
                             <label><i class="fas fa-layer-group"></i> Version Profile <span style="color:#e74c3c">*</span></label>
-                            <select id="bsVersionProfile" class="form-control" onchange="clearFieldError('bsVersionProfile'); refreshDependencyCheck()">
-                                <!-- Dynamic -->
-                            </select>
-                            <small class="help-text">Validated dependency versions for this stack.</small>
+                            <div class="select-shell">
+                                <select id="bsVersionProfile" class="form-control" onchange="clearFieldError('bsVersionProfile'); refreshDependencyCheck()">
+                                    <!-- Dynamic -->
+                                </select>
+                                <span class="select-shell-icon" aria-hidden="true"><i class="fas fa-chevron-down"></i></span>
+                            </div>
+                            <small class="help-text" id="bsVersionProfileHint">Validated dependency versions for this stack.</small>
                             <small class="error-text" id="bsVersionProfileError"></small>
                         </div>
                     </div>
@@ -845,6 +877,32 @@
     }
     .copy-btn:hover { background: var(--accent-primary); color: white; }
 
+    /* Code block collapse / expand styling */
+    .code-content {
+        transition: max-height 0.3s ease-out, padding 0.3s ease-out, margin 0.3s ease-out, opacity 0.3s ease-out;
+        max-height: 2000px;
+        overflow: auto;
+        opacity: 1;
+    }
+    .code-content.collapsed {
+        max-height: 0 !important;
+        padding-top: 0 !important;
+        padding-bottom: 0 !important;
+        margin-top: 0 !important;
+        margin-bottom: 0 !important;
+        opacity: 0;
+        overflow: hidden;
+    }
+    .toggle-icon {
+        transition: transform 0.2s ease-in-out;
+        display: inline-block;
+        font-size: 0.8rem;
+        color: var(--text-secondary);
+    }
+    .toggle-icon.collapsed {
+        transform: rotate(-90deg);
+    }
+
     /* Transitions */
     #existingProjectSection, #newProjectSection {
         animation: fadeIn 0.4s ease-out;
@@ -1055,6 +1113,28 @@
         background-size: 18px !important;
         padding-right: 45px !important;
         cursor: pointer;
+    }
+    #bootstrapperModal .select-shell {
+        position: relative;
+        width: 100%;
+    }
+    #bootstrapperModal .select-shell-icon {
+        position: absolute;
+        top: 50%;
+        right: 16px;
+        transform: translateY(-50%);
+        pointer-events: none;
+        opacity: 0.95;
+        color: #ea6c0b;
+        font-size: 0.9rem;
+        line-height: 1;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+    }
+    #bootstrapperModal .select-shell > select.form-control {
+        background-image: none !important;
+        padding-right: 48px !important;
     }
 
     /* Force Stacking and Centering for Project Creator Card */
@@ -1686,6 +1766,7 @@ function updateBsOptions() {
 function updateVersionProfiles() {
     const row = document.getElementById('bsVersionProfileRow');
     const select = document.getElementById('bsVersionProfile');
+    const hint = document.getElementById('bsVersionProfileHint');
     const params = new URLSearchParams({
         tool: document.getElementById('bsTool').value,
         language: document.getElementById('bsLanguage').value,
@@ -1695,21 +1776,35 @@ function updateVersionProfiles() {
         .then(r => r.json())
         .then(data => {
             const profiles = data.profiles || [];
+            const recommended = data.recommended || '';
+            const recommendationReason = data.recommendationReason || '';
             select.innerHTML = "";
             clearFieldError('bsVersionProfile');
-            // Placeholder so nothing is pre-selected — the user must choose explicitly.
+
+            if (hint) {
+                hint.textContent = recommendationReason || 'Validated dependency versions for this stack.';
+            }
+
+            // Placeholder so nothing is pre-selected when we cannot recommend a profile.
             const placeholder = new Option("-- Select a version --", "");
             placeholder.disabled = true;
-            placeholder.selected = true;
+            placeholder.selected = !recommended;
             select.add(placeholder);
             profiles.forEach(p => select.add(new Option(p, p)));
+            if (recommended && profiles.includes(recommended)) {
+                select.value = recommended;
+            }
             row.style.display = profiles.length ? '' : 'none';
-            // Stack just changed -> refresh the dependency pre-check. No profile is selected yet
-            // (the placeholder is), so version-pinned tools (e.g. JDK) show no required version
-            // until the user picks one; the per-profile refresh is wired on the select's onchange.
+            // Stack just changed -> refresh the dependency pre-check. When the backend can
+            // recommend a profile, it is auto-selected here; otherwise the placeholder stays.
             refreshDependencyCheck();
         })
-        .catch(() => { row.style.display = 'none'; });
+        .catch(() => {
+            if (hint) {
+                hint.textContent = 'Validated dependency versions for this stack.';
+            }
+            row.style.display = 'none';
+        });
 }
 
 // New-project wrapper over the shared runDependencyCheck; keeps bsLastDeps for the blocker gate.
@@ -2069,7 +2164,37 @@ function validateScenarioFile(input) {
     }
 }
 
-function generateCode() {
+async function ensureAiConfigurationReady() {
+    try {
+        const response = await fetch('/api/configure-ai');
+        const data = await response.json();
+        if (data.status !== 'success') {
+            return { ok: true };
+        }
+        if (data.is_complete) {
+            return { ok: true };
+        }
+        return {
+            ok: false,
+            message: data.missing_fields && data.missing_fields.includes('API key')
+                ? (data.missing_fields.includes('AI model')
+                    ? 'AI configuration is incomplete. Please configure both the AI model and API key before generating the script.'
+                    : 'AI API key is missing. Please configure it before generating the script.')
+                : 'AI model is missing. Please configure it before generating the script.',
+        };
+    } catch (error) {
+        return { ok: true };
+    }
+}
+
+function handleGenerationConfigurationError(message, shouldOpenModal = true) {
+    showToast(message, 'warning');
+    if (shouldOpenModal && typeof openConfigureAIModal === 'function') {
+        openConfigureAIModal();
+    }
+}
+
+async function generateCode() {
     const targetPath = document.getElementById('projectPath').value;
     const tool = document.getElementById('genTool').value;
     const language = document.getElementById('genLanguage').value;
@@ -2085,6 +2210,12 @@ function generateCode() {
 
     if(!scenarioFile) {
         showToast("Please upload your Scenario/Test Case file.", 'warning');
+        return;
+    }
+
+    const aiConfig = await ensureAiConfigurationReady();
+    if (!aiConfig.ok) {
+        handleGenerationConfigurationError(aiConfig.message);
         return;
     }
 
@@ -2151,8 +2282,15 @@ function generateCode() {
     document.getElementById('resultContent').style.display = 'none';
     document.getElementById('generationStatsStep3').style.display = 'none';
 
+    const flaskCsrfToken = document.querySelector('meta[name="csrf-token"]')?.content || '';
+    if (flaskCsrfToken && !formData.has('csrf_token')) {
+        formData.append('csrf_token', flaskCsrfToken);
+    }
+
     fetch('/api/generate-bdd-code', {
         method: 'POST',
+        headers: flaskCsrfToken ? { 'X-CSRFToken': flaskCsrfToken } : {},
+        credentials: 'same-origin',
         body: formData
     })
     .then(r => r.json())
@@ -2191,7 +2329,11 @@ function generateCode() {
 
             renderCodeResults(res.files);
         } else {
-            showToast("Generation failed: " + res.message, 'error');
+            if (res.action === 'configure_ai') {
+                handleGenerationConfigurationError(res.message, res.reason === 'missing_config' || res.reason === 'missing_model');
+            } else {
+                showToast("Generation failed: " + res.message, 'error');
+            }
             nextStep(2);
         }
     })
@@ -2294,13 +2436,16 @@ function renderCodeResults(files) {
 
         win.innerHTML = `
             <div class="window-header" style="flex-wrap: wrap; gap: 10px;">
-                <div class="d-flex align-items-center gap-3">
+                <div class="d-flex align-items-center gap-3" style="cursor: pointer; user-select: none;" onclick="toggleCodeWindow(${idx})">
                     <div class="window-controls">
                         <div class="dot red"></div>
                         <div class="dot yellow"></div>
                         <div class="dot green"></div>
                     </div>
-                    <div class="window-title">${file.filename}</div>
+                    <div class="window-title" style="display: flex; align-items: center; gap: 8px; font-weight: 600;">
+                        <i class="fas fa-chevron-down toggle-icon" id="toggleIcon_${idx}"></i>
+                        ${file.filename}
+                    </div>
                 </div>
                 <div class="d-flex gap-2">
                     <button class="copy-btn" onclick="copyCode(this, ${idx})">
@@ -2318,9 +2463,39 @@ function renderCodeResults(files) {
                     <input type="text" id="targetPath_${idx}" class="form-control" style="height:30px; font-size:0.8rem;" value="${(file.path && !file.path.includes('node_modules')) ? file.path : targetFullPath}">
                 </div>
             </div>
-            <pre class="code-content"><code>${escapeHtml(file.content)}</code></pre>
+            <pre class="code-content" id="codeContent_${idx}"><code>${escapeHtml(file.content)}</code></pre>
         `;
         container.appendChild(win);
+    });
+}
+
+function toggleCodeWindow(idx) {
+    const pre = document.getElementById(`codeContent_${idx}`);
+    const icon = document.getElementById(`toggleIcon_${idx}`);
+    if (pre && icon) {
+        pre.classList.toggle('collapsed');
+        icon.classList.toggle('collapsed');
+    }
+}
+
+function toggleAllCodeWindows(expand) {
+    const contents = document.querySelectorAll('.code-content');
+    const icons = document.querySelectorAll('.toggle-icon');
+    
+    contents.forEach(pre => {
+        if (expand) {
+            pre.classList.remove('collapsed');
+        } else {
+            pre.classList.add('collapsed');
+        }
+    });
+    
+    icons.forEach(icon => {
+        if (expand) {
+            icon.classList.remove('collapsed');
+        } else {
+            icon.classList.add('collapsed');
+        }
     });
 }
 

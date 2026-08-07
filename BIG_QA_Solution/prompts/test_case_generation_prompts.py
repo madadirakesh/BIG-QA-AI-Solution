@@ -26,12 +26,15 @@ f"""
     4. Generate Scenario outlines as applicable
     5. Parameterise the steps for reuse with different data
     6. Do NOT include markdown code fences (```gherkin) or any other conversational text.
+    7. Use one consistent quote style for equivalent parameter placeholders across the .feature file.
+    8. If you introduce placeholder values in parameterized steps, keep the same quote convention for
+       that placeholder everywhere it appears in the generated feature content.
     """
     
     
     )
 
-def get_test_case_generation_prompt(requirements: str, template: str) -> str:
+def get_test_case_generation_prompt(requirements: str, template: str, steps_format: str = "single_cell") -> str:
     """
     Returns the prompt for generating formatted test cases from requirements and a template.
     
@@ -41,11 +44,81 @@ def get_test_case_generation_prompt(requirements: str, template: str) -> str:
     Args:
         requirements: The requirements text.
         template: The template string for formatting the output.
+        steps_format: "single_cell" or "separate_rows"
         
     Returns:
         The formatted prompt string.
     """
-    return f"""
+    if steps_format == "separate_rows":
+        return f"""
+    You are an expert QA Automation Engineer.
+    Your task is to generate and map the provided requirements into formatted test cases where each test step is stored in a separate step object inside a "Steps" array.
+    
+    Requirements:
+    {requirements}
+    
+    Template / Column Headers:
+    {template}
+    
+    Instructions:
+    1. Extract test cases from the Requirements.
+    2. Cover all types of scenarios: Positive, Negative, Edge Cases, Boundary conditions, field level validations, Business rule validations, Error handling, Regression impact scenarios.
+    3. Return the response as a JSON object with two top-level keys: "test_cases" and "summary".
+    4. The value for "summary" MUST be a JSON object containing the following keys:
+       - "positive_count": total number of positive test cases/scenarios
+       - "negative_count": total number of negative test cases/scenarios
+       - "high_priority_count": total number of high priority test cases
+       - "medium_priority_count": total number of medium priority test cases
+       - "low_priority_count": total number of low priority test cases
+    5. The value for "test_cases" MUST be a JSON array of objects.
+       Each object in the array represents ONE test case with top-level metadata fields (e.g. ID, Work Item Type, Title, Area Path, Assigned To, State, etc. matching the provided Template/Column Headers excluding step specific columns) AND a nested "Steps" array.
+    6. CRITICAL STEP FORMATTING INSTRUCTION:
+       - Every test case object in "test_cases" MUST contain a "Steps" key containing a JSON array of step objects.
+       - Each step object inside the "Steps" array MUST have the exact following keys:
+         - "Test Step": step number integer (1, 2, 3...)
+         - "Step Action": step action description string
+         - "Step Expected": expected result description string for this specific step
+       - Example JSON structure:
+         {{
+           "test_cases": [
+             {{
+               "ID": "TC_001",
+               "Work Item Type": "Test Case",
+               "Title": "Verify successful Lead creation...",
+               "Area Path": "Campions Creatio Project",
+               "Assigned To": "Sumreet Kaur <SKaur@firstport.co.uk>",
+               "State": "Design",
+               "Steps": [
+                 {{
+                   "Test Step": 1,
+                   "Step Action": "Launch the application",
+                   "Step Expected": "Application should be launched and login screen should be displayed"
+                 }},
+                 {{
+                   "Test Step": 2,
+                   "Step Action": "Login to the application and navigate to the lead creation page",
+                   "Step Expected": "Lead creation page should be displayed"
+                 }},
+                 {{
+                   "Test Step": 3,
+                   "Step Action": "Enter valid data in all fields and click Submit.",
+                   "Step Expected": "Lead is saved successfully with status \"New Lead\"."
+                 }}
+               ]
+             }}
+           ],
+           "summary": {{
+             "positive_count": 1,
+             "negative_count": 0,
+             "high_priority_count": 1,
+             "medium_priority_count": 0,
+             "low_priority_count": 0
+           }}
+         }}
+    7. Include NO other information. Your entire response must be standard, parseable JSON.
+    """
+    else:
+        return f"""
     You are an expert QA Automation Engineer.
     Your task is to generate and map the provided requirements into the provided test case template format.
     

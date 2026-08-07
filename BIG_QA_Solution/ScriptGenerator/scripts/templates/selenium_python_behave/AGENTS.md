@@ -16,7 +16,7 @@
 | Aspect | Value |
 |--------|-------|
 | Automation tool | **Selenium 4** (WebDriver) |
-| Language | **Python 3.12+** |
+| Language | **Python 3.10+** |
 | BDD framework | **Behave** (Gherkin) |
 | Design pattern | **Page Object Model (POM)** |
 | Driver management | **webdriver-manager** (drivers auto-resolved — never hard-code driver paths) |

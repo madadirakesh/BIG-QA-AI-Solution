@@ -1,93 +1,252 @@
 import asyncio
-import os
-import sys
+from contextlib import suppress
 import json
-from mcp import ClientSession, StdioServerParameters
-from mcp.client.stdio import stdio_client
+import os
+import socket
+import subprocess
+import sys
+import time
 
-# We'll use the existing AI clients from backend if possible, or fallback to direct API call
+from mcp import ClientSession
+from mcp.client.streamable_http import streamablehttp_client
+
 from api import backend
 
-async def run_mcp_git_prompt(prompt: str, project_path: str):
-    """
-    Connects to the Git MCP Server, retrieves tools, sends them to the LLM,
-    and executes the tool call the LLM decides on.
-    """
-    server_params = StdioServerParameters(
-        command=sys.executable,
-        args=["-m", "mcp_server_git"],
-        env={**os.environ, "GIT_DIR": os.path.join(project_path, ".git"), "GIT_WORK_TREE": project_path}
+MCP_HOST = "127.0.0.1"
+MCP_STARTUP_TIMEOUT_SECONDS = 12
+
+
+def _find_available_port() -> int:
+    # Start each MCP session on a fresh localhost port so concurrent requests
+    # do not collide with each other or with a previous crashed session.
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.bind((MCP_HOST, 0))
+        return int(sock.getsockname()[1])
+
+
+def _extract_json_block(text: str) -> dict:
+    raw = (text or "").strip()
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        start = raw.find("{")
+        end = raw.rfind("}")
+        if start != -1 and end != -1 and end > start:
+            return json.loads(raw[start : end + 1])
+        raise
+
+
+def _extract_text_from_tool_result(result) -> str:
+    text_parts = []
+    for item in getattr(result, "content", []) or []:
+        text = getattr(item, "text", None)
+        if text:
+            text_parts.append(text)
+    return "\n".join(text_parts).strip()
+
+
+def _build_tool_choice_prompt(prompt: str, tools: list[dict], assistant_mode: str = "explain") -> str:
+    # First AI pass: ask the configured model to choose exactly one MCP tool
+    # and arguments based on the user's natural-language request.
+    normalized_mode = (assistant_mode or "explain").strip().lower()
+    mode_label = "Perform Action" if normalized_mode == "execute" else "Explain Only"
+    return (
+        "You are an AI Git Assistant using MCP tools.\n"
+        "Choose exactly one MCP tool that best answers the user's request.\n"
+        "Return ONLY raw JSON in one of these shapes:\n"
+        '{"mode":"tool","tool":"tool_name","arguments":{"key":"value"}}\n'
+        '{"mode":"answer","message":"direct answer"}\n\n'
+        f"Selected assistant mode: {mode_label}.\n"
+        "Rules:\n"
+        "- Always honor the selected assistant mode.\n"
+        "- In Explain Only mode, return mode=answer unless the user is explicitly asking for repository inspection only. Do not execute mutating git actions in Explain Only mode.\n"
+        "- In Perform Action mode, choose a tool and perform the requested git action whenever the request is actionable and the needed details are clear.\n"
+        "- Distinguish between explanation requests and action requests.\n"
+        "- If the user is asking for guidance, hints, root-cause analysis, recommended commands, or what they should do next, return mode=answer and do not execute any git command.\n"
+        "- If the user explicitly asks you to perform, run, execute, apply, push, pull, merge, stash, fetch, checkout, switch, abort, continue, or resolve something in the repository, choose a tool and perform the action when the selected mode allows it.\n"
+        "- If the user asks both for diagnosis and action, prefer doing the action only when they clearly authorize it and the selected mode is Perform Action; otherwise return mode=answer with the exact commands or next steps.\n"
+        "- Prefer repository_context for broad repo questions.\n"
+        "- Use repository_context when the user asks about the selected project path, what repository/folder is being checked, or wants both local and live/remote context together.\n"
+        "- Use local_repository_overview for explicitly local-only questions such as local path, local modified files, local staged changes, or local commits.\n"
+        "- Use remote_repository_overview for explicitly live/remote questions such as whether the branch is ahead/behind origin, the latest remote-tracking commit, or whether local and remote are in sync.\n"
+        "- Use git_diff_content when the user asks what changed in a specific file or asks for actual code changes.\n"
+        "- Use git_diff_summary for high-level change summaries.\n"
+        "- Use merge_branch only when the user explicitly asks to merge one branch into another and the branch names are clear.\n"
+        "- Use commit_all, pull_current_branch, or push_current_branch only when the user explicitly asks for those actions.\n"
+        "- Use execute_git_command for explicit git command-style requests and operational workflows such as fetch, checkout, switch, stash, rebase continue/abort, merge abort, cherry-pick continue/abort, force push, or other supported git terminal commands.\n"
+        "- If the user asks to merge but does not clearly specify source and target branches, do not choose a tool. Return mode=answer and ask for the exact branch names.\n"
+        "- If the user asks to resolve a conflict but does not explicitly authorize you to make repository changes, return mode=answer with the safe resolution steps instead of executing commands.\n"
+        "- If the user asks to resolve conflicts automatically, do not pretend the conflict is fully resolved unless a command actually resolves it. Use a suitable tool to inspect or run an abort/continue command, then explain any remaining manual conflict work.\n"
+        "- If the user asks about GitHub pull requests, PR reviews, or remote review metadata, do not choose a tool. Return mode=answer and explain that this MCP server only has local Git tools.\n\n"
+        f"Available Tools:\n{json.dumps(tools, indent=2)}\n\n"
+        f"User Request:\n{prompt}"
     )
 
+
+def _build_summary_prompt(user_prompt: str, tool_name: str, tool_args: dict, tool_output: str) -> str:
+    # Second AI pass: convert raw MCP tool output into a direct user-facing
+    # explanation, while preserving full diff output when requested.
+    return (
+        "You are an AI Git Assistant.\n"
+        "Answer the user based only on the MCP tool output below.\n"
+        "Be concise, practical, and accurate.\n"
+        "If the output is already a patch/diff that the user explicitly asked to see, preserve it verbatim.\n"
+        "If the tool output includes a project path, mention that concrete path directly in the answer when relevant.\n"
+        "If the output includes both local and remote sections, explain which facts are local and which are remote instead of mixing them together.\n"
+        "If the tool output indicates a failure, explain the likely cause and next step.\n\n"
+        f"User Request:\n{user_prompt}\n\n"
+        f"Tool Used: {tool_name}\n"
+        f"Tool Arguments: {json.dumps(tool_args, ensure_ascii=True)}\n\n"
+        f"Tool Output:\n{tool_output}"
+    )
+
+
+async def _start_mcp_server(project_path: str) -> tuple[subprocess.Popen, str]:
+    # Launch an isolated MCP server process for the selected repository and
+    # inject the repo context through environment variables.
+    # Earlier MCP attempts relied on a less explicit transport path. We now
+    # start the Git MCP server inside the project for each request so the MCP
+    # lifecycle is controlled by this app and easier to debug in production.
+    port = _find_available_port()
+    script_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    env = os.environ.copy()
+    env["PYTHONUNBUFFERED"] = "1"
+    env["GIT_DIR"] = os.path.join(project_path, ".git")
+    env["GIT_WORK_TREE"] = project_path
+
+    process = subprocess.Popen(
+        [
+            sys.executable,
+            "-m",
+            "api.git_mcp_server",
+            "--host",
+            MCP_HOST,
+            "--port",
+            str(port),
+        ],
+        cwd=script_root,
+        env=env,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    return process, f"http://{MCP_HOST}:{port}/mcp"
+
+
+def _read_process_stderr(process: subprocess.Popen) -> str:
+    if not process.stderr:
+        return ""
+    with suppress(Exception):
+        return process.stderr.read().strip()
+    return ""
+
+
+async def _wait_for_server(server_url: str, process: subprocess.Popen) -> None:
+    # Avoid the earlier stdio transport issue by waiting for the HTTP-based MCP
+    # server to become reachable before opening the client session.
+    deadline = time.monotonic() + MCP_STARTUP_TIMEOUT_SECONDS
+    last_error: Exception | None = None
+    port = int(server_url.rsplit(":", 1)[1].split("/", 1)[0])
+
+    while time.monotonic() < deadline:
+        if process.poll() is not None:
+            details = _read_process_stderr(process) or "No server logs captured."
+            raise RuntimeError(f"MCP server exited unexpectedly. {details}")
+
+        try:
+            reader, writer = await asyncio.open_connection(MCP_HOST, port)
+            writer.close()
+            await writer.wait_closed()
+            return
+        except Exception as exc:
+            last_error = exc
+            await asyncio.sleep(0.5)
+
+    raise RuntimeError(f"MCP server startup timed out. {last_error}")
+
+
+def _stop_process(process: subprocess.Popen | None) -> None:
+    # Every request starts a short-lived MCP server, so we always terminate it
+    # explicitly to avoid leaving orphaned localhost processes behind.
+    if process is None:
+        return
+    if process.poll() is None:
+        process.terminate()
+        try:
+            process.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait(timeout=5)
+
+
+async def run_mcp_git_prompt(prompt: str, project_path: str, assistant_mode: str = "explain"):
+    # Main MCP assistant flow:
+    # 1. start the Git MCP server for the selected repo
+    # 2. let the global AI model choose the best MCP tool
+    # 3. execute that MCP tool
+    # 4. optionally summarize the tool result back to the user
+    if not os.path.isdir(project_path):
+        return {"success": False, "message": f"MCP Error: Project path not found: {project_path}"}
+
+    process = None
     try:
-        async with stdio_client(server_params) as (read, write):
-            async with ClientSession(read, write) as session:
+        process, server_url = await _start_mcp_server(project_path)
+        await _wait_for_server(server_url, process)
+
+        async with streamablehttp_client(server_url) as (read_stream, write_stream, _):
+            async with ClientSession(read_stream, write_stream) as session:
                 await session.initialize()
-                
-                # 1. Get tools from MCP Server
                 tools_response = await session.list_tools()
-                
-                # Define simple fallback if mcp standard changes
-                available_tools = []
-                for t in tools_response.tools:
-                    available_tools.append({
-                        "name": t.name,
-                        "description": t.description,
-                        "inputSchema": t.inputSchema
-                    })
+                available_tools = [
+                    {
+                        "name": tool.name,
+                        "description": tool.description,
+                        "inputSchema": tool.inputSchema,
+                    }
+                    for tool in tools_response.tools
+                ]
 
-                # Format system message
-                system_message = f"You are an intelligent Git Assistant. You have access to Git tools via MCP for the repository at {project_path}. Execute the user's request. If a tool call is needed, return ONLY a raw JSON string like: {{\"tool\": \"tool_name\", \"arguments\": {{\"key\": \"value\"}}}}."
-                
-                # 2. Call LLM (using simple OpenAI style for now, as standard tool-calling is complex across providers)
-                # For simplicity in this integration, we ask the LLM to output a JSON tool call block manually.
-                # In a robust production app, we would map `available_tools` to the native provider's tool schema.
-                
-                tools_context = json.dumps(available_tools, indent=2)
-                full_prompt = f"{system_message}\n\nAvailable Tools:\n{tools_context}\n\nUser Request: {prompt}"
-                
-                # Use Gemini or OpenAI based on config
-                llm_response_text = ""
-                if backend.AI_TOOL in ["GEMINI", "GOOGLE"]:
-                    client = backend._get_gemini_client()
-                    resp = client.models.generate_content(
-                        model=backend.AI_MODEL,
-                        contents=full_prompt
-                    )
-                    llm_response_text = resp.text
-                else:
-                    client = backend._get_openai_client()
-                    resp = client.chat.completions.create(
-                        model=backend.AI_MODEL,
-                        messages=[{"role": "user", "content": full_prompt}],
-                        temperature=0
-                    )
-                    llm_response_text = resp.choices[0].message.content
-
-                # 3. Parse LLM response to see if it requested a tool
+                selector_prompt = _build_tool_choice_prompt(prompt, available_tools, assistant_mode=assistant_mode)
+                selection_raw = await backend.call_ai(selector_prompt, expect_json=True)
                 try:
-                    # Look for JSON block
-                    start = llm_response_text.find('{')
-                    end = llm_response_text.rfind('}')
-                    if start != -1 and end != -1:
-                        tool_call = json.loads(llm_response_text[start:end+1])
-                        if "tool" in tool_call and "arguments" in tool_call:
-                            tool_name = tool_call["tool"]
-                            args = tool_call["arguments"]
-                            
-                            # 4. Execute the tool on the MCP server
-                            result = await session.call_tool(tool_name, args)
-                            
-                            # Extract result text
-                            output_text = "\n".join([c.text for c in result.content if hasattr(c, 'text')])
-                            
-                            # 5. Optional: Summarize result (skipping for speed, just return output)
-                            return {"success": True, "message": f"Executed '{tool_name}'", "output": output_text}
+                    selection = _extract_json_block(selection_raw)
                 except Exception as e:
-                    pass # Fallthrough to return the raw text if it wasn't a tool call
+                    return {"success": False, "message": f"MCP Error: Failed to parse AI tool selection: {e}"}
 
-                # If no tool call was parsed, return the LLM's conversational response
-                return {"success": True, "message": "AI Responded", "output": llm_response_text}
+                if selection.get("mode") == "answer":
+                    return {
+                        "success": True,
+                        "message": "AI Responded",
+                        "output": (selection.get("message") or "").strip() or "No response generated.",
+                    }
 
+                tool_name = (selection.get("tool") or "").strip()
+                tool_args = selection.get("arguments") or {}
+                allowed_tools = {tool["name"] for tool in available_tools}
+                if tool_name not in allowed_tools:
+                    return {"success": False, "message": f"MCP Error: AI selected an unavailable tool: {tool_name or '(empty)'}"}
+
+                result = await session.call_tool(tool_name, tool_args)
+                tool_output = _extract_text_from_tool_result(result)
+
+                if not tool_output:
+                    tool_output = "Tool executed successfully with no text output."
+
+                if tool_name == "git_diff_content":
+                    final_output = tool_output
+                else:
+                    summary_prompt = _build_summary_prompt(prompt, tool_name, tool_args, tool_output)
+                    try:
+                        final_output = await backend.call_ai(summary_prompt, expect_json=False)
+                    except Exception:
+                        final_output = tool_output
+
+                return {
+                    "success": True,
+                    "message": f"Executed '{tool_name}'",
+                    "output": final_output,
+                }
     except Exception as e:
         return {"success": False, "message": f"MCP Error: {str(e)}"}
+    finally:
+        _stop_process(process)

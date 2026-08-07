@@ -3,11 +3,12 @@ import * as path from "path";
 import * as crypto from "crypto";
 
 // Load .env file from the root directory
-dotenv.config({ path: path.join(__dirname, "../../.env") });
+const envFilePath = path.join(__dirname, "../../.env");
+const parsedEnv = dotenv.config({ path: envFilePath }).parsed || {};
 
 export class ConfigReader {
     public static getProperty(key: string): string {
-        const value = process.env[key];
+        const value = parsedEnv[key] ?? process.env[key];
         if (!value) {
             throw new Error(`Property ${key} not found in .env file`);
         }
@@ -30,7 +31,7 @@ export class ConfigReader {
         if (!value.startsWith("ENC:")) {
             return value;
         }
-        const keyB64 = process.env["CRED_KEY"];
+        const keyB64 = parsedEnv["CRED_KEY"] ?? process.env["CRED_KEY"];
         if (!keyB64) {
             throw new Error("CRED_KEY not found in .env file; cannot decrypt secret");
         }
