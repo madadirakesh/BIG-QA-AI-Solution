@@ -517,13 +517,14 @@ def add_no_cache_and_security_headers(response):
     response.headers['X-Frame-Options'] = 'DENY'
     # Prevent MIME-type sniffing
     response.headers['X-Content-Type-Options'] = 'nosniff'
-    # Define Content Security Policy
     response.headers['Content-Security-Policy'] = (
         "default-src 'self'; "
         "script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com; "
         "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdnjs.cloudflare.com; "
         "font-src 'self' https://fonts.gstatic.com https://cdnjs.cloudflare.com; "
-        "connect-src 'self' http://127.0.0.1:8000 http://localhost:8000 https://generativelanguage.googleapis.com https://api.openai.com https://api.anthropic.com;"
+        "connect-src 'self' http://127.0.0.1:8000 http://localhost:8000 https://generativelanguage.googleapis.com https://api.openai.com https://api.anthropic.com; "
+        "frame-ancestors 'none'; "
+        "form-action 'self';"
     )
     # Strip or override Server response header
     response.headers['Server'] = 'BIG-AI-QA-Engine'
@@ -3345,6 +3346,16 @@ def _count_scenarios(text: str, file_type: str) -> int:
 @app.route('/api/generate-bdd-code', methods=['POST'])
 @login_required()
 def generate_bdd_code():
+    def _safe_decode(file_bytes):
+        if not file_bytes:
+            return ""
+        for encoding in ('utf-8', 'cp1252', 'latin-1'):
+            try:
+                return file_bytes.decode(encoding)
+            except UnicodeDecodeError:
+                continue
+        return file_bytes.decode('utf-8', errors='replace')
+
     try:
         existing_steps_count = 0
         ai_state = read_ai_config(os.path.join(BASE_DIR, '.env'))
@@ -3374,7 +3385,7 @@ def generate_bdd_code():
             
         scenarios_text = ""
         if file_type == 'BDD':
-            scenarios_text = scenario_file.read().decode('utf-8')
+            scenarios_text = _safe_decode(scenario_file.read())
         elif file_type == 'Excel':
             try:
                 # Need openpyxl for xlsx
@@ -3510,7 +3521,7 @@ def generate_bdd_code():
             support_content += "Local Page Object Files:\n"
             for po in po_files:
                 if po.filename:
-                    support_content += f"--- {po.filename} ---\n{po.read().decode('utf-8')}\n"
+                    support_content += f"--- {po.filename} ---\n{_safe_decode(po.read())}\n"
 
         # Scan for utilities
         support_content += "\nProject Reusable Utilities:\n"
@@ -3520,7 +3531,7 @@ def generate_bdd_code():
                 for uf in os.listdir(u_path):
                     if uf.endswith((".py", ".java", ".ts", ".js", ".cs")):
                         try:
-                            with open(os.path.join(u_path, uf), "r", encoding="utf-8") as f:
+                            with open(os.path.join(u_path, uf), "r", encoding="utf-8", errors="ignore") as f:
                                 support_content += f"--- {uf} ---\n{''.join(f.readlines()[:100])}\n"
                         except Exception:
                             pass
