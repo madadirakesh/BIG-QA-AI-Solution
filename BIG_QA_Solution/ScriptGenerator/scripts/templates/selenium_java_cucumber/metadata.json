@@ -1,8 +1,8 @@
 {
-  "_comment": "Metadata for the Selenium + Java + Cucumber template. Mirrors the Playwright/Java/Cucumber layout — same package structure, same dotenv-java config, same JUnit-Platform-driven Cucumber runner — but uses WebDriver via WebDriverManager instead of the Playwright Java client. The seeder (deploy_team_templates.py) ingests this directory verbatim and creates a ProjectTemplates row keyed by (tool, language, framework).",
+  "_comment": "Metadata for the Selenium + Java + Cucumber template. Mirrors the Playwright/Java/Cucumber layout — same package structure, same dotenv-java config, same JUnit-Platform-driven Cucumber runner — but uses Selenium WebDriver with its built-in Selenium Manager. The seeder (deploy_team_templates.py) ingests this directory verbatim and creates a ProjectTemplates row keyed by (tool, language, framework).",
   "tool": "Selenium",
   "language": "Java",
   "framework": "Cucumber",
-  "description": "Enterprise Selenium Java Cucumber BDD Template (JUnit 5 + WebDriverManager + Maven)",
+  "description": "Enterprise Selenium Java Cucumber BDD Template (JUnit 5 + Selenium Manager + Maven)",
   "default_run_commands": "mvn test"
 }

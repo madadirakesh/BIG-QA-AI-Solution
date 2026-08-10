@@ -6,14 +6,14 @@ A BDD test project: **Cucumber** scenarios driving **Playwright** in **TypeScrip
 ## Prerequisites
 
 - **Node.js 18+** and **npm** (`node -v`, `npm -v`)
-- Internet on first `npm install` (packages) and first run (`npx playwright install` downloads
+- Internet on first `npm install` (packages) and first run (`npx --no-install playwright install` downloads
   the browser binaries). Behind a corporate proxy, see `../../SETUP-PROXY.md`.
 
 ## Quick start
 
 ```bash
 npm install
-npx playwright install      # one-time browser download
+npx --no-install playwright install chromium  # use project-local CLI; download default browser
 npm test                    # runs test-runner.js -> cucumber-js via ts-node
 npm run report              # regenerate the HTML report
 ```

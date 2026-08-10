@@ -84,7 +84,7 @@ def after_all(context):
 def _create_driver(browser_name: str, headless: bool):
     """Factory function to create the appropriate WebDriver instance.
 
-    Selenium 4 ships with Selenium Manager, so we avoid webdriver_manager network calls here.
+    Selenium 4 ships with Selenium Manager, so no separate driver-manager package is needed.
     That keeps local execution stable even when external driver downloads are flaky or blocked.
     """
     if browser_name == "firefox":

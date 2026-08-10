@@ -4,7 +4,8 @@ When you create a project, the app downloads three kinds of things over HTTPS:
 
 1. Language packages (`npm install`, `pip install`, `mvn install`, `dotnet restore`)
 2. **Playwright browser binaries** (`playwright install`) — this is the step that fails most often
-3. (At test-run time) the generated TypeScript project re-runs `npx playwright install`
+3. (At test-run time) the generated TypeScript project verifies the browser with its project-local
+   `npx --no-install playwright install`
 
 A corporate network can break these in **two different ways**. The fix is different for
 each, so first figure out which one you have by reading the error message.

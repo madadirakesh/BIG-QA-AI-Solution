@@ -1,19 +1,30 @@
 import argparse
 
-from mcp.server.fastmcp import FastMCP
+# MCP 1.x exposes FastMCP from mcp.server.fastmcp. MCP 2.x folded that API into MCPServer and
+# moved host/port configuration from construction to run(). The tool decorator remains
+# compatible, so only server construction/startup needs a small version adapter.
+try:
+    from mcp.server.fastmcp import FastMCP as _MCPServer
+    _MCP_V2 = False
+except ImportError:
+    from mcp.server import MCPServer as _MCPServer
+    _MCP_V2 = True
 
 from api import local_git_assistant as git_tools
 
 
-def create_server(host: str, port: int) -> FastMCP:
+def create_server(host: str, port: int):
     # This file exposes Git capabilities as MCP tools. The actual Git command
     # implementation lives in local_git_assistant.py so the MCP layer stays thin.
-    mcp = FastMCP(
-        "Git MCP Server",
-        host=host,
-        port=port,
-        log_level="ERROR",
-    )
+    if _MCP_V2:
+        mcp = _MCPServer("Git MCP Server", log_level="ERROR")
+    else:
+        mcp = _MCPServer(
+            "Git MCP Server",
+            host=host,
+            port=port,
+            log_level="ERROR",
+        )
 
     @mcp.tool(description="Get a concise repository overview including branch, status, staged changes, unstaged changes, commits, and remotes.")
     def repository_overview() -> str:
@@ -87,7 +98,10 @@ def main() -> None:
     args = parser.parse_args()
 
     server = create_server(args.host, args.port)
-    server.run(transport="streamable-http")
+    if _MCP_V2:
+        server.run(transport="streamable-http", host=args.host, port=args.port)
+    else:
+        server.run(transport="streamable-http")
 
 
 if __name__ == "__main__":

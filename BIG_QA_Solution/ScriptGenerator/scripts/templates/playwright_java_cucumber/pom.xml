@@ -18,7 +18,7 @@
      picks them up; the include filter just guarantees the runner is always discovered.
    - Playwright browser binaries are NOT installed by `mvn install`. The web app's
      EnvironmentSetup.install_project_dependencies step also runs
-     `mvn exec:java -Dexec.mainClass=com.microsoft.playwright.CLI -Dexec.args=install`
+     `mvn exec:java -Dexec.mainClass=com.microsoft.playwright.CLI -Dexec.args="install chromium"`
      after `mvn install -DskipTests` to download the browsers. If you run this project
      standalone, do the same once before `mvn test`.
 -->

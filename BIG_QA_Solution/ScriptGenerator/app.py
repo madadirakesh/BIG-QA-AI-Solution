@@ -2415,14 +2415,43 @@ def _render_behave_dashboard(json_path: str, display_path: str):
     failed_steps = step_counts["failed"]
     skipped_steps = step_counts["skipped"] + step_counts["untested"]
     undefined_steps = step_counts["undefined"]
-    total_step_buckets = max(passed_steps + failed_steps + skipped_steps + undefined_steps, 1)
-    scenario_total = max(sum(scenario_counts.values()), 1)
-    pass_rate = round((passed_steps / total_step_buckets) * 100, 1)
+    execution_summary = {}
+    summary_path = os.path.join(os.path.dirname(json_path), 'runner_summary.json')
+    try:
+        if os.path.isfile(summary_path) and os.path.getmtime(summary_path) + 5 >= os.path.getmtime(json_path):
+            with open(summary_path, 'r', encoding='utf-8') as summary_file:
+                execution_summary = json.load(summary_file) or {}
+    except (OSError, ValueError, TypeError):
+        execution_summary = {}
+
+    reported_features = execution_summary.get('features') or {}
+    reported_scenarios = execution_summary.get('scenarios') or {}
+    reported_steps = execution_summary.get('steps') or {}
+
+    def reported_total(bucket, fallback):
+        return sum(int(bucket.get(status) or 0) for status in ('passed', 'failed', 'skipped', 'undefined')) if bucket else fallback
+
+    feature_total_display = reported_total(reported_features, features_count)
+    scenario_total_display = reported_total(reported_scenarios, scenarios_count)
+    step_total_display = reported_total(reported_steps, steps_count)
+    scenario_passed_display = int(reported_scenarios.get('passed', scenario_counts['passed']))
+    scenario_failed_display = int(reported_scenarios.get('failed', scenario_counts['failed']))
+    scenario_skipped_display = int(reported_scenarios.get('skipped', scenario_counts['skipped'] + scenario_counts['untested']))
+    scenario_undefined_display = int(reported_scenarios.get('undefined', scenario_counts['undefined']))
+    step_passed_display = int(reported_steps.get('passed', passed_steps))
+    step_failed_display = int(reported_steps.get('failed', failed_steps))
+    step_skipped_display = int(reported_steps.get('skipped', skipped_steps))
+    step_undefined_display = int(reported_steps.get('undefined', undefined_steps))
+    display_scenario_buckets = max(
+        scenario_passed_display + scenario_failed_display + scenario_skipped_display + scenario_undefined_display,
+        1,
+    )
+    pass_rate = round((scenario_passed_display / display_scenario_buckets) * 100, 1)
     donut_style = (
-        f"conic-gradient(#2ea44f 0 {(passed_steps / total_step_buckets) * 100:.2f}%, "
-        f"#d73a49 {(passed_steps / total_step_buckets) * 100:.2f}% {((passed_steps + failed_steps) / total_step_buckets) * 100:.2f}%, "
-        f"#d29922 {((passed_steps + failed_steps) / total_step_buckets) * 100:.2f}% {((passed_steps + failed_steps + skipped_steps) / total_step_buckets) * 100:.2f}%, "
-        f"#1f8acb {((passed_steps + failed_steps + skipped_steps) / total_step_buckets) * 100:.2f}% 100%)"
+        f"conic-gradient(#2ea44f 0 {(scenario_passed_display / display_scenario_buckets) * 100:.2f}%, "
+        f"#d73a49 {(scenario_passed_display / display_scenario_buckets) * 100:.2f}% {((scenario_passed_display + scenario_failed_display) / display_scenario_buckets) * 100:.2f}%, "
+        f"#d29922 {((scenario_passed_display + scenario_failed_display) / display_scenario_buckets) * 100:.2f}% {((scenario_passed_display + scenario_failed_display + scenario_skipped_display) / display_scenario_buckets) * 100:.2f}%, "
+        f"#1f8acb {((scenario_passed_display + scenario_failed_display + scenario_skipped_display) / display_scenario_buckets) * 100:.2f}% 100%)"
     )
 
     def percent(value, total):
@@ -2462,15 +2491,15 @@ def _render_behave_dashboard(json_path: str, display_path: str):
   <div class="page">
     <section class="hero">
       <div class="panel hero-copy"><span class="eyebrow">Behave Dashboard</span><h1>Python BDD Execution Report</h1><p class="sub">A lighter Script Runner report for Behave runs with quick status filtering and a cleaner always-open scenario view.</p><div class="path">{safe_display_path}</div></div>
-      <div class="panel hero-side"><div class="donut-wrap"><div class="donut"><div class="donut-center"><div><strong>{pass_rate:.1f}%</strong><br><span>step pass rate</span></div></div></div><div class="legend"><button type="button" class="legend-button active" data-filter="all"><span class="left"><span class="dot" style="background:#5d6f86"></span>All</span><strong>{steps_count}</strong></button><button type="button" class="legend-button" data-filter="passed"><span class="left"><span class="dot" style="background:#2ea44f"></span>Passed</span><strong>{passed_steps}</strong></button><button type="button" class="legend-button" data-filter="failed"><span class="left"><span class="dot" style="background:#d73a49"></span>Failed</span><strong>{failed_steps}</strong></button><button type="button" class="legend-button" data-filter="skipped"><span class="left"><span class="dot" style="background:#d29922"></span>Skipped</span><strong>{skipped_steps}</strong></button><button type="button" class="legend-button" data-filter="undefined"><span class="left"><span class="dot" style="background:#1f8acb"></span>Undefined</span><strong>{undefined_steps}</strong></button></div></div></div>
+      <div class="panel hero-side"><div class="donut-wrap"><div class="donut"><div class="donut-center"><div><strong>{pass_rate:.1f}%</strong><br><span>scenario pass rate</span></div></div></div><div class="legend"><button type="button" class="legend-button active" data-filter="all"><span class="left"><span class="dot" style="background:#5d6f86"></span>Scenarios</span><strong>{scenario_total_display}</strong></button><button type="button" class="legend-button" data-filter="passed"><span class="left"><span class="dot" style="background:#2ea44f"></span>Passed</span><strong>{scenario_passed_display}</strong></button><button type="button" class="legend-button" data-filter="failed"><span class="left"><span class="dot" style="background:#d73a49"></span>Failed</span><strong>{scenario_failed_display}</strong></button><button type="button" class="legend-button" data-filter="skipped"><span class="left"><span class="dot" style="background:#d29922"></span>Skipped / not run</span><strong>{scenario_skipped_display}</strong></button><button type="button" class="legend-button" data-filter="undefined"><span class="left"><span class="dot" style="background:#1f8acb"></span>Undefined</span><strong>{scenario_undefined_display}</strong></button></div></div><p class="stat-foot" style="margin:14px 0 0;">Detailed cards below show {scenarios_count} executed scenarios; {scenario_skipped_display} were skipped or excluded by filters.</p></div>
     </section>
     <section class="cards">
-      <div class="panel stat-card"><div class="stat-label">Features</div><div class="stat-value">{features_count}</div><div class="stat-foot">{scenario_counts['passed']} passing scenarios inside</div></div>
-      <div class="panel stat-card"><div class="stat-label">Scenarios</div><div class="stat-value">{scenarios_count}</div><div class="stat-foot">{percent(scenario_counts['passed'], scenario_total)} passed</div></div>
-      <div class="panel stat-card"><div class="stat-label">Steps</div><div class="stat-value">{steps_count}</div><div class="stat-foot">{passed_steps} passed, {failed_steps} failed</div></div>
+      <div class="panel stat-card"><div class="stat-label">Features Discovered</div><div class="stat-value">{feature_total_display}</div><div class="stat-foot">{features_count} included in this report</div></div>
+      <div class="panel stat-card"><div class="stat-label">Scenarios Discovered</div><div class="stat-value">{scenario_total_display}</div><div class="stat-foot">{scenario_passed_display} passed, {scenario_failed_display} failed, {scenario_skipped_display} skipped</div></div>
+      <div class="panel stat-card"><div class="stat-label">Steps Discovered</div><div class="stat-value">{step_total_display}</div><div class="stat-foot">{step_passed_display} passed, {step_failed_display} failed, {step_skipped_display} skipped</div></div>
       <div class="panel stat-card"><div class="stat-label">Duration</div><div class="stat-value">{html.escape(_format_report_duration(duration_total))}</div><div class="stat-foot">Across all executed steps</div></div>
     </section>
-    <section class="panel bar-panel"><div class="feature-kicker">Scenario Health</div><h2 style="margin:12px 0 8px;font-size:24px;">Scenario Status Breakdown</h2><div class="bars"><div class="bar-row"><span>Passed</span><div class="bar-track"><div class="bar-fill" style="width:{percent(scenario_counts['passed'], scenario_total)};background:#2ea44f;"></div></div><strong>{scenario_counts['passed']}</strong></div><div class="bar-row"><span>Failed</span><div class="bar-track"><div class="bar-fill" style="width:{percent(scenario_counts['failed'], scenario_total)};background:#d73a49;"></div></div><strong>{scenario_counts['failed']}</strong></div><div class="bar-row"><span>Skipped</span><div class="bar-track"><div class="bar-fill" style="width:{percent(scenario_counts['skipped'] + scenario_counts['untested'], scenario_total)};background:#d29922;"></div></div><strong>{scenario_counts['skipped'] + scenario_counts['untested']}</strong></div><div class="bar-row"><span>Undefined</span><div class="bar-track"><div class="bar-fill" style="width:{percent(scenario_counts['undefined'], scenario_total)};background:#1f8acb;"></div></div><strong>{scenario_counts['undefined']}</strong></div></div></section>
+    <section class="panel bar-panel"><div class="feature-kicker">Scenario Health</div><h2 style="margin:12px 0 8px;font-size:24px;">Scenario Status Breakdown</h2><div class="bars"><div class="bar-row"><span>Passed</span><div class="bar-track"><div class="bar-fill" style="width:{percent(scenario_passed_display, scenario_total_display)};background:#2ea44f;"></div></div><strong>{scenario_passed_display}</strong></div><div class="bar-row"><span>Failed</span><div class="bar-track"><div class="bar-fill" style="width:{percent(scenario_failed_display, scenario_total_display)};background:#d73a49;"></div></div><strong>{scenario_failed_display}</strong></div><div class="bar-row"><span>Skipped</span><div class="bar-track"><div class="bar-fill" style="width:{percent(scenario_skipped_display, scenario_total_display)};background:#d29922;"></div></div><strong>{scenario_skipped_display}</strong></div><div class="bar-row"><span>Undefined</span><div class="bar-track"><div class="bar-fill" style="width:{percent(scenario_undefined_display, scenario_total_display)};background:#1f8acb;"></div></div><strong>{scenario_undefined_display}</strong></div></div></section>
     {''.join(feature_blocks)}
   </div>
   <script>
