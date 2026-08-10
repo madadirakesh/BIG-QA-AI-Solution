@@ -2700,31 +2700,140 @@ function updateGeneratedFileLines() {
     linesDiv.innerHTML = html;
 }
 
-function computeLCSMatches(linesA, linesB) {
-    let matchesB = new Set();
-    const setA = new Set(linesA.map(l => l.trim()));
-    const n = linesB.length;
-    for (let j = 0; j < n; j++) {
-        if (setA.has(linesB[j].trim())) {
-            matchesB.add(j);
+const DIFF_MAX_CELLS = 4000000;
+
+// Order-aware LCS diff between two files.
+// The previous version only asked "does this trimmed line exist ANYWHERE in the
+// other file?", so the body of a brand new method was reported as unchanged
+// whenever its lines (await .../return/closing brackets) also occurred
+// elsewhere, and only the signature lit up.
+function computeAddedLines(baseLines, newLines) {
+    const added = new Set();
+    const a = baseLines.map(l => l.trim());
+    const b = newLines.map(l => l.trim());
+    const n = a.length, m = b.length;
+
+    if (m === 0) return added;
+    if (n === 0) {
+        for (let j = 0; j < m; j++) if (b[j] !== "") added.add(j);
+        return added;
+    }
+
+    if (n * m > DIFF_MAX_CELLS) {
+        // Very large files: fall back to a multiset match, so three copies on
+        // the right against one on the left still reports two additions.
+        const counts = new Map();
+        for (const t of a) counts.set(t, (counts.get(t) || 0) + 1);
+        for (let j = 0; j < m; j++) {
+            if (b[j] === "") continue;
+            const c = counts.get(b[j]) || 0;
+            if (c > 0) counts.set(b[j], c - 1);
+            else added.add(j);
+        }
+        return added;
+    }
+
+    const w = m + 1;
+    const dp = new Uint32Array((n + 1) * w);
+    for (let i = n - 1; i >= 0; i--) {
+        const row = i * w, next = row + w;
+        for (let j = m - 1; j >= 0; j--) {
+            dp[row + j] = (a[i] === b[j] && a[i] !== "")
+                ? dp[next + j + 1] + 1
+                : Math.max(dp[next + j], dp[row + j + 1]);
         }
     }
-    return matchesB;
+
+    let i = 0, j = 0;
+    while (i < n && j < m) {
+        if (a[i] === b[j] && a[i] !== "") { i++; j++; }
+        else if (dp[(i + 1) * w + j] >= dp[i * w + j + 1]) { i++; }
+        else { if (b[j] !== "") added.add(j); j++; }
+    }
+    while (j < m) { if (b[j] !== "") added.add(j); j++; }
+    return added;
 }
 
-function updateHighlights(textareaId, highlightId, matches, lines) {
+// A method is one unit: if its signature is new, its whole body is new. Marking
+// the complete block is what lets the user copy something that still compiles.
+function expandAddedBlocks(lines, added) {
+    const result = new Set(added);
+    const n = lines.length;
+    const indentOf = idx => {
+        const p = lines[idx].search(/\S/);
+        return p < 0 ? -1 : p;
+    };
+    const CLOSER = /^[)}\]]+[;,]?$/;
+    const LEAD = /^(@|#|\/\/|\/\*|\*)/;
+    const CLASS_HEADER = /^(?:export\s+|default\s+|public\s+|abstract\s+|final\s+|sealed\s+)*class\b/;
+    const ownedClosers = new Set();
+
+    for (let i = 0; i < n; i++) {
+        const base = indentOf(i);
+        if (base < 0) continue;
+
+        // A header is a line whose next non-blank line is indented deeper.
+        let nxt = -1;
+        for (let k = i + 1; k < n; k++) { if (indentOf(k) >= 0) { nxt = k; break; } }
+        if (nxt < 0 || indentOf(nxt) <= base) continue;
+
+        let end = i;
+        for (let k = i + 1; k < n; k++) {
+            const ind = indentOf(k);
+            if (ind < 0) continue;
+            if (ind > base) { end = k; continue; }
+            if (ind === base && CLOSER.test(lines[k].trim())) end = k;
+            break;
+        }
+        if (end <= i) continue;
+
+        let code = 0, hit = 0;
+        for (let k = i; k <= end; k++) {
+            if (indentOf(k) < 0) continue;
+            code++;
+            if (result.has(k)) hit++;
+        }
+        // Whole class bodies are excluded from the ratio rule so that editing
+        // half a page object does not paint the entire file green.
+        const mostlyNew = code > 0 && hit / code >= 0.5
+            && !CLASS_HEADER.test(lines[i].trim());
+        if (!result.has(i) && !mostlyNew) continue;
+
+        for (let k = i; k <= end; k++) if (indentOf(k) >= 0) result.add(k);
+        if (CLOSER.test(lines[end].trim())) ownedClosers.add(end);
+
+        // Pull in the decorators / annotations / doc comments sitting above it.
+        for (let k = i - 1; k >= 0; k--) {
+            if (indentOf(k) !== base || !LEAD.test(lines[k].trim())) break;
+            result.add(k);
+        }
+    }
+
+    // A bare "}" is interchangeable with every other "}" in the file, so the
+    // diff can pin the addition on the wrong one. Keep a closer only when the
+    // block it actually closes is itself new.
+    for (const k of Array.from(result)) {
+        if (CLOSER.test(lines[k].trim()) && !ownedClosers.has(k)) result.delete(k);
+    }
+    return result;
+}
+
+function computeDiffHighlights(baseLines, newLines) {
+    return expandAddedBlocks(newLines, computeAddedLines(baseLines, newLines));
+}
+
+function updateHighlights(textareaId, highlightId, added, lines) {
     const highlightContainer = document.getElementById(highlightId);
     if (!highlightContainer) return;
-    
+
     let html = "";
     const n = lines.length;
     for (let j = 0; j < n; j++) {
         const lineText = lines[j];
-        const isMatch = matches.has(j);
-        const isAdded = !isMatch && lineText.trim() !== "";
-        
+        const isAdded = added.has(j) && lineText.trim() !== "";
+
         const className = isAdded ? "highlight-line added" : "highlight-line";
-        
+
         const escapedText = lineText
             .replace(/&/g, "&amp;")
             .replace(/</g, "&lt;")
@@ -2752,13 +2861,13 @@ function updateDiffView() {
     const existingLines = existingRaw.split(/\r?\n/);
     
     // 1. Highlight generated file (left pane): lines in generated but not in existing
-    const matchesGenerated = computeLCSMatches(existingLines, generatedLines);
-    updateHighlights('generatedFileContent', 'generatedFileHighlights', matchesGenerated, generatedLines);
-    
+    const addedGenerated = computeDiffHighlights(existingLines, generatedLines);
+    updateHighlights('generatedFileContent', 'generatedFileHighlights', addedGenerated, generatedLines);
+
     // 2. Highlight existing file (right pane): lines in current existing but not in original existing
     const originalLines = originalExistingContent.split(/\r?\n/);
-    const matchesExisting = computeLCSMatches(originalLines, existingLines);
-    updateHighlights('existingFileContent', 'existingFileHighlights', matchesExisting, existingLines);
+    const addedExisting = computeDiffHighlights(originalLines, existingLines);
+    updateHighlights('existingFileContent', 'existingFileHighlights', addedExisting, existingLines);
 
     // Dynamically align scroll range height by adding padding-bottom to the shorter panel
     const genLength = generatedLines.length;
