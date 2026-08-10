@@ -29,12 +29,16 @@ class LicenseSessionTests(unittest.TestCase):
             self.assertEqual(session.get("user_id"), 42)
             self.assertEqual(session.get("user_name"), "Test User")
 
-    def test_invalid_license_redirect_preserves_authenticated_session(self):
+    def test_invalid_license_uses_blocking_shell_and_preserves_authenticated_session(self):
         self._sign_in()
         with patch.object(app_module, "assess_license_state", return_value=self._license_state(False)):
             response = self.client.get("/home")
-        self.assertEqual(response.status_code, 302)
-        self.assertTrue(response.headers["Location"].endswith("/license"))
+        page = response.get_data(as_text=True)
+        self.assertEqual(response.status_code, 423)
+        self.assertIn('class="app-layout"', page)
+        self.assertIn('active license-blocking', page)
+        self.assertIn('const isLicenseGatePage = true', page)
+        self.assertNotIn('window.location.assign(\'/license\')', page)
         self._assert_session_preserved()
 
     def test_invalid_license_api_response_preserves_authenticated_session(self):

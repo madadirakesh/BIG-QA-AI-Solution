@@ -23,6 +23,7 @@
         </div>
 
         <div class="header-license-modal-body">
+            <div class="header-license-overview">
             <div class="status-container glassmorphism license-management-status">
                 <div class="status-header">
                     <i class="fas fa-id-card"></i>
@@ -79,23 +80,33 @@
                     </button>
                 </div>
             </div>
+            </div>
 
             <form method="POST" action="{{ url_for('activate_license') }}" class="license-management-form" id="headerLicenseForm" novalidate>
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
                 <input type="hidden" name="next" id="headerLicenseNext" value=""/>
+                <div class="license-management-form-intro">
+                    <span class="license-management-form-icon"><i class="fas fa-key"></i></span>
+                    <div>
+                        <h4>Update license key</h4>
+                        <p>Enter a replacement key only when renewing or changing the current activation.</p>
+                    </div>
+                </div>
                 <div class="form-group">
                     <label for="header_license_key">
-                        <span><i class="fas fa-key"></i> License Key</span>
-                        <span class="license-management-help">Paste a new key to replace the current activation</span>
+                        <span>New License Key</span>
+                        <span class="license-management-help">Paste the full key exactly as provided</span>
                     </label>
                     <textarea
                         id="header_license_key"
                         name="license_key"
                         rows="4"
                         required
-                        placeholder="Paste the license key here"
+                        placeholder="Paste a new license key here"
                         class="license-management-textarea"
-                    >{{ license_state.get('record', {}).get('license_key', '') if license_state.get('record') else '' }}</textarea>
+                        autocomplete="off"
+                        spellcheck="false"
+                    ></textarea>
                     <div class="field-error" id="headerLicenseErr"></div>
                 </div>
 
@@ -203,6 +214,7 @@
         let activeMandatorySignature = '';
         let activeReleaseUrl = '';
         let licenseBlocked = {{ license_blocked|tojson }};
+        const isLicenseGatePage = {{ license_gate_page|default(false)|tojson }};
 
         if (!button || !versionButton || !versionButtonValue || !statusValue || !modal || !form) return;
 
@@ -434,6 +446,13 @@
                 }
                 if (!payload.license_valid) {
                     applyLicenseState(payload);
+                    return;
+                }
+                if (isLicenseGatePage) {
+                    // The server deliberately rendered a neutral shell instead of protected
+                    // route content. Once validation recovers, reload the original URL so its
+                    // real content is rendered without sending the user through login again.
+                    window.location.reload();
                     return;
                 }
 

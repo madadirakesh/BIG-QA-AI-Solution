@@ -552,6 +552,12 @@ def require_authentication():
                 'redirect': url_for('license_page'),
                 'message': license_state["message"],
             }), 403
+        if 'user_id' in session:
+            # Keep the authenticated session and application identity visible while serving no
+            # protected route content. The global license modal blocks this neutral shell until
+            # validation succeeds, then reloads the original URL. This avoids making a license
+            # transition look like an automatic logout.
+            return render_template('license_gate.html', license_gate_page=True), 423
         return redirect(url_for('license_page'))
 
     # Central guard: enforce login for every route except the public ones.
