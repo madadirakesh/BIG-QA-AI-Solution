@@ -440,7 +440,9 @@ class BootstrapperEngine:
             # requirements.txt
             req_content = ""
             if tool == "Selenium":
-                req_content = "selenium\npytest\npytest-html\npytest-xdist\nwebdriver-manager\n"
+                # Selenium 4 includes Selenium Manager, so a separate driver-manager
+                # package is neither generated nor required.
+                req_content = "selenium\npytest\npytest-html\npytest-xdist\n"
             elif tool == "Playwright":
                 req_content = "playwright\npytest\npytest-playwright\npytest-html\npytest-xdist\n"
             
@@ -483,13 +485,11 @@ class BasePage:
                 test_content = f'''\
 import pytest
 from selenium import webdriver
-from selenium.webdriver.chrome.service import Service as ChromeService
-from webdriver_manager.chrome import ChromeDriverManager
 from pages.login_page import LoginPage
 
 @pytest.fixture()
 def driver():
-    driver = webdriver.Chrome(service=ChromeService(ChromeDriverManager().install()))
+    driver = webdriver.Chrome()
     yield driver
     driver.quit()
 
@@ -678,10 +678,11 @@ public class ExtentManager {{
         ext = "ts" if is_ts else "js"
 
         deps = ""
-        script_test = "npx playwright test"
+        # npm scripts automatically put this project's node_modules/.bin on PATH.
+        script_test = "playwright test"
         if "Cucumber" in framework:
             deps = ',\n    "@cucumber/cucumber": "^9.5.0"'
-            script_test = "npx cucumber-js --format html:Results/report.html"
+            script_test = "cucumber-js --format html:Results/report.html"
             
         if is_ts:
             deps += ',\n    "typescript": "^5.0.0",\n    "@types/node": "^20.0.0"'
@@ -759,12 +760,12 @@ module.exports = defineConfig({{
                 f.write("using Reqnroll;\n\n[Binding]\npublic class SmokeSteps\n{\n    [Given(\"App is launched\")]\n    public void GivenAppIsLaunched() {}\n}\n")
             csproj = f'''<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>net6.0</TargetFramework>
+    <TargetFramework>net8.0</TargetFramework>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="Reqnroll" Version="1.0.0" />
-    <PackageReference Include="Reqnroll.NUnit" Version="1.0.0" />
-    <PackageReference Include="NUnit" Version="3.13.3" />
+    <PackageReference Include="Reqnroll.NUnit" Version="2.1.0" />
+    <PackageReference Include="NUnit" Version="4.2.2" />
+    <PackageReference Include="NUnit3TestAdapter" Version="4.6.0" />
   </ItemGroup>
 </Project>'''
             with open(os.path.join(target_dir, f"{os.path.basename(target_dir)}.csproj"), "w") as f:

@@ -10,15 +10,16 @@
     {% set status_label = status|replace('_', ' ')|title %}
     {% set status_pill_class = 'error' %}
 {% endif %}
+{% set license_blocked = (not license_state.get('valid')) and request.path != '/license' %}
 
-<div class="confirm-backdrop" id="headerLicenseModal">
+<div class="confirm-backdrop{% if license_blocked %} active license-blocking{% endif %}" id="headerLicenseModal" role="dialog" aria-modal="true" aria-labelledby="headerLicenseModalTitle">
     <div class="header-license-modal glassmorphism">
         <div class="header-license-modal-head">
             <div>
-                <h3>Manage License</h3>
-                <p>Review the current activation details and update the stored key when you renew or replace the license.</p>
+                <h3 id="headerLicenseModalTitle">{% if license_blocked %}License Verification Required{% else %}Manage License{% endif %}</h3>
+                <p id="headerLicenseModalDescription">{% if license_blocked %}The application is locked until the license can be verified. Retry the service check or update the license key below.{% else %}Review the current activation details and update the stored key when you renew or replace the license.{% endif %}</p>
             </div>
-            <button type="button" class="header-license-close" onclick="closeHeaderLicenseModal()" aria-label="Close license dialog">&times;</button>
+            <button type="button" class="header-license-close" onclick="closeHeaderLicenseModal()" aria-label="Close license dialog"{% if license_blocked %} hidden{% endif %}>&times;</button>
         </div>
 
         <div class="header-license-modal-body">
@@ -103,9 +104,12 @@
                         <span id="headerLicenseBtnText"><i class="fas fa-shield-check"></i> Update License</span>
                         <span id="headerLicenseBtnLoading" style="display:none;"><i class="fas fa-spinner fa-spin"></i> Saving...</span>
                     </button>
-                    <button type="button" class="btn license-management-refresh" onclick="refreshHeaderLicenseState(true)">
+                    <button type="button" class="btn license-management-refresh" id="headerLicenseRefreshBtn" onclick="refreshHeaderLicenseState(true)">
                         <i class="fas fa-rotate-right"></i> Refresh Status
                     </button>
+                    <a href="/logout" class="btn header-license-logout">
+                        <i class="fas fa-right-from-bracket"></i> Logout
+                    </a>
                 </div>
             </form>
         </div>
@@ -165,6 +169,10 @@
         const versionButtonValue = document.getElementById('headerVersionValue');
         const statusValue = document.getElementById('headerLicenseValue');
         const modal = document.getElementById('headerLicenseModal');
+        const modalTitle = document.getElementById('headerLicenseModalTitle');
+        const modalDescription = document.getElementById('headerLicenseModalDescription');
+        const modalClose = modal ? modal.querySelector('.header-license-close') : null;
+        const refreshButton = document.getElementById('headerLicenseRefreshBtn');
         const modalStatusPill = document.getElementById('headerLicenseModalStatusPill');
         const modalStatusText = document.getElementById('headerLicenseModalStatusText');
         const modalPeriod = document.getElementById('headerLicenseModalPeriod');
@@ -194,6 +202,7 @@
         let activeMandatoryReleaseUrl = '';
         let activeMandatorySignature = '';
         let activeReleaseUrl = '';
+        let licenseBlocked = {{ license_blocked|tojson }};
 
         if (!button || !versionButton || !versionButtonValue || !statusValue || !modal || !form) return;
 
@@ -390,18 +399,48 @@
             modalLicensedTo.textContent = payload.licensed_to || 'Unavailable';
             modalSavedKey.textContent = payload.masked_license_key || 'Unavailable';
             modalMessage.textContent = payload.message || 'No status message available.';
+            setLicenseBlocked(!payload.license_valid);
         }
 
+        function setLicenseBlocked(blocked) {
+            licenseBlocked = Boolean(blocked) && window.location.pathname !== '/license';
+            modal.classList.toggle('license-blocking', licenseBlocked);
+            modal.classList.toggle('active', licenseBlocked || modal.classList.contains('license-management-open'));
+            if (modalClose) modalClose.hidden = licenseBlocked;
+            modalTitle.textContent = licenseBlocked ? 'License Verification Required' : 'Manage License';
+            modalDescription.textContent = licenseBlocked
+                ? 'The application is locked until the license can be verified. Retry the service check or update the license key below.'
+                : 'Review the current activation details and update the stored key when you renew or replace the license.';
+        }
+
+        let licenseRefreshInFlight = false;
         async function refreshStatus(showToastOnError = false) {
+            if (licenseRefreshInFlight) return;
+            licenseRefreshInFlight = true;
+            if (refreshButton) refreshButton.disabled = true;
             try {
                 const clientPlatform = detectClientPlatform();
-                const [licenseResponse, releaseResponse] = await Promise.all([
-                    fetch('/api/license-status?refresh=1', { credentials: 'same-origin' }),
-                    fetch(`/api/release-status?os_name=${encodeURIComponent(clientPlatform)}`, { credentials: 'same-origin' })
-                ]);
-                if (!licenseResponse.ok) return;
+                // Validate the license first. Do not launch release/config requests in parallel:
+                // they are protected and only create noisy 403s when the license service is down.
+                const licenseResponse = await fetch('/api/license-status?refresh=1', {
+                    credentials: 'same-origin'
+                });
+                if (!licenseResponse.ok) {
+                    throw new Error(`License status request failed with HTTP ${licenseResponse.status}`);
+                }
                 const payload = await licenseResponse.json();
-                if (payload.status !== 'success') return;
+                if (payload.status !== 'success') {
+                    throw new Error(payload.message || 'License status response was not successful.');
+                }
+                if (!payload.license_valid) {
+                    applyLicenseState(payload);
+                    return;
+                }
+
+                const releaseResponse = await fetch(
+                    `/api/release-status?os_name=${encodeURIComponent(clientPlatform)}`,
+                    { credentials: 'same-origin' }
+                );
                 if (releaseResponse.ok) {
                     const releasePayload = await releaseResponse.json();
                     const hasReleaseState = Boolean(
@@ -429,21 +468,33 @@
                 }
                 applyLicenseState(payload);
             } catch (error) {
+                applyLicenseState({
+                    license_valid: false,
+                    license_status: 'error',
+                    message: 'License service is unavailable. Check the service connection, then retry.',
+                    period_label: 'Unavailable'
+                });
                 applyReleaseFallback(getLocalCurrentVersion(), 'Unable to refresh release information right now.');
                 if (showToastOnError && typeof showToast === 'function') {
                     showToast('Unable to refresh license status right now.', 'error');
                 }
                 console.warn('Unable to refresh header license state:', error);
+            } finally {
+                licenseRefreshInFlight = false;
+                if (refreshButton) refreshButton.disabled = false;
             }
         }
 
         window.openHeaderLicenseModal = function() {
             nextInput.value = window.location.pathname + window.location.search;
+            modal.classList.add('license-management-open');
             modal.classList.add('active');
             refreshStatus(false);
         };
 
         window.closeHeaderLicenseModal = function() {
+            if (licenseBlocked) return;
+            modal.classList.remove('license-management-open');
             modal.classList.remove('active');
         };
 
@@ -451,11 +502,14 @@
             refreshStatus(showToastOnError);
         };
 
-        if (document.readyState === 'loading') {
+        // The dedicated license page already renders the persisted error state and owns the
+        // manual retry button. Auto-validating there would immediately hit the backend again.
+        const shouldAutoRefreshLicense = window.location.pathname !== '/license';
+        if (shouldAutoRefreshLicense && document.readyState === 'loading') {
             document.addEventListener('DOMContentLoaded', function() {
                 refreshStatus(false);
             });
-        } else {
+        } else if (shouldAutoRefreshLicense) {
             refreshStatus(false);
         }
 
@@ -507,6 +561,11 @@
             if (event.target === modal) closeHeaderLicenseModal();
         });
 
-        refreshStatus(false);
+        document.addEventListener('keydown', function(event) {
+            if (event.key === 'Escape' && modal.classList.contains('active') && !licenseBlocked) {
+                closeHeaderLicenseModal();
+            }
+        });
+
     })();
 </script>

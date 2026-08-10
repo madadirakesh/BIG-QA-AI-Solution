@@ -5,18 +5,22 @@
 {% block extra_css %}
 <style>
     .license-screen {
-        padding-block: clamp(12px, 2vh, 24px);
+        min-height: 100vh;
+        padding: clamp(20px, 4vh, 48px);
+        align-items: center;
     }
 
     .license-card {
-        width: min(100%, 560px);
-        max-height: calc(100vh - clamp(24px, 4vh, 48px));
-        padding: clamp(1.2rem, 2vw, 1.75rem);
+        width: min(100%, 940px);
+        max-height: calc(100vh - clamp(40px, 8vh, 96px));
+        padding: clamp(1.5rem, 3vw, 2.4rem);
         display: flex;
         flex-direction: column;
-        gap: 1rem;
+        gap: 1.5rem;
         overflow-y: auto;
         scrollbar-width: thin;
+        border-color: rgba(56, 189, 248, 0.2);
+        box-shadow: 0 30px 90px rgba(2, 8, 23, 0.58), inset 0 1px 0 rgba(255, 255, 255, 0.05);
     }
 
     .license-card::-webkit-scrollbar {
@@ -30,18 +34,29 @@
 
     .license-header {
         margin-bottom: 0;
+        display: grid;
+        grid-template-columns: auto 1fr;
+        align-items: center;
+        gap: 1.25rem;
+        text-align: left;
     }
 
     .license-logo {
-        height: clamp(60px, 10vh, 104px);
-        margin-bottom: 0.75rem;
+        width: 76px;
+        height: 96px;
+        margin: 0;
+        object-fit: contain;
+    }
+
+    .license-heading-copy {
+        min-width: 0;
     }
 
     .license-title-row {
         display: inline-flex;
         align-items: center;
         gap: 0.55rem;
-        margin-bottom: 0.45rem;
+        margin-bottom: 0.35rem;
     }
 
     .license-title-row h1 {
@@ -66,6 +81,14 @@
     .license-intro {
         margin: 0;
         line-height: 1.55;
+        max-width: 650px;
+    }
+
+    .license-workspace {
+        display: grid;
+        grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.05fr);
+        gap: 1.25rem;
+        align-items: stretch;
     }
 
     .license-panel {
@@ -77,6 +100,7 @@
             linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.02)),
             rgba(15, 23, 42, 0.58);
         box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+        height: 100%;
     }
 
     .license-panel .status-header {
@@ -91,13 +115,15 @@
     .license-status-list .status-item {
         align-items: flex-start;
         gap: 0.8rem;
-        padding: 0.85rem 0.95rem;
+        padding: 0.8rem 0.9rem;
         border: 1px solid rgba(148, 163, 184, 0.08);
         background: rgba(255, 255, 255, 0.035);
     }
 
     .license-status-list .status-item.message {
         display: block;
+        border-color: rgba(248, 113, 113, 0.16);
+        background: rgba(239, 68, 68, 0.055);
     }
 
     .license-status-list .status-item.message .status-label {
@@ -124,7 +150,28 @@
 
     .license-form {
         display: grid;
+        align-content: start;
         gap: 1rem;
+        padding: 1.15rem;
+        border: 1px solid rgba(148, 163, 184, 0.16);
+        border-radius: 16px;
+        background: rgba(15, 23, 42, 0.42);
+    }
+
+    .license-form-title {
+        display: flex;
+        align-items: center;
+        gap: 0.55rem;
+        margin: 0;
+        color: var(--text-primary);
+        font-size: 1rem;
+    }
+
+    .license-form-copy {
+        margin: -0.45rem 0 0;
+        color: var(--text-secondary);
+        font-size: 0.86rem;
+        line-height: 1.5;
     }
 
     .license-form .form-group {
@@ -170,13 +217,26 @@
         color: var(--text-secondary);
         font-size: 0.88rem;
         line-height: 1.5;
+        text-align: center;
     }
 
-    @media (max-width: 560px) {
+    @media (max-width: 760px) {
+        .license-screen {
+            padding: 12px;
+            align-items: flex-start;
+        }
+
         .license-card {
             max-height: calc(100vh - 24px);
             padding: 1rem;
             gap: 0.85rem;
+        }
+
+        .license-header {
+            grid-template-columns: 1fr;
+            justify-items: center;
+            text-align: center;
+            gap: 0.7rem;
         }
 
         .license-title-row {
@@ -185,6 +245,10 @@
         }
 
         .license-actions {
+            grid-template-columns: 1fr;
+        }
+
+        .license-workspace {
             grid-template-columns: 1fr;
         }
 
@@ -197,7 +261,7 @@
         }
     }
 
-    @media (max-height: 820px) {
+    @media (max-height: 760px) and (min-width: 761px) {
         .license-screen {
             padding-block: 10px;
         }
@@ -207,10 +271,7 @@
             padding: 1rem;
         }
 
-        .license-logo {
-            height: 58px;
-            margin-bottom: 0.55rem;
-        }
+        .license-logo { width: 58px; height: 72px; }
 
         .license-panel {
             padding: 0.85rem;
@@ -228,11 +289,13 @@
     <div class="login-card glassmorphism license-card">
         <div class="login-header license-header">
             <img src="{{ url_for('static', filename='images/big_logo_stacked_light.png') }}" alt="BIG Logo" class="login-logo license-logo">
-            <div class="license-title-row">
-                <h1>Activate Your License</h1>
-                <span class="license-badge"><i class="fas fa-shield-halved"></i> Secure Access</span>
+            <div class="license-heading-copy">
+                <div class="license-title-row">
+                    <h1>License verification</h1>
+                    <span class="license-badge"><i class="fas fa-shield-halved"></i> Secure Access</span>
+                </div>
+                <p class="license-intro">Verify your BIG AI QA Solution license to securely restore access{% if session.get('user_id') %} without signing in again{% endif %}.</p>
             </div>
-            <p class="license-intro">Validate your BIG AI QA Solution license to unlock the application and continue to sign in.</p>
         </div>
 
         {% with messages = get_flashed_messages(with_categories=true) %}
@@ -245,7 +308,8 @@
           {% endif %}
         {% endwith %}
 
-        <div class="status-container glassmorphism license-panel">
+        <div class="license-workspace">
+          <div class="status-container glassmorphism license-panel">
             <div class="status-header">
                 <i class="fas fa-id-card"></i>
                 <span>Current License Status</span>
@@ -280,13 +344,15 @@
                     <span class="license-status-content muted">{{ license_state.message }}</span>
                 </div>
             </div>
-        </div>
+          </div>
 
-        <form method="POST" action="{{ url_for('activate_license') }}" class="login-form license-form" id="licenseForm" novalidate>
+          <form method="POST" action="{{ url_for('activate_license') }}" class="login-form license-form" id="licenseForm" novalidate>
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+            <h2 class="license-form-title"><i class="fas fa-key"></i> Update license key</h2>
+            <p class="license-form-copy">Enter the license key supplied by your administrator, then validate it to continue.</p>
             <div class="form-group">
                 <label for="license_key">
-                    <span><i class="fas fa-key"></i> License Key</span>
+                    <span>License Key</span>
                     <span class="license-hint">Paste the full key exactly as provided</span>
                 </label>
                 <textarea
@@ -294,9 +360,11 @@
                     name="license_key"
                     rows="3"
                     required
-                    placeholder="Paste the license key here"
+                    placeholder="Paste a new license key here"
                     class="license-textarea"
-                >{{ request.form.get('license_key', license_state.record.license_key if license_state.record else '') }}</textarea>
+                    autocomplete="off"
+                    spellcheck="false"
+                >{{ request.form.get('license_key', '') }}</textarea>
                 <div class="field-error" id="licenseErr"></div>
             </div>
 
@@ -305,15 +373,20 @@
                     <span id="licenseBtnText"><i class="fas fa-shield-check"></i> Validate License</span>
                     <span id="licenseBtnLoading" style="display:none;"><i class="fas fa-spinner fa-spin"></i> Validating...</span>
                 </button>
-                <button type="button" class="btn license-btn-secondary" onclick="refreshLicenseStatus()">
+                <button type="button" class="btn license-btn-secondary" id="licenseRefreshBtn" onclick="refreshLicenseStatus()">
                     <i class="fas fa-rotate-right"></i> Refresh Status
                 </button>
             </div>
-        </form>
+          </form>
+        </div>
 
         <div class="login-footer">
             <div class="license-note">
-                Once the license is validated, the application will automatically continue to the normal sign-in flow.
+                {% if session.get('user_id') %}
+                    Once the license is validated, your existing session will continue automatically.
+                {% else %}
+                    Once the license is validated, you can continue to sign in.
+                {% endif %}
             </div>
         </div>
     </div>
@@ -344,14 +417,30 @@
         document.getElementById('licenseSubmitBtn').disabled = true;
     });
 
+    let licensePageRefreshInFlight = false;
     async function refreshLicenseStatus() {
-        const response = await fetch('/api/license-status?refresh=1');
-        const data = await response.json();
-        if (data.license_valid) {
-            window.location.href = '{{ url_for("login") }}';
-            return;
+        if (licensePageRefreshInFlight) return;
+        licensePageRefreshInFlight = true;
+        const refreshButton = document.getElementById('licenseRefreshBtn');
+        refreshButton.disabled = true;
+        try {
+            const response = await fetch('/api/license-status?refresh=1');
+            const data = await response.json();
+            if (data.license_valid) {
+                window.location.href = '{{ url_for("home") if session.get("user_id") else url_for("login") }}';
+                return;
+            }
+            // Reload once to render the persisted backend error. Header auto-refresh is disabled
+            // on /license, so this does not start another validation request.
+            window.location.reload();
+        } catch (error) {
+            const errorEl = document.getElementById('licenseErr');
+            errorEl.textContent = 'Unable to contact the license service. Please retry.';
+            errorEl.classList.add('visible');
+        } finally {
+            licensePageRefreshInFlight = false;
+            refreshButton.disabled = false;
         }
-        window.location.reload();
     }
 </script>
 {% endblock %}

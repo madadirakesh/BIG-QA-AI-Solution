@@ -231,7 +231,9 @@ async def add_security_headers(request: Request, call_next):
     response.headers["Content-Security-Policy"] = (
         "default-src 'self'; "
         "script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com; "
-        "connect-src 'self' https://generativelanguage.googleapis.com;"
+        "connect-src 'self' https://generativelanguage.googleapis.com; "
+        "frame-ancestors 'none'; "
+        "form-action 'self';"
     )
     # Strip/override Server version disclosure header
     response.headers["Server"] = "BIG-AI-QA-Engine"

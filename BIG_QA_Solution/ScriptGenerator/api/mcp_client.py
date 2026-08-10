@@ -8,11 +8,14 @@ import sys
 import time
 
 from mcp import ClientSession
+
+# MCP Python SDK 2.x renamed this transport factory and changed the context-manager result
+# from a three-item tuple to two items. Keep the app compatible with both supported SDK majors so
+# an existing user environment does not break merely because pip resolved a newer MCP release.
 try:
-    # MCP 2.x uses the PEP 8 name and yields two transport streams.
-    from mcp.client.streamable_http import streamable_http_client
-except ImportError:  # Compatibility with older MCP releases.
-    from mcp.client.streamable_http import streamablehttp_client as streamable_http_client
+    from mcp.client.streamable_http import streamable_http_client as _streamable_http_client
+except ImportError:  # MCP 1.x
+    from mcp.client.streamable_http import streamablehttp_client as _streamable_http_client
 
 from api import backend
 
@@ -197,9 +200,8 @@ async def run_mcp_git_prompt(prompt: str, project_path: str, assistant_mode: str
         process, server_url = await _start_mcp_server(project_path)
         await _wait_for_server(server_url, process)
 
-        # Older MCP versions yielded a third callback value; MCP 2.x yields only
-        # the read and write streams. Indexing keeps this client compatible with both.
-        async with streamable_http_client(server_url) as transport_streams:
+        async with _streamable_http_client(server_url) as transport_streams:
+            # MCP 1.x yields (read, write, session_id_getter); MCP 2.x yields (read, write).
             read_stream, write_stream = transport_streams[:2]
             async with ClientSession(read_stream, write_stream) as session:
                 await session.initialize()

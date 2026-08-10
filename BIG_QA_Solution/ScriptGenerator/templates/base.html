@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+{% set use_app_shell = session.get('user_id') and request.endpoint != 'license_page' %}
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -94,9 +95,9 @@
         })();
     </script>
 </head>
-<body class="{% if not session.get('user_id') %}login-bg{% else %}app-bg{% endif %} dark-theme">
+<body class="{% if use_app_shell %}app-bg{% else %}login-bg{% endif %} dark-theme">
 
-    {% if session.get('user_id') %}
+    {% if use_app_shell %}
     <!-- H4: Mobile sidebar overlay -->
     <div class="sidebar-overlay" id="sidebarOverlay" onclick="closeSidebar()"></div>
     <!-- H4: Hamburger toggle -->
@@ -190,7 +191,7 @@
     <div class="toast-container" id="toastContainer"></div>
 
     <!-- M11: Theme Toggle FAB -->
-    {% if session.get('user_id') %}
+    {% if use_app_shell %}
     {% include 'partials/header_license_modal.html' %}
     <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()" title="Toggle light/dark mode" aria-label="Toggle theme">
         <i class="fas fa-moon" id="themeIcon"></i>

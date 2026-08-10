@@ -15,10 +15,9 @@ pytz
 selenium
 pytest
 pytest-html
-webdriver-manager
 PyQt6
 PyQt6-WebEngine
 anthropic
 jira
-mcp
+mcp>=1.9,<3
 cryptography

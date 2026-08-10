@@ -19,7 +19,7 @@
 | Language | **Python 3.10+** |
 | BDD framework | **Behave** (Gherkin) |
 | Design pattern | **Page Object Model (POM)** |
-| Driver management | **webdriver-manager** (drivers auto-resolved — never hard-code driver paths) |
+| Driver management | **Selenium Manager** built into Selenium 4 (never hard-code driver paths) |
 | Config source | **`.env`** read via `python-dotenv` |
 
 The application under test lives at **`{{BASE_URL}}`** (overridable via `APP_URL` in `.env`).
@@ -135,7 +135,7 @@ diverges from the suite.
 ```bash
 python -m venv venv
 source venv/bin/activate        # Windows: venv\Scripts\activate
-pip install -r requirements.txt
+python -m pip install -r requirements.txt
 behave                          # run all scenarios
 behave --tags=@smoke            # run only @smoke
 ```

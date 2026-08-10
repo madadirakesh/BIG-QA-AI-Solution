@@ -1,5 +1,6 @@
 import hashlib
 import json
+import logging
 import os
 import platform
 import re
@@ -19,6 +20,10 @@ from utils.crypto_util import decrypt_for_app, encrypt_for_app
 
 
 LICENSE_PRODUCT_NAME = "BIG AI QA Solution"
+LICENSE_SERVICE_UNAVAILABLE_MESSAGE = (
+    "We couldn't verify your license because the license service is unavailable. "
+    "Please check that the license server is running, then try again."
+)
 LICENSE_CACHE_SECONDS = 300
 APP_LICENSE_ROW_ID = 1
 APP_ROOT_DIR = Path(__file__).resolve().parent.parent
@@ -27,6 +32,7 @@ SEMVER_FULL_RE = re.compile(
     r"^v?(0|[1-9]\d*)(?:\.(0|[1-9]\d*))?(?:\.(0|[1-9]\d*))?(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$",
     re.IGNORECASE,
 )
+logger = logging.getLogger(__name__)
 
 
 def utcnow_iso():
@@ -665,10 +671,13 @@ def assess_license_state(force_refresh=False):
         if checked_at and LICENSE_CACHE_SECONDS > 0:
             age_seconds = (datetime.utcnow() - checked_at.replace(tzinfo=None)).total_seconds()
             if age_seconds < LICENSE_CACHE_SECONDS and record.get("status") in ("valid", "invalid", "error"):
+                cached_message = record.get("message") or "License status loaded from cache."
+                if record.get("status") == "error":
+                    cached_message = LICENSE_SERVICE_UNAVAILABLE_MESSAGE
                 return {
                     "valid": record.get("status") == "valid",
                     "status": record.get("status"),
-                    "message": record.get("message") or "License status loaded from cache.",
+                    "message": cached_message,
                     "licensed_to": record.get("licensed_to") or "",
                     "license_period": {
                         "start_date": "",
@@ -680,22 +689,11 @@ def assess_license_state(force_refresh=False):
     try:
         verification = call_license_verifier(record.get("license_key"))
     except requests.RequestException as exc:
-        message = f"License service is unavailable: {exc}"
-        previous_status = (record.get("status") or "").strip().lower()
-        if previous_status == "valid":
-            # Preserve the last known-good activation when the verifier is temporarily
-            # unreachable so authenticated users are not forced out during a transient outage.
-            return {
-                "valid": True,
-                "status": "valid",
-                "message": "Last successful license validation is still being used because the license service is temporarily unavailable.",
-                "licensed_to": record.get("licensed_to") or "",
-                "license_period": {
-                    "start_date": "",
-                    "end_date": "",
-                },
-                "record": record,
-            }
+        logger.warning("License verification service request failed: %s", exc)
+        message = LICENSE_SERVICE_UNAVAILABLE_MESSAGE
+        # Fail closed when the verifier cannot be reached. We preserve the authenticated Flask
+        # session in app.require_authentication(), but block protected application routes until
+        # the license service recovers and show this explicit service error on the license page.
         save_license_record(
             record.get("license_key"),
             "error",
@@ -715,32 +713,30 @@ def assess_license_state(force_refresh=False):
             "record": refreshed,
         }
 
-    status = "valid" if verification["valid"] else "invalid"
-    previous_status = (record.get("status") or "").strip().lower()
-    if previous_status == "valid" and not verification["valid"] and is_transient_license_response(verification.get("status_code", 0)):
-        return {
-            "valid": True,
-            "status": "valid",
-            "message": "Last successful license validation is still being used because the license service is temporarily unavailable.",
-            "licensed_to": record.get("licensed_to") or "",
-            "license_period": verification.get("license_period") or {
-                "start_date": "",
-                "end_date": "",
-            },
-            "record": record,
-        }
+    transient_failure = not verification["valid"] and is_transient_license_response(
+        verification.get("status_code", 0)
+    )
+    status = "valid" if verification["valid"] else "error" if transient_failure else "invalid"
+    message = verification["message"]
+    if transient_failure:
+        logger.warning(
+            "License verification service returned HTTP %s: %s",
+            verification.get("status_code", 0),
+            message,
+        )
+        message = LICENSE_SERVICE_UNAVAILABLE_MESSAGE
 
     save_license_record(
         record.get("license_key"),
         status,
-        verification["message"],
+        message,
         verification.get("licensed_to") or "",
     )
     refreshed = get_license_record()
     return {
         "valid": verification["valid"],
         "status": status,
-        "message": verification["message"],
+        "message": message,
         "licensed_to": verification.get("licensed_to") or "",
         "license_period": verification.get("license_period") or {
             "start_date": "",

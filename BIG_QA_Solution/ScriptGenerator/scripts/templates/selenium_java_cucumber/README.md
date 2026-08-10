@@ -1,7 +1,7 @@
 # {{PROJECT_NAME}}
 
 QA automation framework — **Selenium 4 for Java**, **Cucumber BDD**, **JUnit 5**, **Maven**.
-Driver binaries are managed automatically by **WebDriverManager** — no manual installs.
+Driver binaries are resolved automatically by Selenium 4's built-in **Selenium Manager**.
 Scaffolded by the BIG-QA Script Generator.
 
 ---
@@ -11,7 +11,7 @@ Scaffolded by the BIG-QA Script Generator.
 - **Java 11+** (`java -version`)
 - **Maven 3.6+** (`mvn -version`)
 - A browser installed locally — Chrome (default), Firefox, or Edge.
-- Internet access on first run (WebDriverManager downloads the driver binary).
+- Internet access on first run if Selenium Manager needs to download a driver binary.
 
 ## Quick start
 
@@ -45,7 +45,7 @@ Reports land in [`Results/`](Results/):
 │   │   ├── pageObjects/                       Page Object classes (you add these)
 │   │   └── utils/
 │   │       ├── ConfigReader.java              Reads .env via dotenv-java
-│   │       └── DriverFactory.java             Per-thread WebDriver lifecycle (WebDriverManager)
+│   │       └── DriverFactory.java             Per-thread WebDriver lifecycle (Selenium Manager)
 │   └── test/
 │       ├── java/
 │       │   ├── runners/TestRunner.java        JUnit 5 + Cucumber entry point
@@ -106,8 +106,9 @@ feature, then refine the locators.
   artifactId now (e.g. `First Java App` → `first-java-app`).
 - **`Property 'APP_URL' not found in .env file`** — you forgot to `cp .env.example .env` and
   edit it.
-- **`SessionNotCreatedException: ... browser version X / driver version Y`** — usually means
-  WebDriverManager couldn't reach its cache server. Delete `~/.cache/selenium/` and retry.
+- **`SessionNotCreatedException: ... browser version X / driver version Y`** — Selenium Manager
+  may be unable to reach its driver source. Check proxy/network settings, clear
+  `~/.cache/selenium/`, and retry.
 - **Chrome won't launch on Linux** — install missing deps:
   `sudo apt install libnss3 libgbm1 libasound2`.
 - **Tests pass locally but fail in CI** — set `HEADLESS=true` and add the Chrome flags already

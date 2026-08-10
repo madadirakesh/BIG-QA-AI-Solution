@@ -3,14 +3,12 @@ IMPORTANT - Follow Selenium 4 Python standards strictly:
 
 Required imports in every file that uses Selenium:
     from selenium import webdriver
-    from selenium.webdriver.chrome.service import Service
     from selenium.webdriver.chrome.options import Options
     from selenium.webdriver.common.by import By
     from selenium.webdriver.support.ui import WebDriverWait
     from selenium.webdriver.support import expected_conditions as EC
     from selenium.webdriver.common.action_chains import ActionChains  (only if needed)
     from selenium.webdriver.common.keys import Keys  (only if needed)
-    from webdriver_manager.chrome import ChromeDriverManager
 
 Use ONLY these locator methods (Selenium 4 standard):
     driver.find_element(By.ID, "value")
@@ -43,18 +41,14 @@ NEVER use any of these deprecated Selenium 3 methods:
 IMPORTANT - Always generate conftest.py with a 'browser' fixture:
     import pytest
     from selenium import webdriver
-    from selenium.webdriver.chrome.service import Service
     from selenium.webdriver.chrome.options import Options
-    from webdriver_manager.chrome import ChromeDriverManager
 
     @pytest.fixture(scope="session")
     def browser():
         options = Options()
         options.add_argument("--start-maximized")
-        driver = webdriver.Chrome(
-            service=Service(ChromeDriverManager().install()),
-            options=options
-        )
+        # Selenium 4's built-in Selenium Manager resolves the matching driver.
+        driver = webdriver.Chrome(options=options)
         yield driver
         driver.quit()
 
@@ -67,7 +61,6 @@ IMPORTANT - Always generate a requirements.txt with ALL required packages:
     selenium>=4.0.0
     pytest
     pytest-bdd
-    webdriver-manager
     behave
     python-dotenv
 

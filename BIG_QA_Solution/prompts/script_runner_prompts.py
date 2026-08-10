@@ -15,7 +15,7 @@ def get_execution_command_prompt(tool: str, language: str, framework: str, env: 
         Browser: {browser}
         Tags: {tags}
         
-        Generate the terminal command to execute this test suite locally. Wait, for Python it's usually `pytest` or `behave`, for Node it's `npm run test` or `npx playwright test`, for Java it's `mvn test`. Include any tags/browser parameters as standard arguments for the given framework.
+        Generate the terminal command to execute this test suite locally. For Python, use the project's virtual-environment interpreter; for Node, prefer `npm test`/`npm run test` so executables resolve from this project's node_modules (never download a CLI at run time); for Java, use `mvn test`. Include any tags/browser parameters as standard arguments for the given framework.
         Return only JSON like: {{"command": "the command string"}}
         """
 
@@ -140,4 +140,3 @@ def get_heal_locator_prompt(file_path: str, file_content: str, failed_locator: s
       "explanation": "short explanation of what was changed and why"
     }}
     """
-

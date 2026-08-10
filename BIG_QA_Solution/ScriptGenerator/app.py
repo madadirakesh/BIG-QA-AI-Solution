@@ -577,13 +577,14 @@ def add_no_cache_and_security_headers(response):
     response.headers['X-Frame-Options'] = 'DENY'
     # Prevent MIME-type sniffing
     response.headers['X-Content-Type-Options'] = 'nosniff'
-    # Define Content Security Policy
     response.headers['Content-Security-Policy'] = (
         "default-src 'self'; "
         "script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com; "
         "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdnjs.cloudflare.com; "
         "font-src 'self' https://fonts.gstatic.com https://cdnjs.cloudflare.com; "
-        "connect-src 'self' http://127.0.0.1:8000 http://localhost:8000 https://generativelanguage.googleapis.com https://api.openai.com https://api.anthropic.com;"
+        "connect-src 'self' http://127.0.0.1:8000 http://localhost:8000 https://generativelanguage.googleapis.com https://api.openai.com https://api.anthropic.com; "
+        "frame-ancestors 'none'; "
+        "form-action 'self';"
     )
     # Strip or override Server response header
     response.headers['Server'] = 'BIG-AI-QA-Engine'
@@ -2562,9 +2563,6 @@ def _render_behave_dashboard(json_path: str, display_path: str):
     failed_steps = step_counts["failed"]
     skipped_steps = step_counts["skipped"] + step_counts["untested"]
     undefined_steps = step_counts["undefined"]
-    total_step_buckets = max(passed_steps + failed_steps + skipped_steps + undefined_steps, 1)
-    scenario_total = max(sum(scenario_counts.values()), 1)
-
     # Behave's JSON formatter includes only scenarios selected by the active tag filter. Its
     # console summary also counts scenarios/steps excluded by that filter as skipped. The runner
     # persists those totals so the dashboard can agree with the execution log while still showing
@@ -2572,10 +2570,7 @@ def _render_behave_dashboard(json_path: str, display_path: str):
     execution_summary = {}
     summary_path = os.path.join(os.path.dirname(json_path), 'runner_summary.json')
     try:
-        if (
-            os.path.isfile(summary_path)
-            and os.path.getmtime(summary_path) + 5 >= os.path.getmtime(json_path)
-        ):
+        if os.path.isfile(summary_path) and os.path.getmtime(summary_path) + 5 >= os.path.getmtime(json_path):
             with open(summary_path, 'r', encoding='utf-8') as summary_file:
                 execution_summary = json.load(summary_file) or {}
     except (OSError, ValueError, TypeError):
@@ -2601,16 +2596,16 @@ def _render_behave_dashboard(json_path: str, display_path: str):
     step_failed_display = int(reported_steps.get('failed', failed_steps))
     step_skipped_display = int(reported_steps.get('skipped', skipped_steps))
     step_undefined_display = int(reported_steps.get('undefined', undefined_steps))
-    display_step_buckets = max(
-        step_passed_display + step_failed_display + step_skipped_display + step_undefined_display,
+    display_scenario_buckets = max(
+        scenario_passed_display + scenario_failed_display + scenario_skipped_display + scenario_undefined_display,
         1,
     )
-    pass_rate = round((step_passed_display / display_step_buckets) * 100, 1)
+    pass_rate = round((scenario_passed_display / display_scenario_buckets) * 100, 1)
     donut_style = (
-        f"conic-gradient(#2ea44f 0 {(step_passed_display / display_step_buckets) * 100:.2f}%, "
-        f"#d73a49 {(step_passed_display / display_step_buckets) * 100:.2f}% {((step_passed_display + step_failed_display) / display_step_buckets) * 100:.2f}%, "
-        f"#d29922 {((step_passed_display + step_failed_display) / display_step_buckets) * 100:.2f}% {((step_passed_display + step_failed_display + step_skipped_display) / display_step_buckets) * 100:.2f}%, "
-        f"#1f8acb {((step_passed_display + step_failed_display + step_skipped_display) / display_step_buckets) * 100:.2f}% 100%)"
+        f"conic-gradient(#2ea44f 0 {(scenario_passed_display / display_scenario_buckets) * 100:.2f}%, "
+        f"#d73a49 {(scenario_passed_display / display_scenario_buckets) * 100:.2f}% {((scenario_passed_display + scenario_failed_display) / display_scenario_buckets) * 100:.2f}%, "
+        f"#d29922 {((scenario_passed_display + scenario_failed_display) / display_scenario_buckets) * 100:.2f}% {((scenario_passed_display + scenario_failed_display + scenario_skipped_display) / display_scenario_buckets) * 100:.2f}%, "
+        f"#1f8acb {((scenario_passed_display + scenario_failed_display + scenario_skipped_display) / display_scenario_buckets) * 100:.2f}% 100%)"
     )
 
     def percent(value, total):
@@ -2650,7 +2645,7 @@ def _render_behave_dashboard(json_path: str, display_path: str):
   <div class="page">
     <section class="hero">
       <div class="panel hero-copy"><span class="eyebrow">Behave Dashboard</span><h1>Python BDD Execution Report</h1><p class="sub">A lighter Script Runner report for Behave runs with quick status filtering and a cleaner always-open scenario view.</p><div class="path">{safe_display_path}</div></div>
-      <div class="panel hero-side"><div class="donut-wrap"><div class="donut"><div class="donut-center"><div><strong>{pass_rate:.1f}%</strong><br><span>discovered step pass rate</span></div></div></div><div class="legend"><button type="button" class="legend-button active" data-filter="all"><span class="left"><span class="dot" style="background:#5d6f86"></span>Discovered</span><strong>{step_total_display}</strong></button><button type="button" class="legend-button" data-filter="passed"><span class="left"><span class="dot" style="background:#2ea44f"></span>Passed</span><strong>{step_passed_display}</strong></button><button type="button" class="legend-button" data-filter="failed"><span class="left"><span class="dot" style="background:#d73a49"></span>Failed</span><strong>{step_failed_display}</strong></button><button type="button" class="legend-button" data-filter="skipped"><span class="left"><span class="dot" style="background:#d29922"></span>Skipped / not run</span><strong>{step_skipped_display}</strong></button><button type="button" class="legend-button" data-filter="undefined"><span class="left"><span class="dot" style="background:#1f8acb"></span>Undefined</span><strong>{step_undefined_display}</strong></button></div></div><p class="stat-foot" style="margin:14px 0 0;">Detailed rows below show {steps_count} executed steps; {step_skipped_display} were skipped or excluded by filters.</p></div>
+      <div class="panel hero-side"><div class="donut-wrap"><div class="donut"><div class="donut-center"><div><strong>{pass_rate:.1f}%</strong><br><span>scenario pass rate</span></div></div></div><div class="legend"><button type="button" class="legend-button active" data-filter="all"><span class="left"><span class="dot" style="background:#5d6f86"></span>Scenarios</span><strong>{scenario_total_display}</strong></button><button type="button" class="legend-button" data-filter="passed"><span class="left"><span class="dot" style="background:#2ea44f"></span>Passed</span><strong>{scenario_passed_display}</strong></button><button type="button" class="legend-button" data-filter="failed"><span class="left"><span class="dot" style="background:#d73a49"></span>Failed</span><strong>{scenario_failed_display}</strong></button><button type="button" class="legend-button" data-filter="skipped"><span class="left"><span class="dot" style="background:#d29922"></span>Skipped / not run</span><strong>{scenario_skipped_display}</strong></button><button type="button" class="legend-button" data-filter="undefined"><span class="left"><span class="dot" style="background:#1f8acb"></span>Undefined</span><strong>{scenario_undefined_display}</strong></button></div></div><p class="stat-foot" style="margin:14px 0 0;">Detailed cards below show {scenarios_count} executed scenarios; {scenario_skipped_display} were skipped or excluded by filters.</p></div>
     </section>
     <section class="cards">
       <div class="panel stat-card"><div class="stat-label">Features Discovered</div><div class="stat-value">{feature_total_display}</div><div class="stat-foot">{features_count} included in this report</div></div>
@@ -3471,6 +3466,19 @@ def find_free_port(preferred=5000):
 def launch_backend():
     """Launches the FastAPI backend service using uvicorn."""
     try:
+        # A desktop shortcut, Flask reload, or second app invocation may reach this function
+        # while the existing backend is still healthy. Reuse it instead of spawning a duplicate
+        # process that immediately fails with "address already in use" on port 8000.
+        import urllib.request
+        try:
+            request = urllib.request.Request('http://127.0.0.1:8000/health')
+            with urllib.request.urlopen(request, timeout=2) as response:
+                if 200 <= response.status < 300:
+                    print("AI Backend service already running on port 8000; reusing it.")
+                    return None
+        except Exception:
+            pass
+
         # Launching with uvicorn directly if possible, or as a background process
         # We use the full module path to ensure it's findable
         env = os.environ.copy()
@@ -3484,10 +3492,12 @@ def launch_backend():
             "--port", "8000"
         ]
         
-        subprocess.Popen(cmd, cwd=str(BASE_DIR), env=env)
+        process = subprocess.Popen(cmd, cwd=str(BASE_DIR), env=env)
         print("AI Backend service (Port 8000) launched via uvicorn.")
+        return process
     except Exception as e:
         print(f"Failed to launch backend service: {e}")
+        return None
 
 def check_and_initialize_db():
     print("Checking database connection...")
@@ -3550,6 +3560,16 @@ def _python_syntax_issue(filename, content):
 @app.route('/api/generate-bdd-code', methods=['POST'])
 @login_required()
 def generate_bdd_code():
+    def _safe_decode(file_bytes):
+        if not file_bytes:
+            return ""
+        for encoding in ('utf-8', 'cp1252', 'latin-1'):
+            try:
+                return file_bytes.decode(encoding)
+            except UnicodeDecodeError:
+                continue
+        return file_bytes.decode('utf-8', errors='replace')
+
     try:
         existing_steps_count = 0
         ai_state = read_ai_config(os.path.join(BASE_DIR, '.env'))
@@ -3579,7 +3599,7 @@ def generate_bdd_code():
             
         scenarios_text = ""
         if file_type == 'BDD':
-            scenarios_text = scenario_file.read().decode('utf-8')
+            scenarios_text = _safe_decode(scenario_file.read())
         elif file_type == 'Excel':
             try:
                 # Need openpyxl for xlsx
@@ -3715,7 +3735,7 @@ def generate_bdd_code():
             support_content += "Local Page Object Files:\n"
             for po in po_files:
                 if po.filename:
-                    support_content += f"--- {po.filename} ---\n{po.read().decode('utf-8')}\n"
+                    support_content += f"--- {po.filename} ---\n{_safe_decode(po.read())}\n"
 
         # Scan for utilities
         support_content += "\nProject Reusable Utilities:\n"
@@ -3725,7 +3745,7 @@ def generate_bdd_code():
                 for uf in os.listdir(u_path):
                     if uf.endswith((".py", ".java", ".ts", ".js", ".cs")):
                         try:
-                            with open(os.path.join(u_path, uf), "r", encoding="utf-8") as f:
+                            with open(os.path.join(u_path, uf), "r", encoding="utf-8", errors="ignore") as f:
                                 support_content += f"--- {uf} ---\n{''.join(f.readlines()[:100])}\n"
                         except Exception:
                             pass

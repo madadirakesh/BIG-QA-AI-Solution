@@ -1403,8 +1403,8 @@
                 status.nextSibling.textContent = ' Status: Error';
             }
 
-            // Failed test runs contain the most useful diagnostics. Open the report for every
-            // execution outcome, not only green runs. The URL includes a per-run cache key.
+            // Reports also contain diagnostics for failed runs. Open a fresh report for every
+            // outcome and expose a real clickable absolute URL in the execution log.
             if (data.report_url) {
                 const absoluteReportUrl = new URL(data.report_url, window.location.origin).href;
                 addLog(`[Report] View latest results: ${absoluteReportUrl}`, data.status === 'success' ? "log-success" : "log-system");

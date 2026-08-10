@@ -1094,6 +1094,32 @@ select option {
     overflow-y: auto;
 }
 
+#headerLicenseModal.license-blocking {
+    z-index: 13000;
+    background: rgba(2, 6, 23, 0.88);
+    backdrop-filter: blur(12px);
+}
+
+#headerLicenseModal.license-blocking .header-license-modal {
+    border-color: rgba(248, 113, 113, 0.38);
+    box-shadow: 0 30px 90px rgba(0, 0, 0, 0.7);
+}
+
+#headerLicenseModal.license-blocking .header-license-modal-head h3 {
+    color: #fecaca;
+}
+
+.header-license-logout {
+    background: rgba(239, 68, 68, 0.12);
+    border: 1px solid rgba(248, 113, 113, 0.3);
+    color: #fca5a5;
+    text-decoration: none;
+}
+
+.header-license-logout:hover {
+    background: rgba(239, 68, 68, 0.2);
+}
+
 #mandatoryUpdateModal {
     padding: 16px;
     align-items: center;

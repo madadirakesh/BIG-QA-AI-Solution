@@ -37,11 +37,11 @@ BeforeAll(async function () {
         // This check mimics the 'install_dependencies' logic in your invoker
         execSync("npm list @playwright/test", { stdio: "ignore" });
         // Install Playwright browsers
-        execSync("npx playwright install chromium", { stdio: "ignore" });
+        execSync("npx --no-install playwright install chromium", { stdio: "ignore" });
     } catch (error) {
         console.error("❌ Required packages missing. Executing emergency install...");
         execSync("npm install", { stdio: "inherit" });
-        execSync("npx playwright install chromium", { stdio: "inherit" });
+        execSync("npx --no-install playwright install chromium", { stdio: "inherit" });
     }
     // Rule 4: Create result folder with timestamp
     const resultDir = process.env.RESULT_DIR || path.join(process.cwd(), "results", new Date().toISOString().replace(/[:.]/g, "-"));

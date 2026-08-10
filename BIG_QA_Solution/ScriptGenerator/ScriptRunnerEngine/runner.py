@@ -19,7 +19,7 @@ def _runtime_env_with_ca():
     Base environment for test-run subprocesses.
 
     Reuses EnvironmentSetup._download_env() so running tests (and the runtime
-    `npx playwright install` that the generated TypeScript hooks.ts triggers in its
+    project-local `npx --no-install playwright install` that generated TypeScript hooks trigger in
     BeforeAll) gets the SAME TLS/CA + proxy settings as project creation does. Without this,
     creation would succeed behind a corporate proxy but the first test run would fail on the
     same certificate error we already solved once — see
@@ -362,7 +362,6 @@ class ScriptRunnerService:
     def _validate_python_project(cls, full_path: str) -> str:
         """Compile project Python sources before launching a test framework."""
         import ast
-
         for root, dirs, files in os.walk(full_path):
             dirs[:] = [d for d in dirs if d.lower() not in cls.REPORT_SKIP_DIRS]
             for filename in files:
@@ -374,38 +373,29 @@ class ScriptRunnerService:
                         ast.parse(source_file.read(), filename=source_path)
                 except SyntaxError as exc:
                     rel_path = os.path.relpath(source_path, full_path)
-                    return (
-                        f"[Validation] Python syntax error in {rel_path}, line {exc.lineno}: "
-                        f"{exc.msg}. Fix or regenerate this file before running the suite."
-                    )
+                    return f"[Validation] Python syntax error in {rel_path}, line {exc.lineno}: {exc.msg}. Fix or regenerate this file before running the suite."
                 except OSError as exc:
                     return f"[Validation] Could not read {source_path}: {exc}"
         return ""
 
     @classmethod
     def _write_runner_report(cls, full_path: str, success: bool, log_text: str) -> str:
-        """Write a fresh fallback report when the test framework produced no usable report."""
+        """Write a fresh diagnostic report when the framework produced no usable report."""
         results_dir = os.path.join(full_path, 'Results')
         os.makedirs(results_dir, exist_ok=True)
         report_path = os.path.join(results_dir, 'runner_report.html')
         status = 'Passed' if success else 'Failed'
         color = '#22c55e' if success else '#ef4444'
         generated_at = datetime.now().astimezone().isoformat(timespec='seconds')
-        content = f"""<!doctype html>
-<html><head><meta charset="utf-8"><title>Script Runner - {status}</title></head>
-<body style="font-family:system-ui;background:#0b1220;color:#e8eefc;padding:32px">
-<main style="max-width:1100px;margin:auto"><h1>Execution {status}</h1>
-<p style="color:{color};font-weight:700">Status: {status}</p>
-<p>Generated: {html.escape(generated_at)}</p>
-<pre style="white-space:pre-wrap;background:#131c2f;padding:20px;border-radius:10px;overflow:auto">{html.escape(log_text or 'No command output was captured.')}</pre>
-</main></body></html>"""
+        content = f'''<!doctype html><html><head><meta charset="utf-8"><title>Script Runner - {status}</title></head>
+<body style="font-family:system-ui;background:#0b1220;color:#e8eefc;padding:32px"><main style="max-width:1100px;margin:auto"><h1>Execution {status}</h1><p style="color:{color};font-weight:700">Status: {status}</p><p>Generated: {html.escape(generated_at)}</p><pre style="white-space:pre-wrap;background:#131c2f;padding:20px;border-radius:10px;overflow:auto">{html.escape(log_text or 'No command output was captured.')}</pre></main></body></html>'''
         with open(report_path, 'w', encoding='utf-8') as report_file:
             report_file.write(content)
         return report_path
 
     @classmethod
     def _ensure_behave_html_report(cls, full_path: str) -> None:
-        """Create a usable HTML report when Behave's HTML formatter leaves an empty file."""
+        """Create usable HTML when Behave's HTML formatter leaves an empty file."""
         results_dir = os.path.join(full_path, 'Results')
         json_path = os.path.join(results_dir, 'behave_report.json')
         html_path = os.path.join(results_dir, 'report.html')
@@ -413,40 +403,23 @@ class ScriptRunnerService:
             return
         if os.path.isfile(html_path) and os.path.getsize(html_path) > 0:
             return
-
         try:
             with open(json_path, 'r', encoding='utf-8') as json_file:
                 features = json.load(json_file)
         except (OSError, ValueError):
             return
-
-        rows = []
-        passed = failed = skipped = 0
+        rows, passed, failed, skipped = [], 0, 0, 0
         for feature in features if isinstance(features, list) else []:
             feature_name = feature.get('name') or 'Unnamed feature'
             for scenario in feature.get('elements') or []:
-                statuses = [
-                    ((step.get('result') or {}).get('status') or 'skipped').lower()
-                    for step in scenario.get('steps') or []
-                ]
+                statuses = [((step.get('result') or {}).get('status') or 'skipped').lower() for step in scenario.get('steps') or []]
                 status = 'failed' if 'failed' in statuses else 'skipped' if statuses and all(s == 'skipped' for s in statuses) else 'passed'
-                if status == 'failed':
-                    failed += 1
-                elif status == 'skipped':
-                    skipped += 1
-                else:
-                    passed += 1
-                rows.append(
-                    f"<tr><td>{html.escape(feature_name)}</td><td>{html.escape(scenario.get('name') or 'Unnamed scenario')}</td>"
-                    f"<td class=\"{status}\">{status.title()}</td></tr>"
-                )
-
+                if status == 'failed': failed += 1
+                elif status == 'skipped': skipped += 1
+                else: passed += 1
+                rows.append(f'<tr><td>{html.escape(feature_name)}</td><td>{html.escape(scenario.get("name") or "Unnamed scenario")}</td><td class="{status}">{status.title()}</td></tr>')
         generated_at = datetime.now().astimezone().isoformat(timespec='seconds')
-        document = f"""<!doctype html><html><head><meta charset="utf-8"><title>Behave Test Report</title>
-<style>body{{font-family:system-ui;margin:32px;background:#f5f7fb;color:#172033}}table{{width:100%;border-collapse:collapse;background:white}}th,td{{padding:12px;border:1px solid #dce3ef;text-align:left}}.passed{{color:#16803c}}.failed{{color:#c62828}}.skipped{{color:#8a6500}}</style>
-</head><body><h1>Behave Test Report</h1><p>Generated: {html.escape(generated_at)}</p>
-<p><strong>Passed:</strong> {passed} &nbsp; <strong>Failed:</strong> {failed} &nbsp; <strong>Skipped:</strong> {skipped}</p>
-<table><thead><tr><th>Feature</th><th>Scenario</th><th>Status</th></tr></thead><tbody>{''.join(rows)}</tbody></table></body></html>"""
+        document = f'''<!doctype html><html><head><meta charset="utf-8"><title>Behave Test Report</title><style>body{{font-family:system-ui;margin:32px;background:#f5f7fb;color:#172033}}table{{width:100%;border-collapse:collapse;background:white}}th,td{{padding:12px;border:1px solid #dce3ef;text-align:left}}.passed{{color:#16803c}}.failed{{color:#c62828}}.skipped{{color:#8a6500}}</style></head><body><h1>Behave Test Report</h1><p>Generated: {html.escape(generated_at)}</p><p><strong>Passed:</strong> {passed} &nbsp; <strong>Failed:</strong> {failed} &nbsp; <strong>Skipped:</strong> {skipped}</p><table><thead><tr><th>Feature</th><th>Scenario</th><th>Status</th></tr></thead><tbody>{''.join(rows)}</tbody></table></body></html>'''
         try:
             with open(html_path, 'w', encoding='utf-8') as html_file:
                 html_file.write(document)
@@ -455,7 +428,7 @@ class ScriptRunnerService:
 
     @classmethod
     def _write_behave_execution_summary(cls, full_path: str, log_text: str) -> None:
-        """Persist Behave's console totals, including scenarios excluded by tag filters."""
+        """Persist Behave console totals, including scenarios excluded by tag filters."""
         summary = {}
         patterns = {
             'features': r'(\d+)\s+features?\s+passed,\s*(\d+)\s+failed,\s*(\d+)\s+skipped',
@@ -464,15 +437,9 @@ class ScriptRunnerService:
         }
         for key, pattern in patterns.items():
             matches = re.findall(pattern, log_text or '', flags=re.IGNORECASE)
-            if not matches:
-                continue
-            values = [int(value) for value in matches[-1]]
-            summary[key] = {
-                'passed': values[0],
-                'failed': values[1],
-                'skipped': values[2],
-                'undefined': values[3] if len(values) > 3 else 0,
-            }
+            if matches:
+                values = [int(value) for value in matches[-1]]
+                summary[key] = {'passed': values[0], 'failed': values[1], 'skipped': values[2], 'undefined': values[3] if len(values) > 3 else 0}
         if not summary:
             return
         summary['generated_at'] = datetime.now().astimezone().isoformat(timespec='seconds')
@@ -490,8 +457,7 @@ class ScriptRunnerService:
         cls._ensure_behave_html_report(full_path)
         candidates = cls._iter_report_candidates(full_path, start_time=start_time)
         report_file = candidates[0] if candidates else cls._write_runner_report(full_path, success, log_text)
-        cache_key = int(time.time() * 1000)
-        return f"/api/script-runner/report?path={quote(report_file, safe='')}&run={cache_key}"
+        return f"/api/script-runner/report?path={quote(report_file, safe='')}&run={int(time.time() * 1000)}"
 
     @staticmethod
     def _call_ai_sync_json(prompt: str) -> dict:
@@ -701,7 +667,8 @@ class ScriptRunnerService:
             if language == 'Python':
                 cmd = "pytest tests/ --html=Results/report.html"
             elif language in ['Typescript', 'JavaScript', 'TypeScript']:
-                cmd = "npx playwright test"
+                # Run the package.json script so npm resolves the project-local executable.
+                cmd = "npm test"
             else:
                 cmd = "echo 'Unsupported'"
 
