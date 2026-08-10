@@ -1,4 +1,5 @@
 import unittest
+import os
 from unittest.mock import patch
 
 import app as app_module
@@ -28,6 +29,15 @@ class LicenseSessionTests(unittest.TestCase):
         with self.client.session_transaction() as session:
             self.assertEqual(session.get("user_id"), 42)
             self.assertEqual(session.get("user_name"), "Test User")
+
+    def test_session_uses_renewing_long_lived_cookie(self):
+        with patch.dict(os.environ, {"SESSION_LIFETIME_DAYS": ""}):
+            self.assertEqual(app_module.get_env_positive_int("SESSION_LIFETIME_DAYS", 1), 1)
+        with patch.dict(os.environ, {"SESSION_LIFETIME_DAYS": "invalid"}):
+            self.assertEqual(app_module.get_env_positive_int("SESSION_LIFETIME_DAYS", 1), 1)
+        self.assertTrue(app_module.app.config["SESSION_PERMANENT"])
+        self.assertTrue(app_module.app.config["SESSION_REFRESH_EACH_REQUEST"])
+        self.assertTrue(app_module.app.config["SESSION_COOKIE_HTTPONLY"])
 
     def test_invalid_license_uses_blocking_shell_and_preserves_authenticated_session(self):
         self._sign_in()

@@ -64,6 +64,18 @@ def get_env_bool(name, default=False):
     return value.strip().lower() in ("1", "true", "yes", "on")
 
 
+def get_env_positive_int(name, default):
+    """Read a positive integer setting without allowing invalid values to break startup."""
+    value = (os.environ.get(name) or "").strip()
+    if not value:
+        return default
+    try:
+        parsed = int(value)
+    except ValueError:
+        return default
+    return parsed if parsed > 0 else default
+
+
 def get_local_timezone():
     """Return the configured app timezone with a safe fallback."""
     try:
@@ -425,8 +437,14 @@ app = Flask(__name__)
 app.secret_key = get_flask_secret_key()
 app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 31536000  # Cache static files for 1 year
 app.config['SESSION_PERMANENT'] = True
-app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(hours=8)
+# Use a sliding inactivity window instead of a short fixed login timeout. Active users remain
+# signed in because Flask refreshes the permanent-session expiry on every request.
+app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(
+    days=get_env_positive_int('SESSION_LIFETIME_DAYS', 1)
+)
 app.config['SESSION_REFRESH_EACH_REQUEST'] = True
+app.config['SESSION_COOKIE_HTTPONLY'] = True
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 
 # Enable CSRF protection globally
 csrf = CSRFProtect(app)
