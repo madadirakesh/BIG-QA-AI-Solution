@@ -26,6 +26,7 @@ PROJECT_BOOTSTRAPPER_DIR = ROOT_DIR / "ProjectBootstrapper"
 VENV_DIR = ROOT_DIR / ".venv"
 VENV_PYTHON = VENV_DIR / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
 VENV_BOOTSTRAP_FLAG = "SCRIPTGENERATOR_VENV_READY"
+FLASK_SECRET_KEY_FILE = BASE_DIR / ".flask_secret_key"
 
 # Load environment variables before any module-level config reads.
 load_dotenv(BASE_DIR / ".env")
@@ -38,13 +39,26 @@ DEFAULT_AI_MODELS = {
 }
 
 def get_flask_secret_key():
-    """Return a stable Flask session key, creating a local dev key when needed."""
+    """Return a stable Flask session key, creating a persistent local key when needed."""
     configured_key = os.environ.get('FLASK_SECRET_KEY')
     if configured_key:
         return configured_key
 
+    if FLASK_SECRET_KEY_FILE.exists():
+        try:
+            persisted_key = FLASK_SECRET_KEY_FILE.read_text(encoding="utf-8").strip()
+        except OSError:
+            persisted_key = ""
+        if persisted_key:
+            os.environ['FLASK_SECRET_KEY'] = persisted_key
+            return persisted_key
+
     env_path = BASE_DIR / ".env"
     generated_key = secrets.token_hex(32)
+    try:
+        FLASK_SECRET_KEY_FILE.write_text(generated_key, encoding="utf-8")
+    except OSError:
+        pass
     try:
         with env_path.open("a", encoding="utf-8") as env_file:
             if env_path.exists() and env_path.stat().st_size > 0:
@@ -54,7 +68,38 @@ def get_flask_secret_key():
         return generated_key
     except OSError:
         # Last-resort fallback keeps the app bootable, but sessions will reset on reload.
+        os.environ['FLASK_SECRET_KEY'] = generated_key
         return generated_key
+
+
+def upsert_env_values(env_path, updates):
+    """Update selected .env keys in place while preserving every unrelated setting."""
+    env_file = Path(env_path)
+    existing_lines = []
+    if env_file.exists():
+        with env_file.open('r', encoding='utf-8') as env_handle:
+            existing_lines = env_handle.readlines()
+
+    normalized_updates = {str(key): str(value) for key, value in updates.items()}
+    updated_flags = {key: False for key in normalized_updates}
+    new_lines = []
+
+    for line in existing_lines:
+        stripped = line.strip()
+        if stripped and not stripped.startswith('#') and '=' in line:
+            key = line.split('=', 1)[0].strip()
+            if key in normalized_updates:
+                new_lines.append(f'{key} = "{normalized_updates[key]}"\n')
+                updated_flags[key] = True
+                continue
+        new_lines.append(line)
+
+    for key, value in normalized_updates.items():
+        if not updated_flags[key]:
+            new_lines.append(f'{key} = "{value}"\n')
+
+    with env_file.open('w', encoding='utf-8') as env_handle:
+        env_handle.writelines(new_lines)
 
 def get_env_bool(name, default=False):
     """Parse a boolean environment variable with a safe default."""
@@ -440,7 +485,7 @@ app.config['SESSION_PERMANENT'] = True
 # Use a sliding inactivity window instead of a short fixed login timeout. Active users remain
 # signed in because Flask refreshes the permanent-session expiry on every request.
 app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(
-    days=get_env_positive_int('SESSION_LIFETIME_DAYS', 1)
+    days=get_env_positive_int('SESSION_LIFETIME_DAYS', 7)
 )
 app.config['SESSION_REFRESH_EACH_REQUEST'] = True
 app.config['SESSION_COOKIE_HTTPONLY'] = True
@@ -3224,41 +3269,12 @@ def configure_ai_endpoint():
     if not ai_model:
         ai_model = get_default_ai_model(ai_tool, ai_provider)
     
-    env_lines = []
-    if os.path.exists(env_path):
-        with open(env_path, 'r') as f:
-            env_lines = f.readlines()
-            
-    new_env_lines = []
-    updated_keys = {'AI_TOOL': False, 'AI_MODEL': False, 'API_KEY': False, 'AI_PROVIDER': False}
-    
-    for line in env_lines:
-        if line.startswith('AI_TOOL'):
-            new_env_lines.append(f'AI_TOOL = "{ai_tool}"\n')
-            updated_keys['AI_TOOL'] = True
-        elif line.startswith('AI_MODEL'):
-            new_env_lines.append(f'AI_MODEL = "{ai_model}"\n')
-            updated_keys['AI_MODEL'] = True
-        elif line.startswith('API_KEY'):
-            new_env_lines.append(f'API_KEY = "{api_key}"\n')
-            updated_keys['API_KEY'] = True
-        elif line.startswith('AI_PROVIDER'):
-            new_env_lines.append(f'AI_PROVIDER = "{ai_provider}"\n')
-            updated_keys['AI_PROVIDER'] = True
-        else:
-            new_env_lines.append(line)
-            
-    if not updated_keys['AI_TOOL']:
-        new_env_lines.append(f'AI_TOOL = "{ai_tool}"\n')
-    if not updated_keys['AI_MODEL']:
-        new_env_lines.append(f'AI_MODEL = "{ai_model}"\n')
-    if not updated_keys['API_KEY']:
-        new_env_lines.append(f'API_KEY = "{api_key}"\n')
-    if not updated_keys['AI_PROVIDER']:
-        new_env_lines.append(f'AI_PROVIDER = "{ai_provider}"\n')
-        
-    with open(env_path, 'w') as f:
-        f.writelines(new_env_lines)
+    upsert_env_values(env_path, {
+        'AI_TOOL': ai_tool,
+        'AI_MODEL': ai_model,
+        'API_KEY': api_key,
+        'AI_PROVIDER': ai_provider,
+    })
         
     # Also update current env for immediately running backend.py or others
     os.environ['AI_TOOL'] = str(ai_tool)
@@ -3302,36 +3318,11 @@ def configure_jira_endpoint():
     jira_email = data.get('jira_email')
     jira_api_token = data.get('jira_api_token')
     
-    env_lines = []
-    if os.path.exists(env_path):
-        with open(env_path, 'r') as f:
-            env_lines = f.readlines()
-            
-    new_env_lines = []
-    updated_keys = {'JIRA_SERVER': False, 'JIRA_EMAIL': False, 'JIRA_API_TOKEN': False}
-    
-    for line in env_lines:
-        if line.startswith('JIRA_SERVER') or line.startswith('jira_server'):
-            new_env_lines.append(f'JIRA_SERVER = "{jira_server}"\n')
-            updated_keys['JIRA_SERVER'] = True
-        elif line.startswith('JIRA_EMAIL') or line.startswith('jira_email'):
-            new_env_lines.append(f'JIRA_EMAIL = "{jira_email}"\n')
-            updated_keys['JIRA_EMAIL'] = True
-        elif line.startswith('JIRA_API_TOKEN') or line.startswith('jira_api_token'):
-            new_env_lines.append(f'JIRA_API_TOKEN = "{jira_api_token}"\n')
-            updated_keys['JIRA_API_TOKEN'] = True
-        else:
-            new_env_lines.append(line)
-            
-    if not updated_keys['JIRA_SERVER']:
-        new_env_lines.append(f'JIRA_SERVER = "{jira_server}"\n')
-    if not updated_keys['JIRA_EMAIL']:
-        new_env_lines.append(f'JIRA_EMAIL = "{jira_email}"\n')
-    if not updated_keys['JIRA_API_TOKEN']:
-        new_env_lines.append(f'JIRA_API_TOKEN = "{jira_api_token}"\n')
-        
-    with open(env_path, 'w') as f:
-        f.writelines(new_env_lines)
+    upsert_env_values(env_path, {
+        'JIRA_SERVER': jira_server,
+        'JIRA_EMAIL': jira_email,
+        'JIRA_API_TOKEN': jira_api_token,
+    })
         
     os.environ['JIRA_SERVER'] = str(jira_server)
     os.environ['JIRA_EMAIL'] = str(jira_email)

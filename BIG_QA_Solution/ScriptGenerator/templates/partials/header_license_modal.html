@@ -115,8 +115,9 @@
                         <span id="headerLicenseBtnText"><i class="fas fa-shield-check"></i> Update License</span>
                         <span id="headerLicenseBtnLoading" style="display:none;"><i class="fas fa-spinner fa-spin"></i> Saving...</span>
                     </button>
-                    <button type="button" class="btn license-management-refresh" id="headerLicenseRefreshBtn" onclick="refreshHeaderLicenseState(true)">
-                        <i class="fas fa-rotate-right"></i> Refresh Status
+                    <button type="button" class="btn license-management-refresh" id="headerLicenseRefreshBtn" onclick="refreshHeaderLicenseState(true)" aria-live="polite">
+                        <span id="headerLicenseRefreshText"><i class="fas fa-rotate-right"></i> Refresh Status</span>
+                        <span id="headerLicenseRefreshLoading" style="display:none;"><i class="fas fa-spinner fa-spin"></i> Refreshing...</span>
                     </button>
                     <a href="/logout" class="btn header-license-logout">
                         <i class="fas fa-right-from-bracket"></i> Logout
@@ -184,6 +185,8 @@
         const modalDescription = document.getElementById('headerLicenseModalDescription');
         const modalClose = modal ? modal.querySelector('.header-license-close') : null;
         const refreshButton = document.getElementById('headerLicenseRefreshBtn');
+        const refreshButtonText = document.getElementById('headerLicenseRefreshText');
+        const refreshButtonLoading = document.getElementById('headerLicenseRefreshLoading');
         const modalStatusPill = document.getElementById('headerLicenseModalStatusPill');
         const modalStatusText = document.getElementById('headerLicenseModalStatusText');
         const modalPeriod = document.getElementById('headerLicenseModalPeriod');
@@ -425,11 +428,19 @@
                 : 'Review the current activation details and update the stored key when you renew or replace the license.';
         }
 
+        function setRefreshButtonState(isLoading) {
+            if (!refreshButton) return;
+            refreshButton.disabled = Boolean(isLoading);
+            refreshButton.setAttribute('aria-busy', isLoading ? 'true' : 'false');
+            if (refreshButtonText) refreshButtonText.style.display = isLoading ? 'none' : 'inline-flex';
+            if (refreshButtonLoading) refreshButtonLoading.style.display = isLoading ? 'inline-flex' : 'none';
+        }
+
         let licenseRefreshInFlight = false;
         async function refreshStatus(showToastOnError = false) {
             if (licenseRefreshInFlight) return;
             licenseRefreshInFlight = true;
-            if (refreshButton) refreshButton.disabled = true;
+            setRefreshButtonState(true);
             try {
                 const clientPlatform = detectClientPlatform();
                 // Validate the license first. Do not launch release/config requests in parallel:
@@ -486,6 +497,9 @@
                     applyReleaseFallback(currentVersion, 'Release endpoint is unavailable. Restart the app server to load the latest release route.');
                 }
                 applyLicenseState(payload);
+                if (showToastOnError && typeof showToast === 'function') {
+                    showToast('License status refreshed successfully.', 'success', 2200);
+                }
             } catch (error) {
                 applyLicenseState({
                     license_valid: false,
@@ -500,7 +514,7 @@
                 console.warn('Unable to refresh header license state:', error);
             } finally {
                 licenseRefreshInFlight = false;
-                if (refreshButton) refreshButton.disabled = false;
+                setRefreshButtonState(false);
             }
         }
 

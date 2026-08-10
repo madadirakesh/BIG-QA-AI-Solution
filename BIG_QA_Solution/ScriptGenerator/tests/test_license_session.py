@@ -1,5 +1,6 @@
 import unittest
 import os
+import tempfile
 from unittest.mock import patch
 
 import app as app_module
@@ -32,12 +33,45 @@ class LicenseSessionTests(unittest.TestCase):
 
     def test_session_uses_renewing_long_lived_cookie(self):
         with patch.dict(os.environ, {"SESSION_LIFETIME_DAYS": ""}):
-            self.assertEqual(app_module.get_env_positive_int("SESSION_LIFETIME_DAYS", 1), 1)
+            self.assertEqual(app_module.get_env_positive_int("SESSION_LIFETIME_DAYS", 7), 7)
         with patch.dict(os.environ, {"SESSION_LIFETIME_DAYS": "invalid"}):
-            self.assertEqual(app_module.get_env_positive_int("SESSION_LIFETIME_DAYS", 1), 1)
+            self.assertEqual(app_module.get_env_positive_int("SESSION_LIFETIME_DAYS", 7), 7)
         self.assertTrue(app_module.app.config["SESSION_PERMANENT"])
         self.assertTrue(app_module.app.config["SESSION_REFRESH_EACH_REQUEST"])
         self.assertTrue(app_module.app.config["SESSION_COOKIE_HTTPONLY"])
+
+    def test_secret_key_is_reused_from_persistent_file_when_env_value_is_missing(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            secret_file = os.path.join(tmpdir, ".flask_secret_key")
+            with open(secret_file, "w", encoding="utf-8") as handle:
+                handle.write("persisted-secret-key")
+
+            with patch.dict(os.environ, {}, clear=False):
+                os.environ.pop("FLASK_SECRET_KEY", None)
+                with patch.object(app_module, "FLASK_SECRET_KEY_FILE", app_module.Path(secret_file)):
+                    self.assertEqual(app_module.get_flask_secret_key(), "persisted-secret-key")
+                    self.assertEqual(os.environ.get("FLASK_SECRET_KEY"), "persisted-secret-key")
+
+    def test_upsert_env_values_preserves_existing_secret_key(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            env_path = os.path.join(tmpdir, ".env")
+            with open(env_path, "w", encoding="utf-8") as handle:
+                handle.write('FLASK_SECRET_KEY = "keep-me"\n')
+                handle.write('SESSION_LIFETIME_DAYS = "7"\n')
+                handle.write('AI_TOOL = "OLD"\n')
+
+            app_module.upsert_env_values(env_path, {
+                "AI_TOOL": "OPENAI",
+                "AI_MODEL": "gpt-4.1-mini",
+            })
+
+            with open(env_path, "r", encoding="utf-8") as handle:
+                contents = handle.read()
+
+            self.assertIn('FLASK_SECRET_KEY = "keep-me"', contents)
+            self.assertIn('SESSION_LIFETIME_DAYS = "7"', contents)
+            self.assertIn('AI_TOOL = "OPENAI"', contents)
+            self.assertIn('AI_MODEL = "gpt-4.1-mini"', contents)
 
     def test_invalid_license_uses_blocking_shell_and_preserves_authenticated_session(self):
         self._sign_in()
