@@ -1,7 +1,7 @@
 # Minimum tested dependencies for the Selenium + Behave template. Compatible ranges let pip pick
 # the newest packages that support the user's Python interpreter and OS while keeping a known-good
 # floor from the selected version profile.
-behave==1.2.6
+behave>=1.2.6,<2
 behave-html-formatter==0.9.10
 selenium>={{SELENIUM_VERSION}},<5
 python-dotenv>=1.0.1,<2

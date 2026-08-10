@@ -7,11 +7,11 @@
      version of the user's project name (e.g. "First Java App" -> "first-java-app"). The
      companion {{PROJECT_NAME}} placeholder is NOT sanitised and is used in human-facing
      contexts like the README title. See _to_artifact_id() in bootstrapper_engine.py.
-   - Selenium 4 + WebDriverManager + Cucumber 7 + JUnit Platform is the most common
-     enterprise pairing in 2025-2026. Bump versions deliberately — Cucumber + JUnit Platform
-     have a tight version coupling.
-   - WebDriverManager auto-downloads the matching driver binary the first time a browser is
-     launched. No separate install step is required (contrast Playwright's CLI install).
+   - Selenium 4 + Cucumber 7 + JUnit Platform is the project stack. Selenium Manager,
+     included with Selenium 4, resolves browser drivers automatically.
+     Bump versions deliberately — Cucumber + JUnit Platform have a tight version coupling.
+   - Selenium Manager resolves the matching driver binary when a browser is launched. No
+     separate driver-manager dependency or install step is required.
 -->
 <project xmlns="http://maven.apache.org/POM/4.0.0"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
@@ -28,7 +28,6 @@
         <maven.compiler.target>{{JAVA_VERSION}}</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <selenium.version>{{SELENIUM_VERSION}}</selenium.version>
-        <wdm.version>5.8.0</wdm.version>
         <cucumber.version>{{CUCUMBER_VERSION}}</cucumber.version>
         <junit.platform.version>1.10.2</junit.platform.version>
         <junit.jupiter.version>5.10.2</junit.jupiter.version>
@@ -42,14 +41,6 @@
             <groupId>org.seleniumhq.selenium</groupId>
             <artifactId>selenium-java</artifactId>
             <version>${selenium.version}</version>
-        </dependency>
-
-        <!-- WebDriverManager auto-resolves chromedriver/geckodriver/edgedriver at runtime.
-             Avoids the old "put the driver binary on PATH" foot-gun. -->
-        <dependency>
-            <groupId>io.github.bonigarcia</groupId>
-            <artifactId>webdrivermanager</artifactId>
-            <version>${wdm.version}</version>
         </dependency>
 
         <!-- Cucumber + JUnit 5 wiring (identical pattern to the Playwright/Java template):
@@ -87,7 +78,7 @@
             <version>3.0.0</version>
         </dependency>
 
-        <!-- SLF4J binding. Selenium 4 and WebDriverManager both log through SLF4J. Without a
+        <!-- SLF4J binding. Selenium 4 logs through SLF4J. Without a
              concrete binding they print a "No SLF4J providers were found" warning on every
              test run, which clutters output and confuses newcomers. slf4j-simple writes a
              one-line-per-event log to stderr — minimal, no XML config required. Swap for

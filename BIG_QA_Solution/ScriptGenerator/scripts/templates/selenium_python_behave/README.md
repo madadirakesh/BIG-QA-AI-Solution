@@ -1,7 +1,7 @@
 # Selenium + Python + Behave BDD Template
 
 A BDD test project: **Behave** scenarios driving **Selenium 4** with a Page Object Model layout.
-Drivers are resolved automatically by WebDriverManager — nothing to download by hand.
+Drivers are resolved automatically by Selenium 4's built-in Selenium Manager.
 
 ## Prerequisites
 
@@ -15,9 +15,9 @@ Drivers are resolved automatically by WebDriverManager — nothing to download b
 ```bash
 python -m venv venv
 venv\Scripts\activate           # Windows  (source venv/bin/activate on macOS/Linux)
-pip install -r requirements.txt
-behave                          # run all scenarios
-behave --tags=@smoke            # run only @smoke
+python -m pip install -r requirements.txt
+python -m behave                # run all scenarios
+python -m behave --tags=@smoke  # run only @smoke
 ```
 
 Reports are written under `Results/` (see `behave.ini`).

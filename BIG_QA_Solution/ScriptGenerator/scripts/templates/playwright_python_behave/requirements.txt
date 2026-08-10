@@ -2,7 +2,7 @@
 # compatible ranges instead of exact pins so pip can resolve the newest wheel set that supports
 # the user's Python interpreter and OS (for example newer Playwright/greenlet builds on Python
 # 3.14+) while still enforcing a known-good floor from the selected version profile.
-behave==1.2.6
+behave>=1.2.6,<2
 behave-html-formatter==0.9.10
 playwright>={{PLAYWRIGHT_VERSION}},<2
 python-dotenv>=1.0.1,<2
