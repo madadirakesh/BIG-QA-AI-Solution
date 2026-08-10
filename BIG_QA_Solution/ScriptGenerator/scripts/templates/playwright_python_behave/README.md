@@ -14,10 +14,10 @@ Model layout that mirrors the Selenium/Python template — same folders, same st
 ```bash
 python -m venv venv
 venv\Scripts\activate           # Windows  (source venv/bin/activate on macOS/Linux)
-pip install -r requirements.txt
-python -m playwright install    # one-time browser download
-behave                          # run all scenarios
-behave --tags=@smoke            # run only @smoke
+python -m pip install -r requirements.txt
+python -m playwright install chromium  # one-time download of the default browser
+python -m behave                # run all scenarios
+python -m behave --tags=@smoke  # run only @smoke
 ```
 
 Reports are written under `Results/` (see `behave.ini`).

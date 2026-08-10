@@ -167,7 +167,10 @@ class BootstrapperUI(QWidget):
         self.log(f"[SUCCESS] Code generation complete. Directory: {target_dir}")
         self.log("Starting background dependency injection...")
 
-        inst_success, inst_msg = EnvironmentSetup.install_project_dependencies(target_dir, pm)
+        # Pass the automation tool so Playwright projects also run their required browser-
+        # binary installation phase after package restore. Omitting this made desktop-created
+        # Playwright projects install the SDK but fail on first launch with a missing browser.
+        inst_success, inst_msg = EnvironmentSetup.install_project_dependencies(target_dir, pm, tool)
         if inst_success:
             self.log("[SUCCESS] Dependencies installed successfully.")
             if inst_msg:

@@ -8,7 +8,18 @@ import sys
 import time
 
 from mcp import ClientSession
-from mcp.client.streamable_http import streamablehttp_client
+<<<<<<< Updated upstream
+
+# MCP Python SDK 2.x renamed this transport factory and changed the context-manager result
+# from a three-item tuple to two items. Keep the app compatible with both supported SDK majors so
+# an existing user environment does not break merely because pip resolved a newer MCP release.
+try:
+    from mcp.client.streamable_http import streamable_http_client as _streamable_http_client
+except ImportError:  # MCP 1.x
+    from mcp.client.streamable_http import streamablehttp_client as _streamable_http_client
+=======
+from mcp.client.streamable_http import streamable_http_client
+>>>>>>> Stashed changes
 
 from api import backend
 
@@ -193,7 +204,13 @@ async def run_mcp_git_prompt(prompt: str, project_path: str, assistant_mode: str
         process, server_url = await _start_mcp_server(project_path)
         await _wait_for_server(server_url, process)
 
-        async with streamablehttp_client(server_url) as (read_stream, write_stream, _):
+<<<<<<< Updated upstream
+        async with _streamable_http_client(server_url) as transport_streams:
+            # MCP 1.x yields (read, write, session_id_getter); MCP 2.x yields (read, write).
+            read_stream, write_stream = transport_streams[:2]
+=======
+        async with streamable_http_client(server_url) as (read_stream, write_stream, _):
+>>>>>>> Stashed changes
             async with ClientSession(read_stream, write_stream) as session:
                 await session.initialize()
                 tools_response = await session.list_tools()

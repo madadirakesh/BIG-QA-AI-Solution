@@ -128,8 +128,8 @@ def step_launch_application(context):
 ```bash
 python -m venv venv
 source venv/bin/activate        # Windows: venv\Scripts\activate
-pip install -r requirements.txt
-playwright install              # one-time: browser binaries
+python -m pip install -r requirements.txt
+python -m playwright install chromium  # one-time: default browser via this venv's Python
 behave                          # run all scenarios
 behave --tags=@smoke            # run only @smoke
 ```
