@@ -1243,7 +1243,20 @@
         }
 
         line.classList.add(colorClass);
-        line.textContent = msg;
+        const reportPrefix = '[Report] View latest results: ';
+        if (msg.startsWith(reportPrefix)) {
+            line.appendChild(document.createTextNode(reportPrefix));
+            const reportLink = document.createElement('a');
+            reportLink.href = msg.slice(reportPrefix.length);
+            reportLink.textContent = reportLink.href;
+            reportLink.target = '_blank';
+            reportLink.rel = 'noopener noreferrer';
+            reportLink.style.color = 'inherit';
+            reportLink.style.textDecoration = 'underline';
+            line.appendChild(reportLink);
+        } else {
+            line.textContent = msg;
+        }
         log.appendChild(line);
         log.scrollTop = log.scrollHeight;
     }
@@ -1384,14 +1397,18 @@
                 addLog("[System] Execution Completed Successfully!", "log-success");
                 status.className = 'status-dot done';
                 status.nextSibling.textContent = ' Status: Completed';
-                if (data.report_url) {
-                    addLog(`[Report] View latest results: ${data.report_url}`, "log-success");
-                    window.open(data.report_url, '_blank');
-                }
             } else {
                 addLog("[System] Execution Failed.", "log-error");
                 status.className = 'status-dot offline';
                 status.nextSibling.textContent = ' Status: Error';
+            }
+
+            // Reports also contain diagnostics for failed runs. Open a fresh report for every
+            // outcome and expose a real clickable absolute URL in the execution log.
+            if (data.report_url) {
+                const absoluteReportUrl = new URL(data.report_url, window.location.origin).href;
+                addLog(`[Report] View latest results: ${absoluteReportUrl}`, data.status === 'success' ? "log-success" : "log-system");
+                window.open(absoluteReportUrl, '_blank');
             }
         });
 

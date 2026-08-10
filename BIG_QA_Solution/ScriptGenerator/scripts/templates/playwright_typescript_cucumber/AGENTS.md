@@ -129,7 +129,7 @@ Given("I launch the application", async function (this: ICustomWorld) {
 
 ```bash
 npm install
-npx playwright install          # one-time: browser binaries
+npx --no-install playwright install chromium  # one-time: project-local CLI + default browser
 npm test -- --tags "@smoke"     # run @smoke scenarios
 npm run report                  # generate the HTML report
 ```

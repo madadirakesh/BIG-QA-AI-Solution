@@ -7,6 +7,12 @@ const resultsRoot = path.join(__dirname, 'Results');
 const resultDir = path.join(resultsRoot, timestamp);
 const extraArgs = process.argv.slice(2);
 const reportJsonPath = path.join(resultDir, 'cucumber_report.json');
+const localBin = (name) => path.join(
+  __dirname,
+  'node_modules',
+  '.bin',
+  process.platform === 'win32' ? `${name}.cmd` : name
+);
 
 process.env.RESULT_DIR = resultDir;
 process.env.RESULTS_ROOT = resultsRoot;
@@ -20,13 +26,13 @@ try {
   // auto-detected cucumber.js config. Here we only add what is run-specific: the timestamped
   // JSON report path (consumed by reports.ts via RESULT_DIR) and any tag filters the caller
   // passed through (e.g. `npm test -- --tags "@smoke"`).
-  execFileSync('npx', ['cucumber-js', '--format', `json:${reportJsonPath}`, ...extraArgs], { stdio: 'inherit' });
+  execFileSync(localBin('cucumber-js'), ['--format', `json:${reportJsonPath}`, ...extraArgs], { stdio: 'inherit' });
 } catch (error) {
   testExitCode = 1;
 }
 
 try {
-  execFileSync('npx', ['ts-node', 'test/utils/reports.ts'], { stdio: 'inherit' });
+  execFileSync(localBin('ts-node'), ['test/utils/reports.ts'], { stdio: 'inherit' });
 } catch (reportError) {
   console.error('Failed to generate HTML report:', reportError.message);
 }

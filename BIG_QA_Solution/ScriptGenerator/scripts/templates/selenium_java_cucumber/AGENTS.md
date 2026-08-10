@@ -19,7 +19,7 @@
 | Language | **Java** (Maven project) |
 | BDD framework | **Cucumber** on **JUnit 5 (JUnit Platform)** |
 | Design pattern | **Page Object Model (POM)** |
-| Driver management | **WebDriverManager** (drivers auto-resolved — never hard-code driver paths) |
+| Driver management | **Selenium Manager** built into Selenium 4 (never hard-code driver paths) |
 | Config source | **`.env`** read via `dotenv-java` through `utils.ConfigReader` |
 | Build/run | **`mvn test`** |
 
