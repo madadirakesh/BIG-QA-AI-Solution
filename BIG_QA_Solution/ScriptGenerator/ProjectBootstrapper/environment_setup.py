@@ -577,7 +577,12 @@ class EnvironmentSetup:
         # libwoff1, which triggers Playwright's "Host system is missing dependencies" warning even
         # though the tests may still limp along. Surface it in the same pre-check panel so users
         # see the actionable fix before execution rather than only in the test logs.
-        if tool == "Playwright" and platform.system().lower() == "linux":
+        # This package-level probe is Debian/Ubuntu-specific. Other Linux distributions use
+        # different package names/managers; do not crash their preflight merely because
+        # dpkg-query is absent. Playwright's own browser launch will report the distro-specific
+        # libraries if they are missing.
+        if (tool == "Playwright" and platform.system().lower() == "linux"
+                and shutil.which("dpkg-query")):
             lib_check = subprocess.run(
                 ["dpkg-query", "-W", "-f=${Status} ${Version}", "libwoff1"],
                 capture_output=True,
@@ -938,7 +943,9 @@ class EnvironmentSetup:
             if tool == "Playwright":
                 phases.append((
                     "Downloading Playwright Chromium browser (~130 MB)...",
-                    "npx playwright install chromium",
+                    # --no-install guarantees npx uses the package restored into this project
+                    # instead of silently downloading an unrelated global/latest CLI.
+                    "npx --no-install playwright install chromium",
                 ))
             return phases
 

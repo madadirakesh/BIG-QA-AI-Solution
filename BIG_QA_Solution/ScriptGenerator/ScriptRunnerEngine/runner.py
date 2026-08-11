@@ -6,6 +6,9 @@ import shutil
 import subprocess
 import signal
 import time
+import html
+import re
+from datetime import datetime
 from urllib.parse import quote
 
 active_processes = {} # pid -> process object
@@ -16,7 +19,7 @@ def _runtime_env_with_ca():
     Base environment for test-run subprocesses.
 
     Reuses EnvironmentSetup._download_env() so running tests (and the runtime
-    `npx playwright install` that the generated TypeScript hooks.ts triggers in its
+    project-local `npx --no-install playwright install` that generated TypeScript hooks trigger in
     BeforeAll) gets the SAME TLS/CA + proxy settings as project creation does. Without this,
     creation would succeed behind a corporate proxy but the first test run would fail on the
     same certificate error we already solved once — see
@@ -153,6 +156,8 @@ class ScriptRunnerService:
                     dirs[:] = []
                     continue
                 for file in files:
+                    if file.lower() == 'runner_summary.json':
+                        continue
                     ext = os.path.splitext(file)[1].lower()
                     if ext not in report_extensions:
                         continue
@@ -162,7 +167,9 @@ class ScriptRunnerService:
                     seen_paths.add(file_path)
                     try:
                         mtime = os.path.getmtime(file_path)
-                        if start_time is not None and mtime < start_time - 10:
+                        if start_time is not None and mtime < start_time:
+                            continue
+                        if os.path.getsize(file_path) == 0:
                             continue
                         candidates.append((file_path, *path_priority(file_path, ext)))
                     except Exception:
@@ -344,7 +351,113 @@ class ScriptRunnerService:
                     msg += f" Try: {' ; '.join(suggestions)}"
                 return False, msg
 
+        if any(cls._command_family(cmd) in {"behave", "pytest"} for cmd in commands):
+            syntax_issue = cls._validate_python_project(full_path)
+            if syntax_issue:
+                return False, syntax_issue
+
         return True, ""
+
+    @classmethod
+    def _validate_python_project(cls, full_path: str) -> str:
+        """Compile project Python sources before launching a test framework."""
+        import ast
+        for root, dirs, files in os.walk(full_path):
+            dirs[:] = [d for d in dirs if d.lower() not in cls.REPORT_SKIP_DIRS]
+            for filename in files:
+                if not filename.endswith('.py'):
+                    continue
+                source_path = os.path.join(root, filename)
+                try:
+                    with open(source_path, 'r', encoding='utf-8') as source_file:
+                        ast.parse(source_file.read(), filename=source_path)
+                except SyntaxError as exc:
+                    rel_path = os.path.relpath(source_path, full_path)
+                    return f"[Validation] Python syntax error in {rel_path}, line {exc.lineno}: {exc.msg}. Fix or regenerate this file before running the suite."
+                except OSError as exc:
+                    return f"[Validation] Could not read {source_path}: {exc}"
+        return ""
+
+    @classmethod
+    def _write_runner_report(cls, full_path: str, success: bool, log_text: str) -> str:
+        """Write a fresh diagnostic report when the framework produced no usable report."""
+        results_dir = os.path.join(full_path, 'Results')
+        os.makedirs(results_dir, exist_ok=True)
+        report_path = os.path.join(results_dir, 'runner_report.html')
+        status = 'Passed' if success else 'Failed'
+        color = '#22c55e' if success else '#ef4444'
+        generated_at = datetime.now().astimezone().isoformat(timespec='seconds')
+        content = f'''<!doctype html><html><head><meta charset="utf-8"><title>Script Runner - {status}</title></head>
+<body style="font-family:system-ui;background:#0b1220;color:#e8eefc;padding:32px"><main style="max-width:1100px;margin:auto"><h1>Execution {status}</h1><p style="color:{color};font-weight:700">Status: {status}</p><p>Generated: {html.escape(generated_at)}</p><pre style="white-space:pre-wrap;background:#131c2f;padding:20px;border-radius:10px;overflow:auto">{html.escape(log_text or 'No command output was captured.')}</pre></main></body></html>'''
+        with open(report_path, 'w', encoding='utf-8') as report_file:
+            report_file.write(content)
+        return report_path
+
+    @classmethod
+    def _ensure_behave_html_report(cls, full_path: str) -> None:
+        """Create usable HTML when Behave's HTML formatter leaves an empty file."""
+        results_dir = os.path.join(full_path, 'Results')
+        json_path = os.path.join(results_dir, 'behave_report.json')
+        html_path = os.path.join(results_dir, 'report.html')
+        if not os.path.isfile(json_path) or os.path.getsize(json_path) == 0:
+            return
+        if os.path.isfile(html_path) and os.path.getsize(html_path) > 0:
+            return
+        try:
+            with open(json_path, 'r', encoding='utf-8') as json_file:
+                features = json.load(json_file)
+        except (OSError, ValueError):
+            return
+        rows, passed, failed, skipped = [], 0, 0, 0
+        for feature in features if isinstance(features, list) else []:
+            feature_name = feature.get('name') or 'Unnamed feature'
+            for scenario in feature.get('elements') or []:
+                statuses = [((step.get('result') or {}).get('status') or 'skipped').lower() for step in scenario.get('steps') or []]
+                status = 'failed' if 'failed' in statuses else 'skipped' if statuses and all(s == 'skipped' for s in statuses) else 'passed'
+                if status == 'failed': failed += 1
+                elif status == 'skipped': skipped += 1
+                else: passed += 1
+                rows.append(f'<tr><td>{html.escape(feature_name)}</td><td>{html.escape(scenario.get("name") or "Unnamed scenario")}</td><td class="{status}">{status.title()}</td></tr>')
+        generated_at = datetime.now().astimezone().isoformat(timespec='seconds')
+        document = f'''<!doctype html><html><head><meta charset="utf-8"><title>Behave Test Report</title><style>body{{font-family:system-ui;margin:32px;background:#f5f7fb;color:#172033}}table{{width:100%;border-collapse:collapse;background:white}}th,td{{padding:12px;border:1px solid #dce3ef;text-align:left}}.passed{{color:#16803c}}.failed{{color:#c62828}}.skipped{{color:#8a6500}}</style></head><body><h1>Behave Test Report</h1><p>Generated: {html.escape(generated_at)}</p><p><strong>Passed:</strong> {passed} &nbsp; <strong>Failed:</strong> {failed} &nbsp; <strong>Skipped:</strong> {skipped}</p><table><thead><tr><th>Feature</th><th>Scenario</th><th>Status</th></tr></thead><tbody>{''.join(rows)}</tbody></table></body></html>'''
+        try:
+            with open(html_path, 'w', encoding='utf-8') as html_file:
+                html_file.write(document)
+        except OSError:
+            pass
+
+    @classmethod
+    def _write_behave_execution_summary(cls, full_path: str, log_text: str) -> None:
+        """Persist Behave console totals, including scenarios excluded by tag filters."""
+        summary = {}
+        patterns = {
+            'features': r'(\d+)\s+features?\s+passed,\s*(\d+)\s+failed,\s*(\d+)\s+skipped',
+            'scenarios': r'(\d+)\s+scenarios?\s+passed,\s*(\d+)\s+failed,\s*(\d+)\s+skipped',
+            'steps': r'(\d+)\s+steps?\s+passed,\s*(\d+)\s+failed,\s*(\d+)\s+skipped,\s*(\d+)\s+undefined',
+        }
+        for key, pattern in patterns.items():
+            matches = re.findall(pattern, log_text or '', flags=re.IGNORECASE)
+            if matches:
+                values = [int(value) for value in matches[-1]]
+                summary[key] = {'passed': values[0], 'failed': values[1], 'skipped': values[2], 'undefined': values[3] if len(values) > 3 else 0}
+        if not summary:
+            return
+        summary['generated_at'] = datetime.now().astimezone().isoformat(timespec='seconds')
+        results_dir = os.path.join(full_path, 'Results')
+        os.makedirs(results_dir, exist_ok=True)
+        try:
+            with open(os.path.join(results_dir, 'runner_summary.json'), 'w', encoding='utf-8') as summary_file:
+                json.dump(summary, summary_file, indent=2)
+        except OSError:
+            pass
+
+    @classmethod
+    def _current_report_url(cls, full_path: str, start_time: float, success: bool, log_text: str) -> str:
+        cls._write_behave_execution_summary(full_path, log_text)
+        cls._ensure_behave_html_report(full_path)
+        candidates = cls._iter_report_candidates(full_path, start_time=start_time)
+        report_file = candidates[0] if candidates else cls._write_runner_report(full_path, success, log_text)
+        return f"/api/script-runner/report?path={quote(report_file, safe='')}&run={int(time.time() * 1000)}"
 
     @staticmethod
     def _call_ai_sync_json(prompt: str) -> dict:
@@ -395,11 +508,13 @@ class ScriptRunnerService:
         # Mode A: Custom Sequential Commands
         if custom_commands.strip():
             commands = [cls._normalize_command_for_execution(c) for c in custom_commands.split('\n') if c.strip()]
+            execution_log = ""
             print(f"DEBUG: Found {len(commands)} custom commands")
             is_valid, validation_msg = cls._validate_custom_commands(commands, full_path, language, framework, tool)
             if not is_valid:
                 yield f"event: progress\ndata: {json.dumps({'msg': validation_msg, 'type': 'step_fail', 'step': 1})}\n\n"
-                yield f"event: result\ndata: {json.dumps({'status': 'error', 'report_url': ''})}\n\n"
+                report_url = cls._current_report_url(full_path, start_time, False, validation_msg)
+                yield f"event: result\ndata: {json.dumps({'status': 'error', 'report_url': report_url})}\n\n"
                 return
             yield f"event: progress\ndata: {json.dumps({'msg': f'[Sequential Mode] Starting {len(commands)} commands...', 'type': 'system'})}\n\n"
             
@@ -439,6 +554,7 @@ class ScriptRunnerService:
                     
                     process.stdout.close()
                     return_code = process.wait()
+                    execution_log += f"\n[Command] {cmd}\n{cmd_output}\n[Exit Code] {return_code}\n"
                     
                     if process.pid in active_processes:
                         del active_processes[process.pid]
@@ -518,7 +634,7 @@ class ScriptRunnerService:
                     break
 
             # Finalize
-            report_url = cls._get_latest_report(full_path)
+            report_url = cls._current_report_url(full_path, start_time, success, execution_log)
             yield f"event: result\ndata: {json.dumps({'status': 'success' if success else 'error', 'report_url': report_url})}\n\n"
             return
 
@@ -551,7 +667,8 @@ class ScriptRunnerService:
             if language == 'Python':
                 cmd = "pytest tests/ --html=Results/report.html"
             elif language in ['Typescript', 'JavaScript', 'TypeScript']:
-                cmd = "npx playwright test"
+                # Run the package.json script so npm resolves the project-local executable.
+                cmd = "npm test"
             else:
                 cmd = "echo 'Unsupported'"
 
@@ -780,7 +897,7 @@ class ScriptRunnerService:
                 yield f"event: progress\ndata: {json.dumps({'msg': '[Fallback] No runner classes found in the project.', 'type': 'system'})}\n\n"
 
         # Step 3: Finalize
-        report_url = cls._get_latest_report(full_path)
+        report_url = cls._current_report_url(full_path, start_time, success, output_log)
         yield f"event: result\ndata: {json.dumps({'status': 'success' if success else 'error', 'report_url': report_url})}\n\n"
         return
 

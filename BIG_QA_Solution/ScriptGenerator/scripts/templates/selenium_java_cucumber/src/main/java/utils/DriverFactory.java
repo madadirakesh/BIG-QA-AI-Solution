@@ -1,6 +1,5 @@
 package utils;
 
-import io.github.bonigarcia.wdm.WebDriverManager;
 import org.openqa.selenium.WebDriver;
 import org.openqa.selenium.chrome.ChromeDriver;
 import org.openqa.selenium.chrome.ChromeOptions;
@@ -24,9 +23,8 @@ import java.time.Duration;
  * Hooks.afterScenario() calls quitDriver(). Do not call startDriver() outside the @Before hook
  * or you will leak browser processes.
  *
- * WebDriverManager auto-resolves and caches the right driver binary (chromedriver/geckodriver/
- * edgedriver) for the installed browser version. The cache lives under ~/.cache/selenium so
- * subsequent runs are instant.
+ * Selenium Manager, built into Selenium 4, resolves and caches the right driver binary for the
+ * installed browser. No separate driver-manager library or hard-coded driver path is needed.
  */
 public final class DriverFactory {
 
@@ -37,7 +35,7 @@ public final class DriverFactory {
     }
 
     /**
-     * Resolves the driver binary via WebDriverManager, launches the configured browser, and
+     * Launches the configured browser (Selenium Manager resolves its driver automatically) and
      * applies a sensible implicit wait + window maximisation. Returns the driver so callers
      * may keep a local reference, but most code should call {@link #getDriver()} from inside
      * step definitions instead of holding their own reference.
@@ -49,13 +47,11 @@ public final class DriverFactory {
         WebDriver driver;
         switch (browser) {
             case "firefox":
-                WebDriverManager.firefoxdriver().setup();
                 FirefoxOptions firefoxOptions = new FirefoxOptions();
                 if (headless) firefoxOptions.addArguments("--headless");
                 driver = new FirefoxDriver(firefoxOptions);
                 break;
             case "edge":
-                WebDriverManager.edgedriver().setup();
                 EdgeOptions edgeOptions = new EdgeOptions();
                 if (headless) edgeOptions.addArguments("--headless=new");
                 driver = new EdgeDriver(edgeOptions);
@@ -63,7 +59,6 @@ public final class DriverFactory {
             default:
                 // Fall through to Chrome for any unknown value rather than fail —
                 // keeps CI smoke runs forgiving.
-                WebDriverManager.chromedriver().setup();
                 ChromeOptions chromeOptions = new ChromeOptions();
                 if (headless) chromeOptions.addArguments("--headless=new");
                 // --no-sandbox + --disable-dev-shm-usage are required for Chrome to run in

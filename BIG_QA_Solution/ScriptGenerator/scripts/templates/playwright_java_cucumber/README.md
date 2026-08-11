@@ -27,7 +27,7 @@ cp .env .env
 # 2. Install Maven dependencies and Playwright browsers (one time)
 mvn install -DskipTests
 mvn exec:java -Dexec.mainClass="com.microsoft.playwright.CLI" \
-              -Dexec.args="install" \
+              -Dexec.args="install chromium" \
               -Dexec.classpathScope=compile
 
 # 3. Run all features
