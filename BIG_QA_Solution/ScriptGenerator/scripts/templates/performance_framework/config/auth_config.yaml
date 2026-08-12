@@ -1,0 +1,36 @@
+# auth_config.yaml
+# ------------------
+# Select ONE auth type and fill in its fields. Set type: none to disable.
+
+type: none
+
+# --- Example: HTTP Basic Auth ---
+# type: basic
+# username: perf_user
+# password: perf_pass
+
+# --- Example: static API key header ---
+# type: api_key
+# header_name: X-API-Key
+# api_key: "your-static-api-key"
+
+# --- Example: static bearer token ---
+# type: bearer_static
+# token: "your-static-bearer-token"
+
+# --- Example: login endpoint that returns a token (auto re-login on expiry) ---
+# type: bearer_login
+# login_url: "https://api.example.com/auth/login"
+# username_field: email
+# password: "SecurePass123!"
+# username: "perf_user@example.com"
+# password_field: password
+# token_path: data.access_token   # dotted path into the JSON response
+# token_ttl_seconds: 3600
+
+# --- Example: OAuth2 client-credentials grant ---
+# type: oauth2_client
+# token_url: "https://auth.example.com/oauth/token"
+# client_id: "your-client-id"
+# client_secret: "your-client-secret"
+# scope: "read write"

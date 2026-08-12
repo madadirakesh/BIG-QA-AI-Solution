@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<payments>
+  <record>
+    <account_id>ACC-9001</account_id>
+    <amount>150.00</amount>
+    <currency>USD</currency>
+  </record>
+  <record>
+    <account_id>ACC-9002</account_id>
+    <amount>75.50</amount>
+    <currency>USD</currency>
+  </record>
+  <record>
+    <account_id>ACC-9003</account_id>
+    <amount>320.25</amount>
+    <currency>EUR</currency>
+  </record>
+</payments>

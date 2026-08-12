@@ -1,0 +1,25 @@
+# thresholds.yaml
+# -----------------
+# Pass/fail criteria evaluated against Locust's aggregated + per-request
+# stats after a run completes. A run is marked FAILED overall if any
+# check below fails.
+#
+# Supported metrics:
+#   max_error_rate_pct        - failures / requests * 100
+#   max_avg_response_time_ms  - average response time
+#   max_p95_response_time_ms  - 95th percentile response time
+#   max_p99_response_time_ms  - 99th percentile response time
+#   min_rps                   - minimum acceptable requests/sec
+
+global:
+  max_error_rate_pct: 1.0
+  max_avg_response_time_ms: 500
+  max_p95_response_time_ms: 1200
+  min_rps: 5
+
+per_request:
+  "/api/orders":
+    max_p95_response_time_ms: 900
+    max_error_rate_pct: 0.5
+  "/api/users/[id]":
+    max_avg_response_time_ms: 300

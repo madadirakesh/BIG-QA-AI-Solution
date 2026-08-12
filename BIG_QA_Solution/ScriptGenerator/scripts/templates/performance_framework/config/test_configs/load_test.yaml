@@ -1,0 +1,30 @@
+# load_test.yaml
+# A steady-state load test. Runs two locustfiles in parallel to simulate
+# mixed traffic against the same (or different) target(s).
+
+run_name: load_test
+parallel: true
+max_parallel_workers: 2
+
+tests:
+  - name: api_load_csv
+    locustfile: locustfiles/http_api_test.py
+    host: https://api.example.com
+    users: 100
+    spawn_rate: 10
+    run_time: 5m
+    thresholds_file: config/thresholds.yaml
+    distributed:
+      enabled: false
+    extra_args: []
+
+  - name: orders_load_json
+    locustfile: locustfiles/http_json_payload_test.py
+    host: https://api.example.com
+    users: 50
+    spawn_rate: 5
+    run_time: 5m
+    thresholds_file: config/thresholds.yaml
+    distributed:
+      enabled: false
+    extra_args: []

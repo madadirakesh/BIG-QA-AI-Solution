@@ -1,0 +1,22 @@
+# stress_test.yaml
+# Ramps far beyond normal expected load to identify the system's breaking
+# point. Typically run distributed since a single machine may not be able
+# to generate enough load on its own.
+
+run_name: stress_test
+parallel: false
+max_parallel_workers: 1
+
+tests:
+  - name: api_stress
+    locustfile: locustfiles/http_api_test.py
+    host: https://api.example.com
+    users: 2000
+    spawn_rate: 50
+    run_time: 15m
+    thresholds_file: config/thresholds.yaml
+    distributed:
+      enabled: true
+      worker_count: 8
+      master_bind_port: 5557
+    extra_args: []

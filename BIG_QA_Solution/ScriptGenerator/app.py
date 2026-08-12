@@ -2272,8 +2272,9 @@ def script_runner_project_commands():
 @app.route('/api/script-runner/stop', methods=['POST'])
 @login_required()
 def script_runner_stop():
-    from ScriptRunnerEngine.runner import active_processes
+    from ScriptRunnerEngine.runner import active_processes, stop_all_perf_sessions
     import os, signal
+    stopped = 0
     for pid in list(active_processes.keys()):
         try:
             # On Windows this might need taskkill, on Unix SIGTERM
@@ -2281,7 +2282,22 @@ def script_runner_stop():
                 os.system(f"taskkill /F /T /PID {pid}")
             else:
                 os.kill(pid, signal.SIGTERM)
-        except: pass
+            stopped += 1
+        except Exception:
+            pass
+
+    # Killing the test process tree also kills the browser the performance
+    # watcher was attached to, so finalize monitoring here instead of waiting
+    # for the stream to unwind - otherwise a force-stopped run loses its
+    # report entirely. stop() is idempotent, so the stream calling it again
+    # as it unwinds is harmless.
+    perf_finalized = stop_all_perf_sessions()
+
+    return jsonify({
+        "status": "success",
+        "processes_stopped": stopped,
+        "perf_sessions_finalized": perf_finalized,
+    })
 
 @app.route('/api/git/execute-command', methods=['POST'])
 @login_required()

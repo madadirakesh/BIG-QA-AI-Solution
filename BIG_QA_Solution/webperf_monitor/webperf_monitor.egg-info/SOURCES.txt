@@ -1,0 +1,7 @@
+pyproject.toml
+webperf_monitor.egg-info/PKG-INFO
+webperf_monitor.egg-info/SOURCES.txt
+webperf_monitor.egg-info/dependency_links.txt
+webperf_monitor.egg-info/entry_points.txt
+webperf_monitor.egg-info/requires.txt
+webperf_monitor.egg-info/top_level.txt

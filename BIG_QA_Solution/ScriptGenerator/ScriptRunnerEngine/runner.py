@@ -5,13 +5,185 @@ import glob
 import shutil
 import subprocess
 import signal
+import threading
 import time
 import html
 import re
+from collections import deque
 from datetime import datetime
 from urllib.parse import quote
 
 active_processes = {} # pid -> process object
+
+# Browser-performance monitors that are currently running, one per streaming
+# execution. The abort endpoint finalizes these directly so a force-killed run
+# still writes its report instead of losing it.
+active_perf_sessions = []
+_perf_sessions_lock = threading.Lock()
+
+
+class WebPerfSession:
+    """
+    Runs webperf_monitor's auto-detect Watcher for the lifetime of one test
+    execution, so clicking "Launch Execution" also profiles whatever browser
+    the tests drive - with no change to the project under test.
+
+    The watcher polls the local process list for Chromium browsers carrying
+    automation switches (which is exactly what Selenium/chromedriver
+    produces), attaches over CDP, and writes ONE consolidated
+    Lighthouse-style report when stopped.
+
+    Everything here is best-effort by design: monitoring must never break the
+    run it observes, so each entry point swallows its own errors and surfaces
+    them as a console line instead of raising.
+    """
+
+    ENV_FLAG = "BIGQA_WEBPERF"
+
+    def __init__(self, full_path: str, start_time: float):
+        stamp = datetime.fromtimestamp(start_time).strftime("%Y%m%d_%H%M%S")
+        # Written inside the project folder, which serve_report() already
+        # treats as an allowed base - so the HTML report is viewable in-app.
+        self.output_dir = os.path.join(full_path, "webperf_reports", stamp)
+        self._watcher = None
+        self._lock = threading.Lock()
+        # Set once finalization has completed (or once we know there is
+        # nothing to finalize). Lets a second caller wait for the first
+        # caller's result instead of racing past an empty one - see stop().
+        self._done = threading.Event()
+        # Diagnostics from the watcher's own threads, drained into the run's
+        # console by the streaming generator. Bounded so a pathological run
+        # can't grow it without limit.
+        self._logs = deque(maxlen=500)
+        self.report_path = None
+        self.summary = None
+
+    @classmethod
+    def is_enabled(cls) -> bool:
+        """Monitoring is on by default; set BIGQA_WEBPERF=0 to turn it off."""
+        return os.environ.get(cls.ENV_FLAG, "1").strip().lower() not in ("0", "false", "no", "off")
+
+    def start(self):
+        """Start monitoring. Returns a console line to show, or None if off."""
+        if not self.is_enabled():
+            self._done.set()
+            return None
+        try:
+            parent_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+            if parent_dir not in sys.path:
+                sys.path.insert(0, parent_dir)
+            from webperf_monitor.watcher import Watcher
+        except Exception as e:
+            self._done.set()
+            return (f"[WebPerf] Performance monitoring unavailable ({e}). "
+                    f"Install its dependency with: pip install psutil")
+        try:
+            # 0.5s so a short-lived browser isn't missed between scans.
+            self._watcher = self._build_watcher(Watcher).start()
+        except Exception as e:
+            self._watcher = None
+            self._done.set()
+            return f"[WebPerf] Could not start performance monitoring: {e}"
+        with _perf_sessions_lock:
+            active_perf_sessions.append(self)
+        return ("[WebPerf] Browser performance monitoring started - any automated "
+                "browser this run launches will be profiled.")
+
+    def _build_watcher(self, watcher_cls):
+        """
+        Watcher subclass whose diagnostics land in this run's console instead
+        of the Flask server's stdout. Detection is a heuristic - when it does
+        not fire, or a CDP attach fails, the person who clicked "Launch
+        Execution" is the one who needs to see why.
+        """
+        sink = self._logs
+
+        class _SinkWatcher(watcher_cls):
+            def _log(self, msg):
+                sink.append(f"[WebPerf] {msg}")
+
+        return _SinkWatcher(output_dir=self.output_dir, poll_interval=0.5, verbose=True)
+
+    def drain_logs(self) -> list:
+        """Pop everything the watcher threads have logged since the last call."""
+        lines = []
+        while True:
+            try:
+                lines.append(self._logs.popleft())
+            except IndexError:
+                return lines
+
+    def stop(self, timeout: float = 25.0):
+        """
+        Finalize monitoring and write the consolidated report.
+
+        Idempotent and thread-safe: the streaming generator and the abort
+        endpoint may both call this, from different threads, in either order.
+        The first caller does the work and returns the summary; a second
+        caller waits for that work to finish (so it sees the finished report
+        path rather than racing past an empty one) and returns None.
+        """
+        with self._lock:
+            watcher, self._watcher = self._watcher, None
+        if watcher is None:
+            # Either monitoring never started - in which case _done is already
+            # set and this returns immediately - or another thread is
+            # finalizing right now and we wait for it.
+            self._done.wait(timeout=timeout)
+            return None
+        with _perf_sessions_lock:
+            if self in active_perf_sessions:
+                active_perf_sessions.remove(self)
+        try:
+            try:
+                paths = watcher.stop(timeout=timeout)
+            except Exception as e:
+                self.summary = f"[WebPerf] Error while finalizing the performance report: {e}"
+                return self.summary
+            if not paths:
+                self.summary = ("[WebPerf] No automated browser session was detected during this run, "
+                                "so no performance report was written. (Expected for API/non-UI tests. "
+                                "Playwright needs --remote-debugging-port to be visible to the watcher.)")
+                return self.summary
+            self.report_path = paths.get("html")
+            result = paths.get("result") or {}
+            self.summary = (f"[WebPerf] Performance report ready - {result.get('session_count', 0)} browser "
+                            f"session(s), {result.get('total_urls', 0)} URL(s), average score "
+                            f"{result.get('performance_score')}.")
+            return self.summary
+        finally:
+            self._done.set()
+
+    @property
+    def report_url(self) -> str:
+        if not self.report_path:
+            return ""
+        return (f"/api/script-runner/report?path={quote(self.report_path, safe='')}"
+                f"&run={int(time.time() * 1000)}")
+
+
+def stop_all_perf_sessions() -> int:
+    """
+    Finalize every in-flight performance monitor. Called by the abort endpoint:
+    force-killing the test process tree also kills the browser being profiled,
+    so the report has to be written here rather than waiting for the stream to
+    unwind. Returns how many sessions were finalized.
+    """
+    with _perf_sessions_lock:
+        sessions = list(active_perf_sessions)
+    stopped = 0
+    for session in sessions:
+        try:
+            # Shorter than the streaming path's timeout: this one blocks an
+            # interactive "Stop" click, so it must not hang the UI.
+            session.stop(timeout=15.0)
+            # Count sessions that ended up finalized, whether this call did the
+            # work or the unwinding stream beat us to it.
+            if session.summary:
+                stopped += 1
+        except Exception:
+            pass
+    return stopped
 
 
 def _runtime_env_with_ca():
@@ -483,11 +655,75 @@ class ScriptRunnerService:
             print(f"AI call failed: {e}")
             return {}
 
-    @classmethod
-    def execute_with_streaming(cls, meta: dict, env: str, browser: str, tags: str, custom_commands: str = ""):
+    @staticmethod
+    def _resolve_full_path(meta: dict) -> str:
         project_path = meta.get('path', '') or meta.get('project_path', '')
         project_name = meta.get('name', '') or meta.get('project_name', '')
-        full_path = os.path.join(project_path, project_name) if project_name not in project_path else project_path
+        return os.path.join(project_path, project_name) if project_name not in project_path else project_path
+
+    @classmethod
+    def execute_with_streaming(cls, meta: dict, env: str, browser: str, tags: str, custom_commands: str = ""):
+        """
+        Public streaming entry point for "Launch Execution".
+
+        Wraps the actual run so browser performance monitoring starts before
+        the first command and is ALWAYS finalized afterwards:
+          - normal completion  -> stopped just before the final result event,
+                                  so the report exists by the time the UI is
+                                  told the run is over
+          - user force-stop    -> the /stop endpoint finalizes it directly
+                                  (stop() is idempotent, so the unwinding
+                                  stream calling it again is harmless)
+          - client disconnect  -> Flask closes this generator and the finally
+                                  block finalizes it
+
+        The finally block deliberately does not yield: a generator being
+        closed early receives GeneratorExit and must not produce more output.
+        """
+        perf = WebPerfSession(cls._resolve_full_path(meta), time.time())
+        start_msg = perf.start()
+        if start_msg:
+            yield f"event: progress\ndata: {json.dumps({'msg': start_msg, 'type': 'system'})}\n\n"
+
+        try:
+            for chunk in cls._stream_execution(meta, env, browser, tags, custom_commands):
+                # Interleave the monitor's own diagnostics (browser detected,
+                # CDP attached, attach failed, ...) with the test output.
+                yield from cls._perf_log_events(perf)
+                if chunk.startswith("event: result"):
+                    yield from cls._finalize_perf_and_result(perf, chunk)
+                else:
+                    yield chunk
+        finally:
+            perf.stop(timeout=10.0)
+
+    @staticmethod
+    def _perf_log_events(perf: "WebPerfSession"):
+        for line in perf.drain_logs():
+            yield f"event: progress\ndata: {json.dumps({'msg': line, 'type': 'system'})}\n\n"
+
+    @classmethod
+    def _finalize_perf_and_result(cls, perf: "WebPerfSession", result_chunk: str):
+        """Stop monitoring, then re-emit the run's result event carrying the
+        performance report URL alongside the functional report URL."""
+        # `or perf.summary` covers the abort path: the /stop endpoint already
+        # finalized this same session object, so stop() is a no-op here but the
+        # summary and report path it produced are still worth reporting.
+        summary = perf.stop() or perf.summary
+        yield from cls._perf_log_events(perf)  # anything logged during finalization
+        if summary:
+            yield f"event: progress\ndata: {json.dumps({'msg': summary, 'type': 'system'})}\n\n"
+        try:
+            payload = json.loads(result_chunk.split("data: ", 1)[1].strip())
+        except (IndexError, ValueError):
+            yield result_chunk  # malformed - pass through untouched
+            return
+        payload["perf_report_url"] = perf.report_url
+        yield f"event: result\ndata: {json.dumps(payload)}\n\n"
+
+    @classmethod
+    def _stream_execution(cls, meta: dict, env: str, browser: str, tags: str, custom_commands: str = ""):
+        full_path = cls._resolve_full_path(meta)
 
         language = meta.get('language') or meta.get('lang') or meta.get('project_lang', '')
         framework = meta.get('framework') or meta.get('fw') or meta.get('project_fw', '')

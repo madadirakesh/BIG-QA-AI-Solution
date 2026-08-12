@@ -1,0 +1,22 @@
+# soak_test.yaml
+# Endurance test: moderate, sustained load over a long duration to catch
+# memory leaks, connection-pool exhaustion, and other issues that only
+# surface over time.
+
+run_name: soak_test
+parallel: false
+max_parallel_workers: 1
+
+tests:
+  - name: api_soak
+    locustfile: locustfiles/http_api_test.py
+    host: https://api.example.com
+    users: 200
+    spawn_rate: 10
+    run_time: 4h
+    thresholds_file: config/thresholds.yaml
+    distributed:
+      enabled: true
+      worker_count: 4
+      master_bind_port: 5557
+    extra_args: []

@@ -22,3 +22,6 @@ anthropic
 jira
 mcp
 cryptography
+# webperf_monitor (browser performance monitoring during Script Runner executions)
+psutil
+websocket-client

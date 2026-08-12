@@ -393,6 +393,10 @@
                 <i class="fas fa-eraser"></i> Clear
             </button>
             <span class="status-dot offline" id="execStatus"></span><span id="execStatusText"> Status: Ready</span>
+            <!-- Live execution timer: started by runScript(), stopped when the run ends. -->
+            <span class="exec-timer" id="execTimer" title="Elapsed execution time">
+                <i class="fas fa-stopwatch"></i> <span id="execTimerValue">00:00</span>
+            </span>
         </div>
     </div>
 </div>
@@ -685,6 +689,40 @@
     .status-dot.done {
         background: var(--success);
         box-shadow: 0 0 8px var(--success);
+    }
+
+    /* Execution elapsed-time badge in the terminal header */
+    .exec-timer {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 2px 10px;
+        border-radius: 20px;
+        background: rgba(255, 255, 255, 0.06);
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        color: #94a3b8;
+        font-family: 'JetBrains Mono', 'Courier New', monospace;
+        font-size: 0.8rem;
+        font-variant-numeric: tabular-nums;
+        transition: color 0.3s ease, border-color 0.3s ease, background 0.3s ease;
+    }
+
+    .exec-timer.running {
+        background: rgba(0, 188, 242, 0.1);
+        border-color: rgba(0, 188, 242, 0.35);
+        color: #60a5fa;
+    }
+
+    .exec-timer.done {
+        background: rgba(52, 211, 153, 0.1);
+        border-color: rgba(52, 211, 153, 0.35);
+        color: #34d399;
+    }
+
+    .exec-timer.failed {
+        background: rgba(239, 68, 68, 0.1);
+        border-color: rgba(239, 68, 68, 0.35);
+        color: #ef4444;
     }
 
     .mt-3 {
@@ -1229,6 +1267,58 @@
 
     let eventSource = null;
 
+    // ─── Execution elapsed timer ───────────────────────────────────────────
+    // Ticks once a second between "Launch Execution" and the run finishing
+    // (result / stream error / abort). Elapsed time is derived from the start
+    // timestamp rather than counting ticks, so a throttled background tab
+    // still shows the correct duration.
+    let execTimerInterval = null;
+    let execTimerStartMs = null;
+
+    function formatElapsed(totalSec) {
+        const h = Math.floor(totalSec / 3600);
+        const m = Math.floor((totalSec % 3600) / 60);
+        const s = totalSec % 60;
+        const mm = String(m).padStart(2, '0');
+        const ss = String(s).padStart(2, '0');
+        return h > 0 ? `${String(h).padStart(2, '0')}:${mm}:${ss}` : `${mm}:${ss}`;
+    }
+
+    function renderExecTimer() {
+        const valueEl = document.getElementById('execTimerValue');
+        if (!valueEl || execTimerStartMs === null) return;
+        valueEl.textContent = formatElapsed(Math.floor((Date.now() - execTimerStartMs) / 1000));
+    }
+
+    function startExecTimer() {
+        stopExecTimer();
+        execTimerStartMs = Date.now();
+
+        const timerEl = document.getElementById('execTimer');
+        if (timerEl) timerEl.className = 'exec-timer running';
+
+        renderExecTimer();
+        execTimerInterval = setInterval(renderExecTimer, 1000);
+    }
+
+    // state: 'done' | 'failed' | null — colours the badge once the run stops.
+    // Returns the final elapsed string so callers can log it.
+    function stopExecTimer(state = null) {
+        if (execTimerInterval) {
+            clearInterval(execTimerInterval);
+            execTimerInterval = null;
+        }
+        if (execTimerStartMs === null) return null;
+
+        renderExecTimer();
+        const elapsed = formatElapsed(Math.floor((Date.now() - execTimerStartMs) / 1000));
+        execTimerStartMs = null;
+
+        const timerEl = document.getElementById('execTimer');
+        if (timerEl) timerEl.className = state ? `exec-timer ${state}` : 'exec-timer';
+        return elapsed;
+    }
+
     function addLog(msg, type = 'default') {
         const log = document.getElementById('logOutput');
         const line = document.createElement('div');
@@ -1240,11 +1330,13 @@
             else if (msg.includes('[Error]') || msg.includes('[MCP Error]') || msg.includes('Failed') || msg.includes('Critical')) colorClass = 'log-error';
             else if (msg.includes('[Success]') || msg.includes('[MCP Success]') || msg.includes('Completed Successfully')) colorClass = 'log-success';
             else if (msg.includes('[System]') || msg.includes('[Sequential Mode]')) colorClass = 'log-system';
+            else if (msg.includes('[WebPerf]')) colorClass = 'log-system';
         }
 
         line.classList.add(colorClass);
-        const reportPrefix = '[Report] View latest results: ';
-        if (msg.startsWith(reportPrefix)) {
+        const linkPrefixes = ['[Report] View latest results: ', '[WebPerf] View performance report: '];
+        const reportPrefix = linkPrefixes.find(p => msg.startsWith(p));
+        if (reportPrefix) {
             line.appendChild(document.createTextNode(reportPrefix));
             const reportLink = document.createElement('a');
             reportLink.href = msg.slice(reportPrefix.length);
@@ -1299,8 +1391,15 @@
     async function abortExecution() {
         if (!confirm("Are you sure you want to stop the execution?")) return;
         try {
-            await fetch('/api/script-runner/stop', { method: 'POST' });
             addLog("[System] Stop signal sent. Terminating processes...", "log-error");
+            const resp = await fetch('/api/script-runner/stop', { method: 'POST' });
+            // The backend also finalizes performance monitoring here, because
+            // force-killing the tests kills the browser being profiled - the
+            // partial run's report is still written.
+            const data = await resp.json().catch(() => null);
+            if (data && data.perf_sessions_finalized > 0) {
+                addLog("[WebPerf] Performance monitoring finalized for the stopped run.", "log-system");
+            }
         } catch (e) { console.error(e); }
     }
 
@@ -1344,6 +1443,7 @@
         status.nextSibling.textContent = ' Status: Running...';
         log.innerHTML = '';
         document.querySelector('.terminal-panel').classList.add('running');
+        startExecTimer();
 
         if (currentMode === 'seq') {
             document.getElementById('executionProgress').style.display = 'block';
@@ -1393,6 +1493,8 @@
             abortBtn.style.display = 'none';
             document.querySelector('.terminal-panel').classList.remove('running');
 
+            const elapsed = stopExecTimer(data.status === 'success' ? 'done' : 'failed');
+
             if (data.status === 'success') {
                 addLog("[System] Execution Completed Successfully!", "log-success");
                 status.className = 'status-dot done';
@@ -1403,12 +1505,22 @@
                 status.nextSibling.textContent = ' Status: Error';
             }
 
+            if (elapsed) addLog(`[System] Total execution time: ${elapsed}`, "log-system");
+
             // Reports also contain diagnostics for failed runs. Open a fresh report for every
             // outcome and expose a real clickable absolute URL in the execution log.
             if (data.report_url) {
                 const absoluteReportUrl = new URL(data.report_url, window.location.origin).href;
                 addLog(`[Report] View latest results: ${absoluteReportUrl}`, data.status === 'success' ? "log-success" : "log-system");
                 window.open(absoluteReportUrl, '_blank');
+            }
+
+            // Browser performance report from webperf_monitor, produced automatically
+            // for this run. Linked rather than auto-opened, so it doesn't fight the
+            // functional report for the new tab.
+            if (data.perf_report_url) {
+                const absolutePerfUrl = new URL(data.perf_report_url, window.location.origin).href;
+                addLog(`[WebPerf] View performance report: ${absolutePerfUrl}`, "log-system");
             }
         });
 
@@ -1418,6 +1530,12 @@
             btn.disabled = false;
             btn.innerHTML = '<i class="fas fa-rocket"></i> Launch Execution';
             abortBtn.style.display = 'none';
+            document.querySelector('.terminal-panel').classList.remove('running');
+
+            // The stream can drop after a normal 'result' (timer already stopped),
+            // so only report elapsed time when this error actually ended the run.
+            const elapsed = stopExecTimer('failed');
+            if (elapsed) addLog(`[System] Execution stream ended after ${elapsed}.`, "log-error");
         };
     }
 
