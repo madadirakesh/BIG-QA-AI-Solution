@@ -393,6 +393,10 @@
                 <i class="fas fa-eraser"></i> Clear
             </button>
             <span class="status-dot offline" id="execStatus"></span><span id="execStatusText"> Status: Ready</span>
+             <!-- Live execution timer: started by runScript(), stopped when the run ends. -->
+            <span class="exec-timer" id="execTimer" title="Elapsed execution time">
+                <i class="fas fa-stopwatch"></i> <span id="execTimerValue">00:00</span>
+            </span>
         </div>
     </div>
 </div>
@@ -663,6 +667,40 @@
         font-family: 'Courier New', Courier, monospace;
         font-size: 0.85rem;
         color: #34d399;
+    }
+
+    /* Live execution timer badge in the terminal header */
+    .exec-timer {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 3px 10px;
+        border-radius: 20px;
+        font-family: 'JetBrains Mono', 'Courier New', monospace;
+        font-size: 0.8rem;
+        font-variant-numeric: tabular-nums;
+        background: rgba(255, 255, 255, 0.05);
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        color: #94a3b8;
+        transition: color 0.3s ease, border-color 0.3s ease, background 0.3s ease;
+    }
+
+    .exec-timer.running {
+        color: #fbbf24;
+        border-color: rgba(251, 191, 36, 0.35);
+        background: rgba(251, 191, 36, 0.08);
+    }
+
+    .exec-timer.done {
+        color: #34d399;
+        border-color: rgba(52, 211, 153, 0.35);
+        background: rgba(52, 211, 153, 0.08);
+    }
+
+    .exec-timer.failed {
+        color: #ef4444;
+        border-color: rgba(239, 68, 68, 0.35);
+        background: rgba(239, 68, 68, 0.08);
     }
 
     .status-dot {
@@ -1229,6 +1267,57 @@
 
     let eventSource = null;
 
+    // ─── Execution elapsed timer ───────────────────────────────────────────
+    // Ticks once a second between "Launch Execution" and the run finishing
+    // (result / stream error / abort). Elapsed time is derived from the start
+    // timestamp rather than counting ticks, so a throttled background tab
+    // still shows the correct duration.
+    let execTimerInterval = null;
+    let execTimerStartMs = null;
+
+    function formatElapsed(totalSec) {
+        const h = Math.floor(totalSec / 3600);
+        const m = Math.floor((totalSec % 3600) / 60);
+        const s = totalSec % 60;
+        const mm = String(m).padStart(2, '0');
+        const ss = String(s).padStart(2, '0');
+        return h > 0 ? `${String(h).padStart(2, '0')}:${mm}:${ss}` : `${mm}:${ss}`;
+    }
+
+    function renderExecTimer() {
+        const valueEl = document.getElementById('execTimerValue');
+        if (!valueEl || execTimerStartMs === null) return;
+        valueEl.textContent = formatElapsed(Math.floor((Date.now() - execTimerStartMs) / 1000));
+    }
+
+    function startExecTimer() {
+        stopExecTimer();
+        execTimerStartMs = Date.now();
+
+        const timerEl = document.getElementById('execTimer');
+        if (timerEl) timerEl.className = 'exec-timer running';
+
+        renderExecTimer();
+        execTimerInterval = setInterval(renderExecTimer, 1000);
+    }
+
+    // state: 'done' | 'failed' | null — colours the badge once the run stops.
+    // Returns the final elapsed string so callers can log it.
+    function stopExecTimer(state = null) {
+        if (execTimerInterval) {
+            clearInterval(execTimerInterval);
+            execTimerInterval = null;
+        }
+        if (execTimerStartMs === null) return null;
+
+        renderExecTimer();
+        const elapsed = formatElapsed(Math.floor((Date.now() - execTimerStartMs) / 1000));
+        execTimerStartMs = null;
+
+        const timerEl = document.getElementById('execTimer');
+        if (timerEl) timerEl.className = state ? `exec-timer ${state}` : 'exec-timer';
+        return elapsed;
+    }
     function addLog(msg, type = 'default') {
         const log = document.getElementById('logOutput');
         const line = document.createElement('div');
@@ -1344,6 +1433,7 @@
         status.nextSibling.textContent = ' Status: Running...';
         log.innerHTML = '';
         document.querySelector('.terminal-panel').classList.add('running');
+        startExecTimer();
 
         if (currentMode === 'seq') {
             document.getElementById('executionProgress').style.display = 'block';
@@ -1393,6 +1483,8 @@
             abortBtn.style.display = 'none';
             document.querySelector('.terminal-panel').classList.remove('running');
 
+            const elapsed = stopExecTimer(data.status === 'success' ? 'done' : 'failed');
+
             if (data.status === 'success') {
                 addLog("[System] Execution Completed Successfully!", "log-success");
                 status.className = 'status-dot done';
@@ -1402,6 +1494,8 @@
                 status.className = 'status-dot offline';
                 status.nextSibling.textContent = ' Status: Error';
             }
+
+            if (elapsed) addLog(`[System] Total execution time: ${elapsed}`, "log-system");
 
             // Reports also contain diagnostics for failed runs. Open a fresh report for every
             // outcome and expose a real clickable absolute URL in the execution log.
@@ -1418,6 +1512,10 @@
             btn.disabled = false;
             btn.innerHTML = '<i class="fas fa-rocket"></i> Launch Execution';
             abortBtn.style.display = 'none';
+            document.querySelector('.terminal-panel').classList.remove('running');
+            // No-op if the 'result' handler already stopped the timer.
+            const elapsed = stopExecTimer('failed');
+            if (elapsed) addLog(`[System] Stream ended after ${elapsed}.`, "log-warn");
         };
     }
 
