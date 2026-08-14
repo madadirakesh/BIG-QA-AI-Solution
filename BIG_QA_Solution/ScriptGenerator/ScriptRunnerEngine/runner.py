@@ -58,6 +58,36 @@ def _runtime_env_for_command(cmd: str):
 
 class ScriptRunnerService:
     MAX_HEALING_RETRIES = 3
+
+    # Every locator failure found in one run is repaired in a single pass, so these caps only exist
+    # to stop a pathological diagnosis (a model listing dozens of "failures", or a suite where the
+    # whole app is down) from rewriting the entire page-object layer in one go. Anything over the
+    # cap is reported and left for the next attempt rather than dropped silently.
+    MAX_LOCATOR_FAILURES_PER_ATTEMPT = 12
+    MAX_REPORTED_FAILURE_LINES = 12
+
+
+    # Self-healing is deliberately narrow: it repairs element locators, and it
+    # only ever rewrites Page Object files. Step definitions, feature files,
+    # hooks, config and test data are the human-authored contract of the suite -
+    # editing them would silently change what the test asserts, so any failure
+    # that is not a locator failure in a Page Object fails the run instead.
+    PAGE_OBJECT_DIR_NAMES = {
+        'pages', 'page', 'pageobjects', 'page_objects', 'pageobject', 'page_object'
+    }
+    PAGE_OBJECT_EXTENSIONS = {'.py', '.java', '.ts', '.js', '.cs'}
+    NON_HEALABLE_DIR_NAMES = {
+        'steps', 'step', 'stepdefinitions', 'step_definitions', 'stepdefs',
+        'features', 'feature', 'hooks', 'support', 'utils', 'util', 'utilities',
+        'helpers', 'helper', 'runners', 'runner', 'config', 'configs', 'configuration',
+        'testdata', 'test_data', 'data', 'resources', 'reports', 'results'
+    }
+    # Applied to the file name too, so a step definition parked in `pages/` is
+    # still rejected.
+    NON_HEALABLE_FILE_MARKERS = (
+        'step', 'hook', 'runner', 'config', 'environment', 'conftest', 'fixture'
+    )
+
     REPORT_EXTENSIONS = {'.html', '.htm', '.pdf', '.json', '.xml', '.png', '.txt'}
     REPORT_DIR_HINTS = ("results", "reports", "outputs", "allure-results", "allure-report", "playwright-report")
     REPORT_SKIP_DIRS = {
@@ -65,6 +95,12 @@ class ScriptRunnerService:
         'site-packages', 'dist-packages', 'classes', 'test-classes', 'src',
         'target', 'bin', 'obj'
     }
+
+    # Fully-qualified goal rather than the short `exec:java` prefix. The generated poms do not
+    # declare exec-maven-plugin, so the prefix form makes Maven resolve the plugin group and pick
+    # LATEST at run time - that fails outright when a corporate settings.xml restricts
+    # pluginGroups. Bump the version deliberately.
+    MAVEN_EXEC_JAVA_GOAL = "org.codehaus.mojo:exec-maven-plugin:3.1.0:java"
 
     @staticmethod
     def _inspect_project_files(full_path: str) -> dict:
@@ -224,6 +260,36 @@ class ScriptRunnerService:
         if cmd_lower.startswith("python -m pytest") or cmd_lower.startswith("python3 -m pytest"):
             return "pytest"
         return "generic"
+
+    @staticmethod
+    def _detect_gradle_exec_task(gradle_build_file: str) -> str:
+        """Return a Gradle task that can run an arbitrary main class, or '' if none exists.
+
+        Gradle has no built-in equivalent of `mvn exec:java`: running a main class needs either
+        the `application` plugin (task `run`) or a hand-written JavaExec task. The fallback used
+        to emit `gradle execute ...` unconditionally, which fails with "Task 'execute' not found"
+        on every project that does not happen to define that task.
+        """
+        if not gradle_build_file:
+            return ""
+        try:
+            with open(gradle_build_file, 'r', encoding='utf-8', errors='ignore') as build_file:
+                build_text = build_file.read()
+        except OSError:
+            return ""
+
+        for task_name in ('execute', 'run'):
+            declared = (
+                rf"task\s*\(?\s*['\"]?{task_name}\b"
+                rf"|tasks\.register\(\s*['\"]{task_name}['\"]"
+                rf"|tasks\.create\(\s*['\"]{task_name}['\"]"
+            )
+            if re.search(declared, build_text):
+                return task_name
+
+        if re.search(r"""id\s*\(?\s*['"]application['"]|apply\s+plugin:\s*['"]application['"]""", build_text):
+            return "run"
+        return ""
 
     @classmethod
     def _normalize_command_for_execution(cls, cmd: str) -> str:
@@ -483,6 +549,312 @@ class ScriptRunnerService:
             print(f"AI call failed: {e}")
             return {}
 
+    @staticmethod
+    def _load_healing_prompts():
+        """Import the healing prompts, adding BIG_QA_Solution to sys.path if needed."""
+        parent_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        if parent_dir not in sys.path:
+            sys.path.insert(0, parent_dir)
+        from prompts.script_runner_prompts import (
+            get_diagnose_locator_error_prompt,
+            get_heal_locator_prompt,
+        )
+        return get_diagnose_locator_error_prompt, get_heal_locator_prompt
+
+    @classmethod
+    def _resolve_page_object_target(cls, full_path: str, file_to_fix: str):
+        """
+        Resolve the file the AI nominated, accepting it only if it is a Page Object.
+
+        The diagnosis prompt is already told to return Page Objects only, but the
+        answer is model output - this is the guard that actually keeps step
+        definitions, feature files, hooks and config out of the healing path.
+
+        Returns (absolute_path, "") when healing may proceed, otherwise
+        ("", reason) explaining why the file is off-limits.
+        """
+        rel_path = (file_to_fix or '').strip().strip('"').strip("'").replace('\\', '/')
+        if not rel_path:
+            return "", "no Page Object file was identified"
+
+        project_root = os.path.abspath(full_path)
+        candidate = os.path.abspath(rel_path if os.path.isabs(rel_path) else os.path.join(project_root, rel_path))
+        try:
+            # Never let a hallucinated path escape the project under test.
+            if os.path.commonpath([candidate, project_root]) != project_root:
+                raise ValueError
+        except ValueError:
+            return "", f"'{rel_path}' is outside the project directory"
+
+        display = os.path.relpath(candidate, project_root).replace('\\', '/')
+        segments = display.lower().split('/')
+        directories, filename = segments[:-1], segments[-1]
+        stem, ext = os.path.splitext(filename)
+
+        if ext not in cls.PAGE_OBJECT_EXTENSIONS:
+            return "", f"'{display}' is not a Page Object source file"
+        if any(directory in cls.NON_HEALABLE_DIR_NAMES for directory in directories):
+            return "", f"'{display}' is a step definition/feature/support file, not a Page Object"
+        if any(marker in stem for marker in cls.NON_HEALABLE_FILE_MARKERS):
+            return "", f"'{display}' is a step definition/hook/config file, not a Page Object"
+        if not (any(directory in cls.PAGE_OBJECT_DIR_NAMES for directory in directories) or 'page' in stem):
+            return "", f"'{display}' does not look like a Page Object file"
+        if not os.path.isfile(candidate):
+            return "", f"'{display}' does not exist in the project"
+        return candidate, ""
+
+    @classmethod
+    def _locator_source_location(cls, full_path: str, cmd_output: str) -> str:
+        """Best-effort "relative/path.ts:41" for where the failing locator was used.
+
+        This is used only to EXPLAIN a declined heal. When a locator is built inline in a step
+        definition there is no Page Object to rewrite, and the bare "no Page Object file was
+        identified" left the user with nothing to act on. Naming the file and line turns the
+        decline into a fix instruction.
+
+        Handles the shapes the supported frameworks actually print:
+          Playwright/Cucumber : at World.<anonymous> (C:\\proj\\test\\steps\\leadSteps.ts:41:25)
+          Cucumber summary    : # test/stepDefinitions/leadSteps.ts:36
+          Behave/pytest       : File "features/steps/login_steps.py", line 12
+        Returns "" when no project source file can be identified.
+        """
+        project_root = os.path.abspath(full_path)
+        patterns = (
+            r'File\s+"([^"]+\.py)",\s+line\s+(\d+)',
+            # Spaces are allowed inside the path ("...\AI Solution Projects\Campions\..."): a
+            # no-whitespace character class silently fails to match the whole frame, which used to
+            # push us onto the less precise Cucumber summary line instead of the failing line.
+            r'([A-Za-z]:[\\/][^:"<>|*?\r\n]+?\.(?:ts|tsx|js|jsx|py|java|cs)):(\d+)',
+            r'([\w.\-]+(?:[\\/][\w.\-]+)+\.(?:ts|tsx|js|jsx|py|java|cs)):(\d+)',
+        )
+        for pattern in patterns:
+            for raw_path, line_no in re.findall(pattern, cmd_output or ''):
+                normalized = raw_path.replace('\\', '/')
+                if any(vendor in normalized.lower() for vendor in ('node_modules', 'site-packages', 'dist-packages')):
+                    continue
+                # Absolute paths in stack traces are often clipped by the regex when the project
+                # path contains spaces, so also try each suffix of the path against the project
+                # root: '.../AI Solution Projects/Campions/test/x.ts' still resolves via 'test/x.ts'.
+                segments = normalized.split('/')
+                attempts = [normalized] + ['/'.join(segments[start:]) for start in range(1, len(segments))]
+                for attempt in attempts:
+                    candidate = os.path.abspath(attempt if os.path.isabs(attempt) else os.path.join(project_root, attempt))
+                    if not os.path.isfile(candidate):
+                        continue
+                    try:
+                        if os.path.commonpath([candidate, project_root]) != project_root:
+                            continue
+                    except ValueError:
+                        continue
+                    display = os.path.relpath(candidate, project_root).replace('\\', '/')
+                    return f"{display}:{line_no}"
+        return ""
+
+    @classmethod
+    def _collect_locator_failures(cls, diagnosis: dict) -> list:
+        """Normalise a diagnosis into a de-duplicated list of {'file', 'locator', 'detail'}.
+
+        Accepts the batch shape ("failures": [...]) and the older single-failure shape
+        ("file_to_fix" / "failed_locator"), so a model that answers in the previous format still
+        gets healed instead of silently doing nothing.
+
+        De-duplication is what makes batching worthwhile: one broken locator typically fails in
+        every scenario that touches it, so the raw diagnosis repeats it many times. Keying on
+        (file, locator) collapses those into one fix.
+        """
+        raw_failures = diagnosis.get("failures")
+        if not isinstance(raw_failures, list) or not raw_failures:
+            legacy_file = (diagnosis.get("file_to_fix") or "").strip()
+            legacy_locator = (diagnosis.get("failed_locator") or "").strip()
+            raw_failures = [{"file_to_fix": legacy_file, "failed_locator": legacy_locator}] if (
+                legacy_file or legacy_locator) else []
+
+        collected, seen = [], set()
+        for entry in raw_failures:
+            if not isinstance(entry, dict):
+                continue
+            file_ref = (entry.get("file_to_fix") or entry.get("file") or "").strip()
+            locator = (entry.get("failed_locator") or entry.get("locator") or "").strip()
+            detail = (entry.get("element_description") or entry.get("reason") or "").strip()
+            if not file_ref and not locator:
+                continue
+            key = (file_ref.replace('\\', '/').lower(), locator)
+            if key in seen:
+                continue
+            seen.add(key)
+            collected.append({"file": file_ref, "locator": locator, "detail": detail})
+        return collected
+
+    @staticmethod
+    def _python_syntax_error(display: str, source: str) -> str:
+        """Return a message if healed Python source would not compile, else ''."""
+        if not display.endswith('.py'):
+            return ""
+        import ast
+        try:
+            ast.parse(source, filename=display)
+        except SyntaxError as exc:
+            return f"line {exc.lineno}: {exc.msg}"
+        return ""
+
+    @classmethod
+    def _attempt_locator_heal(cls, full_path: str, cmd: str, cmd_output: str, attempt: int):
+        """
+        Decide whether a failed command can be self-healed, and heal it if so.
+
+        This is a BATCH pass. One diagnosis collects every distinct element locator failure in the
+        run, the failures are grouped by Page Object file, and each file is rewritten once with all
+        of its broken locators fixed together. The caller then re-runs the suite a single time with
+        every fix already in place, instead of paying a full suite run per broken locator.
+
+        Healing is limited to element locator failures, and the only files ever modified are Page
+        Objects. Every other failure - assertion, syntax, import, undefined step, application or
+        data error - is reported back as unhealable so the caller fails the test rather than
+        rewriting the suite.
+
+        Returns (outcome, messages):
+          "HEALED"        - at least one Page Object was rewritten; re-run the command
+          "COMMAND_ERROR" - the command/environment is wrong; no file was touched
+          "FAILED"        - nothing healable; fail the test
+        `messages` are console lines for the caller to stream.
+        """
+        get_diagnose_locator_error_prompt, get_heal_locator_prompt = cls._load_healing_prompts()
+        messages = []
+
+        diagnosis = cls._call_ai_sync_json(get_diagnose_locator_error_prompt(cmd, cmd_output))
+        if not diagnosis:
+            # An empty dict means the diagnosis call itself produced nothing usable - a provider
+            # error, or model output that would not parse as JSON (see _call_ai_sync_json, which
+            # swallows both and returns {}). Falling through to the category checks below would
+            # report "not an element locator issue", which is a false explanation of a failure
+            # that was never classified at all.
+            messages.append("[Self-Healing] The diagnosis step returned no usable response, so this failure "
+                            "could not be classified - check the server console for 'AI call failed'. "
+                            "No project file was modified; failing the test.")
+            return "FAILED", messages
+
+        category = (diagnosis.get("error_category") or "OTHER").strip().upper()
+        reason = (diagnosis.get("reason") or "").strip()
+        reason_suffix = f" ({reason})" if reason else ""
+
+        if category == "COMMAND":
+            messages.append(f"[Self-Healing] Failure is a command/environment problem, not an element "
+                            f"locator{reason_suffix}. No project file will be modified.")
+            return "COMMAND_ERROR", messages
+
+        if category != "LOCATOR":
+            messages.append(f"[Self-Healing] Failure is not an element locator issue{reason_suffix}. "
+                            f"Self-healing only repairs locators in Page Object files - failing the test.")
+            return "FAILED", messages
+
+        project_root = os.path.abspath(full_path)
+        failures = cls._collect_locator_failures(diagnosis)
+        if not failures:
+            messages.append(f"[Self-Healing] Classified the failure as an element locator problem"
+                            f"{reason_suffix}, but no failing locator was reported - nothing to heal. "
+                            f"Failing the test.")
+            return "FAILED", messages
+
+        if len(failures) > cls.MAX_LOCATOR_FAILURES_PER_ATTEMPT:
+            dropped = len(failures) - cls.MAX_LOCATOR_FAILURES_PER_ATTEMPT
+            messages.append(f"[Self-Healing] {len(failures)} locator failures reported; repairing the first "
+                            f"{cls.MAX_LOCATOR_FAILURES_PER_ATTEMPT} this pass and leaving {dropped} for the "
+                            f"next attempt.")
+            failures = failures[:cls.MAX_LOCATOR_FAILURES_PER_ATTEMPT]
+
+        # Group by Page Object so each file is read, rewritten and backed up exactly once even
+        # when several of its locators are broken.
+        grouped, rejections = {}, []
+        for failure in failures:
+            file_target, rejection = cls._resolve_page_object_target(full_path, failure["file"])
+            if rejection:
+                rejections.append((failure, rejection))
+                continue
+            grouped.setdefault(file_target, []).append(failure)
+
+        detail_lines = []
+        for failure in failures:
+            locator_text = failure["locator"] or "(locator not named)"
+            file_text = failure["file"] or "(no Page Object identified)"
+            suffix = f" - {failure['detail']}" if failure["detail"] else ""
+            detail_lines.append(f"[Self-Healing]   * {locator_text} in {file_text}{suffix}")
+        messages.append(f"[Self-Healing] Collected {len(failures)} distinct element locator failure(s) "
+                        f"across {len(grouped)} Page Object file(s){reason_suffix}:")
+        messages.extend(detail_lines[:cls.MAX_REPORTED_FAILURE_LINES])
+        if len(detail_lines) > cls.MAX_REPORTED_FAILURE_LINES:
+            messages.append(f"[Self-Healing]   * ... and {len(detail_lines) - cls.MAX_REPORTED_FAILURE_LINES} more")
+
+        for failure, rejection in rejections:
+            locator_text = failure["locator"] or "(locator not named)"
+            messages.append(f"[Self-Healing] Not healing '{locator_text}': {rejection}.")
+        if rejections:
+            declared_at = cls._locator_source_location(full_path, cmd_output)
+            if declared_at:
+                messages.append(f"[Self-Healing] Those locators are used at {declared_at}, which is not a Page "
+                                f"Object. Self-healing only rewrites Page Object files, so move them into a "
+                                f"Page Object class to make them healable.")
+            else:
+                messages.append("[Self-Healing] Self-healing only rewrites locators declared in Page Object "
+                                "files (e.g. pages/, pageObjects/).")
+
+        if not grouped:
+            messages.append("[Self-Healing] No Page Object file to repair - failing the test.")
+            return "FAILED", messages
+
+        healed_files, healed_locator_count, skipped_notes = [], 0, []
+        for file_target, file_failures in grouped.items():
+            display = os.path.relpath(file_target, project_root).replace('\\', '/')
+            locators = [failure["locator"] for failure in file_failures if failure["locator"]]
+
+            try:
+                with open(file_target, 'r', encoding='utf-8') as page_object_file:
+                    original_content = page_object_file.read()
+            except OSError as read_err:
+                skipped_notes.append(f"{display} (could not read it: {read_err})")
+                continue
+
+            fix_response = cls._call_ai_sync_json(
+                get_heal_locator_prompt(display, original_content, locators, cmd_output)
+            )
+            healed_content = fix_response.get("healed_content", "")
+            if not healed_content or healed_content.strip() == original_content.strip():
+                skipped_notes.append(f"{display} (AI returned no usable fix)")
+                continue
+
+            # Validate before writing: a half-rewritten Page Object would break every
+            # scenario that uses it, including ones that were passing.
+            syntax_error = cls._python_syntax_error(display, healed_content)
+            if syntax_error:
+                skipped_notes.append(f"{display} (healed content is not valid Python - {syntax_error})")
+                continue
+
+            try:
+                shutil.copy2(file_target, f"{file_target}.bak.healing.{attempt}")
+                with open(file_target, 'w', encoding='utf-8') as page_object_file:
+                    page_object_file.write(healed_content)
+            except OSError as write_err:
+                skipped_notes.append(f"{display} (could not write the fix: {write_err})")
+                continue
+
+            healed_files.append(display)
+            healed_locator_count += len(file_failures)
+            explanation = (fix_response.get("explanation") or "").strip()
+            messages.append(f"[Self-Healing] Fixed {len(file_failures)} locator(s) in {display} "
+                            f"(backup: {display}.bak.healing.{attempt}). {explanation}".rstrip())
+
+        for note in skipped_notes:
+            messages.append(f"[Self-Healing] Left unchanged: {note}.")
+
+        if not healed_files:
+            messages.append("[Self-Healing] No Page Object could be repaired - failing the test.")
+            return "FAILED", messages
+
+        messages.append(f"[Self-Healing] Applied {healed_locator_count} locator fix(es) across "
+                        f"{len(healed_files)} file(s) in one pass ({', '.join(healed_files)}). "
+                        f"Re-running once with all fixes in place...")
+        return "HEALED", messages
+
+    
     @classmethod
     def execute_with_streaming(cls, meta: dict, env: str, browser: str, tags: str, custom_commands: str = ""):
         project_path = meta.get('path', '') or meta.get('project_path', '')
@@ -567,63 +939,20 @@ class ScriptRunnerService:
                         if attempt < max_retries:
                             yield f"event: progress\ndata: {json.dumps({'msg': '[Self-Healing] Command failed. Diagnosing logs for element locator issues...', 'type': 'system'})}\n\n"
                             
-                            # Diagnose if it's a locator error
-                            prompt_diag = get_diagnose_locator_error_prompt(cmd, cmd_output)
-                            diag_resp = cls._call_ai_sync_json(prompt_diag)
-                            
-                            is_locator_error = diag_resp.get("is_locator_error", False)
-                            file_to_fix = diag_resp.get("file_to_fix", "").strip()
-                            failed_locator = diag_resp.get("failed_locator", "").strip()
-                            reason = diag_resp.get("reason", "").strip()
-                            
-                            if is_locator_error and file_to_fix:
-                                file_target = os.path.join(full_path, file_to_fix)
-                                if os.path.exists(file_target):
-                                    # Create backup
-                                    backup_target = file_target + f".bak.healing.{attempt}"
-                                    try:
-                                        shutil.copy2(file_target, backup_target)
-                                    except Exception as backup_err:
-                                        print(f"Error creating backup: {backup_err}")
-                                        
-                                    log_msg = f"[Self-Healing] Diagnosed element locator failure in {file_to_fix}: '{failed_locator}' (Reason: {reason}). Backup created at {file_to_fix}.bak.healing.{attempt}"
-                                    yield f"event: progress\ndata: {json.dumps({'msg': log_msg, 'type': 'system'})}\n\n"
-                                    
-                                    try:
-                                        with open(file_target, 'r', encoding='utf-8') as f:
-                                            file_content = f.read()
-                                            
-                                        # Call AI to heal locator
-                                        prompt_fix = get_heal_locator_prompt(file_to_fix, file_content, failed_locator, cmd_output)
-                                        fix_resp = cls._call_ai_sync_json(prompt_fix)
-                                        healed_code = fix_resp.get("healed_content", "")
-                                        explanation = fix_resp.get("explanation", "")
-                                        
-                                        if healed_code:
-                                            with open(file_target, 'w', encoding='utf-8') as f:
-                                                f.write(healed_code)
-                                            log_msg = f"[Self-Healing] Corrected element locator: {explanation}. Retrying execution..."
-                                            yield f"event: progress\ndata: {json.dumps({'msg': log_msg, 'type': 'system'})}\n\n"
-                                            attempt += 1
-                                            continue
-                                        else:
-                                            log_msg = "[Self-Healing] AI did not return a locator fix. Stopping retry loop."
-                                            yield f"event: progress\ndata: {json.dumps({'msg': log_msg, 'type': 'system'})}\n\n"
-                                            break
-                                    except Exception as fix_err:
-                                        log_msg = f"[Self-Healing] Error applying locator fix: {fix_err}"
-                                        yield f"event: progress\ndata: {json.dumps({'msg': log_msg, 'type': 'system'})}\n\n"
-                                        break
-                                else:
-                                    log_msg = f"[Self-Healing] Target file '{file_to_fix}' not found. Cannot perform healing."
-                                    yield f"event: progress\ndata: {json.dumps({'msg': log_msg, 'type': 'system'})}\n\n"
-                                    break
-                            else:
-                                log_msg = "[Self-Healing] Error does not appear to be element locator-related. Cannot self-heal."
-                                yield f"event: progress\ndata: {json.dumps({'msg': log_msg, 'type': 'system'})}\n\n"
-                                yield f"event: progress\ndata: {json.dumps({'msg': f'[Error] Command failed with exit code {return_code}', 'type': 'step_fail', 'step': i+1})}\n\n"
-                                success = False
-                                break
+                            outcome, heal_messages = cls._attempt_locator_heal(full_path, cmd, cmd_output, attempt)
+                            for heal_msg in heal_messages:
+                                execution_log += f"\n{heal_msg}\n"
+                                yield f"event: progress\ndata: {json.dumps({'msg': heal_msg, 'type': 'system'})}\n\n"
+
+                            if outcome == "HEALED":
+                                attempt += 1
+                                continue
+
+                            # Anything other than a healed Page Object locator is a real
+                            # failure: report it as such instead of retrying blindly.
+                            yield f"event: progress\ndata: {json.dumps({'msg': f'[Error] Command failed with exit code {return_code}', 'type': 'step_fail', 'step': i+1})}\n\n"
+                            success = False
+                            break
                         else:
                             yield f"event: progress\ndata: {json.dumps({'msg': f'[Error] Command failed with exit code {return_code} after all retries.', 'type': 'step_fail', 'step': i+1})}\n\n"
                             success = False
@@ -648,7 +977,7 @@ class ScriptRunnerService:
         parent_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
         if parent_dir not in sys.path:
             sys.path.insert(0, parent_dir)
-        from prompts.script_runner_prompts import get_execution_command_prompt, get_diagnose_error_prompt, get_fix_script_prompt, get_correct_command_prompt
+        from prompts.script_runner_prompts import get_execution_command_prompt, get_correct_command_prompt
 
         prompt = get_execution_command_prompt(
             tool=tool,
@@ -721,48 +1050,19 @@ class ScriptRunnerService:
                     
                     if attempts < max_retries:
                         yield f"event: progress\ndata: {json.dumps({'msg': '[Self-Healing] Diagnosing error...', 'type': 'system'})}\n\n"
-                        # Execution failed. Let's ask AI to diagnose the error (COMMAND vs SCRIPT)
                         error_output = cmd_output
-                        prompt_diag = get_diagnose_error_prompt(cmd, error_output)
-                        diag_resp = cls._call_ai_sync_json(prompt_diag)
-                        error_type = diag_resp.get("error_type", "COMMAND_ERROR")
-                        file_to_fix = diag_resp.get("file_to_fix", "")
-                        
-                        if error_type == "SCRIPT_ERROR" and file_to_fix:
-                            file_target = os.path.join(full_path, file_to_fix)
-                            if os.path.exists(file_target):
-                                backup_target = file_target + f".bak.{attempts}"
-                                shutil.copy2(file_target, backup_target)
-                                log_msg = f"[Self-Healing] Diagnosed SCRIPT_ERROR in {file_to_fix}. Backup created at {file_to_fix}.bak.{attempts}"
-                                output_log += f"\n{log_msg}\n"
-                                yield f"event: progress\ndata: {json.dumps({'msg': log_msg, 'type': 'system'})}\n\n"
-                                
-                                with open(file_target, 'r', encoding='utf-8') as f:
-                                    file_content = f.read()
-                                    
-                                prompt_fix = get_fix_script_prompt(error_output, file_to_fix, file_content)
-                                fix_resp = cls._call_ai_sync_json(prompt_fix)
-                                fixed_code = fix_resp.get("fixed_content", "")
-                                
-                                if fixed_code:
-                                    with open(file_target, 'w', encoding='utf-8') as f:
-                                        f.write(fixed_code)
-                                    log_msg = f"[Self-Healing] File {file_to_fix} rewritten successfully. Retrying execution..."
-                                    output_log += f"\n{log_msg}\n"
-                                    yield f"event: progress\ndata: {json.dumps({'msg': log_msg, 'type': 'system'})}\n\n"
-                                    # Keep cmd the same, it will retry in the while loop
-                                else:
-                                    log_msg = "[Self-Healing] AI failed to provide a fix. Falling back to command retry."
-                                    output_log += f"\n{log_msg}\n"
-                                    yield f"event: progress\ndata: {json.dumps({'msg': log_msg, 'type': 'system'})}\n\n"
-                                    error_type = "COMMAND_ERROR" # Fallback
-                            else:
-                                log_msg = f"[Self-Healing] Identified file {file_to_fix} but it does not exist. Falling back..."
-                                output_log += f"\n{log_msg}\n"
-                                yield f"event: progress\ndata: {json.dumps({'msg': log_msg, 'type': 'system'})}\n\n"
-                                error_type = "COMMAND_ERROR" # Fallback
-                                
-                        if error_type == "COMMAND_ERROR" or not file_to_fix:
+                        outcome, heal_messages = cls._attempt_locator_heal(full_path, cmd, error_output, attempts)
+                        for heal_msg in heal_messages:
+                            output_log += f"\n{heal_msg}\n"
+                            yield f"event: progress\ndata: {json.dumps({'msg': heal_msg, 'type': 'system'})}\n\n"
+
+                        if outcome == "FAILED":
+                            # Not a Page Object locator failure - do not touch the suite.
+                            break
+
+                        if outcome == "COMMAND_ERROR":
+                            # The command this mode generated may simply be wrong. Correcting
+                            # it changes no project file, so it stays allowed.
                             prompt2 = get_correct_command_prompt(
                                 cmd=cmd,
                                 error_output=error_output,
@@ -771,13 +1071,13 @@ class ScriptRunnerService:
                             )
                             ai_correction = cls._call_ai_sync_json(prompt2)
                             new_cmd = ai_correction.get("command", "")
-                            if new_cmd:
-                                cmd = new_cmd
-                                log_msg = f"[Self-Healing] AI suggested corrected command: {cmd}"
-                                output_log += f"\n{log_msg}\n"
-                                yield f"event: progress\ndata: {json.dumps({'msg': log_msg, 'type': 'system'})}\n\n"
-                            else:
+                            if not new_cmd:
                                 break
+                            cmd = new_cmd
+                            log_msg = f"[Self-Healing] AI suggested corrected command: {cmd}"
+                            output_log += f"\n{log_msg}\n"
+                            yield f"event: progress\ndata: {json.dumps({'msg': log_msg, 'type': 'system'})}\n\n"
+                        # "HEALED" keeps the same command and re-runs it.
                     else:
                         break
             except Exception as e:
@@ -807,7 +1107,18 @@ class ScriptRunnerService:
                     with open(jf, 'r', encoding='utf-8', errors='ignore') as f:
                         content = f.read()
                     
-                    content_clean = re.sub(r'//.*|/\*.*?\*/', '', content, flags=re.DOTALL)
+                    # Order and flags both matter here. re.DOTALL must apply ONLY to the block
+                    # comment pattern: the previous single pass, r'//.*|/\*.*?\*/' with re.DOTALL,
+                    # let '//.*' match from the first line comment (or any 'http://' inside a
+                    # string literal) straight to EOF. That blanked most files, so has_main /
+                    # package / annotation detection below silently returned False and the wrong
+                    # fallback command was built.
+                    content_clean = re.sub(r'/\*.*?\*/', '', content, flags=re.DOTALL)
+                    # Blank string literals before stripping line comments so the '//' in
+                    # "https://example.com" is not treated as the start of a comment. Nothing we
+                    # look for below ever lives inside a string, so emptying them is safe.
+                    content_clean = re.sub(r'"(?:\\.|[^"\\\n])*"', '""', content_clean)
+                    content_clean = re.sub(r'//[^\n]*', '', content_clean)
                     has_main = re.search(r'public\s+static\s+void\s+main\b', content_clean) is not None
                     
                     package_match = re.search(r'package\s+([\w\.]+)\s*;', content_clean)
@@ -839,16 +1150,44 @@ class ScriptRunnerService:
             if runners:
                 chosen = runners[0]
                 has_maven = os.path.exists(os.path.join(full_path, "pom.xml"))
-                has_gradle = os.path.exists(os.path.join(full_path, "build.gradle"))
-                
+                gradle_build_file = next(
+                    (
+                        candidate for candidate in (
+                            os.path.join(full_path, "build.gradle"),
+                            os.path.join(full_path, "build.gradle.kts"),
+                        ) if os.path.exists(candidate)
+                    ),
+                    ""
+                )
+                has_gradle = bool(gradle_build_file)
+
                 fallback_cmd = ""
-                if chosen['has_main']:
+                if not has_maven and not has_gradle:
+                    # has_maven used to be computed and then never read, so the Maven branches below
+                    # ran in projects with no pom.xml at all. Maven then failed with "there is no
+                    # POM in this directory", which hides the real problem from the user.
+                    msg_text = (f"[Fallback] Found runner class {chosen['full_class_name']}, but the project has "
+                                f"no pom.xml or build.gradle - there is no build tool to run it with.")
+                    yield f"event: progress\ndata: {json.dumps({'msg': msg_text, 'type': 'system'})}\n\n"
+                elif chosen['has_main']:
                     msg_text = f"[Fallback] Found main method in runner class: {chosen['full_class_name']}"
                     yield f"event: progress\ndata: {json.dumps({'msg': msg_text, 'type': 'system'})}\n\n"
-                    if has_gradle:
-                        fallback_cmd = f"gradle execute -PmainClass={chosen['full_class_name']}"
+                    gradle_exec_task = cls._detect_gradle_exec_task(gradle_build_file)
+                    if gradle_exec_task:
+                        fallback_cmd = f"gradle {gradle_exec_task} -PmainClass={chosen['full_class_name']}"
+                    elif has_maven:
+                        # -D values are left unquoted: a fully-qualified Java class name never
+                        # contains spaces, and the previous escaped quotes were handled
+                        # inconsistently - cmd.exe passed them through to Maven on Windows while
+                        # shlex.split() stripped them on POSIX.
+                        fallback_cmd = (f"mvn test-compile {cls.MAVEN_EXEC_JAVA_GOAL}"
+                                        f" -Dexec.classpathScope=test"
+                                        f" -Dexec.mainClass={chosen['full_class_name']}")
                     else:
-                        fallback_cmd = f"mvn test-compile exec:java -Dexec.classpathScope=\"test\" -Dexec.mainClass=\"{chosen['full_class_name']}\""
+                        msg_text = ("[Fallback] Gradle build declares no `application` plugin or exec task, so the "
+                                    "main method cannot be invoked directly. Running the class as a test instead.")
+                        yield f"event: progress\ndata: {json.dumps({'msg': msg_text, 'type': 'system'})}\n\n"
+                        fallback_cmd = f"gradle test --tests {chosen['full_class_name']}"
                 else:
                     msg_text = f"[Fallback] Found runnable runner class: {chosen['full_class_name']}"
                     yield f"event: progress\ndata: {json.dumps({'msg': msg_text, 'type': 'system'})}\n\n"
