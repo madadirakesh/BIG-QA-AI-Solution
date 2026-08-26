@@ -109,6 +109,41 @@ detected; Playwright needs an explicit `--remote-debugging-port`).
 | Failed network requests | Any response with status >= 400, plus requests that failed outright (DNS, connection reset, etc.) |
 | Resource breakdown | Request count and transferred bytes, grouped by type (script, image, stylesheet, font, XHR, ...) |
 
+### Per-page averages (repeated loads of the same URL)
+
+Every individual page load is measured separately, and the report then
+**groups those loads by URL and averages them**, so a page visited five
+times across a suite shows up as ONE card with one set of numbers instead
+of five unrelated score cards:
+
+- The **Pages** section is the headline view: one card per URL, with the
+  averaged Core Web Vitals, averaged category scores, averaged load
+  time/DOMContentLoaded/TTFB/DOM size, and the number of loads averaged.
+  Each card's score is recomputed from the *averaged* metric values (using
+  the same Lighthouse curves), so the score always matches the metrics
+  shown beside it. The individual loads that went into the average are
+  listed under "Individual loads" on each card.
+- Grouping ignores the URL fragment (`#section`) and a bare trailing slash;
+  the query string is significant, so `/search?q=a` and `/search?q=b`
+  remain separate pages. Browser-internal URLs (`about:blank`, `chrome://…`)
+  are not measured.
+- In `report.json` the aggregates are under `pages` (each with `samples`,
+  `metrics`, `metric_scores`, `categories`, `runs`), while each session's
+  raw per-load records are under `sessions[].page_results`.
+- The per-session numbers describe the page that was open when that session
+  finalized, and are kept (collapsed) below the Pages section for drill-down.
+
+The background watcher measures every load automatically, because it polls.
+The explicit `SeleniumMonitor` / `PlaywrightMonitor` hooks don't poll, so
+call `monitor.capture_page()` just before navigating away if you want a
+page other than the last one to be measured:
+
+```python
+driver.get("https://example.com/checkout")
+monitor.capture_page()          # measure this page load
+driver.get("https://example.com/confirm")
+```
+
 ## Honest limitations
 
 - **Speed Index is not measured.** Real Speed Index requires frame-by-frame

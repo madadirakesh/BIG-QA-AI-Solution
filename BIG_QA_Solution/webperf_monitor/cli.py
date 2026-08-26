@@ -120,7 +120,8 @@ def _cmd_watch(args) -> int:
         score = result.get("performance_score")
         print(f"[webperf_monitor] consolidated report written "
               f"({result.get('session_count', 0)} session(s), "
-              f"{result.get('total_urls', 0)} URL(s)) "
+              f"{result.get('page_count', 0)} distinct page(s) over "
+              f"{result.get('measured_page_loads', 0)} measured load(s)) "
               f"- avg performance score: {score}")
 
     stop_hint = (f"run 'webperf-monitor stop --pid-file {args.pid_file}'"

@@ -1,0 +1,734 @@
+{% extends "base.html" %}
+
+{% block title %}Performance Test — BIG AI QA Solution{% endblock %}
+{% block page_title %}Performance Test{% endblock %}
+{% block header_breadcrumb %}
+    <a href="{{ url_for('home') }}">Home</a>
+    <span class="sep">/</span>
+    <span class="current">Performance Test</span>
+{% endblock %}
+
+{% block content %}
+<div class="breadcrumb animate-fade-in">
+    <i class="fas fa-home" style="font-size:0.75rem;"></i>
+    <span class="sep">/</span>
+    <a href="{{ url_for('home') }}">Dashboard</a>
+    <span class="sep">/</span>
+    <span class="current">Performance Test</span>
+</div>
+
+<div class="page-header">
+    <h1><i class="fas fa-gauge-high"></i> Performance Test</h1>
+    <p>Validate and load-test the Locust scripts of your performance projects.</p>
+</div>
+
+<div class="form-panel glassmorphism" style="padding:1.5rem;margin-bottom:1.5rem;">
+    <div class="form-group" style="margin:0;max-width:480px;">
+        <label for="perfProjectSelect" style="margin-bottom:6px;display:block;font-size:0.9rem;color:var(--text-secondary);">Performance Project</label>
+        <select id="perfProjectSelect" onchange="loadPerformanceScripts()" style="width:100%;padding:10px 12px;background:var(--bg-primary);border:1px solid var(--glass-border);border-radius:8px;color:var(--text-primary);font-family:inherit;">
+            <option value="">-- Choose Performance Project --</option>
+            {% for project in performance_projects %}
+            <option value="{{ project.id }}">{{ project.project_name }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div id="perfProjectMeta" class="perf-meta" style="display:none;"></div>
+</div>
+
+<div class="form-panel glassmorphism" style="padding:1.5rem;margin-bottom:1.5rem;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;">
+        <h3 style="margin:0;font-size:1.05rem;"><i class="fas fa-list-check" style="color:var(--accent-secondary);margin-right:8px;"></i>Recorded Test Cases</h3>
+        <div style="display:flex;gap:10px;">
+            <button type="button" id="perfCreateTestBtn" class="btn btn-primary" onclick="startTestRecording()" style="padding:8px 14px;"><i class="fas fa-circle-dot"></i> Create Test</button>
+            <button type="button" class="btn btn-secondary" onclick="loadPerformanceScripts()" style="padding:8px 14px;"><i class="fas fa-rotate"></i> Refresh</button>
+        </div>
+    </div>
+
+    <!-- Mirrors the recorder panel that lives inside the launched browser, so the
+         session is still visible (and stoppable) from here if that window is
+         buried behind other windows or closed unexpectedly. -->
+    <div id="perfRecorderCard" class="recorder-card" style="display:none;">
+        <div class="recorder-head">
+            <span id="perfRecorderDot" class="recorder-dot"></span>
+            <strong id="perfRecorderState">Starting the recorder…</strong>
+            <span id="perfRecorderCounts" class="recorder-counts"></span>
+        </div>
+        <p id="perfRecorderMessage" class="recorder-message">A browser window is opening on the application URL. Use the panel inside it to Start, Stop and save the recording.</p>
+        <div class="recorder-actions">
+            <button type="button" id="perfRecorderFinishBtn" class="btn btn-primary" onclick="finishTestRecording()"><i class="fas fa-floppy-disk"></i> Save &amp; generate script</button>
+            <button type="button" id="perfRecorderCancelBtn" class="btn btn-secondary" onclick="cancelTestRecording()"><i class="fas fa-times"></i> Discard</button>
+        </div>
+    </div>
+
+    <div id="perfScriptsEmpty" class="empty-state-card">
+        <i class="fas fa-gauge-high"></i>
+        <h4>No performance scripts loaded</h4>
+        <p>Select a performance project to list its recorded test cases.</p>
+    </div>
+
+    <div id="perfScriptsTableWrapper" class="table-wrapper" style="display:none;">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th style="width:44px;">#</th>
+                    <th>Test Case</th>
+                    <th>Script File</th>
+                    <th>Last Run</th>
+                    <th style="width:320px;">Actions</th>
+                </tr>
+            </thead>
+            <tbody id="perfScriptsTableBody"></tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Execution console -->
+<div class="form-panel glassmorphism terminal-panel" id="perfTerminalPanel" style="padding:1.5rem;display:none;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;">
+        <h3 style="margin:0;font-size:1.05rem;"><i class="fas fa-terminal" style="color:var(--accent-secondary);margin-right:8px;"></i><span id="perfRunTitle">Execution</span></h3>
+        <div style="display:flex;gap:10px;align-items:center;">
+            <span id="perfRunStatus" class="perf-status">Idle</span>
+            <button type="button" id="perfStopBtn" class="btn btn-secondary" onclick="stopPerformanceRun()" style="display:none;padding:8px 14px;"><i class="fas fa-stop"></i> Stop</button>
+        </div>
+    </div>
+    <div id="perfLog" class="perf-log"></div>
+    <div id="perfSummary" class="perf-summary" style="display:none;"></div>
+</div>
+
+<!-- Run Configuration lightbox -->
+<div id="perfRunConfigModal" class="confirm-backdrop" style="align-items:center;justify-content:center;display:none;z-index:1050;">
+    <div class="confirm-dialog" style="max-width:520px;width:95%;">
+        <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--glass-border);padding-bottom:1rem;margin-bottom:1.5rem;">
+            <h3 style="margin:0;font-size:1.2rem;"><i class="fas fa-sliders" style="color:var(--accent-secondary);margin-right:8px;"></i>Run Configuration</h3>
+            <button onclick="closeRunConfigModal()" style="background:none;border:none;color:var(--text-secondary);font-size:1.5rem;cursor:pointer;line-height:1;">&times;</button>
+        </div>
+
+        <p id="perfRunConfigScript" style="margin:0 0 1.25rem 0;font-size:0.9rem;color:var(--text-secondary);"></p>
+
+        <div class="form-group" style="margin-bottom:1.25rem;">
+            <label for="runUsersInput" style="margin-bottom:6px;display:block;font-size:0.9rem;color:var(--text-secondary);">Concurrent users <span style="color:#ef4444;">*</span></label>
+            <input type="number" min="1" id="runUsersInput" oninput="clearRunConfigError('runUsersInput')" placeholder="e.g. 100" style="width:100%;padding:10px 12px;background:var(--bg-primary);border:1px solid var(--glass-border);border-radius:8px;color:var(--text-primary);font-family:inherit;">
+            <small class="error-text" id="runUsersInputError"></small>
+        </div>
+
+        <div class="form-group" style="margin-bottom:1.25rem;">
+            <label for="runSpawnRateInput" style="margin-bottom:6px;display:block;font-size:0.9rem;color:var(--text-secondary);">Spawn Rate (Users per sec)</label>
+            <input type="number" min="1" id="runSpawnRateInput" oninput="clearRunConfigError('runSpawnRateInput')" placeholder="Defaults to the project ramp-up rate" style="width:100%;padding:10px 12px;background:var(--bg-primary);border:1px solid var(--glass-border);border-radius:8px;color:var(--text-primary);font-family:inherit;">
+            <small class="error-text" id="runSpawnRateInputError"></small>
+        </div>
+
+        <div class="form-group" style="margin-bottom:1.5rem;">
+            <label for="runDurationInput" style="margin-bottom:6px;display:block;font-size:0.9rem;color:var(--text-secondary);">Run duration (minutes)</label>
+            <input type="number" min="1" id="runDurationInput" oninput="clearRunConfigError('runDurationInput')" placeholder="Defaults to the project run duration" style="width:100%;padding:10px 12px;background:var(--bg-primary);border:1px solid var(--glass-border);border-radius:8px;color:var(--text-primary);font-family:inherit;">
+            <small class="error-text" id="runDurationInputError"></small>
+        </div>
+
+        <div style="display:flex;gap:10px;">
+            <button id="perfRunSubmitBtn" onclick="submitRunConfiguration()" class="btn btn-primary" style="flex:1;"><i class="fas fa-bolt"></i> Submit</button>
+            <button type="button" onclick="closeRunConfigModal()" class="btn btn-secondary" style="flex:1;"><i class="fas fa-times"></i> Cancel</button>
+        </div>
+    </div>
+</div>
+
+<style>
+    .perf-meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-top: 1rem;
+    }
+    .perf-chip {
+        padding: 5px 12px;
+        border-radius: 20px;
+        font-size: 0.78rem;
+        background: rgba(255, 255, 255, 0.05);
+        border: 1px solid var(--glass-border);
+        color: var(--text-secondary);
+    }
+    .perf-chip strong {
+        color: var(--text-primary);
+        font-weight: 600;
+    }
+    .perf-status {
+        font-size: 0.8rem;
+        padding: 4px 12px;
+        border-radius: 20px;
+        background: rgba(255, 255, 255, 0.05);
+        border: 1px solid var(--glass-border);
+        color: var(--text-secondary);
+    }
+    .perf-status.running { color: #fbbf24; border-color: rgba(251, 191, 36, 0.35); }
+    .perf-status.done    { color: #34d399; border-color: rgba(52, 211, 153, 0.35); }
+    .perf-status.failed  { color: #ef4444; border-color: rgba(239, 68, 68, 0.35); }
+    .perf-log {
+        max-height: 380px;
+        overflow-y: auto;
+        background: rgba(0, 0, 0, 0.35);
+        border: 1px solid var(--glass-border);
+        border-radius: 8px;
+        padding: 14px;
+        font-family: 'JetBrains Mono', 'Fira Code', 'Courier New', monospace;
+        font-size: 0.82rem;
+        line-height: 1.55;
+        white-space: pre-wrap;
+        word-break: break-word;
+    }
+    .perf-log .log-line { margin-bottom: 2px; }
+    .perf-log .log-system  { color: #94a3b8; font-style: italic; }
+    .perf-log .log-cmd     { color: #60a5fa; font-weight: bold; }
+    .perf-log .log-success { color: #34d399; }
+    .perf-log .log-error   { color: #ef4444; }
+    .perf-summary {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-top: 1rem;
+    }
+    .perf-actions {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+    }
+    .perf-actions .btn { padding: 7px 12px; font-size: 0.8rem; white-space: nowrap; }
+    .data-table td .script-title { color: var(--text-primary); font-weight: 600; }
+    .recorder-card {
+        margin-bottom: 1.25rem;
+        padding: 14px 16px;
+        border: 1px solid rgba(239, 68, 68, 0.35);
+        border-radius: 10px;
+        background: rgba(239, 68, 68, 0.06);
+    }
+    .recorder-head {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 6px;
+        font-size: 0.92rem;
+    }
+    .recorder-dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        background: #64748b;
+        flex: none;
+    }
+    .recorder-dot.rec    { background: #ef4444; animation: recorderPulse 1.2s ease-in-out infinite; }
+    .recorder-dot.paused { background: #fbbf24; }
+    .recorder-dot.done   { background: #22c55e; }
+    .recorder-dot.failed { background: #ef4444; }
+    @keyframes recorderPulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.25; } }
+    .recorder-counts { margin-left: auto; font-size: 0.8rem; color: var(--text-secondary); }
+    .recorder-message { margin: 0 0 10px 0; font-size: 0.85rem; color: var(--text-secondary); }
+    .recorder-actions { display: flex; gap: 10px; }
+    .recorder-actions .btn { padding: 7px 14px; font-size: 0.82rem; }
+</style>
+
+<script>
+    let perfEventSource = null;
+    let perfProjectInfo = null;
+    let pendingRunScript = null;
+
+    function perfEscape(value) {
+        const div = document.createElement('div');
+        div.textContent = value == null ? '' : String(value);
+        return div.innerHTML;
+    }
+
+    function setPerfStatus(text, state) {
+        const el = document.getElementById('perfRunStatus');
+        el.textContent = text;
+        el.className = 'perf-status' + (state ? ' ' + state : '');
+    }
+
+    function addPerfLog(message, cssClass) {
+        const log = document.getElementById('perfLog');
+        const line = document.createElement('div');
+        line.className = 'log-line ' + (cssClass || '');
+        line.textContent = message;
+        log.appendChild(line);
+        log.scrollTop = log.scrollHeight;
+    }
+
+    function isRunActive() {
+        return perfEventSource !== null;
+    }
+
+    async function loadPerformanceScripts() {
+        const perfId = document.getElementById('perfProjectSelect').value;
+        const empty = document.getElementById('perfScriptsEmpty');
+        const wrapper = document.getElementById('perfScriptsTableWrapper');
+        const meta = document.getElementById('perfProjectMeta');
+        const body = document.getElementById('perfScriptsTableBody');
+
+        body.innerHTML = '';
+        wrapper.style.display = 'none';
+        meta.style.display = 'none';
+        perfProjectInfo = null;
+
+        if (!perfId) {
+            empty.style.display = 'flex';
+            empty.querySelector('h4').textContent = 'No performance scripts loaded';
+            empty.querySelector('p').textContent = 'Select a performance project to list its recorded test cases.';
+            return;
+        }
+
+        try {
+            const r = await fetch('/api/performance-test/scripts?perf_id=' + encodeURIComponent(perfId));
+            const d = await r.json();
+            if (d.status !== 'success') {
+                showToast('Error: ' + d.message, 'error');
+                empty.style.display = 'flex';
+                return;
+            }
+
+            perfProjectInfo = d.project;
+            // Re-attach to a recording that is still running (page reloaded, or
+            // the project was re-selected while the recorder browser is open).
+            if (d.active_recorder && !recorderSessionId) {
+                recorderSessionId = d.active_recorder.session_id;
+                showRecorderCard(true);
+                renderRecorderState(d.active_recorder);
+                pollRecorder();
+            }
+            meta.innerHTML = [
+                `<span class="perf-chip">Application URL: <strong>${perfEscape(d.project.application_url || '—')}</strong></span>`,
+                `<span class="perf-chip">Default users: <strong>${perfEscape(d.project.concurrent_user_count ?? '—')}</strong></span>`,
+                `<span class="perf-chip">Spawn rate: <strong>${perfEscape(d.project.spawn_rate ?? '—')}</strong></span>`,
+                `<span class="perf-chip">Run duration: <strong>${d.project.run_duration ? perfEscape(d.project.run_duration) + ' min' : '—'}</strong></span>`,
+                `<span class="perf-chip">Framework: <strong>${perfEscape(d.project.performance_dir || '—')}</strong></span>`
+            ].join('');
+            meta.style.display = 'flex';
+
+            if (!d.data.length) {
+                empty.style.display = 'flex';
+                empty.querySelector('h4').textContent = 'No performance scripts found';
+                empty.querySelector('p').textContent = d.message || 'This project has no scripts in its locustfiles folder yet.';
+                return;
+            }
+
+            empty.style.display = 'none';
+            wrapper.style.display = 'block';
+            d.data.forEach((script, index) => {
+                const row = document.createElement('tr');
+                const lastRun = script.last_report_url
+                    ? `<a href="${perfEscape(script.last_report_url)}" target="_blank" rel="noopener">${perfEscape(script.last_run_at)}</a>`
+                    : '<span style="color:var(--text-secondary);">—</span>';
+                row.innerHTML = `
+                    <td>${index + 1}</td>
+                    <td><span class="script-title">${perfEscape(script.title)}</span></td>
+                    <td title="${perfEscape(script.relative_path)}">${perfEscape(script.file_name)}</td>
+                    <td>${lastRun}</td>
+                    <td>
+                        <div class="perf-actions">
+                            <button type="button" class="btn btn-secondary" data-script="${perfEscape(script.file_name)}" data-title="${perfEscape(script.title)}" onclick="runScriptCheck(this)"><i class="fas fa-vial"></i> Run Script Check</button>
+                            <button type="button" class="btn btn-primary" data-script="${perfEscape(script.file_name)}" data-title="${perfEscape(script.title)}" onclick="openRunConfigModal(this)"><i class="fas fa-bolt"></i> Run performance test</button>
+                        </div>
+                    </td>`;
+                body.appendChild(row);
+            });
+        } catch (e) {
+            showToast('Failed to load performance scripts.', 'error');
+        }
+    }
+
+    /* ------------------------------ Test Recorder ----------------------------- */
+
+    let recorderSessionId = null;
+    let recorderPollTimer = null;
+
+    const RECORDER_STATES = {
+        launching: { label: 'Opening browser…', dot: '' },
+        ready:     { label: 'Ready to record',  dot: '' },
+        recording: { label: 'Recording',        dot: 'rec' },
+        paused:    { label: 'Paused',           dot: 'paused' },
+        saving:    { label: 'Generating script…', dot: 'done' },
+        completed: { label: 'Saved',            dot: 'done' },
+        cancelled: { label: 'Discarded',        dot: '' },
+        error:     { label: 'Recorder failed',  dot: 'failed' }
+    };
+
+    function showRecorderCard(visible) {
+        document.getElementById('perfRecorderCard').style.display = visible ? 'block' : 'none';
+        document.getElementById('perfCreateTestBtn').disabled = visible;
+    }
+
+    function renderRecorderState(snapshot) {
+        const preset = RECORDER_STATES[snapshot.state] || { label: snapshot.state, dot: '' };
+        document.getElementById('perfRecorderState').textContent = preset.label;
+        document.getElementById('perfRecorderDot').className = 'recorder-dot ' + preset.dot;
+        document.getElementById('perfRecorderCounts').textContent =
+            `${snapshot.steps} action(s) · ${snapshot.requests} request(s)`;
+        document.getElementById('perfRecorderMessage').textContent =
+            snapshot.message || 'Use the recorder panel inside the browser window.';
+
+        const settled = ['completed', 'cancelled', 'error'].includes(snapshot.state);
+        const cancelBtn = document.getElementById('perfRecorderCancelBtn');
+        document.getElementById('perfRecorderFinishBtn').disabled = settled || snapshot.state === 'saving';
+        // Once a session has failed there is nothing left to discard, so the
+        // button becomes the way to clear the card and record again.
+        cancelBtn.disabled = snapshot.state === 'saving';
+        cancelBtn.innerHTML = settled
+            ? '<i class="fas fa-check"></i> Dismiss'
+            : '<i class="fas fa-times"></i> Discard';
+    }
+
+    async function startTestRecording() {
+        const perfId = document.getElementById('perfProjectSelect').value;
+        if (!perfId) {
+            showToast('Select a performance project first.', 'error');
+            return;
+        }
+        if (isRunActive()) {
+            showToast('A run is in progress. Stop it before recording a new test.', 'error');
+            return;
+        }
+
+        const btn = document.getElementById('perfCreateTestBtn');
+        btn.disabled = true;
+        try {
+            const r = await fetch('/api/performance-test/recorder/start', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ perf_id: parseInt(perfId) })
+            });
+            const d = await r.json();
+            if (d.status !== 'success') {
+                showToast(d.message || 'Could not start the recorder.', 'error');
+                btn.disabled = false;
+                return;
+            }
+
+            recorderSessionId = d.session_id;
+            showRecorderCard(true);
+            renderRecorderState({ state: 'launching', steps: 0, requests: 0, message: d.message });
+            pollRecorder();
+        } catch (e) {
+            showToast('Failed to start the recorder.', 'error');
+            btn.disabled = false;
+        }
+    }
+
+    function pollRecorder() {
+        clearTimeout(recorderPollTimer);
+        recorderPollTimer = setTimeout(async () => {
+            if (!recorderSessionId) return;
+            try {
+                const r = await fetch('/api/performance-test/recorder/status/' + recorderSessionId);
+                const d = await r.json();
+                if (d.status !== 'success') {
+                    endRecorderSession();
+                    showToast(d.message || 'The recording session was lost.', 'error');
+                    return;
+                }
+
+                const snapshot = d.session;
+                renderRecorderState(snapshot);
+
+                if (snapshot.active) {
+                    pollRecorder();
+                    return;
+                }
+
+                // Session finished: report the outcome and let the grid pick up
+                // the new script file.
+                clearTimeout(recorderPollTimer);
+                recorderPollTimer = null;
+
+                if (snapshot.state === 'completed') {
+                    showToast(snapshot.message || 'Recording saved.', 'success');
+                    await loadPerformanceScripts();
+                    highlightScriptRow(snapshot.script_file);
+                    setTimeout(endRecorderSession, 5000);
+                } else if (snapshot.state === 'error') {
+                    // Left on screen: the message is the only place the failure
+                    // reason (no Chrome, blocked URL, ...) is spelled out.
+                    showToast(snapshot.error || 'The recording failed.', 'error');
+                } else {
+                    showToast(snapshot.message || 'Recording discarded.', 'error');
+                    endRecorderSession();
+                }
+            } catch (e) {
+                pollRecorder();
+            }
+        }, 1200);
+    }
+
+    function endRecorderSession() {
+        clearTimeout(recorderPollTimer);
+        recorderPollTimer = null;
+        recorderSessionId = null;
+        showRecorderCard(false);
+    }
+
+    function highlightScriptRow(fileName) {
+        if (!fileName) return;
+        const cells = document.querySelectorAll('#perfScriptsTableBody td[title]');
+        for (const cell of cells) {
+            if (cell.textContent.trim() !== fileName) continue;
+            const row = cell.closest('tr');
+            row.style.transition = 'background 0.4s ease';
+            row.style.background = 'rgba(34, 197, 94, 0.14)';
+            row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            setTimeout(() => { row.style.background = ''; }, 4000);
+            return;
+        }
+    }
+
+    async function finishTestRecording() {
+        if (!recorderSessionId) return;
+        document.getElementById('perfRecorderFinishBtn').disabled = true;
+        try {
+            const r = await fetch('/api/performance-test/recorder/finish/' + recorderSessionId, { method: 'POST' });
+            const d = await r.json();
+            if (d.status !== 'success') showToast(d.message || 'Could not finish the recording.', 'error');
+        } catch (e) {
+            showToast('Could not finish the recording.', 'error');
+        }
+    }
+
+    async function cancelTestRecording() {
+        if (!recorderSessionId) return;
+        // No poll pending means the session already settled, so this click is a
+        // "dismiss the card" rather than a "stop the recording".
+        if (!recorderPollTimer) {
+            endRecorderSession();
+            return;
+        }
+        document.getElementById('perfRecorderCancelBtn').disabled = true;
+        try {
+            await fetch('/api/performance-test/recorder/cancel/' + recorderSessionId, { method: 'POST' });
+        } catch (e) {
+            showToast('Could not discard the recording.', 'error');
+        }
+    }
+
+    /* ------------------------------ Script Check ------------------------------ */
+
+    function runScriptCheck(button) {
+        if (isRunActive()) {
+            showToast('A run is already in progress. Stop it before starting another.', 'error');
+            return;
+        }
+        startPerformanceRun({
+            mode: 'check',
+            script: button.getAttribute('data-script'),
+            title: button.getAttribute('data-title')
+        });
+    }
+
+    /* --------------------------- Run Configuration --------------------------- */
+
+    function clearRunConfigError(fieldId) {
+        if (typeof clearFieldError === 'function') {
+            clearFieldError(fieldId);
+            return;
+        }
+        const input = document.getElementById(fieldId);
+        const error = document.getElementById(fieldId + 'Error');
+        if (input) input.classList.remove('is-invalid');
+        if (error) {
+            error.textContent = '';
+            error.classList.remove('show');
+        }
+    }
+
+    function openRunConfigModal(button) {
+        if (isRunActive()) {
+            showToast('A run is already in progress. Stop it before starting another.', 'error');
+            return;
+        }
+        if (!perfProjectInfo) {
+            showToast('Select a performance project first.', 'error');
+            return;
+        }
+
+        pendingRunScript = {
+            script: button.getAttribute('data-script'),
+            title: button.getAttribute('data-title')
+        };
+
+        document.getElementById('perfRunConfigScript').textContent =
+            `${pendingRunScript.title} — ${perfProjectInfo.application_url}`;
+        // Pre-fill with the project's saved defaults so a straight Submit reproduces them.
+        document.getElementById('runUsersInput').value = perfProjectInfo.concurrent_user_count ?? '';
+        document.getElementById('runSpawnRateInput').value = perfProjectInfo.spawn_rate ?? '';
+        document.getElementById('runDurationInput').value = perfProjectInfo.run_duration ?? '';
+        ['runUsersInput', 'runSpawnRateInput', 'runDurationInput'].forEach(clearRunConfigError);
+
+        document.getElementById('perfRunConfigModal').style.display = 'flex';
+    }
+
+    function closeRunConfigModal() {
+        document.getElementById('perfRunConfigModal').style.display = 'none';
+    }
+
+    function validateRunConfiguration(values) {
+        const positiveInt = /^[1-9]\d*$/;
+        const schema = {
+            runUsersInput: { required: true, pattern: positiveInt, message: 'Concurrent users is required and must be a whole number greater than zero.' },
+            runSpawnRateInput: { pattern: positiveInt, message: 'Spawn Rate must be a whole number greater than zero.' },
+            runDurationInput: { pattern: positiveInt, message: 'Run duration must be a whole number greater than zero.' }
+        };
+        return typeof validateForm === 'function'
+            ? validateForm(schema, values)
+            : Object.keys(schema).every(function (inputId) {
+                const rule = schema[inputId] || {};
+                const value = (values[inputId] || '').trim();
+                return !(rule.required && !value) && !(rule.pattern && value && !rule.pattern.test(value));
+            });
+    }
+
+    function submitRunConfiguration() {
+        const values = {
+            runUsersInput: document.getElementById('runUsersInput').value.trim(),
+            runSpawnRateInput: document.getElementById('runSpawnRateInput').value.trim(),
+            runDurationInput: document.getElementById('runDurationInput').value.trim()
+        };
+        if (!validateRunConfiguration(values)) return;
+
+        closeRunConfigModal();
+        startPerformanceRun({
+            mode: 'load',
+            script: pendingRunScript.script,
+            title: pendingRunScript.title,
+            users: values.runUsersInput,
+            spawn_rate: values.runSpawnRateInput,
+            run_duration: values.runDurationInput
+        });
+    }
+
+    /* -------------------------------- Execution ------------------------------- */
+
+    function setActionsDisabled(disabled) {
+        document.querySelectorAll('#perfScriptsTableBody .perf-actions .btn')
+            .forEach(btn => { btn.disabled = disabled; });
+    }
+
+    function startPerformanceRun(options) {
+        const perfId = document.getElementById('perfProjectSelect').value;
+        if (!perfId) {
+            showToast('Select a performance project first.', 'error');
+            return;
+        }
+
+        const panel = document.getElementById('perfTerminalPanel');
+        panel.style.display = 'block';
+        panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        document.getElementById('perfLog').innerHTML = '';
+        document.getElementById('perfSummary').style.display = 'none';
+        document.getElementById('perfSummary').innerHTML = '';
+        document.getElementById('perfRunTitle').textContent =
+            (options.mode === 'check' ? 'Script Check — ' : 'Performance Test — ') + options.title;
+        document.getElementById('perfStopBtn').style.display = 'inline-flex';
+        setPerfStatus('Running…', 'running');
+        setActionsDisabled(true);
+
+        const params = new URLSearchParams({
+            perf_id: perfId,
+            script: options.script,
+            mode: options.mode
+        });
+        if (options.mode === 'load') {
+            params.set('users', options.users || '');
+            params.set('spawn_rate', options.spawn_rate || '');
+            params.set('run_duration', options.run_duration || '');
+        }
+
+        perfEventSource = new EventSource('/api/performance-test/stream?' + params.toString());
+
+        perfEventSource.addEventListener('started', (e) => {
+            const data = JSON.parse(e.data);
+            addPerfLog(`[Command] ${data.command}`, 'log-cmd');
+            addPerfLog(`[Config] users=${data.users} · spawn rate=${data.spawn_rate}/s · run time=${data.run_time}`, 'log-system');
+            if (data.web_url) {
+                addPerfLog(`[Headed] Locust UI: ${data.web_url}`, 'log-system');
+                window.open(data.web_url, '_blank');
+            }
+        });
+
+        perfEventSource.addEventListener('log', (e) => {
+            addPerfLog(JSON.parse(e.data).msg);
+        });
+
+        perfEventSource.addEventListener('result', (e) => {
+            const data = JSON.parse(e.data);
+            finishPerformanceRun();
+
+            if (data.status === 'error') {
+                addPerfLog('[System] ' + (data.message || 'Execution failed to start.'), 'log-error');
+                setPerfStatus('Error', 'failed');
+                showToast(data.message || 'Execution failed to start.', 'error');
+                return;
+            }
+
+            const passed = data.status === 'success';
+            addPerfLog(passed ? '[System] Execution completed successfully.' : `[System] Execution finished with failures (exit code ${data.return_code}).`,
+                       passed ? 'log-success' : 'log-error');
+            setPerfStatus(passed ? 'Completed' : 'Failed', passed ? 'done' : 'failed');
+
+            renderPerfSummary(data.summary, data.report_url);
+            if (data.report_url) {
+                const absolute = new URL(data.report_url, window.location.origin).href;
+                addPerfLog(`[Report] ${absolute}`, 'log-success');
+                window.open(absolute, '_blank');
+            } else {
+                addPerfLog('[Report] No HTML report was produced for this run.', 'log-system');
+            }
+            loadPerformanceScripts();
+        });
+
+        perfEventSource.onerror = () => {
+            if (!perfEventSource) return;
+            finishPerformanceRun();
+            setPerfStatus('Disconnected', 'failed');
+            addPerfLog('[System] The execution stream ended unexpectedly.', 'log-error');
+        };
+    }
+
+    function renderPerfSummary(summary, reportUrl) {
+        if (!summary || !Object.keys(summary).length) return;
+        const box = document.getElementById('perfSummary');
+        const chips = [
+            ['Requests', summary.requests],
+            ['Failures', summary.failures],
+            ['Avg response', summary.avg_response_ms ? Math.round(summary.avg_response_ms) + ' ms' : ''],
+            ['p95', summary.p95_ms ? summary.p95_ms + ' ms' : ''],
+            ['Requests/s', summary.requests_per_sec]
+        ].filter(pair => pair[1] !== '' && pair[1] != null)
+         .map(pair => `<span class="perf-chip">${pair[0]}: <strong>${perfEscape(pair[1])}</strong></span>`);
+
+        if (reportUrl) {
+            chips.push(`<a class="perf-chip" href="${perfEscape(reportUrl)}" target="_blank" rel="noopener"><i class="fas fa-file-lines"></i> Open report</a>`);
+        }
+        box.innerHTML = chips.join('');
+        box.style.display = 'flex';
+    }
+
+    function finishPerformanceRun() {
+        if (perfEventSource) {
+            perfEventSource.close();
+            perfEventSource = null;
+        }
+        document.getElementById('perfStopBtn').style.display = 'none';
+        setActionsDisabled(false);
+    }
+
+    async function stopPerformanceRun() {
+        try {
+            const r = await fetch('/api/performance-test/stop', { method: 'POST' });
+            const d = await r.json();
+            if (d.status === 'success') {
+                addPerfLog(`[System] Stop requested (${d.stopped} process(es) terminated).`, 'log-system');
+            } else {
+                showToast('Failed to stop the run: ' + d.message, 'error');
+            }
+        } catch (e) {
+            showToast('Failed to stop the run.', 'error');
+        }
+    }
+
+    window.addEventListener('beforeunload', () => {
+        if (perfEventSource) perfEventSource.close();
+    });
+</script>
+{% endblock %}

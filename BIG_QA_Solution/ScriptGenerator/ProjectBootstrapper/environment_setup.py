@@ -810,8 +810,14 @@ class EnvironmentSetup:
                 pass
             return False, str(e)
 
+    @classmethod
+    def python_launcher_command(cls):
+        """Public accessor for the best local Python launcher (quoted, ready for a shell)."""
+        return cls._python_launcher_command()
+
     @staticmethod
-    def install_project_dependencies(project_path, package_manager, tool="", status_cb=None):
+    def install_project_dependencies(project_path, package_manager, tool="", status_cb=None,
+                                     venv_dir="venv"):
         """
         Run the package-manager install + (for Playwright) browser-binary download for a
         scaffolded project.
@@ -835,6 +841,11 @@ class EnvironmentSetup:
             If provided, called with a human-readable string before each phase starts.
             Used by the Flask worker to update the polling endpoint's status message so the
             frontend's loading panel reflects the current phase.
+        venv_dir : str
+            Name of the virtual environment folder created inside `project_path` for the
+            Pip flow. Defaults to "venv" (what the automation templates and their run
+            commands expect); the performance framework passes ".venv" because that is the
+            interpreter performance_runner.resolve_python() looks for.
 
         Returns
         -------
@@ -843,7 +854,7 @@ class EnvironmentSetup:
         if not os.path.exists(project_path):
             return False, f"Project path {project_path} does not exist."
 
-        phases = EnvironmentSetup._build_install_phases(package_manager, tool)
+        phases = EnvironmentSetup._build_install_phases(package_manager, tool, venv_dir=venv_dir)
         if not phases:
             return False, f"Unknown package manager {package_manager}"
 
@@ -875,7 +886,7 @@ class EnvironmentSetup:
         return True, "All dependencies installed."
 
     @staticmethod
-    def _build_install_phases(package_manager, tool):
+    def _build_install_phases(package_manager, tool, venv_dir="venv"):
         """
         Return an ordered list of (status_message, shell_command) tuples for the requested
         package manager + tool combo.
@@ -912,29 +923,34 @@ class EnvironmentSetup:
 
         if "Pip" in package_manager:
             python_cmd = EnvironmentSetup._python_launcher_command()
+            venv = venv_dir or "venv"
             if EnvironmentSetup.is_windows():
+                venv_pip = f"{venv}\\Scripts\\pip"
+                venv_python = f"{venv}\\Scripts\\python"
                 phases = [
-                    ("Creating Python virtual environment...", f"{python_cmd} -m venv venv"),
+                    ("Creating Python virtual environment...", f"{python_cmd} -m venv {venv}"),
                     ("Installing Python packages from requirements.txt...",
-                     "venv\\Scripts\\pip install -r requirements.txt"),
+                     f"{venv_pip} install -r requirements.txt"),
                 ]
                 if tool == "Playwright":
                     phases.append((
                         "Downloading Playwright Chromium browser (~130 MB)...",
-                        "venv\\Scripts\\python -m playwright install chromium",
+                        f"{venv_python} -m playwright install chromium",
                     ))
             else:
+                venv_pip = f"{venv}/bin/pip"
+                venv_python = f"{venv}/bin/python"
                 phases = [
-                    ("Creating Python virtual environment...", f"{python_cmd} -m venv venv"),
+                    ("Creating Python virtual environment...", f"{python_cmd} -m venv {venv}"),
                     ("Upgrading pip / setuptools / wheel...",
-                     "venv/bin/pip install --upgrade pip setuptools wheel"),
+                     f"{venv_pip} install --upgrade pip setuptools wheel"),
                     ("Installing Python packages from requirements.txt...",
-                     "venv/bin/pip install -r requirements.txt"),
+                     f"{venv_pip} install -r requirements.txt"),
                 ]
                 if tool == "Playwright":
                     phases.append((
                         "Downloading Playwright Chromium browser (~130 MB)...",
-                        "venv/bin/python -m playwright install chromium",
+                        f"{venv_python} -m playwright install chromium",
                     ))
             return phases
 

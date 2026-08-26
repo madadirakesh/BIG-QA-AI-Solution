@@ -34,6 +34,28 @@ _FILMSTRIP_WINDOW_S = 8.0
 # Minification sampling limits (best-effort, capped to stay cheap).
 _MAX_MINIFY_SAMPLES = 15
 _MAX_MINIFY_BODY_BYTES = 700_000
+# Per-page-load Speed Index: frames stashed per load (down-sampled to keep the
+# in-memory cost bounded across a long test) and the number of loads we bother
+# keeping frames for at all.
+_MAX_RUN_SI_FRAMES = 20
+_MAX_RUNS_WITH_FRAMES = 40
+# Browser-internal pages are never the page under test (Chrome opens about:blank
+# on startup, chromedriver navigates to data:, etc.), so they are not measured.
+_INTERNAL_URL_PREFIXES = (
+    "about:", "chrome:", "chrome-error:", "chrome-extension:", "chrome-search:",
+    "chrome-untrusted:", "devtools:", "edge:", "view-source:",
+)
+
+
+def _downsample(frames: list, max_frames: int) -> list:
+    """Evenly-spaced subset of `frames`, at most `max_frames` long."""
+    if not frames:
+        return []
+    if len(frames) <= max_frames or max_frames < 2:
+        return list(frames)
+    step = (len(frames) - 1) / (max_frames - 1)
+    idxs = sorted({round(i * step) for i in range(max_frames)})
+    return [frames[i] for i in idxs]
 
 
 class PerformanceSession:
@@ -83,9 +105,20 @@ class PerformanceSession:
 
         # Filmstrip screencast frames + final screenshot (visual analysis).
         self.filmstrip: list[dict] = []
+        self._filmstrip_lock = threading.Lock()
         self._filmstrip_nav_start: Optional[float] = None
         self._screencast_on = False
         self.final_screenshot: Optional[str] = None
+
+        # One entry per PAGE LOAD seen during the session (not just the last
+        # one), so the report can average repeated loads of the same URL instead
+        # of showing whatever page happened to be open when we finalized.
+        # Each entry: {epoch, url, vitals, diagnostics, nav timings, frames}.
+        self.page_runs: list[dict] = []
+        self._runs_lock = threading.Lock()
+        self._current_run: Optional[dict] = None
+        self._nav_epoch = 0
+        self._runs_with_frames = 0
 
     # ------------------------------------------------------------------ #
     def start(self, finalize_on_disconnect: bool = True) -> "PerformanceSession":
@@ -155,22 +188,32 @@ class PerformanceSession:
         Called periodically by the watcher so that if the browser exits
         abruptly at the end of the test we can still report the last values we
         saw. Keeps the most recent non-empty read.
+
+        The read is also filed against the page load it came from (see
+        _record_page_run) so per-page averages can be computed later.
         """
+        epoch = self._nav_epoch
         vitals = self._collect_vitals()
         if vitals:
             self._last_vitals = vitals
         perf = self._collect_performance_metrics()
         if perf:
             self._last_perf = perf
-        self._record_nav_timing()
+        nav = self._collect_nav_timing()
+        self._record_nav_timing(nav)
         diag = self._collect_diagnostics()
         if diag:
             self._last_diagnostics = diag
+        # Only file the reading if no navigation happened while we were reading
+        # it - otherwise the values could straddle two different pages.
+        if epoch == self._nav_epoch:
+            self._record_page_run(epoch, nav, vitals, diag)
         self._sample_minification()
 
-    def _record_nav_timing(self) -> None:
+    def _record_nav_timing(self, nav: Optional[dict] = None) -> None:
         """Read the current document's load timing and remember it per-URL."""
-        nav = self._collect_nav_timing()
+        if nav is None:
+            nav = self._collect_nav_timing()
         url = nav.get("url") if nav else None
         if not url:
             return
@@ -179,6 +222,114 @@ class PerformanceSession:
         # non-null load_time once the load event has fired.
         merged = {**existing, **{k: v for k, v in nav.items() if v is not None}}
         self.page_load_times[url] = merged
+
+    # ------------------------------------------------------------------ #
+    # Per-page-load tracking
+    # ------------------------------------------------------------------ #
+    def _record_page_run(self, epoch: int, nav: Optional[dict],
+                         vitals: dict, diagnostics: dict) -> None:
+        """
+        File a metrics reading against the page load it belongs to.
+
+        A new run starts whenever the navigation epoch changes (a real
+        navigation / reload) or the URL changes within the same epoch (an
+        in-document SPA route change). Within one run the latest non-empty
+        reading wins, because the vitals of a load only get more complete over
+        time (LCP settles, CLS accumulates, the load event fires).
+        """
+        url = (nav or {}).get("url")
+        if not url or url.lower().startswith(_INTERNAL_URL_PREFIXES):
+            return
+        with self._runs_lock:
+            run = self._current_run
+            if run is None or run.get("epoch") != epoch or run.get("url") != url:
+                run = {
+                    "epoch": epoch,
+                    "url": url,
+                    # Only the first page of an epoch owns that epoch's
+                    # filmstrip, so only it can get a visual Speed Index.
+                    "owns_filmstrip": run is None or run.get("epoch") != epoch,
+                    "started_at": time.time(),
+                }
+                self.page_runs.append(run)
+                self._current_run = run
+            if vitals:
+                run["vitals"] = vitals
+            if diagnostics:
+                run["diagnostics"] = diagnostics
+            for key in ("load_time_ms", "dom_content_loaded_ms", "response_end_ms"):
+                value = (nav or {}).get(key)
+                if value is not None:
+                    run[key] = value
+
+    def _close_current_run(self, frames: list) -> None:
+        """
+        Called when the page being measured is navigated away from (or at
+        finalize): hand it the filmstrip frames captured while it was loading so
+        its own Speed Index can be computed, and stop accumulating into it.
+        """
+        with self._runs_lock:
+            run = self._current_run
+            self._current_run = None
+            if run is None or not frames or not run.get("owns_filmstrip"):
+                return
+            if self._runs_with_frames >= _MAX_RUNS_WITH_FRAMES:
+                return
+            self._runs_with_frames += 1
+            run["frames"] = _downsample(frames, _MAX_RUN_SI_FRAMES)
+
+    def _build_page_result(self, run: dict) -> Optional[dict]:
+        """Turn one recorded page load into a scored, report-shaped dict."""
+        vitals = run.get("vitals") or {}
+        diagnostics = run.get("diagnostics") or {}
+        if not vitals and not diagnostics and run.get("load_time_ms") is None:
+            return None  # nothing was ever read for this load
+
+        fcp = vitals.get("fcp")
+        lcp = vitals.get("lcp")
+        cls = vitals.get("cls")
+        tbt = self._compute_tbt(vitals.get("longTasks", []))
+        inp = vitals.get("inp") or diagnostics.get("inp_ms")
+        speed_index = compute_speed_index(run.get("frames") or [])
+
+        metric_scores = {
+            "fcp": score_metric("fcp", fcp),
+            "si": score_metric("si", speed_index),
+            "lcp": score_metric("lcp", lcp),
+            "tbt": score_metric("tbt", tbt),
+            "cls": score_metric("cls", cls),
+            "inp": score_metric("inp", inp),
+        }
+        return {
+            "url": run.get("url"),
+            "session": self.label,
+            "performance_score": compute_performance_score(metric_scores),
+            "metrics": {
+                "first_contentful_paint_ms": fcp,
+                "largest_contentful_paint_ms": lcp,
+                "total_blocking_time_ms": tbt,
+                "cumulative_layout_shift": cls,
+                "speed_index_ms": speed_index,
+                "interaction_to_next_paint_ms": inp,
+            },
+            "metric_scores": {
+                k: {"score": v, "rating": rating_for_score(v)}
+                for k, v in metric_scores.items()
+            },
+            "categories": self._build_category_scores(diagnostics),
+            "ttfb_ms": diagnostics.get("ttfb_ms"),
+            "dom_nodes": (diagnostics.get("dom") or {}).get("nodes"),
+            "render_blocking_count": len(diagnostics.get("render_blocking") or []),
+            "load_time_ms": run.get("load_time_ms"),
+            "dom_content_loaded_ms": run.get("dom_content_loaded_ms"),
+            "response_end_ms": run.get("response_end_ms"),
+        }
+
+    def _build_page_results(self) -> list:
+        with self._runs_lock:
+            runs = list(self.page_runs)
+        results = [self._build_page_result(r) for r in runs]
+        return [r for r in results if r]
 
     def on_finalized(self, callback: Callable[[dict], None]) -> None:
         """Register a callback invoked with the report dict once finalized."""
@@ -288,9 +439,15 @@ class PerformanceSession:
         if frame.get("parentId") is None:  # top-level navigation only
             self.navigations.append({"url": frame.get("url"), "time": time.time()})
             # Start a fresh filmstrip for the newly-loading page so the frames
-            # captured line up with the metrics for that navigation.
-            self.filmstrip = []
-            self._filmstrip_nav_start = time.time()
+            # captured line up with the metrics for that navigation. The frames
+            # of the page we're leaving go to its own page-load record, so that
+            # load keeps its own Speed Index.
+            with self._filmstrip_lock:
+                previous_frames = self.filmstrip
+                self.filmstrip = []
+                self._filmstrip_nav_start = time.time()
+            self._close_current_run(previous_frames)
+            self._nav_epoch += 1
 
     def _on_screencast_frame(self, params: dict) -> None:
         # Runs on the websocket read thread: ack with send_async (never a
@@ -336,8 +493,17 @@ class PerformanceSession:
             # may already have closed by the time the test ends).
             vitals = self._collect_vitals() or self._last_vitals
             perf_metrics = self._collect_performance_metrics() or self._last_perf
-            self._record_nav_timing()  # capture the final URL's load time too
+            final_nav = self._collect_nav_timing()
+            self._record_nav_timing(final_nav)  # capture the final URL's load time too
             diagnostics = self._collect_diagnostics() or self._last_diagnostics
+
+            # File the final reading against the page that is still open, then
+            # close it out so it owns the frames captured for it.
+            self._record_page_run(self._nav_epoch, final_nav, vitals, diagnostics)
+            with self._filmstrip_lock:
+                trailing_frames = list(self.filmstrip)
+            self._close_current_run(trailing_frames)
+            page_results = self._build_page_results()
 
             fcp = vitals.get("fcp")
             lcp = vitals.get("lcp")
@@ -372,12 +538,20 @@ class PerformanceSession:
             if speed_index is None:
                 notes.append("Speed Index was not computed (install 'Pillow' to "
                              "enable filmstrip-based Speed Index).")
+            if page_results:
+                notes.append(f"Session-level metrics above describe the LAST page open "
+                             f"({len(page_results)} page load(s) were measured in total). "
+                             f"See the per-page section for values averaged over every "
+                             f"load of the same URL.")
 
             self.result = {
                 "label": self.label,
                 "generated_at": time.time(),
                 "duration_seconds": round(time.time() - self._start_time, 2) if self._start_time else None,
                 "navigations": self.navigations,
+                # Every individual page load, each with its own metrics/scores.
+                # The report groups these by URL and averages them.
+                "page_results": page_results,
                 "page_loads": sorted(
                     self.page_load_times.values(),
                     key=lambda p: (p.get("load_time_ms") is None, p.get("load_time_ms") or 0),
@@ -541,16 +715,10 @@ class PerformanceSession:
     def _select_filmstrip_frames(self, max_frames: int = 8) -> list:
         """Down-sample the captured frames to an evenly-spaced handful for the
         report (keeps embedded base64 payloads reasonable)."""
-        frames = self.filmstrip
-        if not frames:
-            return []
-        if len(frames) <= max_frames:
-            chosen = frames
-        else:
-            step = (len(frames) - 1) / (max_frames - 1)
-            idxs = sorted({round(i * step) for i in range(max_frames)})
-            chosen = [frames[i] for i in idxs]
-        return [{"data": f["data"], "offset_ms": f.get("offset_ms", 0)} for f in chosen]
+        with self._filmstrip_lock:
+            frames = list(self.filmstrip)
+        return [{"data": f["data"], "offset_ms": f.get("offset_ms", 0)}
+                for f in _downsample(frames, max_frames)]
 
     @staticmethod
     def _compute_tbt(long_tasks: list) -> float:

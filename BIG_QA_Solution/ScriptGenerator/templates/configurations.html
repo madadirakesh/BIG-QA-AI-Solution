@@ -51,6 +51,98 @@
         <h3>Project Configuration</h3>
         <p>Manage automation directory paths, Git credentials, and custom test execution commands.</p>
     </a>
+
+    <!-- 5. Performance Configuration -->
+    <a href="#" onclick="openPerformanceConfigModal(); return false;" class="dashboard-card glassmorphism hover-effect animate-slide-up delay-4">
+        <div class="card-icon" style="background: rgba(239,68,68,0.1); color: #f87171; border-color: rgba(239,68,68,0.2);"><i class="fas fa-gauge-high"></i></div>
+        <h3>Performance Configuration</h3>
+        <p>Create or modify performance projects and scaffold the Locust performance framework.</p>
+    </a>
+</div>
+
+<!-- Performance Configuration Modal -->
+<div id="configurePerformanceModal" class="confirm-backdrop" style="align-items:center;justify-content:center;display:none;z-index:1050;">
+    <div class="confirm-dialog" style="max-width:600px;max-height:85vh;overflow-y:auto;width:95%;">
+        <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--glass-border);padding-bottom:1rem;margin-bottom:1.5rem;">
+            <h3 style="margin:0;font-size:1.2rem;"><i class="fas fa-gauge-high" style="color:var(--accent-secondary);margin-right:8px;"></i>Performance Configuration</h3>
+            <button onclick="closePerformanceConfigModal()" style="background:none;border:none;color:var(--text-secondary);font-size:1.5rem;cursor:pointer;line-height:1;">&times;</button>
+        </div>
+
+        <!-- 1. New Project Toggle -->
+        <div class="form-group" style="margin-bottom:1.25rem;">
+            <label style="margin-bottom:6px;display:block;font-size:0.9rem;color:var(--text-secondary);">New Project</label>
+            <div class="switch-container">
+                <label class="switch">
+                    <input type="checkbox" id="perfNewProjectToggle" onchange="onPerfNewProjectToggleChange()" checked>
+                    <span class="slider"></span>
+                </label>
+                <span id="perfNewProjectLabel" class="toggle-label-span">Yes</span>
+            </div>
+        </div>
+
+        <!-- 2. Project Name Input / Dropdown -->
+        <div class="form-group" style="margin-bottom:1.25rem;">
+            <label style="margin-bottom:6px;display:block;font-size:0.9rem;color:var(--text-secondary);">Project Name <span style="color:#ef4444;">*</span></label>
+            <input type="text" id="perfProjectNameInput" oninput="clearPerfFieldError('perfProjectNameInput')" placeholder="Enter performance project name" style="width:100%;padding:10px 12px;background:var(--bg-primary);border:1px solid var(--glass-border);border-radius:8px;color:var(--text-primary);font-family:inherit;">
+            <select id="perfProjectNameSelect" onchange="clearPerfFieldError('perfProjectNameSelect'); onPerfProjectSelectChange()" style="display:none;width:100%;padding:10px 12px;background:var(--bg-primary);border:1px solid var(--glass-border);border-radius:8px;color:var(--text-primary);font-family:inherit;">
+                <option value="">-- Choose Project --</option>
+            </select>
+            <small class="error-text" id="perfProjectNameInputError"></small>
+            <small class="error-text" id="perfProjectNameSelectError"></small>
+        </div>
+
+        <!-- 3. Application URL -->
+        <div class="form-group" style="margin-bottom:1.25rem;">
+            <label for="perfAppUrlInput" style="margin-bottom:6px;display:block;font-size:0.9rem;color:var(--text-secondary);">Application URL <span style="color:#ef4444;">*</span></label>
+            <input type="text" id="perfAppUrlInput" oninput="clearPerfFieldError('perfAppUrlInput')" placeholder="e.g. https://api.your-app.com" style="width:100%;padding:10px 12px;background:var(--bg-primary);border:1px solid var(--glass-border);border-radius:8px;color:var(--text-primary);font-family:inherit;">
+            <small class="error-text" id="perfAppUrlInputError"></small>
+        </div>
+
+        <!-- 4. Performance Project path -->
+        <div class="form-group" style="margin-bottom:1.25rem;">
+            <label for="perfProjectPathInput" style="margin-bottom:6px;display:block;font-size:0.9rem;color:var(--text-secondary);">Performance Project path</label>
+            <div style="display:flex;gap:8px;">
+                <input type="text" id="perfProjectPathInput" oninput="clearPerfFieldError('perfProjectPathInput')" placeholder="e.g. C:\performance" style="flex:1;padding:10px 12px;background:var(--bg-primary);border:1px solid var(--glass-border);border-radius:8px;color:var(--text-primary);font-family:inherit;">
+                <button type="button" onclick="browsePerformanceDirectory()" class="btn btn-secondary" style="white-space:nowrap;padding:10px 15px;"><i class="fas fa-folder-open"></i> Browse</button>
+            </div>
+            <small class="error-text" id="perfProjectPathInputError"></small>
+            <small class="help-text">A <strong>&lt;project name&gt;_perf</strong> folder is created here with the performance framework, and Locust is installed into its own <strong>.venv</strong> inside it. Leave blank to save the settings only.</small>
+        </div>
+
+        <!-- 5. Default concurrent user count -->
+        <div class="form-group" style="margin-bottom:1.25rem;">
+            <label for="perfUserCountInput" style="margin-bottom:6px;display:block;font-size:0.9rem;color:var(--text-secondary);">Default concurrent user count</label>
+            <input type="number" min="1" id="perfUserCountInput" oninput="clearPerfFieldError('perfUserCountInput')" placeholder="e.g. 100" style="width:100%;padding:10px 12px;background:var(--bg-primary);border:1px solid var(--glass-border);border-radius:8px;color:var(--text-primary);font-family:inherit;">
+            <small class="error-text" id="perfUserCountInputError"></small>
+        </div>
+
+        <!-- 6. Spawn Rate -->
+        <div class="form-group" style="margin-bottom:1.25rem;">
+            <label for="perfSpawnRateInput" style="margin-bottom:6px;display:block;font-size:0.9rem;color:var(--text-secondary);">Spawn Rate (Users per sec)</label>
+            <input type="number" min="1" id="perfSpawnRateInput" oninput="clearPerfFieldError('perfSpawnRateInput')" placeholder="e.g. 10" style="width:100%;padding:10px 12px;background:var(--bg-primary);border:1px solid var(--glass-border);border-radius:8px;color:var(--text-primary);font-family:inherit;">
+            <small class="error-text" id="perfSpawnRateInputError"></small>
+        </div>
+
+        <!-- 7. Run duration -->
+        <div class="form-group" style="margin-bottom:1.5rem;">
+            <label for="perfRunDurationInput" style="margin-bottom:6px;display:block;font-size:0.9rem;color:var(--text-secondary);">Run duration (minutes)</label>
+            <input type="number" min="1" id="perfRunDurationInput" oninput="clearPerfFieldError('perfRunDurationInput')" placeholder="e.g. 5" style="width:100%;padding:10px 12px;background:var(--bg-primary);border:1px solid var(--glass-border);border-radius:8px;color:var(--text-primary);font-family:inherit;">
+            <small class="error-text" id="perfRunDurationInputError"></small>
+        </div>
+
+        <!-- Environment provisioning progress: the venv + Locust install runs in the
+             background after the record is saved, so its phases are reported here. -->
+        <div id="perfSetupStatus" style="display:none;margin-bottom:1rem;padding:12px 14px;border:1px solid var(--glass-border);border-radius:8px;background:var(--bg-primary);font-size:0.85rem;line-height:1.5;">
+            <i id="perfSetupStatusIcon" class="fas fa-spinner fa-spin" style="margin-right:8px;color:var(--accent-secondary);"></i>
+            <span id="perfSetupStatusText" style="color:var(--text-secondary);white-space:pre-wrap;">Preparing the performance project environment...</span>
+        </div>
+
+        <!-- Submit / Cancel -->
+        <div style="display:flex;gap:10px;">
+            <button id="perfConfigSubmitBtn" onclick="submitPerformanceConfiguration()" class="btn btn-primary" style="flex:1;"><i class="fas fa-save"></i> Submit</button>
+            <button type="button" onclick="closePerformanceConfigModal()" class="btn btn-secondary" style="flex:1;"><i class="fas fa-times"></i> Cancel</button>
+        </div>
+    </div>
 </div>
 
 <!-- Project Configuration Modal -->
@@ -552,6 +644,335 @@
             btn.disabled = false;
             btn.innerHTML = originalText;
         }
+    }
+
+    /* ---------------------- Performance Configuration ---------------------- */
+
+    function getPerfValidationFieldIds() {
+        return [
+            'perfProjectNameInput',
+            'perfProjectNameSelect',
+            'perfAppUrlInput',
+            'perfProjectPathInput',
+            'perfUserCountInput',
+            'perfSpawnRateInput',
+            'perfRunDurationInput'
+        ];
+    }
+
+    function clearPerfFieldError(fieldId) {
+        if (typeof clearFieldError === 'function') {
+            clearFieldError(fieldId);
+            return;
+        }
+        const input = document.getElementById(fieldId);
+        const error = document.getElementById(fieldId + 'Error');
+        if (input) input.classList.remove('is-invalid');
+        if (error) {
+            error.textContent = '';
+            error.classList.remove('show');
+        }
+    }
+
+    function clearPerfErrors() {
+        getPerfValidationFieldIds().forEach(clearPerfFieldError);
+    }
+
+    function clearPerformanceConfigForm() {
+        document.getElementById('perfProjectNameInput').value = '';
+        document.getElementById('perfProjectNameSelect').value = '';
+        document.getElementById('perfAppUrlInput').value = '';
+        document.getElementById('perfProjectPathInput').value = '';
+        document.getElementById('perfUserCountInput').value = '';
+        document.getElementById('perfSpawnRateInput').value = '';
+        document.getElementById('perfRunDurationInput').value = '';
+        clearPerfErrors();
+    }
+
+    function setPerfSetupStatus(message, state) {
+        const panel = document.getElementById('perfSetupStatus');
+        const icon = document.getElementById('perfSetupStatusIcon');
+        const text = document.getElementById('perfSetupStatusText');
+        if (!panel) return;
+        if (!message) {
+            panel.style.display = 'none';
+            return;
+        }
+        panel.style.display = 'block';
+        text.textContent = message;
+        if (state === 'success') {
+            icon.className = 'fas fa-circle-check';
+            icon.style.color = '#22c55e';
+        } else if (state === 'error') {
+            icon.className = 'fas fa-triangle-exclamation';
+            icon.style.color = '#ef4444';
+        } else {
+            icon.className = 'fas fa-spinner fa-spin';
+            icon.style.color = 'var(--accent-secondary)';
+        }
+    }
+
+    function openPerformanceConfigModal() {
+        document.getElementById('perfNewProjectToggle').checked = true;
+        onPerfNewProjectToggleChange();
+        setPerfSetupStatus('');
+        perfSetupToken++;
+        document.getElementById('configurePerformanceModal').style.display = 'flex';
+    }
+
+    function closePerformanceConfigModal() {
+        document.getElementById('configurePerformanceModal').style.display = 'none';
+        setPerfSetupStatus('');
+    }
+
+    function onPerfNewProjectToggleChange() {
+        const isNew = document.getElementById('perfNewProjectToggle').checked;
+        document.getElementById('perfNewProjectLabel').innerText = isNew ? 'Yes' : 'No';
+
+        const nameInput = document.getElementById('perfProjectNameInput');
+        const nameSelect = document.getElementById('perfProjectNameSelect');
+        const submitBtn = document.getElementById('perfConfigSubmitBtn');
+
+        clearPerformanceConfigForm();
+
+        if (isNew) {
+            nameInput.style.display = 'block';
+            nameSelect.style.display = 'none';
+            submitBtn.innerHTML = '<i class="fas fa-save"></i> Submit';
+        } else {
+            nameInput.style.display = 'none';
+            nameSelect.style.display = 'block';
+            submitBtn.innerHTML = '<i class="fas fa-save"></i> Update';
+            loadPerformanceProjectsList();
+        }
+    }
+
+    async function loadPerformanceProjectsList(selectedId = null) {
+        try {
+            const r = await fetch('/api/performance-projects');
+            const d = await r.json();
+            if (d.status === 'success') {
+                const select = document.getElementById('perfProjectNameSelect');
+                select.innerHTML = '<option value="">-- Choose Project --</option>';
+                d.data.forEach(p => {
+                    const opt = document.createElement('option');
+                    opt.value = p.id;
+                    opt.innerText = p.project_name;
+                    select.appendChild(opt);
+                });
+                if (selectedId) {
+                    select.value = selectedId;
+                    onPerfProjectSelectChange();
+                }
+            } else {
+                showToast('Failed to load performance projects: ' + d.message, 'error');
+            }
+        } catch (e) {
+            showToast('Failed to load performance projects list.', 'error');
+        }
+    }
+
+    async function onPerfProjectSelectChange() {
+        const perfId = document.getElementById('perfProjectNameSelect').value;
+        if (!perfId) {
+            document.getElementById('perfAppUrlInput').value = '';
+            document.getElementById('perfProjectPathInput').value = '';
+            document.getElementById('perfUserCountInput').value = '';
+            document.getElementById('perfSpawnRateInput').value = '';
+            document.getElementById('perfRunDurationInput').value = '';
+            clearPerfErrors();
+            return;
+        }
+        try {
+            const r = await fetch('/api/performance-config/' + perfId);
+            const d = await r.json();
+            if (d.status === 'success') {
+                const data = d.data;
+                document.getElementById('perfAppUrlInput').value = data.application_url || '';
+                document.getElementById('perfProjectPathInput').value = data.project_path || '';
+                document.getElementById('perfUserCountInput').value = data.concurrent_user_count ?? '';
+                document.getElementById('perfSpawnRateInput').value = data.spawn_rate ?? '';
+                document.getElementById('perfRunDurationInput').value = data.run_duration ?? '';
+                clearPerfErrors();
+            } else {
+                showToast('Error loading performance project: ' + d.message, 'error');
+            }
+        } catch (e) {
+            showToast('Failed to fetch performance project configuration.', 'error');
+        }
+    }
+
+    async function browsePerformanceDirectory() {
+        try {
+            const r = await fetch('/api/select-directory');
+            const d = await r.json();
+            if (d.path) {
+                document.getElementById('perfProjectPathInput').value = d.path;
+                clearPerfFieldError('perfProjectPathInput');
+            }
+        } catch (e) {
+            showToast('Failed to browse directory.', 'error');
+        }
+    }
+
+    function validatePerformanceConfiguration(values) {
+        const positiveInt = /^[1-9]\d*$/;
+        const schema = {};
+
+        if (values.isNew) {
+            schema.perfProjectNameInput = { required: true, message: 'Project Name is required.' };
+        } else {
+            schema.perfProjectNameSelect = { required: true, message: 'Please select a project to update.' };
+        }
+
+        schema.perfAppUrlInput = {
+            required: true,
+            pattern: /^https?:\/\/\S+$/i,
+            message: 'Application URL is required and must start with http:// or https://'
+        };
+        schema.perfUserCountInput = { pattern: positiveInt, message: 'Default concurrent user count must be a whole number greater than zero.' };
+        schema.perfSpawnRateInput = { pattern: positiveInt, message: 'Spawn Rate must be a whole number greater than zero.' };
+        schema.perfRunDurationInput = { pattern: positiveInt, message: 'Run duration must be a whole number greater than zero.' };
+
+        const fieldValues = {
+            perfProjectNameInput: values.projectName,
+            perfProjectNameSelect: values.perfId,
+            perfAppUrlInput: values.applicationUrl,
+            perfUserCountInput: values.userCount,
+            perfSpawnRateInput: values.spawnRate,
+            perfRunDurationInput: values.runDuration
+        };
+
+        // The URL rule carries both required and pattern; validateForm only enforces the
+        // pattern on non-empty values, so an empty URL still fails on `required` first.
+        return typeof validateForm === 'function'
+            ? validateForm(schema, fieldValues)
+            : Object.keys(schema).every(function (inputId) {
+                const rule = schema[inputId] || {};
+                const value = (fieldValues[inputId] || '').trim();
+                return !(rule.required && !value) && !(rule.pattern && value && !rule.pattern.test(value));
+            });
+    }
+
+    async function submitPerformanceConfiguration() {
+        const isNew = document.getElementById('perfNewProjectToggle').checked;
+        const nameSelect = document.getElementById('perfProjectNameSelect');
+        const perfId = isNew ? null : nameSelect.value;
+        const projectName = isNew
+            ? document.getElementById('perfProjectNameInput').value.trim()
+            : (nameSelect.selectedIndex > 0 ? nameSelect.options[nameSelect.selectedIndex].text : '');
+        const applicationUrl = document.getElementById('perfAppUrlInput').value.trim();
+        const projectPath = document.getElementById('perfProjectPathInput').value.trim();
+        const userCount = document.getElementById('perfUserCountInput').value.trim();
+        const spawnRate = document.getElementById('perfSpawnRateInput').value.trim();
+        const runDuration = document.getElementById('perfRunDurationInput').value.trim();
+
+        if (!validatePerformanceConfiguration({
+            isNew,
+            projectName,
+            perfId,
+            applicationUrl,
+            userCount,
+            spawnRate,
+            runDuration
+        })) return;
+
+        const btn = document.getElementById('perfConfigSubmitBtn');
+        const originalText = btn.innerHTML;
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving...';
+        setPerfSetupStatus('');
+        let installRunning = false;
+
+        try {
+            const payload = {
+                is_new_project: isNew,
+                perf_id: perfId ? parseInt(perfId) : null,
+                project_name: projectName,
+                application_url: applicationUrl,
+                project_path: projectPath,
+                concurrent_user_count: userCount,
+                spawn_rate: spawnRate,
+                run_duration: runDuration
+            };
+
+            const r = await fetch('/api/save-performance-config', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            const d = await r.json();
+
+            if (d.status === 'success') {
+                showToast(d.message || (isNew ? 'Performance project created successfully!' : 'Performance project updated successfully!'), 'success');
+                if (d.perf_job_id) {
+                    // The record is saved; the venv + Locust install continues in the
+                    // background. Keep the modal open so its phases stay visible.
+                    installRunning = true;
+                    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Installing...';
+                    pollPerformanceSetup(d.perf_job_id, btn, originalText);
+                } else {
+                    closePerformanceConfigModal();
+                }
+            } else {
+                showToast('Error: ' + d.message, 'error');
+            }
+        } catch (e) {
+            showToast('Failed to save performance configuration.', 'error');
+        } finally {
+            if (!installRunning) {
+                btn.disabled = false;
+                btn.innerHTML = originalText;
+            }
+        }
+    }
+
+    // Bumped whenever the modal is reopened or resubmitted. A poller started before
+    // the bump keeps reporting its result as a toast, but must not write into — or
+    // close — a modal that has since moved on to a different project.
+    let perfSetupToken = 0;
+
+    // Poll the background environment provisioning (venv + `pip install -r
+    // requirements.txt`, i.e. Locust) started by /api/save-performance-config.
+    function pollPerformanceSetup(jobId, btn, originalText) {
+        const token = ++perfSetupToken;
+        const isCurrent = () => token === perfSetupToken;
+        setPerfSetupStatus('Preparing the performance project environment...');
+
+        // On success the modal has nothing left to show, so it closes just like a
+        // save with no scaffolding. Failures keep it open — the message names the
+        // phase that broke and the fix, which a toast alone would hide too soon.
+        const finish = (message, state, toastType) => {
+            showToast(message, toastType);
+            if (!isCurrent()) return;
+            btn.disabled = false;
+            btn.innerHTML = originalText;
+            if (state === 'success') {
+                closePerformanceConfigModal();
+            } else {
+                setPerfSetupStatus(message, state);
+            }
+        };
+
+        const tick = async () => {
+            try {
+                const r = await fetch('/api/performance-setup-status/' + jobId);
+                const d = await r.json();
+
+                if (d.status === 'processing') {
+                    if (isCurrent()) setPerfSetupStatus(d.message || 'Installing dependencies...');
+                    setTimeout(tick, 2000);
+                } else if (d.status === 'completed') {
+                    finish(d.message || 'Performance dependencies are ready.', 'success', 'success');
+                } else {
+                    finish(d.message || 'Failed to install the performance dependencies.', 'error', 'error');
+                }
+            } catch (e) {
+                finish('Lost contact with the dependency install. Check the app logs.', 'error', 'error');
+            }
+        };
+
+        setTimeout(tick, 1000);
     }
 
     function openConfigureJiraModal() {

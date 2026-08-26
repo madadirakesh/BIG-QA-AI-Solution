@@ -48,6 +48,11 @@ perf_framework/
 
 ## Setup
 
+When this project is created from the **Performance Configuration** screen the
+setup below is already done for you: a `.venv` is created in this folder and
+`requirements.txt` (Locust included) is installed into it. Run it by hand only
+if you copied the framework in yourself, or to repair the environment.
+
 ```bash
 cd perf_framework
 python3 -m venv .venv && source .venv/bin/activate

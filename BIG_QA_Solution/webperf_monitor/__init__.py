@@ -2,7 +2,10 @@ from .selenium_hook import SeleniumMonitor
 from .playwright_hook import PlaywrightMonitor
 from .watcher import Watcher, watch
 from .collector import PerformanceSession
-from .report import write_json_report, write_html_report, write_reports, write_consolidated_report
+from .report import (
+    write_json_report, write_html_report, write_reports, write_consolidated_report,
+    build_page_aggregates,
+)
 
 __all__ = [
     "SeleniumMonitor",
@@ -14,6 +17,7 @@ __all__ = [
     "write_html_report",
     "write_reports",
     "write_consolidated_report",
+    "build_page_aggregates",
 ]
 
 __version__ = "0.1.0"

@@ -231,6 +231,18 @@ def init_db():
     );
     """
 
+    create_performance_details_table = """
+    CREATE TABLE IF NOT EXISTS PerformanceDetails (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        project_name TEXT NOT NULL UNIQUE,
+        application_url TEXT NOT NULL,
+        project_path TEXT,
+        concurrent_user_count INTEGER,
+        spawn_rate INTEGER,
+        run_duration INTEGER
+    );
+    """
+
     create_project_git_config_table = """
     CREATE TABLE IF NOT EXISTS ProjectGitConfig (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -254,6 +266,7 @@ def init_db():
             cursor.execute(create_template_files_table)
             cursor.execute(create_backupfiles_table)
             cursor.execute(create_project_inputs_table)
+            cursor.execute(create_performance_details_table)
             cursor.execute(create_project_git_config_table)
             
             # Indexes

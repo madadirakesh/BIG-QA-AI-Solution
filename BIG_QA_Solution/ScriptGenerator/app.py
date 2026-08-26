@@ -1,4 +1,5 @@
 import os
+import re
 import sys
 import json
 import hashlib
@@ -10,6 +11,7 @@ import uuid
 import secrets
 from datetime import datetime
 from pathlib import Path
+from urllib.parse import quote
 
 # Path setup
 BASE_DIR = Path(__file__).resolve().parent
@@ -400,12 +402,28 @@ from db.app_db import fetch_data, insert_data, update_data, init_db, get_db, pur
 # key (Flask .env). decrypt_for_app passes legacy plaintext rows through unchanged.
 from utils.crypto_util import decrypt_for_app, encrypt_for_app, encrypt_secret, generate_key
 from utils.password_util import hash_password, verify_password, is_hashed
+from utils.performance_scaffolder import (
+    scaffold_performance_project,
+    performance_dir_path,
+    install_performance_dependencies,
+)
+from ScriptRunnerEngine.performance_runner import (
+    list_scripts as list_performance_scripts,
+    stream_run as stream_performance_run,
+    stop_active_runs as stop_active_performance_runs,
+)
+from ScriptRunnerEngine.performance_recorder import registry as recorder_registry
 
 # Load environment variables early
 load_dotenv(BASE_DIR / ".env")
 
 # Global dictionary for background bootstrapper jobs
 bootstrapper_jobs = {}
+
+# Same idea for the performance framework's dependency install. Creating the venv and
+# pulling Locust takes minutes on a cold pip cache, far longer than a form POST should
+# block, so the save endpoint returns immediately and the modal polls this dict.
+performance_setup_jobs = {}
 
 # Tracks the currently running Element Locator Studio subprocess.
 # Prevents launching a duplicate when the user accidentally clicks the
@@ -748,6 +766,39 @@ def _bootstrapper_worker(job_id, p_name, p_path, tool, lang, fw, pm, url, user, 
         }
     except Exception as e:
         bootstrapper_jobs[job_id] = {"status": "error", "message": str(e)}
+
+
+def _performance_dependency_worker(job_id, perf_dir):
+    """
+    Provision the scaffolded performance project's Python environment in the
+    background: pre-flight Python/Pip, create `<perf project>/.venv`, install
+    requirements.txt (Locust) into it.
+
+    Mirrors _bootstrapper_worker's contract - the job dict always ends up with a
+    terminal status ("completed" / "error") so the poller can stop.
+    """
+    def _update_status(phase_message):
+        performance_setup_jobs[job_id] = {"status": "processing", "message": phase_message}
+
+    try:
+        result = install_performance_dependencies(perf_dir, status_cb=_update_status)
+        status = result.get("status")
+        if status in ("installed", "already_installed", "skipped"):
+            performance_setup_jobs[job_id] = {
+                "status": "completed",
+                "message": result.get("message") or "Performance dependencies are ready.",
+                "locust_version": result.get("locust_version", ""),
+                "install_status": status,
+            }
+        else:
+            performance_setup_jobs[job_id] = {
+                "status": "error",
+                "message": result.get("message") or "Failed to install the performance dependencies.",
+                "install_status": status,
+                "dependencies": result.get("dependencies", []),
+            }
+    except Exception as e:
+        performance_setup_jobs[job_id] = {"status": "error", "message": str(e)}
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Native folder / file pickers
@@ -1224,6 +1275,233 @@ def script_runner():
     """
     projects = fetch_data(query)
     return render_template('script_runner.html', projects=projects)
+
+@app.route('/qa/performance-test', methods=['GET'])
+@login_required()
+def performance_test():
+    if session.get('user_role', '').lower() not in ['qa', 'admin']:
+        flash('Not authorized', 'error')
+        return redirect(url_for('home'))
+
+    projects = fetch_data(
+        "SELECT id, project_name FROM PerformanceDetails ORDER BY project_name ASC"
+    )
+    return render_template('performance_test.html', performance_projects=projects)
+
+
+def _report_url(report_path):
+    """Build the viewer URL for a generated report file."""
+    if not report_path:
+        return ''
+    return '/api/script-runner/report?path=' + quote(str(report_path))
+
+
+def _performance_project(perf_id):
+    """Return (record, performance directory) for a performance project, or (None, '')."""
+    rows = fetch_data("SELECT * FROM PerformanceDetails WHERE id = ?", (perf_id,))
+    if not rows:
+        return None, ''
+    record = dict(rows[0])
+    return record, performance_dir_path(record.get('project_name'), record.get('project_path'))
+
+
+@app.route('/api/performance-test/scripts', methods=['GET'])
+@login_required()
+def performance_test_scripts():
+    try:
+        perf_id = request.args.get('perf_id', type=int)
+        if not perf_id:
+            return jsonify({"status": "error", "message": "A performance project must be selected."}), 400
+
+        record, perf_dir = _performance_project(perf_id)
+        if not record:
+            return jsonify({"status": "error", "message": "Performance project not found."}), 404
+
+        project = {
+            "id": record.get('id'),
+            "project_name": record.get('project_name', ''),
+            "application_url": record.get('application_url', ''),
+            "project_path": record.get('project_path', '') or '',
+            "performance_dir": perf_dir,
+            "concurrent_user_count": record.get('concurrent_user_count'),
+            "spawn_rate": record.get('spawn_rate'),
+            "run_duration": record.get('run_duration')
+        }
+
+        if not perf_dir:
+            return jsonify({
+                "status": "success", "data": [], "project": project,
+                "message": "This performance project has no path configured, so it has no scripts on disk yet."
+            })
+        if not os.path.isdir(perf_dir):
+            return jsonify({
+                "status": "success", "data": [], "project": project,
+                "message": f"The performance framework folder was not found at {perf_dir}."
+            })
+
+        scripts = list_performance_scripts(perf_dir)
+        for script in scripts:
+            script['last_report_url'] = _report_url(script.get('last_report'))
+
+        # A recording outlives the page that started it (it is a browser plus a
+        # server-side thread), so hand back any live session for this project and
+        # let a reloaded page re-attach to it instead of orphaning it.
+        active = recorder_registry.active_for_project(perf_dir)
+        return jsonify({
+            "status": "success", "data": scripts, "project": project, "message": "",
+            "active_recorder": active.snapshot() if active else None
+        })
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.route('/api/performance-test/stream', methods=['GET'])
+@login_required()
+def performance_test_stream():
+    perf_id = request.args.get('perf_id', type=int)
+    script_file = request.args.get('script', '')
+    mode = request.args.get('mode', 'check')
+    users = request.args.get('users', '')
+    spawn_rate = request.args.get('spawn_rate', '')
+    run_duration = request.args.get('run_duration', '')
+
+    def error_stream(message):
+        yield f"event: result\ndata: {json.dumps({'status': 'error', 'message': message})}\n\n"
+
+    record, perf_dir = _performance_project(perf_id) if perf_id else (None, '')
+    if not record:
+        return Response(stream_with_context(error_stream("Performance project not found.")),
+                        mimetype='text/event-stream')
+    if not perf_dir or not os.path.isdir(perf_dir):
+        return Response(stream_with_context(error_stream(
+            "The performance framework folder for this project does not exist. "
+            "Re-save it from Configurations > Performance Configuration to scaffold it."
+        )), mimetype='text/event-stream')
+
+    if mode == 'load':
+        try:
+            users = int(str(users).strip())
+            if users <= 0:
+                raise ValueError
+        except (TypeError, ValueError):
+            return Response(stream_with_context(error_stream("Concurrent users must be a whole number greater than zero.")),
+                            mimetype='text/event-stream')
+        for label, value in (("Spawn Rate", spawn_rate), ("Run duration", run_duration)):
+            parsed, error = _parse_optional_positive_int(value, label)
+            if error:
+                return Response(stream_with_context(error_stream(error)), mimetype='text/event-stream')
+            if label == "Spawn Rate":
+                spawn_rate = parsed
+            else:
+                run_duration = parsed
+        spawn_rate = spawn_rate or record.get('spawn_rate')
+        run_duration = run_duration or record.get('run_duration')
+
+    return Response(
+        stream_with_context(stream_performance_run(
+            perf_dir=perf_dir,
+            script_file=script_file,
+            host=record.get('application_url', ''),
+            mode='check' if mode == 'check' else 'load',
+            users=users,
+            spawn_rate=spawn_rate,
+            run_duration=run_duration,
+            report_url_builder=_report_url,
+        )),
+        mimetype='text/event-stream'
+    )
+
+
+@app.route('/api/performance-test/stop', methods=['POST'])
+@login_required()
+def performance_test_stop():
+    try:
+        return jsonify({"status": "success", "stopped": stop_active_performance_runs()})
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Test recorder
+#
+# "Create Test" opens a real browser on the project's Application URL with a
+# floating recorder panel injected into it. The panel owns the Start / Stop /
+# Save controls; these endpoints only launch the session, report its progress
+# so the page can mirror it, and expose a fallback finish for when the browser
+# is no longer reachable. Script generation happens inside the session.
+# ─────────────────────────────────────────────────────────────────────────────
+
+@app.route('/api/performance-test/recorder/start', methods=['POST'])
+@login_required()
+def performance_recorder_start():
+    try:
+        data = request.json or {}
+        perf_id = data.get('perf_id')
+        if not perf_id:
+            return jsonify({"status": "error", "message": "A performance project must be selected."}), 400
+
+        record, perf_dir = _performance_project(perf_id)
+        if not record:
+            return jsonify({"status": "error", "message": "Performance project not found."}), 404
+
+        application_url = (record.get('application_url') or '').strip()
+        if not application_url:
+            return jsonify({"status": "error", "message": "This performance project has no Application URL configured."}), 400
+        if not perf_dir or not os.path.isdir(perf_dir):
+            return jsonify({
+                "status": "error",
+                "message": ("The performance framework folder for this project does not exist. "
+                            "Re-save it from Configurations > Performance Configuration to scaffold it.")
+            }), 400
+
+        existing = recorder_registry.active_for_project(perf_dir)
+        if existing:
+            return jsonify({
+                "status": "error",
+                "message": "A recording is already running for this project. Finish it before starting another.",
+                "session_id": existing.id
+            }), 409
+
+        session_id = str(uuid.uuid4())
+        recorder_registry.create(session_id, perf_dir, record.get('project_name', ''), application_url)
+        return jsonify({
+            "status": "success",
+            "session_id": session_id,
+            "application_url": application_url,
+            "message": f"Opening {application_url} with the recorder panel…"
+        })
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.route('/api/performance-test/recorder/status/<session_id>', methods=['GET'])
+@login_required()
+def performance_recorder_status(session_id):
+    session_obj = recorder_registry.get(session_id)
+    if not session_obj:
+        return jsonify({"status": "error", "message": "Recording session not found."}), 404
+    return jsonify({"status": "success", "session": session_obj.snapshot()})
+
+
+@app.route('/api/performance-test/recorder/finish/<session_id>', methods=['POST'])
+@login_required()
+def performance_recorder_finish(session_id):
+    session_obj = recorder_registry.get(session_id)
+    if not session_obj:
+        return jsonify({"status": "error", "message": "Recording session not found."}), 404
+    session_obj.request_finish()
+    return jsonify({"status": "success", "message": "Finishing the recording…"})
+
+
+@app.route('/api/performance-test/recorder/cancel/<session_id>', methods=['POST'])
+@login_required()
+def performance_recorder_cancel(session_id):
+    session_obj = recorder_registry.get(session_id)
+    if not session_obj:
+        return jsonify({"status": "error", "message": "Recording session not found."}), 404
+    session_obj.request_cancel()
+    return jsonify({"status": "success", "message": "Discarding the recording…"})
+
 
 @app.route('/qa/test-case-generator', methods=['GET'])
 @login_required()
@@ -1974,6 +2252,187 @@ def get_project_config(project_id):
         })
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500
+
+def _parse_optional_positive_int(raw_value, label):
+    """Return (value|None, error). Blank stays None; anything else must be a positive integer."""
+    if raw_value is None:
+        return None, None
+    text = str(raw_value).strip()
+    if not text:
+        return None, None
+    try:
+        value = int(text)
+    except (TypeError, ValueError):
+        return None, f"{label} must be a whole number."
+    if value <= 0:
+        return None, f"{label} must be greater than zero."
+    return value, None
+
+
+@app.route('/api/performance-projects', methods=['GET'])
+@login_required()
+def get_performance_projects():
+    try:
+        projects = fetch_data(
+            "SELECT id, project_name FROM PerformanceDetails ORDER BY project_name ASC"
+        )
+        return jsonify({"status": "success", "data": projects})
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.route('/api/performance-config/<int:perf_id>', methods=['GET'])
+@login_required()
+def get_performance_config(perf_id):
+    try:
+        rows = fetch_data("SELECT * FROM PerformanceDetails WHERE id = ?", (perf_id,))
+        if not rows:
+            return jsonify({"status": "error", "message": "Performance project not found."}), 404
+        row = dict(rows[0])
+        return jsonify({
+            "status": "success",
+            "data": {
+                "id": row.get('id'),
+                "project_name": row.get('project_name', ''),
+                "application_url": row.get('application_url', ''),
+                "project_path": row.get('project_path', '') or '',
+                "concurrent_user_count": row.get('concurrent_user_count'),
+                "spawn_rate": row.get('spawn_rate'),
+                "run_duration": row.get('run_duration')
+            }
+        })
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.route('/api/save-performance-config', methods=['POST'])
+@login_required()
+def save_performance_config():
+    try:
+        data = request.json or {}
+        is_new_project = data.get('is_new_project', True)
+        perf_id = data.get('perf_id')
+
+        project_name = (data.get('project_name', '') or '').strip()
+        application_url = (data.get('application_url', '') or '').strip()
+        project_path = normalize_project_path(data.get('project_path', ''))
+
+        # 1. Validation
+        if not project_name:
+            return jsonify({"status": "error", "message": "Project Name is required."}), 400
+        if not application_url:
+            return jsonify({"status": "error", "message": "Application URL is required."}), 400
+        if not re.match(r'^https?://\S+$', application_url, re.IGNORECASE):
+            return jsonify({"status": "error", "message": "Invalid Application URL. It must start with http:// or https://"}), 400
+
+        user_count, error = _parse_optional_positive_int(data.get('concurrent_user_count'), "Default concurrent user count")
+        if error:
+            return jsonify({"status": "error", "message": error}), 400
+        spawn_rate, error = _parse_optional_positive_int(data.get('spawn_rate'), "Spawn Rate")
+        if error:
+            return jsonify({"status": "error", "message": error}), 400
+        run_duration, error = _parse_optional_positive_int(data.get('run_duration'), "Run duration")
+        if error:
+            return jsonify({"status": "error", "message": error}), 400
+
+        if project_path and not os.path.isdir(project_path):
+            return jsonify({"status": "error", "message": f"Performance Project path does not exist: {project_path}"}), 400
+
+        if is_new_project:
+            duplicate = fetch_data("SELECT id FROM PerformanceDetails WHERE project_name = ?", (project_name,))
+            if duplicate:
+                return jsonify({"status": "error", "message": f"Performance project '{project_name}' already exists."}), 400
+        else:
+            if not perf_id:
+                return jsonify({"status": "error", "message": "Please select a performance project to update."}), 400
+            existing_rows = fetch_data("SELECT id FROM PerformanceDetails WHERE id = ?", (perf_id,))
+            if not existing_rows:
+                return jsonify({"status": "error", "message": "Performance project not found."}), 404
+            duplicate = fetch_data(
+                "SELECT id FROM PerformanceDetails WHERE project_name = ? AND id != ?",
+                (project_name, perf_id)
+            )
+            if duplicate:
+                return jsonify({"status": "error", "message": f"Performance project '{project_name}' is already used by another record."}), 400
+
+        # 2. Scaffold the performance framework before touching the DB, so a
+        #    failed scaffold never leaves an orphaned record behind.
+        scaffold_message = ""
+        scaffold_path = ""
+        if project_path:
+            try:
+                result = scaffold_performance_project(
+                    project_name, project_path, application_url,
+                    user_count, spawn_rate, run_duration
+                )
+                scaffold_message = result.get('message', '')
+                scaffold_path = result.get('path', '')
+            except Exception as scaffold_error:
+                return jsonify({
+                    "status": "error",
+                    "message": f"Failed to scaffold the performance project: {scaffold_error}"
+                }), 500
+
+        # 3. Insert or Update PerformanceDetails
+        if is_new_project:
+            insert_data(
+                "INSERT INTO PerformanceDetails (project_name, application_url, project_path, "
+                "concurrent_user_count, spawn_rate, run_duration) VALUES (?, ?, ?, ?, ?, ?)",
+                (project_name, application_url, project_path, user_count, spawn_rate, run_duration)
+            )
+            new_rows = fetch_data("SELECT id FROM PerformanceDetails WHERE project_name = ?", (project_name,))
+            if not new_rows:
+                return jsonify({"status": "error", "message": "Failed to create the performance project record."}), 500
+            perf_id = new_rows[0]['id']
+        else:
+            update_data(
+                "UPDATE PerformanceDetails SET project_name=?, application_url=?, project_path=?, "
+                "concurrent_user_count=?, spawn_rate=?, run_duration=? WHERE id=?",
+                (project_name, application_url, project_path, user_count, spawn_rate, run_duration, perf_id)
+            )
+
+        # 4. Provision the project's Python environment (venv + Locust) in the
+        #    background. The record already exists at this point, so a failed or
+        #    slow install never blocks the save - the modal polls the job below
+        #    and reports what happened.
+        perf_job_id = ""
+        if scaffold_path:
+            perf_job_id = str(uuid.uuid4())
+            performance_setup_jobs[perf_job_id] = {
+                "status": "processing",
+                "message": "Preparing the performance project environment...",
+            }
+            threading.Thread(target=_performance_dependency_worker,
+                             args=(perf_job_id, scaffold_path),
+                             daemon=True).start()
+
+        message = "Performance project created successfully." if is_new_project else "Performance project updated successfully."
+        if scaffold_message:
+            message = f"{message} {scaffold_message}"
+        return jsonify({
+            "status": "success",
+            "message": message,
+            "perf_id": perf_id,
+            "performance_project_path": scaffold_path,
+            "perf_job_id": perf_job_id
+        })
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.route('/api/performance-setup-status/<job_id>', methods=['GET'])
+@login_required()
+def performance_setup_status(job_id):
+    """Poll the background venv/Locust install kicked off by save-performance-config."""
+    job = performance_setup_jobs.get(job_id)
+    if not job:
+        return jsonify({"status": "error", "message": "Job ID not found"})
+    # Terminal states are read once by the poller; drop them so the dict does not
+    # grow for the lifetime of the process.
+    if job.get("status") in ("completed", "error"):
+        performance_setup_jobs.pop(job_id, None)
+    return jsonify(job)
+
 
 @app.route('/api/save-git-config', methods=['POST'])
 @login_required()
@@ -2883,7 +3342,14 @@ def serve_report():
     for p in projects:
         if p.get('project_path'):
             allowed_bases.append(os.path.abspath(p['project_path']))
-            
+
+    # Locust reports live under <performance project path>/<name>_perf/results/
+    perf_projects = fetch_data("SELECT project_path FROM PerformanceDetails")
+    for p in perf_projects:
+        if p.get('project_path'):
+            allowed_bases.append(os.path.abspath(p['project_path']))
+
+
     import tempfile
     allowed_bases.append(os.path.abspath(tempfile.gettempdir()))
     allowed_bases.append(os.path.abspath(str(ROOT_DIR)))

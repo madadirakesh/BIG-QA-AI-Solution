@@ -63,6 +63,21 @@ class SeleniumMonitor:
         if self.on_report:
             self.on_report(result)
 
+    def capture_page(self) -> None:
+        """
+        Record the metrics of the page that is open RIGHT NOW as its own page
+        load, so it gets its own entry in the report's per-page section (repeated
+        loads of the same URL are averaged there).
+
+        Call this just before navigating away - unlike the background watcher,
+        this hook doesn't poll, so a page that is never captured is only measured
+        if it happens to be the last one open. Must be called from the thread
+        that drives the browser.
+        """
+        if self.session is None:
+            raise RuntimeError("start() was not called")
+        self.session.snapshot()
+
     def wait_for_report(self, timeout: Optional[float] = None) -> dict:
         """
         Block until the browser closes and the report has been written.

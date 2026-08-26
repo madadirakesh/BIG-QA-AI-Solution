@@ -17,6 +17,8 @@ import os
 import time
 from html import escape
 
+from .scoring import compute_performance_score, rating_for_score, score_metric
+
 
 # --------------------------------------------------------------------------- #
 # Formatting helpers
@@ -255,10 +257,21 @@ def render_session_detail(result: dict, heading: str = None) -> str:
     """The full set of per-session sections, reused by both report types."""
     notes = "".join(f"<li>{escape(n)}</li>" for n in result.get("notes", []))
     title_html = f'<h2 class="detail-heading">{escape(heading)}</h2>' if heading else ""
+    # A session's own scores describe the page that was open when it finalized;
+    # say so, since the averaged per-page section is the authoritative view.
+    page_results = result.get("page_results") or []
+    scope_note = ""
+    if len(page_results) > 1:
+        last_url = page_results[-1].get("url") or ""
+        scope_note = (f'<div class="small page-note">Last page measured in this session: '
+                      f'<span class="mono">{escape(str(last_url))}</span>. '
+                      f'{len(page_results)} page load(s) were measured - see the averaged '
+                      f'per-page section for the full picture.</div>')
     return f"""
   {title_html}
   <section>
     <h2>Categories</h2>
+    {scope_note}
     {_category_row(result)}
   </section>
 
@@ -316,6 +329,208 @@ def _metrics_grid_cards(result: dict) -> str:
     ])
 
 
+# --------------------------------------------------------------------------- #
+# Per-page aggregation (averages every load of the same URL)
+# --------------------------------------------------------------------------- #
+# (metric_scores key, metrics key) pairs, in display order.
+_METRIC_KEYS = (
+    ("fcp", "first_contentful_paint_ms"),
+    ("si", "speed_index_ms"),
+    ("lcp", "largest_contentful_paint_ms"),
+    ("tbt", "total_blocking_time_ms"),
+    ("cls", "cumulative_layout_shift"),
+    ("inp", "interaction_to_next_paint_ms"),
+)
+
+
+def _avg(values):
+    vals = [v for v in values if v is not None]
+    if not vals:
+        return None
+    return sum(vals) / len(vals)
+
+
+def _normalize_url(url: str) -> str:
+    """
+    Group key for "the same page". The fragment is dropped (it never changes
+    what the server sent) and a bare trailing slash is ignored; the query string
+    is KEPT, since different parameters generally mean a different page.
+    """
+    u = (url or "").split("#", 1)[0]
+    if u.endswith("/") and "?" not in u and u.count("/") > 2:
+        u = u[:-1]
+    return u
+
+
+def _page_results_of(result: dict) -> list:
+    """
+    Per-page-load records for one session. Sessions produced before per-page
+    capture existed (or by the Playwright/Selenium hooks, which don't poll)
+    fall back to a single record built from the session-level metrics.
+    """
+    pages = result.get("page_results")
+    if pages:
+        return [dict(p, session=p.get("session") or result.get("label")) for p in pages]
+
+    navs = result.get("navigations") or []
+    url = navs[-1].get("url") if navs else None
+    if not url:
+        loads = result.get("page_loads") or []
+        url = loads[0].get("url") if loads else None
+    if not url:
+        return []
+    load = next((p for p in (result.get("page_loads") or [])
+                 if _normalize_url(p.get("url")) == _normalize_url(url)), {})
+    return [{
+        "url": url,
+        "session": result.get("label"),
+        "performance_score": result.get("performance_score"),
+        "metrics": result.get("metrics", {}),
+        "metric_scores": result.get("metric_scores", {}),
+        "categories": result.get("categories", {}),
+        "load_time_ms": load.get("load_time_ms"),
+        "dom_content_loaded_ms": load.get("dom_content_loaded_ms"),
+    }]
+
+
+def build_page_aggregates(results: list) -> list:
+    """
+    Group every measured page load (across all sessions) by URL and average its
+    metrics, so each page appears exactly once with a single set of numbers.
+
+    The headline scores are recomputed from the AVERAGED metric values using the
+    same Lighthouse curves as a single run, rather than averaging the per-run
+    scores - that keeps each page card internally consistent (its score always
+    matches the metrics shown next to it).
+    """
+    groups: dict[str, list] = {}
+    for r in results:
+        for page in _page_results_of(r):
+            groups.setdefault(_normalize_url(page.get("url")), []).append(page)
+
+    aggregates = []
+    for url, runs in groups.items():
+        metrics: dict = {}
+        for short, mkey in _METRIC_KEYS:
+            value = _avg([(p.get("metrics") or {}).get(mkey) for p in runs])
+            if value is not None:
+                value = round(value, 3) if short == "cls" else round(value, 1)
+            metrics[mkey] = value
+
+        metric_scores = {short: score_metric(short, metrics[mkey])
+                         for short, mkey in _METRIC_KEYS}
+
+        # Category scores are averaged too; the pass/fail audit lists come from
+        # the most recent load (they describe the page's markup, not its timing).
+        categories: dict = {}
+        latest_cats = next((p.get("categories") for p in reversed(runs) if p.get("categories")), {}) or {}
+        for key in _CATEGORY_LABELS:
+            avg_score = _avg([((p.get("categories") or {}).get(key) or {}).get("score") for p in runs])
+            source = latest_cats.get(key) or {}
+            if avg_score is None and not source:
+                continue
+            categories[key] = {
+                "score": round(avg_score) if avg_score is not None else None,
+                "passed": source.get("passed", []),
+                "failed": source.get("failed", []),
+            }
+
+        run_scores = [p.get("performance_score") for p in runs if p.get("performance_score") is not None]
+        aggregates.append({
+            "url": url,
+            "samples": len(runs),
+            "sessions": sorted({p.get("session") for p in runs if p.get("session")}),
+            "performance_score": compute_performance_score(metric_scores),
+            "score_min": min(run_scores) if run_scores else None,
+            "score_max": max(run_scores) if run_scores else None,
+            "metrics": metrics,
+            "metric_scores": {k: {"score": v, "rating": rating_for_score(v)}
+                              for k, v in metric_scores.items()},
+            "categories": categories,
+            "load_time_ms": _round_or_none(_avg([p.get("load_time_ms") for p in runs])),
+            "dom_content_loaded_ms": _round_or_none(_avg([p.get("dom_content_loaded_ms") for p in runs])),
+            "ttfb_ms": _round_or_none(_avg([p.get("ttfb_ms") for p in runs])),
+            "dom_nodes": _round_or_none(_avg([p.get("dom_nodes") for p in runs])),
+            "runs": runs,
+        })
+
+    # Worst pages first - that's what a reader needs to act on.
+    aggregates.sort(key=lambda a: (a["performance_score"] is None, a["performance_score"] or 0))
+    return aggregates
+
+
+def _round_or_none(value):
+    return None if value is None else round(value)
+
+
+def _page_runs_table(page: dict) -> str:
+    rows = ""
+    for i, run in enumerate(page.get("runs", []), start=1):
+        m = run.get("metrics") or {}
+        cls_val = m.get("cumulative_layout_shift")
+        score = run.get("performance_score")
+        rows += f"""
+        <tr>
+          <td>{i}</td>
+          <td style="color:{_score_color(score)};font-weight:700">{score if score is not None else 'N/A'}</td>
+          <td>{_fmt_ms(m.get('first_contentful_paint_ms'))}</td>
+          <td>{_fmt_ms(m.get('largest_contentful_paint_ms'))}</td>
+          <td>{_fmt_ms(m.get('total_blocking_time_ms'))}</td>
+          <td>{'N/A' if cls_val is None else f'{cls_val:.3f}'}</td>
+          <td>{_fmt_ms(run.get('load_time_ms'))}</td>
+          <td class="small">{escape(str(run.get('session') or ''))}</td>
+        </tr>"""
+    return f"""
+    <table>
+      <thead><tr><th>#</th><th>Perf</th><th>FCP</th><th>LCP</th><th>TBT</th><th>CLS</th>
+        <th>Load</th><th>Session</th></tr></thead>
+      <tbody>{rows}</tbody>
+    </table>"""
+
+
+def _page_cards(pages: list) -> str:
+    if not pages:
+        return '<p class="small">No page loads with metrics were captured.</p>'
+    cards = ""
+    for page in pages:
+        n = page.get("samples", 0)
+        spread = ""
+        if n > 1 and page.get("score_min") is not None and page["score_min"] != page.get("score_max"):
+            spread = (f" &middot; individual loads scored "
+                      f"{page['score_min']}&ndash;{page['score_max']}")
+        extras = [
+            f"Avg load time {_fmt_ms(page.get('load_time_ms'))}",
+            f"Avg DOMContentLoaded {_fmt_ms(page.get('dom_content_loaded_ms'))}",
+            f"Avg TTFB {_fmt_ms(page.get('ttfb_ms'))}",
+            f"Avg DOM nodes {page.get('dom_nodes') if page.get('dom_nodes') is not None else 'N/A'}",
+        ]
+        cards += f"""
+      <div class="page-card">
+        <div class="page-head">
+          <span class="page-url mono">{escape(str(page.get('url') or ''))}</span>
+          <span class="page-count">{n} load(s) averaged</span>
+        </div>
+        <div class="small page-note">Scores below are computed from the averaged
+          metric values{spread}.</div>
+        {_category_row(page)}
+        <div class="metrics-grid" style="margin-top:18px">{_metrics_grid_cards(page)}</div>
+        <div class="small page-extra">{' &middot; '.join(extras)}</div>
+        <details class="page-runs">
+          <summary class="small">Individual loads ({n})</summary>
+          {_page_runs_table(page)}
+        </details>
+      </div>"""
+    return cards
+
+
+def render_pages_section(pages: list) -> str:
+    return f"""
+  <section>
+    <h2>Pages (averaged across every load of the same URL)</h2>
+    {_page_cards(pages)}
+  </section>"""
+
+
 _SHARED_CSS = """
   :root { --bg:#f8f9fa; --card:#ffffff; --text:#202124; --muted:#5f6368; }
   * { box-sizing: border-box; }
@@ -368,6 +583,17 @@ _SHARED_CSS = """
   .shot-wrap img { max-width:100%; border:1px solid #e8eaed; border-radius:4px; display:block; }
   .lcp-box { position:absolute; border:3px solid #ff4e42; background:rgba(255,78,66,.12); box-shadow:0 0 0 2px rgba(255,255,255,.5); }
   .lcp-key { display:inline-block; width:10px; height:10px; border:2px solid #ff4e42; vertical-align:middle; }
+  .page-card { background:var(--card); border:1px solid #e8eaed; border-radius:8px; padding:18px 20px; margin-bottom:16px; }
+  .page-head { display:flex; justify-content:space-between; align-items:baseline; gap:12px; margin-bottom:2px; }
+  .page-url { font-size:13px; font-weight:600; }
+  .page-count { font-size:12px; color:var(--muted); white-space:nowrap; }
+  .page-note { margin-bottom:14px; }
+  .page-extra { margin-top:12px; }
+  .page-runs { margin-top:12px; }
+  .page-runs summary { cursor:pointer; }
+  .page-runs table { margin-top:10px; }
+  .session-detail > summary { cursor:pointer; font-size:14px; font-weight:600; padding:14px 0;
+                             border-top:2px solid #e8eaed; }
   .stats { display:flex; gap:32px; flex-wrap:wrap; }
   .stat .n { font-size:28px; font-weight:700; }
   .stat .l { font-size:12px; color:var(--muted); }
@@ -380,6 +606,10 @@ _SHARED_CSS = """
 # --------------------------------------------------------------------------- #
 def render_html_report(result: dict) -> str:
     generated_at = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(result.get("generated_at", time.time())))
+    # With more than one page load in the session, lead with the per-page
+    # averages so repeated loads of the same URL read as one result.
+    pages = build_page_aggregates([result]) if len(result.get("page_results") or []) > 1 else []
+    pages_html = render_pages_section(pages) if pages else ""
     return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -393,6 +623,7 @@ def render_html_report(result: dict) -> str:
   <div class="sub">{escape(str(result.get('label', '')))} &middot; generated {generated_at}</div>
 </header>
 <main>
+{pages_html}
 {render_session_detail(result)}
 </main>
 <footer>Generated by webperf_monitor - a CDP-based Python performance monitor</footer>
@@ -410,8 +641,10 @@ def write_html_report(result: dict, output_dir: str, filename: str = "report.htm
 
 def write_reports(result: dict, output_dir: str) -> dict:
     """Convenience: writes both report.json and report.html, returns their paths."""
+    pages = build_page_aggregates([result])
+    payload = dict(result, pages=pages) if pages else result
     return {
-        "json": write_json_report(result, output_dir),
+        "json": write_json_report(payload, output_dir),
         "html": write_html_report(result, output_dir),
     }
 
@@ -421,8 +654,20 @@ def write_reports(result: dict, output_dir: str) -> dict:
 # --------------------------------------------------------------------------- #
 def build_consolidated_result(results: list) -> dict:
     """Merge per-session result dicts into a single consolidated result."""
-    scores = [r.get("performance_score") for r in results if r.get("performance_score") is not None]
-    avg_score = round(sum(scores) / len(scores)) if scores else None
+    # Averages over every measured PAGE LOAD, grouped per URL. This is the
+    # authoritative view: a URL loaded five times appears once, with its metrics
+    # averaged, instead of five unrelated score cards.
+    pages = build_page_aggregates(results)
+
+    # Overall score: mean over all page loads (falls back to the per-session
+    # scores when no per-page data was captured).
+    run_scores = [run.get("performance_score")
+                  for page in pages for run in page.get("runs", [])
+                  if run.get("performance_score") is not None]
+    if not run_scores:
+        run_scores = [r.get("performance_score") for r in results
+                      if r.get("performance_score") is not None]
+    avg_score = round(sum(run_scores) / len(run_scores)) if run_scores else None
 
     page_loads: list[dict] = []
     for r in results:
@@ -437,11 +682,13 @@ def build_consolidated_result(results: list) -> dict:
             })
     page_loads.sort(key=lambda p: (p.get("load_time_ms") is None, -(p.get("load_time_ms") or 0)))
 
-    # Average category scores across sessions.
+    # Average category scores over every measured page load (per-session values
+    # are the fallback for sessions with no per-page data).
+    all_runs = [run for page in pages for run in page.get("runs", [])] or results
     category_averages: dict[str, int] = {}
     for key in _CATEGORY_LABELS:
         vals = [((r.get("categories") or {}).get(key) or {}).get("score")
-                for r in results]
+                for r in all_runs]
         vals = [v for v in vals if v is not None]
         if vals:
             category_averages[key] = round(sum(vals) / len(vals))
@@ -455,6 +702,9 @@ def build_consolidated_result(results: list) -> dict:
         "session_count": len(results),
         "performance_score": avg_score,
         "category_averages": category_averages,
+        "pages": pages,
+        "page_count": len(pages),
+        "measured_page_loads": sum(p.get("samples", 0) for p in pages),
         "total_urls": len(page_loads),
         "total_console_messages": total_console,
         "total_failed_requests": total_failed,
@@ -512,10 +762,18 @@ def render_consolidated_html(consolidated: dict) -> str:
     for key, label in _CATEGORY_LABELS.items():
         overview_donuts.append(_donut(label, cat_avgs.get(key)))
 
-    # Per-session detail sections.
+    pages = consolidated.get("pages", [])
+    measured = consolidated.get("measured_page_loads", 0)
+
+    # Per-session detail sections, collapsed: the averaged per-page section
+    # above is what should be read first.
     details = ""
     for r in consolidated.get("sessions", []):
-        details += render_session_detail(r, heading=f"Session: {r.get('label', '')}")
+        details += f"""
+  <details class="session-detail">
+    <summary>Session detail: {escape(str(r.get('label', '')))}</summary>
+    {render_session_detail(r)}
+  </details>"""
 
     return f"""<!DOCTYPE html>
 <html lang="en">
@@ -531,15 +789,18 @@ def render_consolidated_html(consolidated: dict) -> str:
 </header>
 <main>
   <section>
-    <h2>Overview (averages across sessions)</h2>
+    <h2>Overview (averages across all measured page loads)</h2>
     <div class="cat-row">{"".join(overview_donuts)}</div>
     <div class="stats" style="margin-top:20px">
+      <div class="stat"><div class="n">{len(pages)}</div><div class="l">Distinct pages</div></div>
+      <div class="stat"><div class="n">{measured}</div><div class="l">Page loads measured</div></div>
       <div class="stat"><div class="n">{consolidated.get('session_count', 0)}</div><div class="l">Sessions</div></div>
-      <div class="stat"><div class="n">{consolidated.get('total_urls', 0)}</div><div class="l">URLs loaded</div></div>
       <div class="stat"><div class="n">{consolidated.get('total_console_messages', 0)}</div><div class="l">Console errors/warnings</div></div>
       <div class="stat"><div class="n">{consolidated.get('total_failed_requests', 0)}</div><div class="l">Failed requests</div></div>
     </div>
   </section>
+
+  {render_pages_section(pages)}
 
   <section>
     <h2>Sessions</h2>
@@ -552,7 +813,7 @@ def render_consolidated_html(consolidated: dict) -> str:
   </section>
 
   <section>
-    <h2>URLs Visited &amp; Load Times ({consolidated.get('total_urls', 0)})</h2>
+    <h2>All URL Load Times, Per Session ({consolidated.get('total_urls', 0)})</h2>
     <table>
       <thead><tr><th>URL</th><th>Load Time</th><th>DOMContentLoaded</th><th>Session</th></tr></thead>
       <tbody>{url_rows}</tbody>

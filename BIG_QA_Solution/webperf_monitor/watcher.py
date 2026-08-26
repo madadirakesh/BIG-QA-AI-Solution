@@ -272,7 +272,8 @@ class Watcher:
                 self._results.append(result)
             self._log(f"pid={pid}: session captured "
                       f"(score: {result.get('performance_score')}, "
-                      f"urls: {len(result.get('page_loads', []))})")
+                      f"urls: {len(result.get('page_loads', []))}, "
+                      f"measured page loads: {len(result.get('page_results', []))})")
 
         session.on_finalized(finalize)
         # We manage finalization ourselves so a tab closing mid-session doesn't

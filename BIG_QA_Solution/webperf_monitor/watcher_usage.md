@@ -31,9 +31,18 @@ driver.quit()
 
 ## 3. Get your report
 
-When `driver.quit()` runs (or the browser process otherwise exits), the
-watcher writes `report.json` and `report.html` into `webperf_reports/`,
-named by process id, and prints the performance score to its own terminal.
+When `driver.quit()` runs (or the browser process otherwise exits), that
+browser session is captured. On `webperf-monitor stop`, every captured
+session is merged into ONE `report.json` / `report.html` in
+`webperf_reports/`, and the performance score is printed to the watcher's
+own terminal.
+
+Because the watcher polls the live page, it measures **every page load**,
+not just the last one. The report leads with a **Pages** section that groups
+those loads by URL and averages them: a page your suite visits ten times
+appears once, with averaged metrics, scores, load time and TTFB, plus a
+drill-down list of the individual loads. Per-session detail sits below it,
+collapsed.
 
 ## Detection limits - please read
 
