@@ -307,7 +307,7 @@
     .step-p.completed { opacity: 1; }
     .step-p.completed .step-icon { background: var(--success); border-color: var(--success); box-shadow: 0 0 15px rgba(16, 185, 129, 0.4); }
     .step-icon { width: 45px; height: 45px; border-radius: 50%; background: var(--bg-secondary); border: 2px solid var(--glass-border); display: flex; align-items: center; justify-content: center; font-size: 1.1rem; color: var(--text-primary); transition: var(--transition); }
-    .step-p.active .step-icon { border-color: var(--accent-primary); box-shadow: 0 0 15px var(--accent-glow); background: rgba(0, 120, 212, 0.1); }
+    .step-p.active .step-icon { border-color: var(--accent-primary); background: var(--accent-primary); color: #fff; }
     .step-label { font-size: 0.75rem; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; color: var(--text-secondary); }
     .step-p.active .step-label { color: var(--accent-primary); }
     .step-line { flex: 1; height: 2px; background: var(--glass-border); margin: 0 10px; margin-top: -22px; position: relative; max-width: 200px; }
@@ -315,13 +315,12 @@
     .wizard-content { display: none; }
     .wizard-content.active { display: block; animation: slideUp 0.4s ease-out forwards; }
 
-    .premium-header { font-size: 1.4rem; font-weight: 700; border-bottom: 2px solid var(--accent-glow); padding-bottom: 12px; margin-bottom: 30px; position: relative; }
-    .premium-header::after { content: ''; position: absolute; bottom: -2px; left: 0; width: 60px; height: 2px; background: var(--accent-primary); box-shadow: 0 0 10px var(--accent-glow); }
+    /* .premium-header now lives in static/css/style.css (shared by three pages). */
 
     .options-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
-    .option-card { background: rgba(255, 255, 255, 0.03); border: 1px solid var(--glass-border); border-radius: 12px; padding: 20px; text-align: center; cursor: pointer; transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); position: relative; overflow: hidden; }
-    .option-card:hover { background: rgba(255, 255, 255, 0.07); transform: translateY(-3px); border-color: rgba(255,255,255,0.2); }
-    .option-card.selected { border-color: var(--accent-primary); background: rgba(0, 120, 212, 0.08); box-shadow: 0 5px 15px rgba(0,0,0,0.2); }
+    .option-card { background: var(--bg-card); border: 1px solid var(--glass-border); border-radius: var(--border-radius); padding: 20px; text-align: center; cursor: pointer; transition: var(--transition); position: relative; overflow: hidden; }
+    .option-card:hover { background: var(--bg-hover); border-color: var(--border-strong); }
+    .option-card.selected { border-color: var(--accent-primary); background: var(--accent-softer); }
     .option-icon { font-size: 1.8rem; color: var(--accent-primary); margin-bottom: 10px; }
     .option-card h4 { font-size: 1rem; margin-bottom: 5px; }
     .option-card p { font-size: 0.8rem; margin-bottom: 0; }
@@ -399,10 +398,9 @@
         transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
     }
     .summary-card:hover {
-        background: rgba(255, 255, 255, 0.05);
-        border-color: rgba(255, 255, 255, 0.15);
-        transform: translateY(-2px);
-        box-shadow: 0 8px 20px rgba(0, 0, 0, 0.3);
+        background: var(--bg-hover);
+        border-color: var(--border-strong);
+        box-shadow: var(--shadow-md);
     }
     .summary-card-icon {
         width: 44px;

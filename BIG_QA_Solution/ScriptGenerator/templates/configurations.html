@@ -83,8 +83,8 @@
         <!-- 2. Project Name Input / Dropdown -->
         <div class="form-group" style="margin-bottom:1.25rem;">
             <label style="margin-bottom:6px;display:block;font-size:0.9rem;color:var(--text-secondary);">Project Name <span style="color:#ef4444;">*</span></label>
-            <input type="text" id="perfProjectNameInput" oninput="clearPerfFieldError('perfProjectNameInput')" placeholder="Enter performance project name" style="width:100%;padding:10px 12px;background:var(--bg-primary);border:1px solid var(--glass-border);border-radius:8px;color:var(--text-primary);font-family:inherit;">
-            <select id="perfProjectNameSelect" onchange="clearPerfFieldError('perfProjectNameSelect'); onPerfProjectSelectChange()" style="display:none;width:100%;padding:10px 12px;background:var(--bg-primary);border:1px solid var(--glass-border);border-radius:8px;color:var(--text-primary);font-family:inherit;">
+            <input type="text" id="perfProjectNameInput" oninput="clearPerfFieldError('perfProjectNameInput')" placeholder="Enter performance project name">
+            <select id="perfProjectNameSelect" onchange="clearPerfFieldError('perfProjectNameSelect'); onPerfProjectSelectChange()" style="display:none;">
                 <option value="">-- Choose Project --</option>
             </select>
             <small class="error-text" id="perfProjectNameInputError"></small>
@@ -94,7 +94,7 @@
         <!-- 3. Application URL -->
         <div class="form-group" style="margin-bottom:1.25rem;">
             <label for="perfAppUrlInput" style="margin-bottom:6px;display:block;font-size:0.9rem;color:var(--text-secondary);">Application URL <span style="color:#ef4444;">*</span></label>
-            <input type="text" id="perfAppUrlInput" oninput="clearPerfFieldError('perfAppUrlInput')" placeholder="e.g. https://api.your-app.com" style="width:100%;padding:10px 12px;background:var(--bg-primary);border:1px solid var(--glass-border);border-radius:8px;color:var(--text-primary);font-family:inherit;">
+            <input type="text" id="perfAppUrlInput" oninput="clearPerfFieldError('perfAppUrlInput')" placeholder="e.g. https://api.your-app.com">
             <small class="error-text" id="perfAppUrlInputError"></small>
         </div>
 
@@ -102,7 +102,7 @@
         <div class="form-group" style="margin-bottom:1.25rem;">
             <label for="perfProjectPathInput" style="margin-bottom:6px;display:block;font-size:0.9rem;color:var(--text-secondary);">Performance Project path</label>
             <div style="display:flex;gap:8px;">
-                <input type="text" id="perfProjectPathInput" oninput="clearPerfFieldError('perfProjectPathInput')" placeholder="e.g. C:\performance" style="flex:1;padding:10px 12px;background:var(--bg-primary);border:1px solid var(--glass-border);border-radius:8px;color:var(--text-primary);font-family:inherit;">
+                <input type="text" id="perfProjectPathInput" oninput="clearPerfFieldError('perfProjectPathInput')" placeholder="e.g. C:\performance" style="flex:1;">
                 <button type="button" onclick="browsePerformanceDirectory()" class="btn btn-secondary" style="white-space:nowrap;padding:10px 15px;"><i class="fas fa-folder-open"></i> Browse</button>
             </div>
             <small class="error-text" id="perfProjectPathInputError"></small>
@@ -112,21 +112,21 @@
         <!-- 5. Default concurrent user count -->
         <div class="form-group" style="margin-bottom:1.25rem;">
             <label for="perfUserCountInput" style="margin-bottom:6px;display:block;font-size:0.9rem;color:var(--text-secondary);">Default concurrent user count</label>
-            <input type="number" min="1" id="perfUserCountInput" oninput="clearPerfFieldError('perfUserCountInput')" placeholder="e.g. 100" style="width:100%;padding:10px 12px;background:var(--bg-primary);border:1px solid var(--glass-border);border-radius:8px;color:var(--text-primary);font-family:inherit;">
+            <input type="number" min="1" id="perfUserCountInput" oninput="clearPerfFieldError('perfUserCountInput')" placeholder="e.g. 100">
             <small class="error-text" id="perfUserCountInputError"></small>
         </div>
 
         <!-- 6. Spawn Rate -->
         <div class="form-group" style="margin-bottom:1.25rem;">
             <label for="perfSpawnRateInput" style="margin-bottom:6px;display:block;font-size:0.9rem;color:var(--text-secondary);">Spawn Rate (Users per sec)</label>
-            <input type="number" min="1" id="perfSpawnRateInput" oninput="clearPerfFieldError('perfSpawnRateInput')" placeholder="e.g. 10" style="width:100%;padding:10px 12px;background:var(--bg-primary);border:1px solid var(--glass-border);border-radius:8px;color:var(--text-primary);font-family:inherit;">
+            <input type="number" min="1" id="perfSpawnRateInput" oninput="clearPerfFieldError('perfSpawnRateInput')" placeholder="e.g. 10">
             <small class="error-text" id="perfSpawnRateInputError"></small>
         </div>
 
         <!-- 7. Run duration -->
         <div class="form-group" style="margin-bottom:1.5rem;">
             <label for="perfRunDurationInput" style="margin-bottom:6px;display:block;font-size:0.9rem;color:var(--text-secondary);">Run duration (minutes)</label>
-            <input type="number" min="1" id="perfRunDurationInput" oninput="clearPerfFieldError('perfRunDurationInput')" placeholder="e.g. 5" style="width:100%;padding:10px 12px;background:var(--bg-primary);border:1px solid var(--glass-border);border-radius:8px;color:var(--text-primary);font-family:inherit;">
+            <input type="number" min="1" id="perfRunDurationInput" oninput="clearPerfFieldError('perfRunDurationInput')" placeholder="e.g. 5">
             <small class="error-text" id="perfRunDurationInputError"></small>
         </div>
 
@@ -168,8 +168,8 @@
         <!-- 2. Project Name Input / Dropdown -->
         <div class="form-group" style="margin-bottom:1.25rem;">
             <label style="margin-bottom:6px;display:block;font-size:0.9rem;color:var(--text-secondary);">Project Name <span style="color:#ef4444;">*</span></label>
-            <input type="text" id="projectNameInput" oninput="clearProjectConfigFieldError('projectNameInput')" placeholder="Enter project name" style="width:100%;padding:10px 12px;background:var(--bg-primary);border:1px solid var(--glass-border);border-radius:8px;color:var(--text-primary);font-family:inherit;">
-            <select id="projectNameSelect" onchange="clearProjectConfigFieldError('projectNameSelect'); onProjectSelectChange()" style="display:none;width:100%;padding:10px 12px;background:var(--bg-primary);border:1px solid var(--glass-border);border-radius:8px;color:var(--text-primary);font-family:inherit;">
+            <input type="text" id="projectNameInput" oninput="clearProjectConfigFieldError('projectNameInput')" placeholder="Enter project name">
+            <select id="projectNameSelect" onchange="clearProjectConfigFieldError('projectNameSelect'); onProjectSelectChange()" style="display:none;">
                 <option value="">-- Choose Project --</option>
             </select>
             <small class="error-text" id="projectNameInputError"></small>
@@ -179,20 +179,20 @@
         <!-- 3. Application URL -->
         <div class="form-group" style="margin-bottom:1.25rem;">
             <label for="appUrlInput" style="margin-bottom:6px;display:block;font-size:0.9rem;color:var(--text-secondary);">Application URL</label>
-            <input type="text" id="appUrlInput" placeholder="e.g. https://your-app.com" style="width:100%;padding:10px 12px;background:var(--bg-primary);border:1px solid var(--glass-border);border-radius:8px;color:var(--text-primary);font-family:inherit;">
+            <input type="text" id="appUrlInput" placeholder="e.g. https://your-app.com">
         </div>
 
         <!-- 4. User Name -->
         <div class="form-group" style="margin-bottom:1.25rem;">
             <label for="appUsernameInput" style="margin-bottom:6px;display:block;font-size:0.9rem;color:var(--text-secondary);">User Name</label>
-            <input type="text" id="appUsernameInput" placeholder="Enter username" style="width:100%;padding:10px 12px;background:var(--bg-primary);border:1px solid var(--glass-border);border-radius:8px;color:var(--text-primary);font-family:inherit;">
+            <input type="text" id="appUsernameInput" placeholder="Enter username">
         </div>
 
         <!-- 5. Password -->
         <div class="form-group" style="margin-bottom:1.25rem;">
             <label for="appPasswordInput" style="margin-bottom:6px;display:block;font-size:0.9rem;color:var(--text-secondary);">Password</label>
             <div class="password-wrapper" style="position:relative;">
-                <input type="password" id="appPasswordInput" placeholder="Enter password" style="width:100%;padding:10px 12px;background:var(--bg-primary);border:1px solid var(--glass-border);border-radius:8px;color:var(--text-primary);font-family:inherit;">
+                <input type="password" id="appPasswordInput" placeholder="Enter password">
                 <button class="pwd-toggle" onclick="togglePwdLocal('appPasswordInput', this)" type="button"><i class="fas fa-eye"></i></button>
             </div>
         </div>
@@ -200,14 +200,14 @@
         <!-- 6. Git Repository URL -->
         <div class="form-group" style="margin-bottom:1.25rem;">
             <label for="gitUrlInput" style="margin-bottom:6px;display:block;font-size:0.9rem;color:var(--text-secondary);">Git Repository URL</label>
-            <input type="text" id="gitUrlInput" oninput="clearProjectConfigFieldError('gitUrlInput'); clearProjectConfigFieldError('gitUsernameInput'); clearProjectConfigFieldError('gitTokenInput'); updateGitMandatoryStars()" placeholder="e.g. https://github.com/user/repo.git" style="width:100%;padding:10px 12px;background:var(--bg-primary);border:1px solid var(--glass-border);border-radius:8px;color:var(--text-primary);font-family:inherit;">
+            <input type="text" id="gitUrlInput" oninput="clearProjectConfigFieldError('gitUrlInput'); clearProjectConfigFieldError('gitUsernameInput'); clearProjectConfigFieldError('gitTokenInput'); updateGitMandatoryStars()" placeholder="e.g. https://github.com/user/repo.git">
             <small class="error-text" id="gitUrlInputError"></small>
         </div>
 
         <!-- 7. Git Username -->
         <div class="form-group" style="margin-bottom:1.25rem;">
             <label for="gitUsernameInput" style="margin-bottom:6px;display:block;font-size:0.9rem;color:var(--text-secondary);">Git Username <span id="gitUserReqStar" style="display:none;color:#ef4444;">*</span></label>
-            <input type="text" id="gitUsernameInput" oninput="clearProjectConfigFieldError('gitUsernameInput'); clearProjectConfigFieldError('gitUrlInput')" placeholder="Enter Git Username" style="width:100%;padding:10px 12px;background:var(--bg-primary);border:1px solid var(--glass-border);border-radius:8px;color:var(--text-primary);font-family:inherit;">
+            <input type="text" id="gitUsernameInput" oninput="clearProjectConfigFieldError('gitUsernameInput'); clearProjectConfigFieldError('gitUrlInput')" placeholder="Enter Git Username">
             <small class="error-text" id="gitUsernameInputError"></small>
         </div>
 
@@ -215,7 +215,7 @@
         <div class="form-group" style="margin-bottom:1.25rem;">
             <label for="gitTokenInput" style="margin-bottom:6px;display:block;font-size:0.9rem;color:var(--text-secondary);">Git PA Token <span id="gitTokenReqStar" style="display:none;color:#ef4444;">*</span></label>
             <div class="password-wrapper" style="position:relative;">
-                <input type="password" id="gitTokenInput" oninput="clearProjectConfigFieldError('gitTokenInput'); clearProjectConfigFieldError('gitUrlInput')" placeholder="Enter Git Personal Access Token" style="width:100%;padding:10px 12px;background:var(--bg-primary);border:1px solid var(--glass-border);border-radius:8px;color:var(--text-primary);font-family:inherit;">
+                <input type="password" id="gitTokenInput" oninput="clearProjectConfigFieldError('gitTokenInput'); clearProjectConfigFieldError('gitUrlInput')" placeholder="Enter Git Personal Access Token">
                 <button class="pwd-toggle" onclick="togglePwdLocal('gitTokenInput', this)" type="button"><i class="fas fa-eye"></i></button>
             </div>
             <small class="error-text" id="gitTokenInputError"></small>
@@ -225,7 +225,7 @@
         <div class="form-group" style="margin-bottom:1.25rem;">
             <label for="projectPathInput" style="margin-bottom:6px;display:block;font-size:0.9rem;color:var(--text-secondary);">Local Automation Directory path <span id="projectPathReqStar" style="color:#ef4444;display:none;">*</span></label>
             <div style="display:flex;gap:8px;">
-                <input type="text" id="projectPathInput" oninput="clearProjectConfigFieldError('projectPathInput')" placeholder="e.g. C:\automation\project" style="flex:1;padding:10px 12px;background:var(--bg-primary);border:1px solid var(--glass-border);border-radius:8px;color:var(--text-primary);font-family:inherit;">
+                <input type="text" id="projectPathInput" oninput="clearProjectConfigFieldError('projectPathInput')" placeholder="e.g. C:\automation\project" style="flex:1;">
                 <button type="button" onclick="browseProjectDirectory()" class="btn btn-secondary" style="white-space:nowrap;padding:10px 15px;"><i class="fas fa-folder-open"></i> Browse</button>
             </div>
             <small class="error-text" id="projectPathInputError"></small>
@@ -235,7 +235,7 @@
         <!-- 10. Test Execution commands -->
         <div class="form-group" style="margin-bottom:1.25rem;">
             <label for="runCommandsInput" style="margin-bottom:6px;display:block;font-size:0.9rem;color:var(--text-secondary);">Test Execution commands</label>
-            <textarea id="runCommandsInput" placeholder="Enter execution commands (one per line)&#10;e.g. npm test" style="width:100%;height:100px;padding:10px 12px;background:var(--bg-primary);border:1px solid var(--glass-border);border-radius:8px;color:var(--text-primary);font-family:inherit;resize:vertical;"></textarea>
+            <textarea id="runCommandsInput" placeholder="Enter execution commands (one per line)&#10;e.g. npm test" style="height:100px;"></textarea>
         </div>
 
         <!-- 11. Is the local directory configured with Git -->
@@ -264,16 +264,16 @@
         </div>
         <div class="form-group" style="margin-bottom:1.25rem;">
             <label for="jiraUrlInput" style="margin-bottom:6px;display:block;font-size:0.9rem;color:var(--text-secondary);">Jira Server</label>
-            <input type="text" id="jiraUrlInput" placeholder="e.g. https://your-domain.atlassian.net" style="width:100%;padding:10px 12px;background:var(--bg-primary);border:1px solid var(--glass-border);border-radius:8px;color:var(--text-primary);font-family:inherit;">
+            <input type="text" id="jiraUrlInput" placeholder="e.g. https://your-domain.atlassian.net">
         </div>
         <div class="form-group" style="margin-bottom:1.25rem;">
             <label for="jiraEmailInput" style="margin-bottom:6px;display:block;font-size:0.9rem;color:var(--text-secondary);">Email</label>
-            <input type="email" id="jiraEmailInput" placeholder="Enter Jira Email" style="width:100%;padding:10px 12px;background:var(--bg-primary);border:1px solid var(--glass-border);border-radius:8px;color:var(--text-primary);font-family:inherit;">
+            <input type="email" id="jiraEmailInput" placeholder="Enter Jira Email">
         </div>
         <div class="form-group" style="margin-bottom:1.5rem;">
             <label for="jiraTokenInput" style="margin-bottom:6px;display:block;font-size:0.9rem;color:var(--text-secondary);">API Token</label>
             <div class="password-wrapper">
-                <input type="password" id="jiraTokenInput" placeholder="Enter Jira API Token" style="width:100%;padding:10px 12px;background:var(--bg-primary);border:1px solid var(--glass-border);border-radius:8px;color:var(--text-primary);font-family:inherit;">
+                <input type="password" id="jiraTokenInput" placeholder="Enter Jira API Token">
                 <button class="pwd-toggle" onclick="togglePwd('jiraTokenInput', this)" type="button"><i class="fas fa-eye"></i></button>
             </div>
         </div>

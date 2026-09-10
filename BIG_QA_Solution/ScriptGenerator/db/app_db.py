@@ -243,6 +243,30 @@ def init_db():
     );
     """
 
+    # One payload configuration per (performance project, test script): the
+    # payload file that drives the script, the script parameter -> payload node
+    # mapping, and the per-request response-time thresholds saved from the
+    # Payload Configuration dialog.
+    create_performance_payload_table = """
+    CREATE TABLE IF NOT EXISTS PerformancePayloadConfig (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        perf_id INTEGER NOT NULL,
+        script_file TEXT NOT NULL,
+        payload_type TEXT NOT NULL,
+        payload_file TEXT,
+        payload_name TEXT,
+        source_file_name TEXT,
+        record_tag TEXT,
+        row_count INTEGER,
+        mappings TEXT,
+        thresholds TEXT,
+        generated_script TEXT,
+        updated_at TEXT,
+        UNIQUE(perf_id, script_file),
+        FOREIGN KEY(perf_id) REFERENCES PerformanceDetails(id)
+    );
+    """
+
     create_project_git_config_table = """
     CREATE TABLE IF NOT EXISTS ProjectGitConfig (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -267,6 +291,7 @@ def init_db():
             cursor.execute(create_backupfiles_table)
             cursor.execute(create_project_inputs_table)
             cursor.execute(create_performance_details_table)
+            cursor.execute(create_performance_payload_table)
             cursor.execute(create_project_git_config_table)
             
             # Indexes
@@ -294,6 +319,10 @@ def init_db():
 
             try:
                 cursor.execute("ALTER TABLE Locators ADD COLUMN project_id INTEGER")
+            except Exception: pass
+
+            try:
+                cursor.execute("ALTER TABLE PerformancePayloadConfig ADD COLUMN thresholds TEXT")
             except Exception: pass
             
             # Insert admin user if not exists

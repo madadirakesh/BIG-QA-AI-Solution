@@ -25,7 +25,7 @@
 <div class="form-panel glassmorphism" style="padding:1.5rem;margin-bottom:1.5rem;">
     <div class="form-group" style="margin:0;max-width:480px;">
         <label for="perfProjectSelect" style="margin-bottom:6px;display:block;font-size:0.9rem;color:var(--text-secondary);">Performance Project</label>
-        <select id="perfProjectSelect" onchange="loadPerformanceScripts()" style="width:100%;padding:10px 12px;background:var(--bg-primary);border:1px solid var(--glass-border);border-radius:8px;color:var(--text-primary);font-family:inherit;">
+        <select id="perfProjectSelect" onchange="loadPerformanceScripts()">
             <option value="">-- Choose Performance Project --</option>
             {% for project in performance_projects %}
             <option value="{{ project.id }}">{{ project.project_name }}</option>
@@ -74,7 +74,7 @@
                     <th>Test Case</th>
                     <th>Script File</th>
                     <th>Last Run</th>
-                    <th style="width:320px;">Actions</th>
+                    <th style="width:430px;">Actions</th>
                 </tr>
             </thead>
             <tbody id="perfScriptsTableBody"></tbody>
@@ -95,6 +95,59 @@
     <div id="perfSummary" class="perf-summary" style="display:none;"></div>
 </div>
 
+<!-- Payload Configuration lightbox -->
+<div id="perfPayloadModal" class="confirm-backdrop" style="align-items:center;justify-content:center;display:none;z-index:1050;">
+    <div class="confirm-dialog payload-dialog">
+        <div class="payload-dialog-head">
+            <h3 style="margin:0;font-size:1.2rem;"><i class="fas fa-database" style="color:var(--accent-secondary);margin-right:8px;"></i>Payload Configuration</h3>
+            <button onclick="cancelPayloadModal()" style="background:none;border:none;color:var(--text-secondary);font-size:1.5rem;cursor:pointer;line-height:1;">&times;</button>
+        </div>
+
+        <div class="payload-dialog-body">
+            <p id="payloadScriptLabel" class="payload-script-label"></p>
+
+            <div class="form-group" style="margin-bottom:1.1rem;">
+                <label style="margin-bottom:6px;display:block;font-size:0.9rem;color:var(--text-secondary);">Payload type <span style="color:#ef4444;">*</span></label>
+                <div class="payload-type-group" id="payloadTypeGroup">
+                    <label class="payload-type"><input type="radio" name="payloadType" value="xml" onchange="changePayloadType('xml')"> XML</label>
+                    <label class="payload-type"><input type="radio" name="payloadType" value="json" onchange="changePayloadType('json')"> JSON</label>
+                    <label class="payload-type"><input type="radio" name="payloadType" value="csv" onchange="changePayloadType('csv')"> CSV</label>
+                </div>
+            </div>
+
+            <div class="form-group" style="margin-bottom:1.25rem;">
+                <label for="payloadFileInput" style="margin-bottom:6px;display:block;font-size:0.9rem;color:var(--text-secondary);">Payload file <span style="color:#ef4444;">*</span></label>
+                <input type="file" id="payloadFileInput" accept=".csv" onchange="uploadPayloadFile(this)" class="payload-file-input">
+                <small class="error-text" id="payloadFileInputError"></small>
+                <div id="payloadFileSummary" class="payload-file-summary" style="display:none;"></div>
+            </div>
+
+            <div class="payload-map-head">
+                <h4><i class="fas fa-right-left" style="color:var(--accent-secondary);margin-right:6px;"></i>Parameter mapping</h4>
+                <button type="button" id="payloadAddRowBtn" class="btn btn-secondary" onclick="addPayloadMappingRow()"><i class="fas fa-plus"></i> Add mapping</button>
+            </div>
+            <div id="payloadMappingHint" class="payload-hint"></div>
+            <div id="payloadMappingRows" class="payload-map-rows"></div>
+            <small class="error-text" id="payloadMappingRowsError"></small>
+            <div id="payloadUnmappedWarning" class="payload-warning" style="display:none;"></div>
+
+            <div class="payload-map-head threshold-head">
+                <h4><i class="fas fa-stopwatch" style="color:var(--accent-secondary);margin-right:6px;"></i>Response time thresholds</h4>
+                <button type="button" id="thresholdAddBtn" class="btn btn-secondary" onclick="addThresholdRow()"><i class="fas fa-plus"></i> Add thresholds</button>
+            </div>
+            <div id="thresholdHint" class="payload-hint"></div>
+            <div id="thresholdRows" class="payload-map-rows"></div>
+            <small class="error-text" id="thresholdRowsError"></small>
+        </div>
+
+        <div class="payload-dialog-actions">
+            <button type="button" id="payloadRemoveBtn" class="btn btn-secondary payload-remove-btn" onclick="removePayloadConfiguration()" style="display:none;"><i class="fas fa-trash-can"></i> Remove</button>
+            <button type="button" id="payloadSubmitBtn" class="btn btn-primary" onclick="submitPayloadConfiguration()" style="flex:1;"><i class="fas fa-check"></i> Submit</button>
+            <button type="button" class="btn btn-secondary" onclick="cancelPayloadModal()" style="flex:1;"><i class="fas fa-times"></i> Cancel</button>
+        </div>
+    </div>
+</div>
+
 <!-- Run Configuration lightbox -->
 <div id="perfRunConfigModal" class="confirm-backdrop" style="align-items:center;justify-content:center;display:none;z-index:1050;">
     <div class="confirm-dialog" style="max-width:520px;width:95%;">
@@ -107,19 +160,19 @@
 
         <div class="form-group" style="margin-bottom:1.25rem;">
             <label for="runUsersInput" style="margin-bottom:6px;display:block;font-size:0.9rem;color:var(--text-secondary);">Concurrent users <span style="color:#ef4444;">*</span></label>
-            <input type="number" min="1" id="runUsersInput" oninput="clearRunConfigError('runUsersInput')" placeholder="e.g. 100" style="width:100%;padding:10px 12px;background:var(--bg-primary);border:1px solid var(--glass-border);border-radius:8px;color:var(--text-primary);font-family:inherit;">
+            <input type="number" min="1" id="runUsersInput" oninput="clearPerfFieldError('runUsersInput')" placeholder="e.g. 100">
             <small class="error-text" id="runUsersInputError"></small>
         </div>
 
         <div class="form-group" style="margin-bottom:1.25rem;">
             <label for="runSpawnRateInput" style="margin-bottom:6px;display:block;font-size:0.9rem;color:var(--text-secondary);">Spawn Rate (Users per sec)</label>
-            <input type="number" min="1" id="runSpawnRateInput" oninput="clearRunConfigError('runSpawnRateInput')" placeholder="Defaults to the project ramp-up rate" style="width:100%;padding:10px 12px;background:var(--bg-primary);border:1px solid var(--glass-border);border-radius:8px;color:var(--text-primary);font-family:inherit;">
+            <input type="number" min="1" id="runSpawnRateInput" oninput="clearPerfFieldError('runSpawnRateInput')" placeholder="Defaults to the project ramp-up rate">
             <small class="error-text" id="runSpawnRateInputError"></small>
         </div>
 
         <div class="form-group" style="margin-bottom:1.5rem;">
             <label for="runDurationInput" style="margin-bottom:6px;display:block;font-size:0.9rem;color:var(--text-secondary);">Run duration (minutes)</label>
-            <input type="number" min="1" id="runDurationInput" oninput="clearRunConfigError('runDurationInput')" placeholder="Defaults to the project run duration" style="width:100%;padding:10px 12px;background:var(--bg-primary);border:1px solid var(--glass-border);border-radius:8px;color:var(--text-primary);font-family:inherit;">
+            <input type="number" min="1" id="runDurationInput" oninput="clearPerfFieldError('runDurationInput')" placeholder="Defaults to the project run duration">
             <small class="error-text" id="runDurationInputError"></small>
         </div>
 
@@ -221,6 +274,162 @@
     .recorder-message { margin: 0 0 10px 0; font-size: 0.85rem; color: var(--text-secondary); }
     .recorder-actions { display: flex; gap: 10px; }
     .recorder-actions .btn { padding: 7px 14px; font-size: 0.82rem; }
+
+    /* ---------------------------- Payload dialog ---------------------------- */
+    /* The mapping list can grow to a dozen rows, so the dialog body scrolls
+       while the header and the action buttons stay put. */
+    .payload-dialog {
+        max-width: 720px;
+        width: 96%;
+        display: flex;
+        flex-direction: column;
+        max-height: 88vh;
+        padding: 1.5rem;
+    }
+    .payload-dialog-head {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        border-bottom: 1px solid var(--glass-border);
+        padding-bottom: 1rem;
+        margin-bottom: 1.25rem;
+        flex: none;
+    }
+    .payload-dialog-body { overflow-y: auto; padding-right: 4px; flex: 1 1 auto; }
+    .payload-dialog-actions {
+        display: flex;
+        gap: 10px;
+        padding-top: 1.25rem;
+        margin-top: 1.25rem;
+        border-top: 1px solid var(--glass-border);
+        flex: none;
+    }
+    .payload-remove-btn { color: #ef4444; border-color: rgba(239, 68, 68, 0.4); }
+    .payload-script-label {
+        margin: 0 0 1.25rem 0;
+        font-size: 0.9rem;
+        color: var(--text-secondary);
+    }
+    .payload-script-label strong { color: var(--text-primary); }
+    .payload-type-group { display: flex; gap: 10px; flex-wrap: wrap; }
+    .payload-type {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        padding: 8px 16px;
+        border-radius: 8px;
+        border: 1px solid var(--glass-border);
+        background: var(--bg-primary);
+        font-size: 0.85rem;
+        cursor: pointer;
+    }
+    .payload-type:has(input:checked) {
+        border-color: var(--accent-secondary);
+        color: var(--text-primary);
+        background: rgba(0, 120, 212, 0.12);
+    }
+    .payload-type input { accent-color: var(--accent-secondary); cursor: pointer; }
+    .payload-file-input {
+        width: 100%;
+        padding: 9px 12px;
+        background: var(--bg-primary);
+        border: 1px solid var(--glass-border);
+        border-radius: 8px;
+        color: var(--text-primary);
+        font-family: inherit;
+        font-size: 0.85rem;
+    }
+    .payload-file-input::file-selector-button {
+        margin-right: 12px;
+        padding: 6px 12px;
+        border: 1px solid var(--glass-border);
+        border-radius: 6px;
+        background: rgba(255, 255, 255, 0.06);
+        color: var(--text-primary);
+        font-family: inherit;
+        font-size: 0.8rem;
+        cursor: pointer;
+    }
+    .payload-file-summary {
+        margin-top: 10px;
+        padding: 8px 12px;
+        border-radius: 8px;
+        font-size: 0.82rem;
+        background: rgba(34, 197, 94, 0.08);
+        border: 1px solid rgba(34, 197, 94, 0.3);
+        color: var(--text-secondary);
+    }
+    .payload-file-summary strong { color: var(--text-primary); }
+    .payload-map-head {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 0.75rem;
+    }
+    .payload-map-head h4 { margin: 0; font-size: 0.95rem; }
+    .payload-map-head .btn { padding: 6px 12px; font-size: 0.8rem; }
+    .payload-hint { font-size: 0.82rem; color: var(--text-secondary); margin-bottom: 0.5rem; }
+    .payload-map-rows { display: flex; flex-direction: column; gap: 8px; }
+    .payload-map-row { display: flex; gap: 8px; align-items: center; }
+    /* Only the layout the row needs — the control's own look comes from the
+       shared stylesheet. (The `background:` shorthand that used to be here also
+       wiped the select's chevron, which is why these dropdowns had none.) */
+    .payload-map-row select { flex: 1; min-width: 0; }
+    .payload-map-row .payload-arrow { color: var(--text-tertiary); font-size: 0.7rem; flex: none; }
+    .payload-row-del { color: var(--error); }
+    .payload-row-del:hover {
+        background: var(--error-soft);
+        border-color: var(--error-border);
+        color: var(--error);
+    }
+    /* -------------------------- Response time thresholds -------------------------- */
+    .threshold-head { margin-top: 1.5rem; padding-top: 1.25rem; border-top: 1px solid var(--glass-border); }
+    .threshold-row input[type="number"] { flex: none; width: 110px; }
+    .threshold-row .threshold-unit { flex: none; font-size: 0.75rem; color: var(--text-tertiary); }
+    .payload-row-add { color: var(--accent-secondary); }
+    .payload-row-add:hover {
+        background: var(--accent-soft);
+        border-color: var(--accent-border);
+        color: var(--accent-secondary);
+    }
+    /* Shared chrome for both row buttons. */
+    .payload-row-del,
+    .payload-row-add {
+        flex: none;
+        width: 32px;
+        height: 32px;
+        border-radius: var(--radius-sm);
+        border: 1px solid var(--glass-border);
+        background: var(--bg-hover);
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 0.75rem;
+        transition: var(--transition);
+    }
+    .payload-warning {
+        margin-top: 0.9rem;
+        padding: 10px 12px;
+        border-radius: 8px;
+        font-size: 0.82rem;
+        background: rgba(251, 191, 36, 0.08);
+        border: 1px solid rgba(251, 191, 36, 0.35);
+        color: var(--text-secondary);
+    }
+    .payload-warning strong { color: #fbbf24; }
+    .payload-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        margin-top: 4px;
+        padding: 2px 9px;
+        border-radius: 20px;
+        font-size: 0.7rem;
+        background: rgba(0, 120, 212, 0.14);
+        border: 1px solid rgba(0, 120, 212, 0.35);
+        color: var(--text-secondary);
+    }
 </style>
 
 <script>
@@ -264,6 +473,7 @@
         wrapper.style.display = 'none';
         meta.style.display = 'none';
         perfProjectInfo = null;
+        Object.keys(payloadSummaries).forEach(key => { delete payloadSummaries[key]; });
 
         if (!perfId) {
             empty.style.display = 'flex';
@@ -313,18 +523,24 @@
                 const lastRun = script.last_report_url
                     ? `<a href="${perfEscape(script.last_report_url)}" target="_blank" rel="noopener">${perfEscape(script.last_run_at)}</a>`
                     : '<span style="color:var(--text-secondary);">—</span>';
+                const dataAttrs = `data-script="${perfEscape(script.file_name)}" data-title="${perfEscape(script.title)}"`;
                 row.innerHTML = `
                     <td>${index + 1}</td>
-                    <td><span class="script-title">${perfEscape(script.title)}</span></td>
+                    <td>
+                        <span class="script-title">${perfEscape(script.title)}</span>
+                        ${payloadChip(script.payload)}
+                    </td>
                     <td title="${perfEscape(script.relative_path)}">${perfEscape(script.file_name)}</td>
                     <td>${lastRun}</td>
                     <td>
                         <div class="perf-actions">
-                            <button type="button" class="btn btn-secondary" data-script="${perfEscape(script.file_name)}" data-title="${perfEscape(script.title)}" onclick="runScriptCheck(this)"><i class="fas fa-vial"></i> Run Script Check</button>
-                            <button type="button" class="btn btn-primary" data-script="${perfEscape(script.file_name)}" data-title="${perfEscape(script.title)}" onclick="openRunConfigModal(this)"><i class="fas fa-bolt"></i> Run performance test</button>
+                            <button type="button" class="btn btn-secondary" ${dataAttrs} onclick="openPayloadModal(this)"><i class="fas fa-database"></i> Configure Payload</button>
+                            <button type="button" class="btn btn-secondary" ${dataAttrs} onclick="runScriptCheck(this)"><i class="fas fa-vial"></i> Run Script Check</button>
+                            <button type="button" class="btn btn-primary" ${dataAttrs} onclick="openRunConfigModal(this)"><i class="fas fa-bolt"></i> Run performance test</button>
                         </div>
                     </td>`;
                 body.appendChild(row);
+                payloadSummaries[script.file_name] = script.payload || null;
             });
         } catch (e) {
             showToast('Failed to load performance scripts.', 'error');
@@ -516,9 +732,690 @@
         });
     }
 
+    /* -------------------------- Payload Configuration ------------------------- */
+    /*
+     * Maps the parameterisable fields of a test script (request body keys, query
+     * parameters) onto the columns / keys / nodes of a CSV, JSON or XML payload.
+     *
+     * `payloadStates` keeps one entry per script for the lifetime of the page, so
+     * closing and reopening the dialog restores the uploaded file and the mapping
+     * rows exactly as they were. Cancel restores the snapshot taken when the
+     * dialog was opened, which is what makes it discard only the edits made in
+     * that dialog session.
+     */
+
+    const payloadStates = {};
+    const payloadSummaries = {};
+    let payloadActiveScript = null;
+    let payloadSnapshot = null;
+    let payloadBusy = false;
+
+    const PAYLOAD_SOURCE_GROUPS = [
+        ['body', 'Request body fields'],
+        ['query', 'Query parameters']
+    ];
+
+    // The threshold row that covers every request without one of its own.
+    const THRESHOLD_GENERAL = '__general__';
+
+    function payloadChip(payload) {
+        if (!payload) return '';
+        const chips = [];
+        if (payload.mapping_count) {
+            const parts = [`${perfEscape((payload.payload_type || '').toUpperCase())} payload`,
+                           `${payload.mapping_count} mapped`];
+            if (payload.row_count) parts.push(`${payload.row_count} record(s)`);
+            chips.push(`<span class="payload-chip" title="${perfEscape(payload.source_file_name || '')}">`
+                     + `<i class="fas fa-database"></i>${parts.join(' · ')}</span>`);
+        }
+        if (payload.threshold_count) {
+            chips.push(`<span class="payload-chip" title="Response time thresholds">`
+                     + `<i class="fas fa-stopwatch"></i>${payload.threshold_count} threshold(s)</span>`);
+        }
+        return chips.join(' ');
+    }
+
+    function newPayloadState(scriptFile, title) {
+        return {
+            scriptFile: scriptFile,
+            title: title,
+            payloadType: '',
+            parameters: [],
+            requests: [],
+            nodes: [],
+            sample: {},
+            rowCount: 0,
+            recordTag: '',
+            fileName: '',
+            uploadId: '',
+            mappings: [],
+            thresholds: [],
+            saved: false
+        };
+    }
+
+    function payloadCurrentState() {
+        return payloadStates[payloadActiveScript] || null;
+    }
+
+    async function openPayloadModal(button) {
+        if (isRunActive()) {
+            showToast('A run is in progress. Stop it before changing a payload configuration.', 'error');
+            return;
+        }
+        const perfId = document.getElementById('perfProjectSelect').value;
+        if (!perfId) {
+            showToast('Select a performance project first.', 'error');
+            return;
+        }
+
+        const scriptFile = button.getAttribute('data-script');
+        const title = button.getAttribute('data-title');
+        payloadActiveScript = scriptFile;
+        button.disabled = true;
+        try {
+            const state = await loadPayloadState(perfId, scriptFile, title);
+            if (!state) return;
+            // Snapshot before the user touches anything: Cancel rewinds to this.
+            payloadSnapshot = JSON.parse(JSON.stringify(state));
+            renderPayloadModal();
+            clearPayloadErrors();
+            document.getElementById('perfPayloadModal').style.display = 'flex';
+        } finally {
+            button.disabled = false;
+        }
+    }
+
+    /*
+     * The script's parameters always come from the server (the script may have
+     * been re-recorded since the last visit), while the mapping and the uploaded
+     * file come from this session's state when there is one.
+     */
+    async function loadPayloadState(perfId, scriptFile, title) {
+        const params = new URLSearchParams({ perf_id: perfId, script: scriptFile });
+        let data;
+        try {
+            const r = await fetch('/api/performance-test/payload/config?' + params.toString());
+            data = await r.json();
+        } catch (e) {
+            showToast('Failed to read the payload configuration.', 'error');
+            return null;
+        }
+        if (data.status !== 'success') {
+            showToast(data.message || 'Failed to read the payload configuration.', 'error');
+            return null;
+        }
+        if (data.warning) showToast(data.warning, 'error');
+
+        const cached = payloadStates[scriptFile];
+        const state = cached || newPayloadState(scriptFile, title);
+        state.title = title;
+        state.parameters = data.parameters || [];
+        state.requests = data.requests || [];
+        state.saved = !!data.config;
+
+        // Thresholds are independent of the payload file, so they are restored
+        // from the server whenever this session has no edits of its own yet.
+        if (!cached) {
+            state.thresholds = (data.config && data.config.thresholds
+                ? data.config.thresholds.map(t => ({ request: t.request, seconds: String(t.seconds) }))
+                : []);
+        }
+
+        // A session upload wins over what is on the server; it is the newer of
+        // the two and has not been submitted yet.
+        if (!cached || (!cached.uploadId && !cached.fileName)) {
+            const config = data.config;
+            const payload = data.payload;
+            state.payloadType = (config && config.payload_type) || state.payloadType || '';
+            state.mappings = (config && config.mappings ? config.mappings.slice() : []);
+            state.uploadId = '';
+            if (payload) {
+                state.nodes = payload.nodes || [];
+                state.sample = payload.sample || {};
+                state.rowCount = payload.row_count || 0;
+                state.recordTag = payload.record_tag || '';
+                state.fileName = payload.file_name || (config && config.source_file_name) || '';
+            } else if (config) {
+                // Configuration saved but the payload file can no longer be read:
+                // keep the mapping visible so it is obvious what has to be re-uploaded.
+                state.nodes = config.mappings.map(m => m.node);
+                state.sample = {};
+                state.rowCount = config.row_count || 0;
+                state.fileName = '';
+            }
+        }
+
+        // Drop mapping rows whose parameter has disappeared from the script.
+        const known = new Set(state.parameters.map(p => p.id));
+        state.mappings = state.mappings.filter(m => !m.parameter || known.has(m.parameter));
+
+        // Same for threshold rows pointing at a request the script no longer makes.
+        const knownRequests = new Set(state.requests.map(r => r.id));
+        state.thresholds = state.thresholds.filter(
+            t => !t.request || t.request === THRESHOLD_GENERAL || knownRequests.has(t.request));
+
+        payloadStates[scriptFile] = state;
+        return state;
+    }
+
+    function renderPayloadModal() {
+        const state = payloadCurrentState();
+        if (!state) return;
+
+        document.getElementById('payloadScriptLabel').innerHTML =
+            `Test case: <strong>${perfEscape(state.title)}</strong> · <code>${perfEscape(state.scriptFile)}</code>`;
+
+        document.querySelectorAll('#payloadTypeGroup input[name="payloadType"]').forEach(input => {
+            input.checked = input.value === state.payloadType;
+        });
+        applyPayloadAccept(state.payloadType);
+
+        const summary = document.getElementById('payloadFileSummary');
+        if (state.fileName && state.nodes.length) {
+            summary.innerHTML = `<i class="fas fa-file-circle-check" style="margin-right:6px;color:#34d399;"></i>`
+                + `<strong>${perfEscape(state.fileName)}</strong> — ${state.rowCount} record(s), `
+                + `${state.nodes.length} node(s)`
+                + (state.recordTag ? ` · record tag <strong>&lt;${perfEscape(state.recordTag)}&gt;</strong>` : '');
+            summary.style.display = 'block';
+        } else {
+            summary.style.display = 'none';
+        }
+
+        document.getElementById('payloadRemoveBtn').style.display = state.saved ? 'inline-flex' : 'none';
+        renderPayloadMappings();
+        renderThresholdRows();
+    }
+
+    function clearPayloadErrors() {
+        clearPerfFieldError('payloadFileInput');
+        clearPerfFieldError('payloadMappingRows');
+        clearPerfFieldError('thresholdRows');
+    }
+
+    function applyPayloadAccept(payloadType) {
+        const accept = { xml: '.xml', json: '.json', csv: '.csv' }[payloadType] || '.csv,.json,.xml';
+        document.getElementById('payloadFileInput').setAttribute('accept', accept);
+    }
+
+    function renderPayloadMappings() {
+        const state = payloadCurrentState();
+        const container = document.getElementById('payloadMappingRows');
+        const hint = document.getElementById('payloadMappingHint');
+        container.innerHTML = '';
+
+        const addBtn = document.getElementById('payloadAddRowBtn');
+        const ready = state.parameters.length && state.nodes.length;
+        addBtn.disabled = !ready;
+
+        if (!state.parameters.length) {
+            hint.textContent = 'This script has no request body fields or query parameters to drive with a payload.';
+        } else if (!state.nodes.length) {
+            hint.textContent = 'Upload a payload file to list the nodes its data can be mapped from.';
+        } else if (!state.mappings.length) {
+            hint.textContent = 'Add a mapping to point a script parameter at a payload node.';
+        } else {
+            hint.textContent = '';
+        }
+
+        state.mappings.forEach((mapping, index) => {
+            const row = document.createElement('div');
+            row.className = 'payload-map-row';
+            row.innerHTML = `
+                <select onchange="setPayloadMapping(${index}, 'parameter', this.value)" aria-label="Script parameter">
+                    ${payloadParameterOptions(state, mapping.parameter)}
+                </select>
+                <i class="fas fa-arrow-right payload-arrow"></i>
+                <select onchange="setPayloadMapping(${index}, 'node', this.value)" aria-label="Payload node">
+                    ${payloadNodeOptions(state, mapping.node)}
+                </select>
+                <button type="button" class="payload-row-del" title="Remove this mapping" onclick="removePayloadMappingRow(${index})"><i class="fas fa-trash"></i></button>`;
+            container.appendChild(row);
+        });
+
+        renderPayloadUnmapped(state);
+    }
+
+    /* A script parameter already used on another row is disabled here, which is
+       how duplicate mappings are prevented before Submit is ever pressed. */
+    function payloadParameterOptions(state, selected) {
+        const used = new Set(state.mappings
+            .map(m => m.parameter)
+            .filter(value => value && value !== selected));
+
+        let html = '<option value="">— Select script parameter —</option>';
+        PAYLOAD_SOURCE_GROUPS.forEach(([source, label]) => {
+            const items = state.parameters.filter(p => p.source === source);
+            if (!items.length) return;
+            html += `<optgroup label="${label}">`;
+            items.forEach(p => {
+                const suffix = p.occurrences > 1 ? ` (${p.occurrences}×)` : '';
+                html += `<option value="${perfEscape(p.id)}"`
+                     + (p.id === selected ? ' selected' : '')
+                     + (used.has(p.id) ? ' disabled' : '') + '>'
+                     + `${perfEscape(p.path)} · ${perfEscape(p.method)} ${perfEscape(p.request)}${suffix}`
+                     + '</option>';
+            });
+            html += '</optgroup>';
+        });
+        return html;
+    }
+
+    function payloadNodeOptions(state, selected) {
+        let html = '<option value="">— Select payload node —</option>';
+        state.nodes.forEach(node => {
+            const sample = state.sample[node];
+            const label = sample ? `${node} · ${sample}` : node;
+            html += `<option value="${perfEscape(node)}"${node === selected ? ' selected' : ''}>`
+                 + `${perfEscape(label)}</option>`;
+        });
+        return html;
+    }
+
+    /* Unmapped parameters are a warning, not an error: a payload does not have to
+       drive every field. Rendering it live means the user sees it before Submit. */
+    function renderPayloadUnmapped(state) {
+        const box = document.getElementById('payloadUnmappedWarning');
+        const mapped = new Set(state.mappings.map(m => m.parameter).filter(Boolean));
+        const unmapped = state.parameters.filter(p => !mapped.has(p.id));
+
+        if (!state.parameters.length || !unmapped.length || !state.nodes.length) {
+            box.style.display = 'none';
+            return;
+        }
+        const shown = unmapped.slice(0, 6).map(p => perfEscape(p.path)).join(', ');
+        const more = unmapped.length > 6 ? ` and ${unmapped.length - 6} more` : '';
+        box.innerHTML = `<strong><i class="fas fa-triangle-exclamation"></i> `
+            + `${unmapped.length} script parameter(s) are not mapped.</strong><br>`
+            + `${shown}${more} will keep the value recorded in the script.`;
+        box.style.display = 'block';
+    }
+
+    /* --------------------- Response time thresholds (NFR) --------------------- */
+    /*
+     * One row per request whose response time is capped, plus an optional
+     * "General" row that covers every request without one of its own. On Submit
+     * the rows are compiled into the generated copy of the script, where a
+     * response slower than its limit is reported to Locust as a failure.
+     */
+
+    function renderThresholdRows() {
+        const state = payloadCurrentState();
+        if (!state) return;
+        const container = document.getElementById('thresholdRows');
+        const hint = document.getElementById('thresholdHint');
+        container.innerHTML = '';
+
+        document.getElementById('thresholdAddBtn').disabled = !state.requests.length;
+        if (!state.requests.length) {
+            hint.textContent = 'This script makes no requests, so there is nothing to set a response time threshold on.';
+        } else if (!state.thresholds.length) {
+            hint.textContent = 'Add a threshold to fail any response slower than the NFR limit. '
+                + 'General applies to every request that has no row of its own.';
+        } else {
+            hint.textContent = '';
+        }
+
+        state.thresholds.forEach((threshold, index) => {
+            const row = document.createElement('div');
+            row.className = 'payload-map-row threshold-row';
+            row.innerHTML = `
+                <select onchange="setThreshold(${index}, 'request', this.value)" aria-label="Request">
+                    ${thresholdRequestOptions(state, threshold.request)}
+                </select>
+                <input type="number" min="0.001" step="0.1" placeholder="e.g. 2" aria-label="Threshold in seconds"
+                       value="${perfEscape(threshold.seconds ?? '')}"
+                       oninput="setThreshold(${index}, 'seconds', this.value)">
+                <span class="threshold-unit">sec</span>
+                <button type="button" class="payload-row-del" title="Remove this threshold" onclick="removeThresholdRow(${index})"><i class="fas fa-trash"></i></button>
+                <button type="button" class="payload-row-add" title="Add another threshold" onclick="addThresholdRow()"><i class="fas fa-plus"></i></button>`;
+            container.appendChild(row);
+        });
+    }
+
+    /* A request already capped on another row is disabled here, so a duplicate
+       threshold cannot be built in the first place. */
+    function thresholdRequestOptions(state, selected) {
+        const used = new Set(state.thresholds
+            .map(t => t.request)
+            .filter(value => value && value !== selected));
+
+        let html = '<option value="">— Select request —</option>';
+        html += `<option value="${THRESHOLD_GENERAL}"`
+             + (selected === THRESHOLD_GENERAL ? ' selected' : '')
+             + (used.has(THRESHOLD_GENERAL) ? ' disabled' : '')
+             + '>General (every other request)</option>';
+        state.requests.forEach(entry => {
+            const suffix = entry.occurrences > 1 ? ` (${entry.occurrences}×)` : '';
+            html += `<option value="${perfEscape(entry.id)}"`
+                 + (entry.id === selected ? ' selected' : '')
+                 + (used.has(entry.id) ? ' disabled' : '') + '>'
+                 + `${perfEscape(entry.id)}${suffix}</option>`;
+        });
+        return html;
+    }
+
+    function addThresholdRow() {
+        const state = payloadCurrentState();
+        if (!state) return;
+        if (!state.requests.length) {
+            setPayloadError('thresholdRows', 'This script makes no requests to set a threshold on.');
+            return;
+        }
+        // General plus one row per request is every threshold this script can carry.
+        if (state.thresholds.length > state.requests.length) {
+            setPayloadError('thresholdRows', 'Every request already has a threshold row.');
+            return;
+        }
+        clearPerfFieldError('thresholdRows');
+        state.thresholds.push({ request: '', seconds: '' });
+        renderThresholdRows();
+    }
+
+    function setThreshold(index, field, value) {
+        const state = payloadCurrentState();
+        if (!state || !state.thresholds[index]) return;
+        state.thresholds[index][field] = value;
+        clearPerfFieldError('thresholdRows');
+        // Only the dropdowns need rebuilding; re-rendering on every keystroke of
+        // the number field would drop the caret.
+        if (field === 'request') renderThresholdRows();
+    }
+
+    function removeThresholdRow(index) {
+        const state = payloadCurrentState();
+        if (!state) return;
+        state.thresholds.splice(index, 1);
+        clearPerfFieldError('thresholdRows');
+        renderThresholdRows();
+    }
+
+    /* Returns an error message, or '' when every row is usable. */
+    function validateThresholdRows(state) {
+        const seen = new Set();
+        for (const threshold of state.thresholds) {
+            if (!threshold.request) {
+                return 'Every threshold row needs a request, or General for all of them.';
+            }
+            const seconds = Number(String(threshold.seconds).trim());
+            if (!String(threshold.seconds).trim() || !isFinite(seconds) || seconds <= 0) {
+                return 'Every threshold needs a response time in seconds greater than zero.';
+            }
+            if (seen.has(threshold.request)) {
+                return 'A request can only have one threshold. Remove the duplicate row.';
+            }
+            seen.add(threshold.request);
+        }
+        return '';
+    }
+
+    function changePayloadType(payloadType) {
+        const state = payloadCurrentState();
+        if (!state) return;
+        if (state.payloadType === payloadType) return;
+
+        state.payloadType = payloadType;
+        // The nodes came from a file of the previous format, so both the file and
+        // the mappings that point at its nodes are no longer valid.
+        state.nodes = [];
+        state.sample = {};
+        state.rowCount = 0;
+        state.recordTag = '';
+        state.fileName = '';
+        state.uploadId = '';
+        state.mappings = [];
+        document.getElementById('payloadFileInput').value = '';
+        renderPayloadModal();
+        clearPayloadErrors();
+    }
+
+    async function uploadPayloadFile(input) {
+        const state = payloadCurrentState();
+        if (!state) return;
+        clearPerfFieldError('payloadFileInput');
+
+        const file = input.files && input.files[0];
+        if (!file) return;
+        if (!state.payloadType) {
+            setPayloadError('payloadFileInput', 'Choose the payload type first.');
+            input.value = '';
+            return;
+        }
+
+        const form = new FormData();
+        form.append('perf_id', document.getElementById('perfProjectSelect').value);
+        form.append('script', state.scriptFile);
+        form.append('payload_type', state.payloadType);
+        form.append('file', file);
+
+        payloadBusy = true;
+        document.getElementById('payloadSubmitBtn').disabled = true;
+        try {
+            const r = await fetch('/api/performance-test/payload/upload', { method: 'POST', body: form });
+            const d = await r.json();
+            if (d.status !== 'success') {
+                input.value = '';
+                state.nodes = [];
+                state.sample = {};
+                state.fileName = '';
+                state.uploadId = '';
+                state.mappings = [];
+                // Rendered first: the message has to survive the re-render.
+                renderPayloadModal();
+                setPayloadError('payloadFileInput', d.message || 'The payload file could not be parsed.');
+                return;
+            }
+
+            const payload = d.payload;
+            state.uploadId = d.upload_id;
+            state.fileName = payload.file_name || file.name;
+            state.nodes = payload.nodes || [];
+            state.sample = payload.sample || {};
+            state.rowCount = payload.row_count || 0;
+            state.recordTag = payload.record_tag || '';
+            // Keep the mappings whose node still exists in the new file, so
+            // swapping in an updated payload does not wipe the mapping.
+            const nodeSet = new Set(state.nodes);
+            state.mappings = state.mappings.filter(m => nodeSet.has(m.node));
+            renderPayloadModal();
+        } catch (e) {
+            setPayloadError('payloadFileInput', 'The payload file could not be uploaded.');
+            input.value = '';
+        } finally {
+            payloadBusy = false;
+            document.getElementById('payloadSubmitBtn').disabled = false;
+        }
+    }
+
+    function setPayloadError(fieldId, message) {
+        if (typeof setFieldError === 'function') {
+            setFieldError(fieldId, message);
+            return;
+        }
+        const error = document.getElementById(fieldId + 'Error');
+        if (error) {
+            error.textContent = message;
+            error.classList.add('show');
+        }
+    }
+
+    function addPayloadMappingRow() {
+        const state = payloadCurrentState();
+        if (!state) return;
+        if (!state.nodes.length) {
+            setPayloadError('payloadFileInput', 'Upload a payload file before adding mappings.');
+            return;
+        }
+        if (state.mappings.length >= state.parameters.length) {
+            setPayloadError('payloadMappingRows', 'Every script parameter already has a mapping row.');
+            return;
+        }
+        clearPerfFieldError('payloadMappingRows');
+        state.mappings.push({ parameter: '', node: '' });
+        renderPayloadMappings();
+    }
+
+    function setPayloadMapping(index, field, value) {
+        const state = payloadCurrentState();
+        if (!state || !state.mappings[index]) return;
+        state.mappings[index][field] = value;
+        clearPerfFieldError('payloadMappingRows');
+        // Re-rendered so the other rows drop the parameter that was just taken.
+        renderPayloadMappings();
+    }
+
+    function removePayloadMappingRow(index) {
+        const state = payloadCurrentState();
+        if (!state) return;
+        state.mappings.splice(index, 1);
+        clearPerfFieldError('payloadMappingRows');
+        renderPayloadMappings();
+    }
+
+    async function submitPayloadConfiguration() {
+        const state = payloadCurrentState();
+        if (!state || payloadBusy) return;
+        clearPayloadErrors();
+
+        const thresholdError = validateThresholdRows(state);
+        if (thresholdError) {
+            setPayloadError('thresholdRows', thresholdError);
+            return;
+        }
+
+        // Either half of the dialog is enough on its own: a payload mapping, a
+        // set of thresholds, or both. Only a dialog left completely empty fails.
+        const wantsPayload = !!(state.payloadType || state.fileName || state.nodes.length
+                                || state.mappings.length);
+        if (!wantsPayload && !state.thresholds.length) {
+            setPayloadError('payloadFileInput',
+                'Choose a payload type and upload a file, or add a response time threshold.');
+            return;
+        }
+        if (wantsPayload) {
+            if (!state.payloadType) {
+                setPayloadError('payloadFileInput', 'Choose a payload type.');
+                return;
+            }
+            if (!state.nodes.length) {
+                setPayloadError('payloadFileInput', 'Upload a payload file.');
+                return;
+            }
+
+            const incomplete = state.mappings.some(m => !m.parameter || !m.node);
+            if (incomplete) {
+                setPayloadError('payloadMappingRows',
+                    'Every mapping row needs both a script parameter and a payload node.');
+                return;
+            }
+            if (!state.mappings.length) {
+                setPayloadError('payloadMappingRows',
+                    'Add at least one mapping between a script parameter and a payload node.');
+                return;
+            }
+            const chosen = state.mappings.map(m => m.parameter);
+            if (new Set(chosen).size !== chosen.length) {
+                setPayloadError('payloadMappingRows',
+                    'A script parameter can only be mapped once. Remove the duplicate row.');
+                return;
+            }
+        }
+
+        const button = document.getElementById('payloadSubmitBtn');
+        button.disabled = true;
+        try {
+            const r = await fetch('/api/performance-test/payload/save', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    perf_id: parseInt(document.getElementById('perfProjectSelect').value),
+                    script: state.scriptFile,
+                    upload_id: state.uploadId,
+                    mappings: state.mappings,
+                    thresholds: state.thresholds.map(t => ({
+                        request: t.request, seconds: Number(String(t.seconds).trim())
+                    }))
+                })
+            });
+            const d = await r.json();
+            if (d.status !== 'success') {
+                setPayloadError('payloadMappingRows', d.message || 'The payload configuration could not be saved.');
+                return;
+            }
+
+            // Saved: the staged upload has become the project's payload file.
+            state.uploadId = '';
+            state.saved = true;
+            if (d.config) {
+                state.mappings = d.config.mappings || state.mappings;
+                state.thresholds = (d.config.thresholds || []).map(
+                    t => ({ request: t.request, seconds: String(t.seconds) }));
+            }
+            payloadSnapshot = null;
+            closePayloadModal();
+            showToast(d.message || 'Payload configuration saved.', 'success');
+            if (d.unmapped && d.unmapped.length) {
+                showToast(`${d.unmapped.length} script parameter(s) keep their recorded value: `
+                    + d.unmapped.slice(0, 4).join(', ') + (d.unmapped.length > 4 ? '…' : ''), 'info');
+            }
+            loadPerformanceScripts();
+        } catch (e) {
+            setPayloadError('payloadMappingRows', 'The payload configuration could not be saved.');
+        } finally {
+            button.disabled = false;
+        }
+    }
+
+    async function removePayloadConfiguration() {
+        const state = payloadCurrentState();
+        if (!state) return;
+        const button = document.getElementById('payloadRemoveBtn');
+        button.disabled = true;
+        try {
+            const r = await fetch('/api/performance-test/payload/clear', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    perf_id: parseInt(document.getElementById('perfProjectSelect').value),
+                    script: state.scriptFile
+                })
+            });
+            const d = await r.json();
+            if (d.status !== 'success') {
+                showToast(d.message || 'The payload configuration could not be removed.', 'error');
+                return;
+            }
+            delete payloadStates[state.scriptFile];
+            payloadSnapshot = null;
+            closePayloadModal();
+            showToast(d.message || 'Payload configuration removed.', 'success');
+            loadPerformanceScripts();
+        } catch (e) {
+            showToast('The payload configuration could not be removed.', 'error');
+        } finally {
+            button.disabled = false;
+        }
+    }
+
+    function cancelPayloadModal() {
+        // Rewind to the state the dialog opened with; anything kept from earlier
+        // in the session survives, anything changed just now does not.
+        if (payloadSnapshot && payloadActiveScript) {
+            payloadStates[payloadActiveScript] = payloadSnapshot;
+        }
+        payloadSnapshot = null;
+        closePayloadModal();
+    }
+
+    function closePayloadModal() {
+        document.getElementById('perfPayloadModal').style.display = 'none';
+        document.getElementById('payloadFileInput').value = '';
+        payloadActiveScript = null;
+    }
+
     /* --------------------------- Run Configuration --------------------------- */
 
-    function clearRunConfigError(fieldId) {
+    function clearPerfFieldError(fieldId) {
         if (typeof clearFieldError === 'function') {
             clearFieldError(fieldId);
             return;
@@ -547,13 +1444,23 @@
             title: button.getAttribute('data-title')
         };
 
-        document.getElementById('perfRunConfigScript').textContent =
-            `${pendingRunScript.title} — ${perfProjectInfo.application_url}`;
+        const payload = payloadSummaries[pendingRunScript.script];
+        document.getElementById('perfRunConfigScript').innerHTML =
+            `${perfEscape(pendingRunScript.title)} — ${perfEscape(perfProjectInfo.application_url)}`
+            + (payload && payload.mapping_count
+                ? `<br><span style="color:#34d399;"><i class="fas fa-database"></i> Driven by `
+                  + `${perfEscape(payload.source_file_name)} (${payload.mapping_count} mapped parameter(s), `
+                  + `${payload.row_count} record(s)).</span>`
+                : '')
+            + (payload && payload.threshold_count
+                ? `<br><span style="color:#34d399;"><i class="fas fa-stopwatch"></i> `
+                  + `${payload.threshold_count} response time threshold(s) will fail any slower response.</span>`
+                : '');
         // Pre-fill with the project's saved defaults so a straight Submit reproduces them.
         document.getElementById('runUsersInput').value = perfProjectInfo.concurrent_user_count ?? '';
         document.getElementById('runSpawnRateInput').value = perfProjectInfo.spawn_rate ?? '';
         document.getElementById('runDurationInput').value = perfProjectInfo.run_duration ?? '';
-        ['runUsersInput', 'runSpawnRateInput', 'runDurationInput'].forEach(clearRunConfigError);
+        ['runUsersInput', 'runSpawnRateInput', 'runDurationInput'].forEach(clearPerfFieldError);
 
         document.getElementById('perfRunConfigModal').style.display = 'flex';
     }
@@ -691,6 +1598,7 @@
         const chips = [
             ['Requests', summary.requests],
             ['Failures', summary.failures],
+            ['Over threshold', summary.threshold_failures],
             ['Avg response', summary.avg_response_ms ? Math.round(summary.avg_response_ms) + ' ms' : ''],
             ['p95', summary.p95_ms ? summary.p95_ms + ' ms' : ''],
             ['Requests/s', summary.requests_per_sec]

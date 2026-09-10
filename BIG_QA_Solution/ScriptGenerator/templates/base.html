@@ -16,7 +16,7 @@
     <!-- Font Awesome -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" integrity="sha512-iecdLmaskl7CVkqkXNQ/ZH/XLlvWZOJyj7Yy7tcenmpD1ypASozpmT/E0iPtmFIB46ZmdtAc9eNBvH0H/ZpiBw==" crossorigin="anonymous" referrerpolicy="no-referrer">
     <!-- Custom CSS -->
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=2.4">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=3.1">
     {% block extra_css %}{% endblock %}
 
     <!-- Global Anti-CSRF Fetch Interceptor -->
@@ -116,9 +116,9 @@
                 <div class="user-greeting">
                     <!-- Global Active Project Selector -->
                     {% if global_projects %}
-                    <div class="global-project-selector" style="margin-right: 15px; display: inline-flex; align-items: center; gap: 8px;" title="Set Global Active Project">
-                        <i class="fas fa-project-diagram" style="color: var(--primary);"></i>
-                        <select id="globalActiveProject" onchange="setGlobalActiveProject(this)" class="input-glass" style="padding: 4px 8px; font-size: 0.9rem; min-width: 150px; background: rgba(0,0,0,0.2); border-color: rgba(255,255,255,0.1);">
+                    <div class="global-project-selector" title="Set Global Active Project">
+                        <i class="fas fa-project-diagram"></i>
+                        <select id="globalActiveProject" onchange="setGlobalActiveProject(this)" class="input-glass" style="height:28px;min-height:28px;padding:0 26px 0 9px;font-size:0.75rem;min-width:160px;">
                             <option value="">-- Select Active Project --</option>
                             {% for proj in global_projects %}
                                 <option value="{{ proj.id }}" data-path="{{ proj.project_path }}" {% if proj.id|string == active_project_id|string %}selected{% endif %}>{{ proj.project_name }}</option>
@@ -133,7 +133,7 @@
                         <span id="aiStatusText">AI</span>
                     </button>
                     <span class="role-badge role-{{ user_role }}">{{ user_role|title }}</span>
-                    <span style="color:var(--text-secondary);font-size:0.9rem;">{{ user_name }}</span>
+                    <span style="color:var(--text-secondary);font-size:0.8125rem;">{{ user_name }}</span>
                 </div>
             </header>
             

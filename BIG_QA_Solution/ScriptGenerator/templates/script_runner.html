@@ -176,33 +176,34 @@
                     transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease, box-shadow 0.2s ease;
                 }
 
+                /* Token-driven so the pair tracks the app's own theme toggle. The
+                   inactive state used to be #334155 text, which on the dark
+                   surface was all but unreadable. */
                 .mode-toggle-btn.mode-inactive {
-                    background: rgba(148, 163, 184, 0.12) !important;
-                    border-color: rgba(100, 116, 139, 0.28) !important;
-                    color: #334155 !important;
+                    background: var(--bg-hover) !important;
+                    border-color: var(--glass-border) !important;
+                    color: var(--text-secondary) !important;
                     box-shadow: none !important;
                 }
 
+                .mode-toggle-btn.mode-inactive:hover {
+                    background: var(--bg-active) !important;
+                    border-color: var(--border-strong) !important;
+                    color: var(--text-primary) !important;
+                }
+
                 .mode-toggle-btn.mode-active-seq {
-                    background: #6366f1 !important;
-                    border-color: #4f46e5 !important;
-                    color: #ffffff !important;
-                    box-shadow: 0 8px 22px rgba(99, 102, 241, 0.22);
+                    background: var(--accent-primary) !important;
+                    border-color: var(--accent-primary) !important;
+                    color: #fff !important;
+                    box-shadow: none !important;
                 }
 
                 .mode-toggle-btn.mode-active-git {
-                    background: #ea580c !important;
-                    border-color: #c2410c !important;
-                    color: #ffffff !important;
-                    box-shadow: 0 8px 22px rgba(234, 88, 12, 0.22);
-                }
-
-                @media (prefers-color-scheme: dark) {
-                    .mode-toggle-btn.mode-inactive {
-                        background: rgba(255, 255, 255, 0.08) !important;
-                        border-color: rgba(148, 163, 184, 0.22) !important;
-                        color: #cbd5e1 !important;
-                    }
+                    background: var(--warning) !important;
+                    border-color: var(--warning) !important;
+                    color: #fff !important;
+                    box-shadow: none !important;
                 }
 
                 @media (max-width: 900px) {
@@ -454,102 +455,56 @@
 
 {% block extra_css %}
 <style>
-    /* Premium Native Git Buttons */
+    /* ── Git actions ──────────────────────────────────────────────────────
+       Five actions that still have to be told apart at a glance, so the colour
+       coding stays — but drawn flat from the shared palette. The previous
+       version gave each one its own gradient, a coloured 18px drop shadow and a
+       2px hover lift, which is a lot of movement for a toolbar. */
     .git-action-btn {
-        border: none !important;
-        color: white !important;
-        font-weight: 600 !important;
-        font-size: 0.9rem !important;
-        padding: 10px 18px !important;
-        border-radius: 6px !important;
+        border: 1px solid transparent !important;
+        color: #fff !important;
+        font-family: inherit !important;
+        font-weight: 500 !important;
+        font-size: 0.8125rem !important;
+        height: 34px !important;
+        padding: 0 14px !important;
+        border-radius: var(--radius-sm) !important;
         display: inline-flex !important;
         align-items: center !important;
-        gap: 8px !important;
+        gap: 7px !important;
         cursor: pointer !important;
-        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+        white-space: nowrap !important;
+        box-shadow: none !important;
+        transition: var(--transition) !important;
     }
 
+    .git-action-btn:hover {
+        filter: brightness(1.08);
+    }
+
+    .git-action-btn:disabled,
+    .git-action-btn[disabled] {
+        opacity: 0.45;
+        pointer-events: none;
+    }
+
+    /* `status` only reads, so it stays neutral and lets the write actions own
+       the colour. */
     .git-btn-status {
-        background: linear-gradient(135deg, #0284c7, #0369a1) !important;
-        box-shadow: 0 4px 12px rgba(2, 132, 199, 0.25) !important;
+        background: var(--bg-hover) !important;
+        border-color: var(--glass-border) !important;
+        color: var(--text-primary) !important;
     }
     .git-btn-status:hover {
-        background: linear-gradient(135deg, #0ea5e9, #0284c7) !important;
-        box-shadow: 0 6px 18px rgba(2, 132, 199, 0.45) !important;
-        transform: translateY(-2px);
-    }
-    .git-btn-status:active {
-        transform: translateY(0);
+        background: var(--bg-active) !important;
+        border-color: var(--border-strong) !important;
+        filter: none;
     }
 
-    .git-btn-pull {
-        background: linear-gradient(135deg, #6366f1, #4f46e5) !important;
-        box-shadow: 0 4px 12px rgba(99, 102, 241, 0.25) !important;
-    }
-    .git-btn-pull:hover {
-        background: linear-gradient(135deg, #818cf8, #6366f1) !important;
-        box-shadow: 0 6px 18px rgba(99, 102, 241, 0.45) !important;
-        transform: translateY(-2px);
-    }
-    .git-btn-pull:active {
-        transform: translateY(0);
-    }
-
-    .git-btn-commit {
-        background: linear-gradient(135deg, #10b981, #059669) !important;
-        box-shadow: 0 4px 12px rgba(16, 185, 129, 0.25) !important;
-    }
-    .git-btn-commit:hover {
-        background: linear-gradient(135deg, #34d399, #10b981) !important;
-        box-shadow: 0 6px 18px rgba(16, 185, 129, 0.45) !important;
-        transform: translateY(-2px);
-    }
-    .git-btn-commit:active {
-        transform: translateY(0);
-    }
-
-    .git-btn-merge {
-        background: linear-gradient(135deg, #f59e0b, #d97706) !important;
-        box-shadow: 0 4px 12px rgba(245, 158, 11, 0.25) !important;
-    }
-    .git-btn-merge:hover {
-        background: linear-gradient(135deg, #fbbf24, #f59e0b) !important;
-        box-shadow: 0 6px 18px rgba(245, 158, 11, 0.45) !important;
-        transform: translateY(-2px);
-    }
-    .git-btn-merge:active {
-        transform: translateY(0);
-    }
-
-    .git-btn-push {
-        background: linear-gradient(135deg, #f97316, #ea580c) !important;
-        box-shadow: 0 4px 12px rgba(249, 115, 22, 0.25) !important;
-    }
-    .git-btn-push:hover {
-        background: linear-gradient(135deg, #fb923c, #f97316) !important;
-        box-shadow: 0 6px 18px rgba(249, 115, 22, 0.45) !important;
-        transform: translateY(-2px);
-    }
-    .git-btn-push:active {
-        transform: translateY(0);
-    }
-
-    /* Light Theme Specific overrides */
-    html[data-theme="light"] .git-btn-status {
-        box-shadow: 0 4px 12px rgba(2, 132, 199, 0.15) !important;
-    }
-    html[data-theme="light"] .git-btn-pull {
-        box-shadow: 0 4px 12px rgba(99, 102, 241, 0.15) !important;
-    }
-    html[data-theme="light"] .git-btn-commit {
-        box-shadow: 0 4px 12px rgba(16, 185, 129, 0.15) !important;
-    }
-    html[data-theme="light"] .git-btn-merge {
-        box-shadow: 0 4px 12px rgba(245, 158, 11, 0.15) !important;
-    }
-    html[data-theme="light"] .git-btn-push {
-        box-shadow: 0 4px 12px rgba(249, 115, 22, 0.15) !important;
-    }
+    .git-btn-pull   { background: var(--info) !important;           border-color: var(--info) !important; }
+    .git-btn-commit { background: var(--success) !important;        border-color: var(--success) !important; }
+    .git-btn-merge  { background: var(--warning) !important;        border-color: var(--warning) !important; }
+    .git-btn-push   { background: var(--accent-primary) !important; border-color: var(--accent-primary) !important; }
 
     /* Custom Commit Modal styling */
     .commit-modal-backdrop {
@@ -754,29 +709,7 @@
     }
 
 
-    .premium-header {
-        font-size: 1.5rem;
-        font-weight: 700;
-        letter-spacing: -0.5px;
-        margin-bottom: 30px;
-        padding-bottom: 15px;
-        border-bottom: 2px solid var(--accent-glow);
-        position: relative;
-        display: block;
-        width: 100%;
-    }
-
-    .premium-header::after {
-        content: '';
-        position: absolute;
-        bottom: -2px;
-        left: 0;
-        width: 100px;
-        height: 2px;
-        background: var(--accent-primary);
-        box-shadow: 0 0 15px var(--accent-glow);
-    }
-
+    /* .premium-header now lives in static/css/style.css (shared by three pages). */
     .form-row {
         display: flex;
         gap: 20px;
@@ -810,38 +743,11 @@
         letter-spacing: 0.5px;
     }
 
-    /* Improve Contrast for Inputs */
-    input[type="text"],
-    input[type="password"],
-    select,
-    textarea,
-    .form-control {
-        background: rgba(255, 255, 255, 0.07) !important;
-        border: 1px solid rgba(255, 255, 255, 0.2) !important;
-        height: 46px;
-        color: white !important;
-    }
-
-    input::placeholder {
-        color: rgba(255, 255, 255, 0.4) !important;
-    }
-
-    input:focus,
-    select:focus {
-        border-color: var(--accent-primary) !important;
-        background: rgba(255, 255, 255, 0.1) !important;
-    }
-
-    /* Premium Dropdown Styling */
-    select.form-control {
-        appearance: none;
-        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%23ea6c0b' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") !important;
-        background-repeat: no-repeat !important;
-        background-position: right 15px center !important;
-        background-size: 18px !important;
-        padding-right: 45px !important;
-        cursor: pointer;
-    }
+    /* Inputs, selects and textareas are styled by static/css/style.css. The
+       overrides that used to sit here forced height:46px and color:white on
+       every control on the page — twelve pixels taller than the rest of the
+       product, and unreadable once light mode was switched on. The dropdown
+       chevron they painted was orange, from an accent the app no longer uses. */
 
     .w-100 {
         width: 100% !important;

@@ -6,6 +6,7 @@ import hashlib
 import importlib.util
 import subprocess
 import threading
+import time
 import webbrowser
 import uuid
 import secrets
@@ -411,7 +412,10 @@ from ScriptRunnerEngine.performance_runner import (
     list_scripts as list_performance_scripts,
     stream_run as stream_performance_run,
     stop_active_runs as stop_active_performance_runs,
+    resolve_script_path as resolve_performance_script,
 )
+from utils import payload_parameterizer
+from utils.payload_parameterizer import PayloadError
 from ScriptRunnerEngine.performance_recorder import registry as recorder_registry
 
 # Load environment variables early
@@ -1342,6 +1346,7 @@ def performance_test_scripts():
         scripts = list_performance_scripts(perf_dir)
         for script in scripts:
             script['last_report_url'] = _report_url(script.get('last_report'))
+        _payload_summaries(perf_id, scripts)
 
         # A recording outlives the page that started it (it is a browser plus a
         # server-side thread), so hand back any live session for this project and
@@ -1397,19 +1402,85 @@ def performance_test_stream():
         spawn_rate = spawn_rate or record.get('spawn_rate')
         run_duration = run_duration or record.get('run_duration')
 
-    return Response(
-        stream_with_context(stream_performance_run(
+    # A script with a saved payload configuration runs as its parameterised
+    # copy. It is rebuilt here rather than reused so an edit to the recorded
+    # script (or to the payload file) is always picked up by the next run.
+    run_script, prelude, payload_error = _prepare_payload_script(perf_id, perf_dir, script_file)
+    if payload_error:
+        return Response(stream_with_context(error_stream(payload_error)), mimetype='text/event-stream')
+
+    def run_stream():
+        for line in prelude:
+            yield f"event: log\ndata: {json.dumps({'msg': line})}\n\n"
+        yield from stream_performance_run(
             perf_dir=perf_dir,
-            script_file=script_file,
+            script_file=run_script,
             host=record.get('application_url', ''),
             mode='check' if mode == 'check' else 'load',
             users=users,
             spawn_rate=spawn_rate,
             run_duration=run_duration,
             report_url_builder=_report_url,
-        )),
-        mimetype='text/event-stream'
-    )
+            # Reports stay filed under the recorded script so the grid's "Last
+            # Run" link keeps working for a payload-driven run.
+            result_stem=Path(script_file).stem,
+        )
+
+    return Response(stream_with_context(run_stream()), mimetype='text/event-stream')
+
+
+def _prepare_payload_script(perf_id, perf_dir, script_file):
+    """
+    Return (script to run, log lines for the console, error message).
+
+    Without a saved configuration this is the requested script and nothing else;
+    with one it is the freshly regenerated copy carrying the payload mapping,
+    the response-time thresholds, or both.
+    """
+    row = _payload_config_row(perf_id, script_file)
+    if not row:
+        return script_file, [], ""
+
+    config = _payload_config_public(row)
+    if not config['mappings'] and not config['thresholds']:
+        return script_file, [], ""
+
+    script_path = resolve_performance_script(perf_dir, script_file)
+    if not script_path:
+        return script_file, [], f"Script '{script_file}' was not found in this performance project."
+
+    prelude = []
+    nodes = None
+    if config['mappings']:
+        raw, read_error = _stored_payload_bytes(row)
+        if raw is None:
+            return script_file, [], read_error
+        try:
+            payload = payload_parameterizer.parse_payload(
+                raw, config['payload_type'], config['source_file_name'] or config['payload_name'])
+        except PayloadError as e:
+            return script_file, [], f"The payload configuration could not be applied: {e}"
+        config['row_count'] = payload['row_count']
+        config['record_tag'] = payload['record_tag']
+        nodes = payload['nodes']
+        prelude.append(
+            f"[Payload] {config['source_file_name'] or config['payload_name']} "
+            f"({config['payload_type'].upper()}, {payload['row_count']} record(s)) drives "
+            f"{len(config['mappings'])} parameter(s).")
+
+    if config['thresholds']:
+        prelude.append(
+            "[Thresholds] Responses slower than "
+            f"{payload_parameterizer.describe_thresholds(config['thresholds'])} are failed.")
+
+    try:
+        _, generated_name = _generate_payload_script(
+            perf_dir, os.path.basename(script_file), script_path, config, nodes=nodes)
+    except PayloadError as e:
+        return script_file, [], f"The payload configuration could not be applied: {e}"
+
+    prelude.append(f"[Config] Running the generated copy locustfiles/{generated_name}.")
+    return generated_name, prelude, ""
 
 
 @app.route('/api/performance-test/stop', methods=['POST'])
@@ -1417,6 +1488,425 @@ def performance_test_stream():
 def performance_test_stop():
     try:
         return jsonify({"status": "success", "stopped": stop_active_performance_runs()})
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Payload configuration
+#
+# "Configure Payload" maps the parameterisable fields of a test script (request
+# body keys, query parameters) onto the nodes of a CSV / JSON / XML payload
+# file. The mapping is saved per (performance project, script) and compiled into
+# a parameterised copy of the script - `locustfiles/_bigqa_param_<stem>.py` -
+# which the runner executes instead of the original, so the recorded script
+# itself is never rewritten.
+#
+# An upload is held in memory until Submit. That is what makes Cancel a true
+# discard (nothing lands in the project's data/ folder) while still letting the
+# dialog show the parsed nodes as soon as the file is chosen.
+# ─────────────────────────────────────────────────────────────────────────────
+
+payload_uploads = {}
+PAYLOAD_UPLOAD_RETENTION_SECONDS = 60 * 60
+PAYLOAD_UPLOAD_LIMIT = 40
+
+
+def _purge_payload_uploads():
+    """Drop staged uploads that were never submitted, oldest first."""
+    cutoff = time.time() - PAYLOAD_UPLOAD_RETENTION_SECONDS
+    for key, entry in list(payload_uploads.items()):
+        if entry.get('created_at', 0) < cutoff:
+            payload_uploads.pop(key, None)
+    excess = len(payload_uploads) - PAYLOAD_UPLOAD_LIMIT
+    if excess > 0:
+        for key in sorted(payload_uploads, key=lambda k: payload_uploads[k].get('created_at', 0))[:excess]:
+            payload_uploads.pop(key, None)
+
+
+def _resolve_perf_script(perf_id, script_file):
+    """
+    Resolve (record, perf_dir, script_path) for a performance script.
+
+    Returns (None, message, status_code) instead when anything is missing, so
+    every payload endpoint reports the same failures the same way.
+    """
+    if not perf_id:
+        return None, "A performance project must be selected.", 400
+    if not (script_file or '').strip():
+        return None, "A test script must be selected.", 400
+
+    record, perf_dir = _performance_project(perf_id)
+    if not record:
+        return None, "Performance project not found.", 404
+    if not perf_dir or not os.path.isdir(perf_dir):
+        return None, ("The performance framework folder for this project does not exist. "
+                      "Re-save it from Configurations > Performance Configuration to scaffold it."), 400
+
+    script_path = resolve_performance_script(perf_dir, script_file)
+    if not script_path:
+        return None, f"Script '{script_file}' was not found in this performance project.", 404
+    return (record, perf_dir, script_path), "", 200
+
+
+def _payload_config_row(perf_id, script_file):
+    rows = fetch_data(
+        "SELECT * FROM PerformancePayloadConfig WHERE perf_id = ? AND script_file = ?",
+        (perf_id, os.path.basename(script_file or '')),
+    )
+    return dict(rows[0]) if rows else None
+
+
+def _payload_config_public(row):
+    """Shape a stored configuration for the dialog. Never leaks absolute paths."""
+    if not row:
+        return None
+    def decode(column):
+        try:
+            value = json.loads(row.get(column) or '[]')
+        except ValueError:
+            return []
+        return value if isinstance(value, list) else []
+
+    return {
+        "payload_type": row.get('payload_type') or '',
+        "payload_name": row.get('payload_name') or '',
+        "source_file_name": row.get('source_file_name') or '',
+        "record_tag": row.get('record_tag') or '',
+        "row_count": row.get('row_count') or 0,
+        "mappings": decode('mappings'),
+        "thresholds": decode('thresholds'),
+        "generated_script": row.get('generated_script') or '',
+        "updated_at": row.get('updated_at') or '',
+    }
+
+
+def _payload_summaries(perf_id, scripts):
+    """Annotate the grid rows with the payload each script is driven by."""
+    rows = fetch_data("SELECT * FROM PerformancePayloadConfig WHERE perf_id = ?", (perf_id,))
+    by_script = {row['script_file']: dict(row) for row in rows}
+    for script in scripts:
+        stored = by_script.get(script['file_name'])
+        if not stored:
+            script['payload'] = None
+            continue
+        config = _payload_config_public(stored)
+        script['payload'] = {
+            "payload_type": config['payload_type'],
+            "source_file_name": config['source_file_name'] or config['payload_name'],
+            "mapping_count": len(config['mappings']),
+            "row_count": config['row_count'],
+            "threshold_count": len(config['thresholds']),
+        }
+
+
+def _stored_payload_bytes(row):
+    """Read the payload file a saved configuration points at, or '' with a reason."""
+    path = (row or {}).get('payload_file') or ''
+    if not path or not os.path.isfile(path):
+        return None, ("The payload file saved for this script is no longer on disk. "
+                      "Upload it again.")
+    try:
+        with open(path, 'rb') as handle:
+            return handle.read(), ""
+    except OSError as e:
+        return None, f"The saved payload file could not be read: {e}"
+
+
+@app.route('/api/performance-test/payload/config', methods=['GET'])
+@login_required()
+def performance_payload_config():
+    """
+    Everything the Payload Configuration dialog needs in one call: the script's
+    parameters and requests, the saved mapping and thresholds, and the nodes of
+    the payload that mapping refers to (re-parsed from disk so a hand-edited
+    payload is picked up).
+    """
+    try:
+        perf_id = request.args.get('perf_id', type=int)
+        script_file = request.args.get('script', '')
+        resolved, message, code = _resolve_perf_script(perf_id, script_file)
+        if not resolved:
+            return jsonify({"status": "error", "message": message}), code
+        _, _, script_path = resolved
+
+        try:
+            parameters = payload_parameterizer.extract_parameters(script_path)
+            requests_in_script = payload_parameterizer.extract_requests(script_path)
+        except PayloadError as e:
+            return jsonify({"status": "error", "message": str(e)}), 400
+
+        row = _payload_config_row(perf_id, script_file)
+        config = _payload_config_public(row)
+        payload = None
+        warning = ""
+        # A thresholds-only configuration has no payload file to re-read.
+        if config and config['payload_name']:
+            raw, read_error = _stored_payload_bytes(row)
+            if raw is None:
+                warning = read_error
+            else:
+                try:
+                    payload = payload_parameterizer.parse_payload(
+                        raw, config['payload_type'], config['source_file_name'] or config['payload_name'])
+                    payload['file_name'] = config['source_file_name'] or config['payload_name']
+                except PayloadError as e:
+                    warning = f"The saved payload file could no longer be parsed: {e}"
+
+        return jsonify({
+            "status": "success",
+            "script": {"file_name": os.path.basename(script_path)},
+            "parameters": parameters,
+            "requests": requests_in_script,
+            "config": config,
+            "payload": payload,
+            "warning": warning,
+        })
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.route('/api/performance-test/payload/upload', methods=['POST'])
+@login_required()
+def performance_payload_upload():
+    """Parse an uploaded payload and stage it until the dialog is submitted."""
+    try:
+        perf_id = request.form.get('perf_id', type=int)
+        script_file = request.form.get('script', '')
+        payload_type = request.form.get('payload_type', '')
+        resolved, message, code = _resolve_perf_script(perf_id, script_file)
+        if not resolved:
+            return jsonify({"status": "error", "message": message}), code
+
+        upload = request.files.get('file')
+        if not upload or not (upload.filename or '').strip():
+            return jsonify({"status": "error", "message": "Choose a payload file to upload."}), 400
+
+        raw = upload.read()
+        if not raw:
+            return jsonify({"status": "error", "message": "The selected payload file is empty."}), 400
+
+        try:
+            payload = payload_parameterizer.parse_payload(raw, payload_type, upload.filename)
+        except PayloadError as e:
+            return jsonify({"status": "error", "message": str(e)}), 400
+
+        _purge_payload_uploads()
+        upload_id = str(uuid.uuid4())
+        payload_uploads[upload_id] = {
+            "created_at": time.time(),
+            "perf_id": perf_id,
+            "script_file": os.path.basename(script_file),
+            "file_name": os.path.basename(upload.filename),
+            "payload_type": payload['payload_type'],
+            "raw": raw,
+        }
+        return jsonify({"status": "success", "upload_id": upload_id, "payload": payload})
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+def _generate_payload_script(perf_dir, script_file, script_path, config, nodes=None):
+    """Compile the saved mapping and thresholds into the copy of the script."""
+    return payload_parameterizer.write_parameterized_script(
+        perf_dir=perf_dir,
+        script_file=script_file,
+        script_path=script_path,
+        mappings=config['mappings'],
+        payload_name=config['payload_name'],
+        payload_type=config['payload_type'],
+        record_tag=config.get('record_tag') or 'record',
+        row_count=config.get('row_count') or 0,
+        nodes=nodes,
+        thresholds=config.get('thresholds') or [],
+    )
+
+
+@app.route('/api/performance-test/payload/save', methods=['POST'])
+@login_required()
+def performance_payload_save():
+    """
+    Save a payload configuration and prepare the script for a data-driven run.
+
+    A configuration is a payload mapping, a set of response-time thresholds, or
+    both; either half on its own is enough to save. The payload file is copied
+    into the project's data/ folder only now, so a cancelled dialog leaves
+    nothing behind.
+    """
+    try:
+        data = request.json or {}
+        perf_id = data.get('perf_id')
+        script_file = os.path.basename((data.get('script') or '').strip())
+        upload_id = (data.get('upload_id') or '').strip()
+        mappings = data.get('mappings') or []
+        thresholds = data.get('thresholds') or []
+
+        resolved, message, code = _resolve_perf_script(perf_id, script_file)
+        if not resolved:
+            return jsonify({"status": "error", "message": message}), code
+        _, perf_dir, script_path = resolved
+
+        existing = _payload_config_row(perf_id, script_file)
+        staged = payload_uploads.get(upload_id) if upload_id else None
+        if upload_id and not staged:
+            return jsonify({
+                "status": "error",
+                "message": "The uploaded payload is no longer available. Upload the file again.",
+            }), 400
+
+        if staged:
+            raw, source_file_name = staged['raw'], staged['file_name']
+            payload_type = staged['payload_type']
+        elif existing and existing.get('payload_file'):
+            raw, read_error = _stored_payload_bytes(existing)
+            if raw is None:
+                return jsonify({"status": "error", "message": read_error}), 400
+            source_file_name = existing.get('source_file_name') or existing.get('payload_name') or ''
+            payload_type = existing.get('payload_type') or ''
+        else:
+            raw, source_file_name, payload_type = None, '', ''
+
+        if raw is None and mappings:
+            return jsonify({"status": "error", "message": "Upload a payload file first."}), 400
+        if raw is None and not thresholds:
+            return jsonify({
+                "status": "error",
+                "message": ("Upload a payload file and map a script parameter, or add a "
+                            "response time threshold."),
+            }), 400
+
+        try:
+            parameters = {
+                param['id']: param
+                for param in payload_parameterizer.extract_parameters(script_path)
+            }
+            clean_thresholds, threshold_errors = payload_parameterizer.validate_thresholds(
+                thresholds, payload_parameterizer.extract_requests(script_path))
+            if threshold_errors:
+                return jsonify({"status": "error",
+                                "message": " ".join(dict.fromkeys(threshold_errors))}), 400
+
+            payload = None
+            clean, unmapped = [], list(parameters)
+            payload_path, payload_name = '', ''
+            if raw is not None:
+                payload = payload_parameterizer.parse_payload(raw, payload_type, source_file_name)
+                clean, errors, unmapped = payload_parameterizer.validate_mappings(
+                    mappings, parameters, payload['nodes'])
+                if errors:
+                    return jsonify({"status": "error", "message": " ".join(dict.fromkeys(errors))}), 400
+                payload_path, payload_name = payload_parameterizer.store_payload_file(
+                    perf_dir, script_file, source_file_name, raw, payload['payload_type'])
+
+            if not clean and not clean_thresholds:
+                return jsonify({
+                    "status": "error",
+                    "message": ("Add at least one mapping between a script parameter and a payload "
+                                "node, or a response time threshold."),
+                }), 400
+
+            config = {
+                "payload_type": payload['payload_type'] if payload else '',
+                "payload_name": payload_name,
+                "record_tag": payload['record_tag'] if payload else '',
+                "row_count": payload['row_count'] if payload else 0,
+                "mappings": clean,
+                "thresholds": clean_thresholds,
+            }
+            _, generated_name = _generate_payload_script(
+                perf_dir, script_file, script_path, config,
+                nodes=payload['nodes'] if payload else None)
+        except PayloadError as e:
+            return jsonify({"status": "error", "message": str(e)}), 400
+
+        stored = {
+            "perf_id": perf_id,
+            "script_file": script_file,
+            "payload_type": config['payload_type'],
+            "payload_file": payload_path,
+            "payload_name": payload_name,
+            "source_file_name": os.path.basename(source_file_name),
+            "record_tag": config['record_tag'],
+            "row_count": config['row_count'],
+            "mappings": json.dumps(clean),
+            "thresholds": json.dumps(clean_thresholds),
+            "generated_script": generated_name,
+            "updated_at": datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+        }
+        insert_data(
+            """INSERT INTO PerformancePayloadConfig
+                   (perf_id, script_file, payload_type, payload_file, payload_name,
+                    source_file_name, record_tag, row_count, mappings, thresholds,
+                    generated_script, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+               ON CONFLICT(perf_id, script_file) DO UPDATE SET
+                   payload_type = excluded.payload_type,
+                   payload_file = excluded.payload_file,
+                   payload_name = excluded.payload_name,
+                   source_file_name = excluded.source_file_name,
+                   record_tag = excluded.record_tag,
+                   row_count = excluded.row_count,
+                   mappings = excluded.mappings,
+                   thresholds = excluded.thresholds,
+                   generated_script = excluded.generated_script,
+                   updated_at = excluded.updated_at""",
+            tuple(stored[key] for key in (
+                'perf_id', 'script_file', 'payload_type', 'payload_file', 'payload_name',
+                'source_file_name', 'record_tag', 'row_count', 'mappings', 'thresholds',
+                'generated_script', 'updated_at')),
+        )
+        payload_uploads.pop(upload_id, None)
+        # The copy this configuration replaced is nobody's payload now.
+        previous = (existing or {}).get('payload_file')
+        if previous and previous != payload_path:
+            payload_parameterizer.remove_payload_copy(previous)
+
+        saved = []
+        if clean:
+            saved.append(f"{len(clean)} parameter(s) will be driven by "
+                         f"{stored['source_file_name']} ({config['row_count']} record(s))")
+        if clean_thresholds:
+            saved.append("responses slower than "
+                         f"{payload_parameterizer.describe_thresholds(clean_thresholds)} "
+                         "will be marked failed")
+        unmapped_names = [parameters[key]['path'] for key in unmapped if key in parameters]
+        return jsonify({
+            "status": "success",
+            "message": "Configuration saved. " + "; ".join(saved) + ".",
+            "config": _payload_config_public(stored),
+            "unmapped": unmapped_names if clean else [],
+        })
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.route('/api/performance-test/payload/clear', methods=['POST'])
+@login_required()
+def performance_payload_clear():
+    """Forget a script's payload configuration and delete its parameterised copy."""
+    try:
+        data = request.json or {}
+        perf_id = data.get('perf_id')
+        script_file = os.path.basename((data.get('script') or '').strip())
+        if not perf_id or not script_file:
+            return jsonify({"status": "error", "message": "A project and script are required."}), 400
+
+        record, perf_dir = _performance_project(perf_id)
+        if not record:
+            return jsonify({"status": "error", "message": "Performance project not found."}), 404
+
+        row = _payload_config_row(perf_id, script_file)
+        if not row:
+            return jsonify({"status": "success", "message": "This script has no payload configuration."})
+
+        if perf_dir and os.path.isdir(perf_dir):
+            payload_parameterizer.remove_generated_script(perf_dir, script_file)
+        payload_parameterizer.remove_payload_copy(row.get('payload_file'))
+        update_data(
+            "DELETE FROM PerformancePayloadConfig WHERE perf_id = ? AND script_file = ?",
+            (perf_id, script_file),
+        )
+        return jsonify({"status": "success", "message": "Payload configuration removed."})
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
