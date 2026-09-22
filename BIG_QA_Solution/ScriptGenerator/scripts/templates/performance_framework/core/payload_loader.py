@@ -26,6 +26,12 @@ import threading
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
+# Bumped whenever the loader's reading of a payload changes. The Payload
+# Configuration dialog parses the file with the same rules to build its node
+# dropdown, so utils/payload_parameterizer.ensure_payload_loader refreshes an
+# older copy of this file in a project before generating a script against it.
+LOADER_VERSION = 2
+
 
 class PayloadLoader:
     def __init__(self, file_path, strategy="round_robin", xml_record_tag="record"):
@@ -71,6 +77,15 @@ class PayloadLoader:
             return data
         if isinstance(data, dict) and "records" in data:
             return data["records"]
+        if isinstance(data, dict):
+            # A payload that wraps its records under a name of its own,
+            # {"users": [{...}, {...}]}, is that list of records - not one
+            # record whose single field is the whole list.
+            wrapped = [value for value in data.values()
+                       if isinstance(value, list) and value
+                       and all(isinstance(item, dict) for item in value)]
+            if len(wrapped) == 1:
+                return wrapped[0]
         # Single object -> treat as one record
         return [data]
 

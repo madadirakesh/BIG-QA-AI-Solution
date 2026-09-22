@@ -10,7 +10,7 @@ import time
 import webbrowser
 import uuid
 import secrets
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from urllib.parse import quote
 
@@ -398,7 +398,11 @@ if str(PROJECT_BOOTSTRAPPER_DIR) not in sys.path:
 
 from ProjectBootstrapper.bootstrapper_engine import BootstrapperEngine
 from ProjectBootstrapper.environment_setup import EnvironmentSetup
-from db.app_db import fetch_data, insert_data, update_data, init_db, get_db, purge_transient_test_projects
+from db.app_db import (
+    fetch_data, insert_data, update_data, init_db, get_db,
+    purge_transient_test_projects, insert_performance_run_stats,
+    insert_performance_run_history,
+)
 # encrypt_for_app / decrypt_for_app protect the password stored in ProjectData with an app master
 # key (Flask .env). decrypt_for_app passes legacy plaintext rows through unchanged.
 from utils.crypto_util import decrypt_for_app, encrypt_for_app, encrypt_secret, generate_key
@@ -414,7 +418,7 @@ from ScriptRunnerEngine.performance_runner import (
     stop_active_runs as stop_active_performance_runs,
     resolve_script_path as resolve_performance_script,
 )
-from utils import payload_parameterizer
+from utils import payload_parameterizer, performance_insights
 from utils.payload_parameterizer import PayloadError
 from ScriptRunnerEngine.performance_recorder import registry as recorder_registry
 
@@ -1293,6 +1297,154 @@ def performance_test():
     return render_template('performance_test.html', performance_projects=projects)
 
 
+@app.route('/qa/performance-dashboard', methods=['GET'])
+@login_required()
+def performance_dashboard():
+    if session.get('user_role', '').lower() not in ['qa', 'admin']:
+        flash('Not authorized', 'error')
+        return redirect(url_for('home'))
+
+    projects = fetch_data(
+        "SELECT id, project_name FROM PerformanceDetails ORDER BY project_name ASC"
+    )
+    return render_template('performance_dashboard.html', performance_projects=projects)
+
+
+# The date-range presets of the dashboard filter row, in days. "all" keeps every
+# recorded run, which is the only honest default for a project whose last run
+# was months ago.
+DASHBOARD_RANGE_DAYS = {"7": 7, "30": 30, "90": 90}
+
+
+def _dashboard_window(range_key, from_date, to_date):
+    """
+    Translate the date filter into the (from, to) bounds of a `run_at` compare.
+
+    `run_at` is stored as 'YYYY-MM-DD HH:MM:SS', so lexical bounds are
+    chronological bounds and the filter needs no date parsing in SQL.
+    """
+    if range_key == 'custom':
+        start = (from_date or '').strip()[:10]
+        end = (to_date or '').strip()[:10]
+        return (f"{start} 00:00:00" if start else None,
+                f"{end} 23:59:59" if end else None)
+    days = DASHBOARD_RANGE_DAYS.get(str(range_key or '').strip())
+    if not days:
+        return None, None
+    cutoff = datetime.now() - timedelta(days=days)
+    return cutoff.strftime('%Y-%m-%d %H:%M:%S'), None
+
+
+@app.route('/api/performance-dashboard/data', methods=['GET'])
+@login_required()
+def performance_dashboard_data():
+    """
+    Every figure the Performance Dashboard draws, for one project and one slice.
+
+    The filter row scopes the whole page: the date window picks which runs are
+    in play, the test case keeps the cross-run comparison on one script (runs
+    of two different scripts are not the same test), the run selector picks the
+    run whose timeline and endpoint grid are shown, and the endpoint type
+    narrows both to GET or POST.
+    """
+    try:
+        perf_id = request.args.get('perf_id', type=int)
+        if not perf_id:
+            return jsonify({"status": "error", "message": "A performance project must be selected."}), 400
+
+        record, _ = _performance_project(perf_id)
+        if not record:
+            return jsonify({"status": "error", "message": "Performance project not found."}), 404
+
+        range_key = request.args.get('range', 'all')
+        window_from, window_to = _dashboard_window(
+            range_key, request.args.get('from'), request.args.get('to'))
+        requested_script = (request.args.get('script') or '').strip()
+        requested_run = request.args.get('run_id', type=int)
+        method = (request.args.get('method') or 'all').strip()
+
+        query = "SELECT * FROM PerformanceRunStats WHERE project_id = ?"
+        params = [perf_id]
+        if window_from:
+            query += " AND run_at >= ?"
+            params.append(window_from)
+        if window_to:
+            query += " AND run_at <= ?"
+            params.append(window_to)
+        rows = fetch_data(query, params)
+
+        project = {
+            "id": record.get('id'),
+            "project_name": record.get('project_name', ''),
+            "application_url": record.get('application_url', ''),
+        }
+        if not rows:
+            return jsonify({
+                "status": "success", "project": project, "runs": [], "scripts": [],
+                "methods": [], "selected": None, "kpi": None, "endpoints": [],
+                "timeline": [], "trend": [], "variance": [], "inferences": {},
+                "message": ("No performance runs have been recorded for this project in the "
+                            "selected date range. Run a test from the Performance Test page.")
+            })
+
+        all_runs = performance_insights.group_runs(rows)
+        # A test case is compared against its own history, so the page works on
+        # one script at a time; the newest run picks the default.
+        scripts = sorted({run.get('script_file') or '' for run in all_runs})
+        script = requested_script if requested_script in scripts else (
+            all_runs[-1].get('script_file') or '')
+
+        script_runs = [run for run in all_runs if (run.get('script_file') or '') == script]
+        selected = performance_insights.find_run(script_runs, script, requested_run)
+        # The endpoint-type filter offers what this test case actually called,
+        # so it can never be set to a method that yields an empty page.
+        script_rows = [row for row in rows if (row.get('script_file') or '') == script]
+
+        history = fetch_data(
+            "SELECT * FROM PerformanceRunHistory "
+            "WHERE project_id = ? AND script_file IS ? AND run_id = ? "
+            "ORDER BY timestamp ASC",
+            (perf_id, selected.get('script_file'), selected.get('run_id')),
+        )
+        timeline = performance_insights.timeline_series(history)
+
+        metrics = performance_insights.run_metrics(selected, method)
+        peak_rps, peak_basis = performance_insights.peak_throughput(timeline, metrics, method)
+        kpi = dict(metrics)
+        kpi.update({
+            "peak_rps": peak_rps,
+            "peak_basis": peak_basis,
+            # Only meaningful next to a timeline peak, which is the one basis
+            # that reads the samples this count comes from.
+            "peak_users": (max((s.get('users') or 0 for s in timeline), default=None) or None
+                           if peak_basis == 'timeline' else None),
+            "sample_count": len(timeline),
+        })
+
+        trend = performance_insights.trend_series(script_runs, method)
+        variance = performance_insights.endpoint_variance(script_runs, method)
+        return jsonify({
+            "status": "success",
+            "project": project,
+            "scripts": scripts,
+            "script": script,
+            "methods": performance_insights.request_methods(script_rows),
+            "method": method,
+            "range": range_key,
+            "runs": [performance_insights.run_identity(run) for run in reversed(script_runs)],
+            "selected": performance_insights.run_identity(selected),
+            "kpi": kpi,
+            "endpoints": performance_insights.endpoint_table(selected, method),
+            "timeline": timeline,
+            "trend": trend,
+            "variance": variance,
+            "inferences": performance_insights.inferences(trend, variance),
+            "message": "",
+        })
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
 def _report_url(report_path):
     """Build the viewer URL for a generated report file."""
     if not report_path:
@@ -1409,6 +1561,32 @@ def performance_test_stream():
     if payload_error:
         return Response(stream_with_context(error_stream(payload_error)), mimetype='text/event-stream')
 
+    def save_run_stats(rows, run_info, history_rows=None):
+        """
+        Persist this run's totals (`_stats.csv`) and timeline
+        (`_stats_history.csv`) against the performance project.
+
+        The timeline is stamped with the run number the totals were given, so
+        the dashboard reads both halves of one run together.
+        """
+        run_context = {
+            # The recorded script, not the generated payload copy that ran.
+            'script_file': os.path.basename(script_file),
+            'run_at': run_info.get('run_at'),
+            'concurrent_users': run_info.get('users'),
+            'spawn_rate': run_info.get('spawn_rate'),
+            'duration': run_info.get('run_time'),
+        }
+        run_id = insert_performance_run_stats(perf_id, run_context, rows)
+        if rows and not run_id:
+            # The measurements exist but could not be stored, which means this
+            # run will be missing from the dashboard. The runner turns this
+            # into a log line on the run's own console, so the tester finds out
+            # now rather than when a run is unaccountably absent.
+            raise RuntimeError("the run statistics could not be written to the database")
+        if run_id and history_rows:
+            insert_performance_run_history(perf_id, run_id, run_context, history_rows)
+
     def run_stream():
         for line in prelude:
             yield f"event: log\ndata: {json.dumps({'msg': line})}\n\n"
@@ -1424,6 +1602,7 @@ def performance_test_stream():
             # Reports stay filed under the recorded script so the grid's "Last
             # Run" link keeps working for a payload-driven run.
             result_stem=Path(script_file).stem,
+            stats_sink=save_run_stats,
         )
 
     return Response(stream_with_context(run_stream()), mimetype='text/event-stream')

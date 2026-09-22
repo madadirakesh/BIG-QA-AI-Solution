@@ -99,6 +99,8 @@ SOURCE_LABELS = {"body": "request body", "query": "query parameter"}
 
 _UNSAFE_FILENAME = re.compile(r"[^A-Za-z0-9._-]+")
 _SAMPLE_MAX_CHARS = 60
+# `LOADER_VERSION = <n>` as declared at the top of core/payload_loader.py.
+_LOADER_VERSION_RE = re.compile(r"^LOADER_VERSION\s*=\s*(\d+)", re.MULTILINE)
 
 
 class PayloadError(ValueError):
@@ -193,6 +195,22 @@ def _parse_csv(text):
     return headers, rows
 
 
+def json_record_list_keys(data):
+    """
+    The keys of a JSON object whose values are lists of objects.
+
+    A payload that wraps its records under a name of its own -
+    `{"users": [{...}, {...}]}` - is the common export shape, so the wrapped
+    list is the record list. Without this the object is read as a single
+    record and every element of the list becomes an addressable node of its
+    own (`users.0.username`, `users.1.username`, ...) instead of the fields
+    those records share.
+    """
+    return [key for key, value in data.items()
+            if isinstance(value, list) and value
+            and all(isinstance(item, dict) for item in value)]
+
+
 def _parse_json(text):
     try:
         data = json.loads(text)
@@ -200,9 +218,10 @@ def _parse_json(text):
         raise PayloadError(f"The JSON file could not be parsed: {error}")
 
     # Mirrors PayloadLoader._load_json: a list of records, {"records": [...]},
-    # or a single object treated as one record. A "records" key that is not a
-    # list is rejected rather than reinterpreted, because the runtime loader
-    # would hand that value straight to itertools.cycle.
+    # a single wrapped list of objects, or a lone object treated as one record.
+    # A "records" key that is not a list is rejected rather than reinterpreted,
+    # because the runtime loader would hand that value straight to
+    # itertools.cycle.
     if isinstance(data, list):
         records = data
     elif isinstance(data, dict) and "records" in data:
@@ -210,7 +229,16 @@ def _parse_json(text):
             raise PayloadError('The "records" key of the JSON payload must hold a list of objects.')
         records = data["records"]
     elif isinstance(data, dict):
-        records = [data]
+        wrappers = json_record_list_keys(data)
+        if len(wrappers) > 1:
+            # Guessing here would silently test the wrong data, and the runtime
+            # loader has to make the same choice from the same file.
+            raise PayloadError(
+                "The JSON payload holds more than one list of objects "
+                f"({', '.join(wrappers[:4])}). Keep the records to test in the file, "
+                'or move them under a "records" key.'
+            )
+        records = data[wrappers[0]] if wrappers else [data]
     else:
         raise PayloadError("The JSON payload must be an object or a list of objects.")
 
@@ -220,21 +248,56 @@ def _parse_json(text):
     return records
 
 
+def _xml_record_tag(root):
+    """
+    The tag of the element that holds one record.
+
+    The record is the repeating element, which is not always a direct child of
+    the root: `<root><users><user/><user/></users></root>` keeps its records in
+    `<user>`, not in the `<users>` wrapper. Taking the wrapper instead would
+    offer the record tag itself as the only mappable node. PayloadLoader looks
+    records up with `.//<tag>`, so how deep the tag sits does not matter to the
+    generated script.
+
+    Returns "" when no element repeats and nothing looks like a record.
+    """
+    # Breadth-first, so the shallowest repeating tag wins over a field name that
+    # happens to repeat inside one record.
+    queue = [(root, 0)]
+    # Elements whose children are all leaves: the shape of a record in a file
+    # that happens to carry only one.
+    single = ""
+    while queue:
+        element, depth = queue.pop(0)
+        children = list(element)
+        if not children or depth > MAX_NODE_DEPTH:
+            continue
+        tag, count = Counter(child.tag for child in children).most_common(1)[0]
+        if count > 1:
+            return tag
+        if not single and element is not root and all(len(child) == 0 for child in children):
+            single = element.tag
+        queue.extend((child, depth + 1) for child in children)
+    return single
+
+
 def _parse_xml(text):
     try:
         root = ET.fromstring(text)
     except ET.ParseError as error:
         raise PayloadError(f"The XML file could not be parsed: {error}")
 
-    children = list(root)
-    if not children:
+    if not len(root):
         raise PayloadError(
             f"<{root.tag}> has no child elements, so the XML file holds no records."
         )
 
-    # PayloadLoader finds records by tag name, so the repeating child tag is the
-    # record tag; the most frequent one wins when the root is mixed.
-    record_tag = Counter(child.tag for child in children).most_common(1)[0][0]
+    record_tag = _xml_record_tag(root)
+    if not record_tag:
+        raise PayloadError(
+            f"No repeating record element was found under <{root.tag}>. Wrap each "
+            "record in its own element, e.g. <records><record>…</record></records>."
+        )
     records = []
     for element in root.findall(f".//{record_tag}"):
         record = {child.tag: child.text for child in element}
@@ -1086,23 +1149,40 @@ def store_payload_file(perf_dir, script_file, file_name, raw, payload_type):
     return str(target), payload_name
 
 
+def _loader_version(path):
+    """The LOADER_VERSION declared by a copy of payload_loader.py (0 if none)."""
+    try:
+        text = Path(path).read_text(encoding="utf-8")
+    except OSError:
+        return -1
+    match = _LOADER_VERSION_RE.search(text)
+    return int(match.group(1)) if match else 0
+
+
 def ensure_payload_loader(perf_dir, template_dir=None):
     """
-    Make sure `core/payload_loader.py` exists in the project, copying it from the
-    bundled framework template when an older scaffold predates it. The generated
-    script imports it, so a missing loader would fail at run time.
+    Make sure `core/payload_loader.py` exists in the project and is current,
+    copying it from the bundled framework template when an older scaffold
+    predates it or predates the way this module now reads a payload.
+
+    The scaffolder never re-copies framework files into an existing project, so
+    a project created before a loader change would keep reading payloads by the
+    old rules while the dialog offered nodes parsed by the new ones. Refreshing
+    on the declared LOADER_VERSION keeps the generated script and the mapping
+    it was built from talking about the same records.
     """
     core_dir = Path(perf_dir) / CORE_DIRNAME
     loader = core_dir / "payload_loader.py"
-    if loader.is_file():
-        return True
 
     template_dir = Path(template_dir) if template_dir else (
         Path(__file__).resolve().parent.parent / "scripts" / "templates" / "performance_framework"
     )
     source = template_dir / CORE_DIRNAME / "payload_loader.py"
     if not source.is_file():
-        return False
+        # Nothing to copy: an existing loader is better than none.
+        return loader.is_file()
+    if loader.is_file() and _loader_version(loader) >= _loader_version(source):
+        return True
 
     core_dir.mkdir(parents=True, exist_ok=True)
     init_file = core_dir / "__init__.py"

@@ -1,0 +1,1177 @@
+{% extends "base.html" %}
+
+{% block title %}Performance Dashboard — BIG AI QA Solution{% endblock %}
+{% block page_title %}Performance Dashboard{% endblock %}
+{% block header_breadcrumb %}
+    <a href="{{ url_for('home') }}">Home</a>
+    <span class="sep">/</span>
+    <span class="current">Performance Dashboard</span>
+{% endblock %}
+
+{% block content %}
+<div class="breadcrumb animate-fade-in">
+    <i class="fas fa-home" style="font-size:0.75rem;"></i>
+    <span class="sep">/</span>
+    <a href="{{ url_for('home') }}">Dashboard</a>
+    <span class="sep">/</span>
+    <span class="current">Performance Dashboard</span>
+</div>
+
+<div class="page-header">
+    <h1><i class="fas fa-chart-line"></i> Performance Dashboard</h1>
+    <p>Read one performance run in detail, and compare it against its own history.</p>
+</div>
+
+<!-- Filter row. One row, above everything it scopes: every card, chart and
+     table below re-renders against this same slice. -->
+<div class="form-panel glassmorphism dash-filters" id="dashFilters">
+    <div class="form-group dash-filter">
+        <label for="dashProject">Performance project</label>
+        <select id="dashProject">
+            <option value="">-- Choose performance project --</option>
+            {% for project in performance_projects %}
+            <option value="{{ project.id }}">{{ project.project_name }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="form-group dash-filter">
+        <label for="dashRange">Date range</label>
+        <select id="dashRange">
+            <option value="all">All time</option>
+            <option value="7">Last 7 days</option>
+            <option value="30">Last 30 days</option>
+            <option value="90">Last 90 days</option>
+            <option value="custom">Custom range…</option>
+        </select>
+    </div>
+    <div class="form-group dash-filter dash-custom-range" id="dashCustomRange" style="display:none;">
+        <label for="dashFrom">From / to</label>
+        <div class="dash-range-inputs">
+            <input type="date" id="dashFrom">
+            <input type="date" id="dashTo">
+        </div>
+    </div>
+    <div class="form-group dash-filter">
+        <label for="dashScript">Test case</label>
+        <select id="dashScript" disabled></select>
+    </div>
+    <div class="form-group dash-filter">
+        <label for="dashRun">Test run</label>
+        <select id="dashRun" disabled></select>
+    </div>
+    <div class="form-group dash-filter">
+        <label for="dashMethod">Endpoint type</label>
+        <select id="dashMethod">
+            <option value="all">All endpoints</option>
+        </select>
+    </div>
+    <div class="dash-filter-actions">
+        <button type="button" class="btn btn-secondary" onclick="loadDashboard()"><i class="fas fa-rotate"></i> Refresh</button>
+    </div>
+</div>
+
+<div id="dashEmpty" class="empty-state-card">
+    <i class="fas fa-chart-line"></i>
+    <h4>No performance run selected</h4>
+    <p>Choose a performance project to see its recorded runs, percentiles and endpoint breakdown.</p>
+</div>
+
+<div id="dashBody" style="display:none;">
+
+    <!-- KPI summary -->
+    <div class="form-panel glassmorphism dash-panel">
+        <div class="dash-panel-head">
+            <h3><i class="fas fa-bullseye"></i> Run summary</h3>
+            <span class="dash-panel-note" id="dashRunMeta"></span>
+        </div>
+        <div class="dash-kpi-grid">
+            <div class="dash-hero">
+                <span class="dash-tile-label">Success rate</span>
+                <span class="dash-hero-value" id="kpiSuccessRate">—</span>
+                <span class="dash-hero-sub" id="kpiRequests">—</span>
+                <div class="dash-meter" title="Share of requests that succeeded">
+                    <div class="dash-meter-fill" id="kpiMeter" style="width:0%"></div>
+                </div>
+            </div>
+            <div class="dash-tiles">
+                <div class="dash-tile">
+                    <span class="dash-tile-label">95th percentile</span>
+                    <span class="dash-tile-value" id="kpiP95">—</span>
+                    <span class="dash-tile-sub" id="kpiP95Basis">—</span>
+                </div>
+                <div class="dash-tile">
+                    <span class="dash-tile-label">99th percentile</span>
+                    <span class="dash-tile-value" id="kpiP99">—</span>
+                    <span class="dash-tile-sub" id="kpiP99Basis">—</span>
+                </div>
+                <div class="dash-tile">
+                    <span class="dash-tile-label">Max response time</span>
+                    <span class="dash-tile-value" id="kpiMax">—</span>
+                    <span class="dash-tile-sub">Slowest single request</span>
+                </div>
+                <div class="dash-tile">
+                    <span class="dash-tile-label">Peak throughput</span>
+                    <span class="dash-tile-value" id="kpiPeak">—</span>
+                    <span class="dash-tile-sub" id="kpiPeakBasis">—</span>
+                </div>
+                <div class="dash-tile">
+                    <span class="dash-tile-label">Average response time</span>
+                    <span class="dash-tile-value" id="kpiAvg">—</span>
+                    <span class="dash-tile-sub" id="kpiMedian">—</span>
+                </div>
+                <div class="dash-tile">
+                    <span class="dash-tile-label">Failures</span>
+                    <span class="dash-tile-value" id="kpiFailures">—</span>
+                    <span class="dash-tile-sub" id="kpiFailureRate">—</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Cross-run inferences -->
+    <div class="form-panel glassmorphism dash-panel">
+        <div class="dash-panel-head">
+            <h3><i class="fas fa-lightbulb"></i> What the run history says</h3>
+            <span class="dash-panel-note" id="dashInferenceScope"></span>
+        </div>
+        <div class="dash-inference-grid" id="dashInferences"></div>
+    </div>
+
+    <!-- Within-run timeline -->
+    <div class="dash-chart-row">
+        <div class="form-panel glassmorphism dash-panel dash-chart-card">
+            <div class="dash-panel-head">
+                <h3><i class="fas fa-wave-square"></i> Response time over the run</h3>
+                <span class="dash-panel-note">Median, 90th and 99th percentile per sample</span>
+            </div>
+            <p class="dash-chart-hint" id="dashTimelineHint"></p>
+            <div id="chartResponseTime" class="dash-chart"></div>
+        </div>
+
+        <div class="form-panel glassmorphism dash-panel dash-chart-card">
+            <div class="dash-panel-head">
+                <h3><i class="fas fa-gauge"></i> Throughput and failures over the run</h3>
+                <span class="dash-panel-note">Shared time axis, one scale each</span>
+            </div>
+            <p class="dash-chart-hint">Requests per second above, failures per second below — read the
+               same point in time down the pair to see where the system buckled.</p>
+            <div id="chartThroughput" class="dash-chart dash-chart-stacked"></div>
+            <div id="chartFailures" class="dash-chart dash-chart-short"></div>
+        </div>
+    </div>
+
+    <!-- Cross-run trends -->
+    <div class="dash-chart-row dash-chart-quad">
+        <div class="form-panel glassmorphism dash-panel dash-chart-card">
+            <div class="dash-panel-head">
+                <h3><i class="fas fa-arrow-trend-up"></i> Response time across runs</h3>
+                <span class="dash-panel-note">Degradation trending</span>
+            </div>
+            <p class="dash-chart-hint">A rising line over weeks is the signature of database bloat or a
+               slower build, not of one bad run.</p>
+            <div id="chartDegradation" class="dash-chart"></div>
+        </div>
+
+        <div class="form-panel glassmorphism dash-panel dash-chart-card">
+            <div class="dash-panel-head">
+                <h3><i class="fas fa-bolt"></i> Throughput across runs</h3>
+                <span class="dash-panel-note">Requests/s delivered per run</span>
+            </div>
+            <p class="dash-chart-hint">Identical tests should deliver the same load. Columns that jump
+               around point at the infrastructure, not the application.</p>
+            <div id="chartConsistency" class="dash-chart"></div>
+        </div>
+
+        <div class="form-panel glassmorphism dash-panel dash-chart-card">
+            <div class="dash-panel-head">
+                <h3><i class="fas fa-weight-hanging"></i> Payload impact across runs</h3>
+                <span class="dash-panel-note">Indexed to 100 at the first run</span>
+            </div>
+            <p class="dash-chart-hint">Content size and response time are different units, so both are
+               indexed to their first run and read on one scale. Lines that climb together mean heavier
+               responses are costing time.</p>
+            <div id="chartPayload" class="dash-chart"></div>
+        </div>
+
+        <div class="form-panel glassmorphism dash-panel dash-chart-card">
+            <div class="dash-panel-head">
+                <h3><i class="fas fa-triangle-exclamation"></i> Endpoint error rate across runs</h3>
+                <span class="dash-panel-note">Least reliable endpoints</span>
+            </div>
+            <p class="dash-chart-hint">A spike in one run is intermittent; a flat non-zero line is a
+               route that always fails a little.</p>
+            <div id="chartReliability" class="dash-chart"></div>
+        </div>
+    </div>
+
+    <!-- Endpoint reliability variance -->
+    <div class="form-panel glassmorphism dash-panel">
+        <div class="dash-panel-head">
+            <h3><i class="fas fa-shield-halved"></i> Endpoint reliability across runs</h3>
+            <span class="dash-panel-note" id="dashVarianceNote"></span>
+        </div>
+        <div class="table-wrapper">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Type</th>
+                        <th>Endpoint</th>
+                        <th class="viz-num">Runs</th>
+                        <th class="viz-num">Runs with failures</th>
+                        <th class="viz-num">Worst error rate</th>
+                        <th class="viz-num">Mean error rate</th>
+                        <th>Pattern</th>
+                    </tr>
+                </thead>
+                <tbody id="dashVarianceBody"></tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Endpoint grid for the selected run -->
+    <div class="form-panel glassmorphism dash-panel">
+        <div class="dash-panel-head">
+            <h3><i class="fas fa-table-list"></i> Endpoint performance</h3>
+            <div class="dash-panel-actions">
+                <span class="dash-panel-note" id="dashEndpointNote"></span>
+                <button type="button" class="btn btn-secondary" onclick="exportEndpointCsv()"><i class="fas fa-file-csv"></i> Export CSV</button>
+            </div>
+        </div>
+        <div class="table-wrapper">
+            <table class="data-table dash-endpoint-table">
+                <thead><tr id="dashEndpointHead"></tr></thead>
+                <tbody id="dashEndpointBody"></tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<style>
+    /* ── Data-viz tokens ────────────────────────────────────────────────────
+       The series hues are the validated categorical slots 1-3 (blue, orange,
+       aqua), stepped per theme for the surface they sit on, plus the reserved
+       "critical" status hue for failures. Charts reference them through inline
+       `style`, so the theme toggle re-colours a rendered chart without a
+       redraw. Dark is the default here because the app's default theme is
+       dark; the light block below is its own selected set, not a flip. */
+    .viz-root {
+        --viz-surface: var(--bg-card);
+        --viz-grid: var(--border-subtle);
+        --viz-axis: var(--glass-border);
+        --viz-ink: var(--text-primary);
+        --viz-muted: var(--text-tertiary);
+        --viz-1: #3987e5;
+        --viz-2: #d95926;
+        --viz-3: #199e70;
+        --viz-critical: #d03b3b;
+        position: relative;
+    }
+    :root[data-theme="light"] .viz-root {
+        --viz-1: #2a78d6;
+        --viz-2: #eb6834;
+        --viz-3: #1baf7a;
+        --viz-critical: #d03b3b;
+    }
+
+    /* ── Filter row ─────────────────────────────────────────────────────── */
+    .dash-filters {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 14px;
+        align-items: flex-end;
+        padding: 1.25rem 1.5rem;
+        margin-bottom: 1.25rem;
+    }
+    .dash-filter { margin: 0; min-width: 170px; flex: 1 1 170px; }
+    .dash-filter > label {
+        display: block;
+        margin-bottom: 6px;
+        font-size: 0.8rem;
+        color: var(--text-secondary);
+    }
+    .dash-custom-range { flex: 1 1 260px; }
+    .dash-range-inputs { display: flex; gap: 8px; }
+    .dash-range-inputs input { min-width: 0; }
+    .dash-filter-actions { display: flex; gap: 10px; padding-bottom: 1px; }
+    .dash-filter-actions .btn { padding: 9px 16px; }
+    .dash-loading { opacity: 0.45; transition: opacity 0.15s ease-out; }
+
+    /* ── Panels ─────────────────────────────────────────────────────────── */
+    .dash-panel { padding: 1.5rem; margin-bottom: 1.25rem; }
+    .dash-panel-head {
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+        gap: 14px;
+        flex-wrap: wrap;
+        margin-bottom: 1.1rem;
+    }
+    .dash-panel-head h3 { margin: 0; font-size: 1.02rem; }
+    .dash-panel-head h3 i { color: var(--accent-secondary); margin-right: 8px; }
+    .dash-panel-note { font-size: 0.78rem; color: var(--text-tertiary); }
+    .dash-panel-actions { display: flex; align-items: center; gap: 12px; }
+    .dash-panel-actions .btn { padding: 7px 12px; font-size: 0.8rem; }
+    .dash-chart-hint {
+        margin: -0.4rem 0 1rem 0;
+        font-size: 0.8rem;
+        color: var(--text-secondary);
+        max-width: 68ch;
+    }
+
+    /* ── KPI summary ────────────────────────────────────────────────────── */
+    .dash-kpi-grid {
+        display: grid;
+        grid-template-columns: minmax(220px, 280px) 1fr;
+        gap: 16px;
+        align-items: stretch;
+    }
+    @media (max-width: 900px) { .dash-kpi-grid { grid-template-columns: 1fr; } }
+    .dash-hero,
+    .dash-tile {
+        border: 1px solid var(--glass-border);
+        border-radius: var(--radius-md);
+        background: var(--bg-hover);
+        padding: 16px 18px;
+    }
+    .dash-hero { display: flex; flex-direction: column; justify-content: center; }
+    /* The one hero figure of the view. Proportional figures, app sans - a
+       tabular or display face makes a number this size read as decoration. */
+    .dash-hero-value {
+        font-size: 3rem;
+        line-height: 1.1;
+        font-weight: 600;
+        color: var(--text-primary);
+        margin: 4px 0;
+    }
+    .dash-hero-sub { font-size: 0.82rem; color: var(--text-secondary); }
+    /* The track is a lighter step of whatever ramp the fill is on, so the
+       state reads across the whole bar rather than only the filled part. */
+    .dash-meter {
+        height: 6px;
+        border-radius: var(--radius-pill);
+        background: var(--accent-soft);
+        margin-top: 12px;
+        overflow: hidden;
+    }
+    .dash-meter.warning  { background: var(--warning-soft); }
+    .dash-meter.critical { background: var(--error-soft); }
+    .dash-meter-fill {
+        height: 100%;
+        border-radius: var(--radius-pill);
+        background: var(--accent-primary);
+        transition: width 0.3s ease-out;
+    }
+    .dash-meter-fill.warning { background: var(--warning); }
+    .dash-meter-fill.critical { background: var(--error); }
+    .dash-tiles {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+        gap: 12px;
+    }
+    .dash-tile-label {
+        display: block;
+        font-size: 0.75rem;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        color: var(--text-tertiary);
+    }
+    .dash-tile-value {
+        display: block;
+        font-size: 1.5rem;
+        font-weight: 600;
+        color: var(--text-primary);
+        margin: 6px 0 2px;
+    }
+    .dash-tile-sub { display: block; font-size: 0.74rem; color: var(--text-secondary); }
+
+    /* ── Inference cards ────────────────────────────────────────────────── */
+    .dash-inference-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+        gap: 12px;
+    }
+    .dash-inference {
+        border: 1px solid var(--glass-border);
+        border-left-width: 3px;
+        border-radius: var(--radius-md);
+        background: var(--bg-hover);
+        padding: 14px 16px;
+    }
+    .dash-inference-head {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 0.78rem;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        color: var(--text-tertiary);
+    }
+    .dash-inference-verdict {
+        display: block;
+        font-size: 1.05rem;
+        font-weight: 600;
+        color: var(--text-primary);
+        margin: 8px 0 4px;
+    }
+    .dash-inference-detail { font-size: 0.8rem; color: var(--text-secondary); }
+    /* Status is carried by an icon and a worded verdict as well as the colour,
+       so it never depends on hue alone. */
+    .dash-inference.good      { border-left-color: var(--success); }
+    .dash-inference.good      .dash-inference-head i { color: var(--success); }
+    .dash-inference.steady    { border-left-color: var(--info); }
+    .dash-inference.steady    .dash-inference-head i { color: var(--info); }
+    .dash-inference.bad       { border-left-color: var(--error); }
+    .dash-inference.bad       .dash-inference-head i { color: var(--error); }
+    .dash-inference.insufficient { border-left-color: var(--border-strong); }
+    .dash-inference.insufficient .dash-inference-head i { color: var(--text-tertiary); }
+
+    /* ── Charts ─────────────────────────────────────────────────────────── */
+    .dash-chart-row {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(440px, 1fr));
+        gap: 1.25rem;
+    }
+    /* Four cards read as a 2x2 block. A 440px minimum would fit three across a
+       wide screen and leave the fourth stranded at a third of the width. */
+    .dash-chart-row.dash-chart-quad { grid-template-columns: repeat(auto-fit, minmax(520px, 1fr)); }
+    @media (max-width: 640px) { .dash-chart-row { grid-template-columns: 1fr; } }
+    .dash-chart-card { margin-bottom: 0; }
+    .dash-chart-row + .dash-chart-row,
+    .dash-chart-row + .dash-panel { margin-top: 1.25rem; }
+    /* Sized to include the x-axis band, so a card never grows a private
+       scrollbar around its own axis labels. */
+    .dash-chart { min-height: 300px; }
+    .dash-chart-stacked { min-height: 230px; }
+    .dash-chart-short { min-height: 170px; margin-top: 4px; }
+    /* An explanation does not need a chart's worth of height. */
+    .dash-chart:has(> .viz-empty) { min-height: 0; }
+    .viz-stage { position: relative; }
+    .viz-svg { display: block; width: 100%; overflow: visible; }
+    .viz-svg:focus-visible { outline: 2px solid var(--accent-secondary); outline-offset: 2px; }
+    .viz-hit { cursor: crosshair; }
+    .viz-hit:focus-visible { outline: 2px solid var(--accent-secondary); }
+    .viz-tooltip {
+        position: absolute;
+        z-index: 5;
+        min-width: 148px;
+        padding: 9px 11px;
+        border-radius: var(--radius-sm);
+        border: 1px solid var(--glass-border);
+        background: var(--bg-overlay);
+        box-shadow: var(--shadow-md);
+        pointer-events: none;
+        opacity: 0;
+        transition: opacity 0.12s ease-out;
+    }
+    .viz-tooltip.visible { opacity: 1; }
+    .viz-tip-title {
+        font-size: 0.74rem;
+        color: var(--text-tertiary);
+        margin-bottom: 6px;
+        white-space: nowrap;
+    }
+    .viz-tip-row { display: flex; align-items: center; gap: 7px; font-size: 0.8rem; }
+    /* A short stroke of the series colour, not a filled box: at tooltip
+       density a box is data-weight ink doing a label's job. */
+    .viz-tip-key { width: 14px; height: 2px; border-radius: 1px; flex: none; }
+    .viz-tip-value { color: var(--text-primary); font-variant-numeric: tabular-nums; }
+    .viz-tip-name { color: var(--text-secondary); }
+    .viz-legend {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 14px;
+        margin-top: 10px;
+        font-size: 0.78rem;
+        color: var(--text-secondary);
+    }
+    .viz-legend-item { display: inline-flex; align-items: center; gap: 7px; }
+    .viz-legend-key { width: 16px; height: 2px; border-radius: 1px; }
+    .viz-table-wrap { margin-top: 10px; }
+    .viz-table-toggle {
+        background: none;
+        border: none;
+        padding: 0;
+        font: inherit;
+        font-size: 0.76rem;
+        color: var(--text-tertiary);
+        cursor: pointer;
+    }
+    .viz-table-toggle:hover { color: var(--accent-secondary); }
+    .viz-table { max-height: 260px; overflow: auto; margin-top: 8px; }
+    .viz-data-table { font-size: 0.78rem; }
+    .viz-num { text-align: right; font-variant-numeric: tabular-nums; }
+    .viz-empty {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 10px;
+        min-height: 180px;
+        text-align: center;
+        color: var(--text-tertiary);
+    }
+    .viz-empty i { font-size: 1.6rem; opacity: 0.5; }
+    .viz-empty p { font-size: 0.82rem; max-width: 42ch; margin: 0; }
+
+    /* ── Tables ─────────────────────────────────────────────────────────── */
+    .dash-endpoint-table { font-size: 0.8rem; white-space: nowrap; }
+    .dash-endpoint-table th { cursor: pointer; user-select: none; }
+    .dash-endpoint-table th .sort-cue { opacity: 0.45; margin-left: 5px; font-size: 0.7rem; }
+    .dash-endpoint-name { max-width: 340px; overflow: hidden; text-overflow: ellipsis; }
+    .dash-pattern {
+        font-size: 0.72rem;
+        padding: 3px 9px;
+        border-radius: var(--radius-pill);
+        border: 1px solid var(--glass-border);
+    }
+    .dash-pattern.clean { color: var(--success); border-color: var(--success-border); background: var(--success-soft); }
+    .dash-pattern.intermittent { color: var(--warning); border-color: var(--warning-border); background: var(--warning-soft); }
+    .dash-pattern.persistent { color: var(--error); border-color: var(--error-border); background: var(--error-soft); }
+</style>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{{ url_for('static', filename='js/perf_charts.js') }}?v=1.0"></script>
+<script>
+/*
+ * Performance Dashboard.
+ *
+ * One fetch per filter change returns everything on the page, so every card,
+ * chart and table always describes the same slice of runs and the numbers
+ * cannot disagree with each other.
+ */
+
+const fmt = PerfCharts.fmt;
+
+// Mirrors utils/performance_insights.PERCENTILE_COLUMNS: the endpoint grid
+// shows the percentiles of the stats CSV, in the CSV's own order.
+const PERCENTILES = [
+    ['pct_50', '50%'], ['pct_66', '66%'], ['pct_75', '75%'], ['pct_80', '80%'],
+    ['pct_90', '90%'], ['pct_95', '95%'], ['pct_98', '98%'], ['pct_99', '99%'],
+    ['pct_99_9', '99.9%'], ['pct_99_99', '99.99%'], ['pct_100', '100%']
+];
+
+const ENDPOINT_COLUMNS = [
+    { key: 'request_type', label: 'Type', text: true },
+    { key: 'name', label: 'Endpoint', text: true, className: 'dash-endpoint-name' },
+    { key: 'requests', label: 'Requests', format: fmt.compact },
+    { key: 'failures', label: 'Failures', format: fmt.compact },
+    { key: 'error_rate', label: 'Error rate', format: value => fmt.pct(value) },
+    { key: 'median', label: 'Median', format: fmt.ms },
+    { key: 'average', label: 'Average', format: fmt.ms },
+    { key: 'min', label: 'Min', format: fmt.ms },
+    { key: 'max', label: 'Max', format: fmt.ms },
+    { key: 'content_size', label: 'Avg size', format: fmt.bytes },
+    { key: 'requests_per_sec', label: 'Requests/s', format: fmt.rate },
+    { key: 'failures_per_sec', label: 'Failures/s', format: fmt.rate }
+].concat(PERCENTILES.map(([key, label]) => ({ key: key, label: label, format: fmt.ms })));
+
+// The four cross-run inferences, in the order they are read: is it getting
+// slower, is the load real, is the payload to blame, which route is at fault.
+const INFERENCE_CARDS = [
+    { key: 'degradation', label: 'Degradation trend', icon: 'fa-arrow-trend-up', detail: degradationDetail },
+    { key: 'throughput', label: 'Throughput consistency', icon: 'fa-bolt', detail: throughputDetail },
+    { key: 'payload', label: 'Payload impact', icon: 'fa-weight-hanging', detail: payloadDetail },
+    { key: 'reliability', label: 'Endpoint reliability', icon: 'fa-shield-halved', detail: reliabilityDetail }
+];
+
+const STATUS_ICONS = {
+    good: 'fa-circle-check',
+    steady: 'fa-circle-minus',
+    bad: 'fa-circle-exclamation',
+    insufficient: 'fa-circle-question'
+};
+
+const state = { perfId: '', script: '', runId: '', method: 'all', range: 'all', from: '', to: '' };
+let payload = null;
+let endpointSort = { key: 'requests', ascending: false };
+
+function el(id) { return document.getElementById(id); }
+
+// ── Filters ─────────────────────────────────────────────────────────────────
+
+document.addEventListener('DOMContentLoaded', () => {
+    el('dashProject').addEventListener('change', () => {
+        state.perfId = el('dashProject').value;
+        // A new project has its own scripts and runs; nothing carries over.
+        state.script = '';
+        state.runId = '';
+        state.method = 'all';
+        loadDashboard();
+    });
+    el('dashScript').addEventListener('change', () => {
+        state.script = el('dashScript').value;
+        state.runId = '';   // run numbers are per script
+        loadDashboard();
+    });
+    el('dashRun').addEventListener('change', () => {
+        state.runId = el('dashRun').value;
+        loadDashboard();
+    });
+    el('dashMethod').addEventListener('change', () => {
+        state.method = el('dashMethod').value;
+        loadDashboard();
+    });
+    el('dashRange').addEventListener('change', () => {
+        state.range = el('dashRange').value;
+        el('dashCustomRange').style.display = state.range === 'custom' ? '' : 'none';
+        state.runId = '';   // the selected run may fall outside the new window
+        if (state.range !== 'custom') loadDashboard();
+    });
+    ['dashFrom', 'dashTo'].forEach(id => el(id).addEventListener('change', () => {
+        state.from = el('dashFrom').value;
+        state.to = el('dashTo').value;
+        state.runId = '';
+        loadDashboard();
+    }));
+});
+
+function fillSelect(select, options, selected, placeholder) {
+    select.innerHTML = '';
+    if (placeholder) {
+        const option = document.createElement('option');
+        option.value = '';
+        option.textContent = placeholder;
+        select.appendChild(option);
+    }
+    options.forEach(entry => {
+        const option = document.createElement('option');
+        option.value = entry.value;
+        // Script names and run labels come from the file system and the tested
+        // application, so they are set as text, never as markup.
+        option.textContent = entry.label;
+        select.appendChild(option);
+    });
+    select.value = selected === null || selected === undefined ? '' : String(selected);
+    select.disabled = !options.length;
+}
+
+// ── Load ────────────────────────────────────────────────────────────────────
+
+async function loadDashboard() {
+    if (!state.perfId) {
+        payload = null;
+        el('dashBody').style.display = 'none';
+        el('dashEmpty').style.display = '';
+        el('dashEmpty').querySelector('h4').textContent = 'No performance run selected';
+        el('dashEmpty').querySelector('p').textContent =
+            'Choose a performance project to see its recorded runs, percentiles and endpoint breakdown.';
+        fillSelect(el('dashScript'), [], '');
+        fillSelect(el('dashRun'), [], '');
+        return;
+    }
+
+    const params = new URLSearchParams({ perf_id: state.perfId, range: state.range, method: state.method });
+    if (state.script) params.set('script', state.script);
+    if (state.runId) params.set('run_id', state.runId);
+    if (state.range === 'custom') {
+        if (state.from) params.set('from', state.from);
+        if (state.to) params.set('to', state.to);
+    }
+
+    // Refetch keeps the frame: the previous render stays put at reduced
+    // opacity rather than collapsing into a skeleton and jumping the layout.
+    const body = el('dashBody');
+    body.classList.add('dash-loading');
+    try {
+        const response = await fetch('/api/performance-dashboard/data?' + params.toString());
+        const data = await response.json();
+        if (data.status !== 'success') {
+            showToast(data.message || 'The dashboard data could not be loaded.', 'error');
+            return;
+        }
+        payload = data;
+        renderDashboard(data);
+    } catch (error) {
+        console.error(error);
+        showToast('The dashboard data could not be loaded.', 'error');
+    } finally {
+        body.classList.remove('dash-loading');
+    }
+}
+
+function renderDashboard(data) {
+    fillSelect(el('dashScript'), (data.scripts || []).map(name => ({ value: name, label: name })), data.script);
+    fillSelect(el('dashRun'), (data.runs || []).map(run => ({
+        value: run.run_id, label: run.label
+    })), data.selected ? data.selected.run_id : '');
+    fillSelect(el('dashMethod'),
+        [{ value: 'all', label: 'All endpoints' }].concat(
+            (data.methods || []).map(method => ({ value: method, label: method + ' only' }))),
+        data.method || 'all');
+    state.script = data.script || '';
+    state.method = data.method || 'all';
+    state.runId = data.selected ? String(data.selected.run_id) : '';
+
+    if (!data.runs || !data.runs.length) {
+        el('dashBody').style.display = 'none';
+        el('dashEmpty').style.display = '';
+        el('dashEmpty').querySelector('h4').textContent = 'No runs in this slice';
+        el('dashEmpty').querySelector('p').textContent = data.message
+            || 'No performance runs were recorded for this project in the selected date range.';
+        return;
+    }
+
+    el('dashEmpty').style.display = 'none';
+    el('dashBody').style.display = '';
+
+    renderSummary(data);
+    renderInferences(data);
+    renderTimelineCharts(data);
+    renderTrendCharts(data);
+    renderVariance(data);
+    renderEndpointTable(data);
+}
+
+// ── KPI summary ─────────────────────────────────────────────────────────────
+
+function renderSummary(data) {
+    const kpi = data.kpi || {};
+    const run = data.selected || {};
+    const scope = data.method && data.method !== 'all' ? data.method + ' endpoints only' : 'all endpoints';
+    el('dashRunMeta').textContent = [
+        run.label,
+        run.script_file,
+        (run.concurrent_users ? run.concurrent_users + ' users' : ''),
+        (run.spawn_rate ? run.spawn_rate + '/s spawn' : ''),
+        (run.duration ? 'for ' + run.duration : ''),
+        scope
+    ].filter(Boolean).join(' · ');
+
+    const successRate = kpi.success_rate;
+    el('kpiSuccessRate').textContent = successRate === null || successRate === undefined
+        ? '—' : fmt.number(successRate, successRate >= 99.99 && successRate < 100 ? 3 : 2) + '%';
+    el('kpiRequests').textContent =
+        fmt.number(kpi.requests, 0) + ' requests · ' + fmt.number(kpi.failures, 0) + ' failures';
+
+    const meter = el('kpiMeter');
+    meter.style.width = Math.max(0, Math.min(100, successRate === null || successRate === undefined ? 0 : successRate)) + '%';
+    const severity = successRate === null || successRate === undefined ? ''
+        : successRate < 95 ? ' critical' : successRate < 99.5 ? ' warning' : '';
+    meter.className = 'dash-meter-fill' + severity;
+    meter.parentElement.className = 'dash-meter' + severity;
+
+    // Percentiles of separate endpoints cannot be merged, so a filtered view
+    // reports the worst endpoint and says as much.
+    const basis = kpi.percentile_basis === 'aggregated'
+        ? 'Across every request of the run'
+        : 'Worst endpoint in this scope';
+    el('kpiP95').textContent = fmt.ms(kpi.pct_95);
+    el('kpiP95Basis').textContent = basis;
+    el('kpiP99').textContent = fmt.ms(kpi.pct_99);
+    el('kpiP99Basis').textContent = basis;
+    el('kpiMax').textContent = fmt.ms(kpi.max);
+    el('kpiPeak').textContent = fmt.rate(kpi.peak_rps);
+    // The timeline is the only source of a true peak, and it only exists for
+    // the run as a whole — so under an endpoint filter, or for a run recorded
+    // without samples, the card says which figure it is actually showing.
+    el('kpiPeakBasis').textContent = kpi.peak_basis === 'timeline'
+        ? 'Highest sample of the run' + (kpi.peak_users ? ' · ' + kpi.peak_users + ' users' : '')
+        : kpi.peak_basis === 'scope-average'
+            ? 'Run average for ' + data.method + ' endpoints'
+            : 'Run average — this run has no timeline';
+    el('kpiAvg').textContent = fmt.ms(kpi.average);
+    el('kpiMedian').textContent = 'Median ' + fmt.ms(kpi.median);
+    el('kpiFailures').textContent = fmt.number(kpi.failures, 0);
+    el('kpiFailureRate').textContent = kpi.failure_rate === null || kpi.failure_rate === undefined
+        ? '—' : fmt.pct(kpi.failure_rate) + ' of requests';
+}
+
+// ── Inferences ──────────────────────────────────────────────────────────────
+
+/*
+ * A script check drives one user and a load run drives many, and both are
+ * recorded against the same script. Where the runs in view did not use the
+ * same load, a cross-run verdict has to say so - otherwise a change in the
+ * load reads as a change in the application.
+ */
+function loadCaveat(entry) {
+    if (!entry.load_varies) return '';
+    return ' These runs used ' + entry.load_min + '–' + entry.load_max
+        + ' concurrent users, so part of the difference is the load, not the build.';
+}
+
+function degradationDetail(entry) {
+    const parts = [];
+    if (entry.p99_change_pct !== null && entry.p99_change_pct !== undefined) {
+        parts.push('99th percentile ' + fmt.signedPct(entry.p99_change_pct));
+    }
+    if (entry.avg_change_pct !== null && entry.avg_change_pct !== undefined) {
+        parts.push('average ' + fmt.signedPct(entry.avg_change_pct));
+    }
+    return parts.join(', ') + ' from ' + entry.first_label + ' to ' + entry.last_label
+        + ' (±' + fmt.number(entry.tolerance_pct, 0) + '% counts as noise).' + loadCaveat(entry);
+}
+
+function throughputDetail(entry) {
+    return 'Mean ' + fmt.rate(entry.mean_rps) + ', ranging ' + fmt.number(entry.min_rps, 1)
+        + '–' + fmt.number(entry.max_rps, 1) + '/s. Spread ' + fmt.pct(entry.cov_pct, 1)
+        + ' of the mean (tolerance ' + fmt.number(entry.tolerance_pct, 0) + '%).'
+        + loadCaveat(entry);
+}
+
+function payloadDetail(entry) {
+    return 'Correlation between average content size and average response time is r = '
+        + fmt.number(entry.correlation, 2) + ' (|r| ≥ ' + fmt.number(entry.tolerance, 1)
+        + ' counts as related).';
+}
+
+function reliabilityDetail(entry) {
+    if (!entry.worst_endpoint) {
+        return 'None of the ' + entry.endpoint_count + ' endpoints failed a request in these runs.';
+    }
+    return 'Worst is ' + entry.worst_endpoint + ' at ' + fmt.pct(entry.worst_error_rate)
+        + '. ' + entry.intermittent + ' endpoint(s) fail only in some runs, '
+        + entry.persistent + ' in every run.';
+}
+
+function renderInferences(data) {
+    const scope = (data.trend || []).length;
+    el('dashInferenceScope').textContent = scope === 1
+        ? '1 run of ' + (data.script || 'this test case') + ' in range'
+        : scope + ' runs of ' + (data.script || 'this test case') + ' in range';
+
+    const host = el('dashInferences');
+    host.innerHTML = '';
+    INFERENCE_CARDS.forEach(card => {
+        const entry = (data.inferences || {})[card.key];
+        if (!entry) return;
+        const status = entry.status || 'insufficient';
+        const box = document.createElement('div');
+        box.className = 'dash-inference ' + status;
+
+        const head = document.createElement('div');
+        head.className = 'dash-inference-head';
+        head.innerHTML = '<i class="fas ' + (STATUS_ICONS[status] || STATUS_ICONS.insufficient) + '"></i>';
+        const label = document.createElement('span');
+        label.textContent = card.label;
+        head.appendChild(label);
+        box.appendChild(head);
+
+        const verdict = document.createElement('span');
+        verdict.className = 'dash-inference-verdict';
+        verdict.textContent = status === 'insufficient' ? 'Not enough runs yet' : entry.verdict;
+        box.appendChild(verdict);
+
+        const detail = document.createElement('p');
+        detail.className = 'dash-inference-detail';
+        detail.textContent = status === 'insufficient' ? entry.detail : card.detail(entry);
+        box.appendChild(detail);
+
+        host.appendChild(box);
+    });
+}
+
+// ── Within-run charts ───────────────────────────────────────────────────────
+
+const NO_TIMELINE =
+    'This run has no per-interval samples, so it cannot be plotted over time. '
+    + 'Runs recorded from now on capture a timeline; re-run this test to see one.';
+
+function renderTimelineCharts(data) {
+    const timeline = data.timeline || [];
+    const labels = timeline.map(sample => fmt.clock(sample.elapsed));
+
+    el('dashTimelineHint').textContent = timeline.length
+        ? 'Locust samples the run as a whole, so this timeline covers every endpoint together'
+          + (data.method && data.method !== 'all'
+              ? ' — the ' + data.method + ' filter applies to the cards and tables, not to this chart.' : '.')
+        : '';
+
+    PerfCharts.responsive(el('chartResponseTime'), () => {
+        PerfCharts.line(el('chartResponseTime'), {
+            title: 'Response time percentiles over the run',
+            labels: labels,
+            xHeader: 'Elapsed',
+            height: 300,
+            yFormat: value => fmt.number(value, 0),
+            valueFormat: fmt.ms,
+            endLabels: true,
+            empty: NO_TIMELINE,
+            series: [
+                { name: 'Median', color: 'var(--viz-1)', values: timeline.map(s => s.median) },
+                { name: '90th percentile', color: 'var(--viz-2)', values: timeline.map(s => s.pct_90) },
+                { name: '99th percentile', color: 'var(--viz-3)', values: timeline.map(s => s.pct_99) }
+            ]
+        });
+    });
+
+    // Throughput and failures are different units, so they get one frame each
+    // on a shared time axis rather than two y-scales in one plot - the
+    // alignment of two scales would imply a relationship the data never shows.
+    // With no timeline there is nothing to pair, so the card explains itself
+    // once instead of printing the same sentence in both frames.
+    el('chartFailures').style.display = timeline.length ? '' : 'none';
+    PerfCharts.responsive(el('chartThroughput'), () => {
+        PerfCharts.line(el('chartThroughput'), {
+            title: 'Requests per second over the run',
+            labels: labels,
+            xHeader: 'Elapsed',
+            height: 210,
+            yFormat: value => fmt.number(value, 0),
+            valueFormat: fmt.rate,
+            endLabels: true,
+            empty: NO_TIMELINE,
+            series: [
+                { name: 'Requests/s', color: 'var(--viz-1)', values: timeline.map(s => s.requests_per_sec) }
+            ]
+        });
+    });
+
+    PerfCharts.responsive(el('chartFailures'), () => {
+        PerfCharts.columns(el('chartFailures'), {
+            title: 'Failures per second over the run',
+            labels: labels,
+            values: timeline.map(s => s.failures_per_sec),
+            color: 'var(--viz-critical)',
+            align: 'points',
+            height: 150,
+            xHeader: 'Elapsed',
+            valueHeader: 'Failures/s',
+            yFormat: value => fmt.number(value, value < 10 ? 1 : 0),
+            valueFormat: fmt.rate,
+            empty: NO_TIMELINE
+        });
+    });
+}
+
+// ── Cross-run charts ────────────────────────────────────────────────────────
+
+const ONE_RUN = 'Only one run is in range. Run this test again to compare it against its own history.';
+
+/** Index a series to 100 at its first present value, so two units share a scale. */
+function indexToBase(values) {
+    const base = values.find(value => value !== null && value !== undefined && !isNaN(value) && value !== 0);
+    if (base === undefined) return values.map(() => null);
+    return values.map(value =>
+        value === null || value === undefined || isNaN(value) ? null : (value / base) * 100);
+}
+
+function renderTrendCharts(data) {
+    const trend = data.trend || [];
+    // One run is not a comparison. These four cards exist to read a run
+    // against its own history, so with a single run in range they say that
+    // rather than drawing a one-point line.
+    const labels = trend.length > 1 ? trend.map(entry => entry.short_label) : [];
+
+    PerfCharts.responsive(el('chartDegradation'), () => {
+        PerfCharts.line(el('chartDegradation'), {
+            title: 'Response time across runs',
+            labels: labels,
+            xHeader: 'Run',
+            height: 300,
+            yFormat: value => fmt.number(value, 0),
+            valueFormat: fmt.ms,
+            endLabels: true,
+            empty: ONE_RUN,
+            series: [
+                { name: 'Average', color: 'var(--viz-1)', values: trend.map(entry => entry.average) },
+                { name: '95th percentile', color: 'var(--viz-2)', values: trend.map(entry => entry.pct_95) },
+                { name: '99th percentile', color: 'var(--viz-3)', values: trend.map(entry => entry.pct_99) }
+            ]
+        });
+    });
+
+    PerfCharts.responsive(el('chartConsistency'), () => {
+        PerfCharts.columns(el('chartConsistency'), {
+            title: 'Requests per second across runs',
+            labels: labels,
+            values: trend.map(entry => entry.requests_per_sec),
+            color: 'var(--viz-1)',
+            height: 300,
+            xHeader: 'Run',
+            valueHeader: 'Requests/s',
+            yFormat: value => fmt.number(value, 0),
+            valueFormat: fmt.rate,
+            empty: ONE_RUN
+        });
+    });
+
+    const sizes = indexToBase(trend.map(entry => entry.content_size));
+    const times = indexToBase(trend.map(entry => entry.average));
+    PerfCharts.responsive(el('chartPayload'), () => {
+        PerfCharts.line(el('chartPayload'), {
+            title: 'Content size and response time across runs, indexed to the first run',
+            labels: labels,
+            xHeader: 'Run',
+            height: 300,
+            yFormat: value => fmt.number(value, 0),
+            valueFormat: value => fmt.number(value, 1) + ' (index)',
+            endLabels: true,
+            empty: ONE_RUN,
+            series: [
+                { name: 'Avg content size', color: 'var(--viz-1)', values: sizes },
+                { name: 'Avg response time', color: 'var(--viz-2)', values: times }
+            ]
+        });
+    });
+
+    // Three series is the cap that keeps every pair distinguishable under
+    // colour-vision deficiency; the rest of the endpoints stay in the table
+    // below, which carries all of them.
+    const flagged = (data.variance || [])
+        .filter(entry => (entry.max_error_rate || 0) > 0)
+        .slice(0, 3);
+    const hues = ['var(--viz-1)', 'var(--viz-2)', 'var(--viz-3)'];
+    PerfCharts.responsive(el('chartReliability'), () => {
+        PerfCharts.line(el('chartReliability'), {
+            title: 'Endpoint error rate across runs',
+            labels: labels,
+            xHeader: 'Run',
+            height: 300,
+            yFormat: value => fmt.number(value, value < 10 ? 1 : 0) + '%',
+            valueFormat: value => fmt.pct(value),
+            endLabels: false,
+            empty: flagged.length
+                ? ONE_RUN
+                : 'No endpoint failed a request in these runs — there is no error rate to plot.',
+            series: flagged.map((entry, index) => ({
+                name: (entry.request_type + ' ' + entry.name).trim(),
+                color: hues[index],
+                // Endpoints are matched to runs by label: a route missing from
+                // a run leaves a gap rather than shifting the series along.
+                values: labels.map(label => {
+                    const point = entry.points.find(candidate => candidate.label === label);
+                    return point ? point.error_rate : null;
+                })
+            }))
+        });
+    });
+}
+
+// ── Tables ──────────────────────────────────────────────────────────────────
+
+function textCell(row, value, className) {
+    const cell = document.createElement('td');
+    if (className) cell.className = className;
+    cell.textContent = value;
+    row.appendChild(cell);
+    return cell;
+}
+
+function renderVariance(data) {
+    const rows = data.variance || [];
+    el('dashVarianceNote').textContent = rows.length
+        ? rows.length + ' endpoint(s) across ' + (data.trend || []).length + ' run(s)'
+        : '';
+
+    const body = el('dashVarianceBody');
+    body.innerHTML = '';
+    if (!rows.length) {
+        const row = document.createElement('tr');
+        const cell = textCell(row, 'No endpoint rows were recorded for these runs.');
+        cell.colSpan = 7;
+        cell.style.color = 'var(--text-tertiary)';
+        body.appendChild(row);
+        return;
+    }
+    rows.forEach(entry => {
+        const row = document.createElement('tr');
+        textCell(row, entry.request_type || '—');
+        textCell(row, entry.name, 'dash-endpoint-name');
+        textCell(row, fmt.number(entry.runs_seen, 0), 'viz-num');
+        textCell(row, fmt.number(entry.failing_runs, 0), 'viz-num');
+        textCell(row, fmt.pct(entry.max_error_rate), 'viz-num');
+        textCell(row, fmt.pct(entry.mean_error_rate), 'viz-num');
+        const patternCell = document.createElement('td');
+        const badge = document.createElement('span');
+        badge.className = 'dash-pattern ' + entry.pattern;
+        badge.textContent = entry.pattern === 'clean' ? 'No failures'
+            : entry.pattern === 'intermittent' ? 'Intermittent' : 'Every run';
+        patternCell.appendChild(badge);
+        row.appendChild(patternCell);
+        body.appendChild(row);
+    });
+}
+
+function renderEndpointTable(data) {
+    const rows = (data.endpoints || []).slice();
+    el('dashEndpointNote').textContent = rows.length
+        ? rows.length + ' endpoint(s) in ' + (data.selected ? data.selected.label : 'this run')
+        : 'No endpoints recorded for this run in the current scope';
+
+    const head = el('dashEndpointHead');
+    head.innerHTML = '';
+    ENDPOINT_COLUMNS.forEach(column => {
+        const cell = document.createElement('th');
+        if (!column.text) cell.className = 'viz-num';
+        cell.textContent = column.label;
+        if (endpointSort.key === column.key) {
+            const cue = document.createElement('span');
+            cue.className = 'sort-cue';
+            cue.textContent = endpointSort.ascending ? '▲' : '▼';
+            cell.appendChild(cue);
+        }
+        cell.addEventListener('click', () => {
+            endpointSort = endpointSort.key === column.key
+                ? { key: column.key, ascending: !endpointSort.ascending }
+                : { key: column.key, ascending: !!column.text };
+            renderEndpointTable(data);
+        });
+        head.appendChild(cell);
+    });
+
+    const direction = endpointSort.ascending ? 1 : -1;
+    rows.sort((left, right) => {
+        const a = left[endpointSort.key];
+        const b = right[endpointSort.key];
+        if (typeof a === 'string' || typeof b === 'string') {
+            return String(a || '').localeCompare(String(b || '')) * direction;
+        }
+        // Rows with no measurement sit at the bottom either way rather than
+        // being read as zero.
+        if (a === null || a === undefined) return 1;
+        if (b === null || b === undefined) return -1;
+        return (a - b) * direction;
+    });
+
+    const body = el('dashEndpointBody');
+    body.innerHTML = '';
+    if (!rows.length) {
+        const row = document.createElement('tr');
+        const cell = textCell(row, 'Nothing to show for the current endpoint-type filter.');
+        cell.colSpan = ENDPOINT_COLUMNS.length;
+        cell.style.color = 'var(--text-tertiary)';
+        body.appendChild(row);
+        return;
+    }
+    rows.forEach(entry => {
+        const row = document.createElement('tr');
+        ENDPOINT_COLUMNS.forEach(column => {
+            const value = entry[column.key];
+            textCell(row,
+                column.text ? (value || '—') : column.format(value),
+                column.text ? column.className : 'viz-num');
+        });
+        body.appendChild(row);
+    });
+}
+
+function exportEndpointCsv() {
+    if (!payload || !(payload.endpoints || []).length) {
+        showToast('There are no endpoint rows to export.', 'warning');
+        return;
+    }
+    const quote = value => '"' + String(value === null || value === undefined ? '' : value).replace(/"/g, '""') + '"';
+    const lines = [ENDPOINT_COLUMNS.map(column => quote(column.label)).join(',')];
+    payload.endpoints.forEach(entry => {
+        lines.push(ENDPOINT_COLUMNS.map(column => quote(entry[column.key])).join(','));
+    });
+
+    const run = payload.selected || {};
+    const name = (payload.project.project_name + '_run' + run.run_id + '_endpoints.csv')
+        .replace(/[^A-Za-z0-9_.-]/g, '_');
+    const url = URL.createObjectURL(new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8' }));
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = name;
+    // In the document and revoked on the next tick: some browsers will not
+    // download from a detached anchor, and revoking in the same tick as the
+    // click can cancel the transfer before it starts.
+    document.body.appendChild(link);
+    link.click();
+    setTimeout(() => { link.remove(); URL.revokeObjectURL(url); }, 0);
+    showToast('Exported ' + payload.endpoints.length + ' endpoint row(s).', 'success');
+}
+</script>
+{% endblock %}

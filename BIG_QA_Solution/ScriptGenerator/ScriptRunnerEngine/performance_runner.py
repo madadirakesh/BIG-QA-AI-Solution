@@ -222,28 +222,51 @@ def _locust_available(python_exe, env):
         return False
 
 
-def _read_summary(csv_prefix):
-    """Pull the aggregated totals out of Locust's `<prefix>_stats.csv`."""
-    stats_file = f"{csv_prefix}_stats.csv"
-    if not os.path.isfile(stats_file):
-        return {}
+def _read_csv_rows(path):
+    """Read a Locust CSV as a list of header -> value dicts; [] when unreadable."""
+    if not os.path.isfile(path):
+        return []
     try:
-        with open(stats_file, "r", encoding="utf-8", errors="ignore", newline="") as handle:
-            for row in csv.DictReader(handle):
-                if (row.get("Name") or "").strip() == "Aggregated":
-                    summary = {
-                        "requests": row.get("Request Count", "0"),
-                        "failures": row.get("Failure Count", "0"),
-                        "avg_response_ms": row.get("Average Response Time", ""),
-                        "p95_ms": row.get("95%", ""),
-                        "requests_per_sec": row.get("Requests/s", ""),
-                    }
-                    breaches = _count_threshold_breaches(csv_prefix)
-                    if breaches:
-                        summary["threshold_failures"] = breaches
-                    return summary
+        with open(path, "r", encoding="utf-8", errors="ignore", newline="") as handle:
+            return [dict(row) for row in csv.DictReader(handle)]
     except Exception:
-        pass
+        return []
+
+
+def read_stats_rows(csv_prefix):
+    """
+    Read every row of Locust's `<prefix>_stats.csv` - one per request plus the
+    trailing "Aggregated" total - as a list of header -> value dicts.
+    """
+    return _read_csv_rows(f"{csv_prefix}_stats.csv")
+
+
+def read_stats_history_rows(csv_prefix):
+    """
+    Read Locust's `<prefix>_stats_history.csv` - one sample per interval for the
+    duration of the run - as a list of header -> value dicts.
+
+    This is the run's timeline. `_stats.csv` only has the totals a run ended at,
+    so without these samples there is nothing to plot against elapsed time.
+    """
+    return _read_csv_rows(f"{csv_prefix}_stats_history.csv")
+
+
+def _read_summary(csv_prefix, rows):
+    """Pull the aggregated totals out of the parsed `_stats.csv` rows."""
+    for row in rows:
+        if (row.get("Name") or "").strip() == "Aggregated":
+            summary = {
+                "requests": row.get("Request Count", "0"),
+                "failures": row.get("Failure Count", "0"),
+                "avg_response_ms": row.get("Average Response Time", ""),
+                "p95_ms": row.get("95%", ""),
+                "requests_per_sec": row.get("Requests/s", ""),
+            }
+            breaches = _count_threshold_breaches(csv_prefix)
+            if breaches:
+                summary["threshold_failures"] = breaches
+            return summary
     return {}
 
 
@@ -270,7 +293,7 @@ def _count_threshold_breaches(csv_prefix):
 
 
 def stream_run(perf_dir, script_file, host, mode="check", users=None, spawn_rate=None,
-               run_duration=None, report_url_builder=None, result_stem=None):
+               run_duration=None, report_url_builder=None, result_stem=None, stats_sink=None):
     """
     Execute one performance script and yield Server-Sent Events.
 
@@ -280,6 +303,12 @@ def stream_run(perf_dir, script_file, host, mode="check", users=None, spawn_rate
     `result_stem` names the results folder and report files when it differs from
     the executed file: a payload-driven run executes a generated copy of the
     script, but its report belongs to the script the tester recorded.
+
+    `stats_sink`, when given, is called once with `(rows, run_info, history)`
+    after the run: `rows` are the parsed `_stats.csv` totals, `run_info` the
+    settings they were measured under, and `history` the parsed
+    `_stats_history.csv` samples that make up the run's timeline. It is how the
+    caller persists a run's numbers - the runner itself owns no database.
     """
     def report_url(path):
         if not path or not os.path.exists(path):
@@ -352,7 +381,25 @@ def stream_run(perf_dir, script_file, host, mode="check", users=None, spawn_rate
         if process and process.pid in active_performance_processes:
             del active_performance_processes[process.pid]
 
-    summary = _read_summary(csv_prefix)
+    stats_rows = read_stats_rows(csv_prefix)
+    if stats_sink:
+        # Recording the run must never mask its result, so a failing sink is
+        # reported as a log line and the run still reports normally.
+        try:
+            stats_sink(stats_rows, {
+                "mode": mode,
+                "script_file": Path(script_file).name,
+                "result_stem": stem,
+                "run_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "users": users,
+                "spawn_rate": spawn_rate,
+                "run_time": run_time,
+                "result_dir": str(result_dir),
+            }, read_stats_history_rows(csv_prefix))
+        except Exception as e:
+            yield _sse("log", {"msg": f"[Stats] The run statistics could not be saved: {e}"})
+
+    summary = _read_summary(csv_prefix, stats_rows)
     # Locust exits non-zero when requests failed or thresholds were not met, so a
     # non-zero code still produces a report worth showing.
     yield _sse("result", {
