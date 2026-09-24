@@ -905,6 +905,9 @@
 
             if (d.status === 'success') {
                 showToast(d.message || (isNew ? 'Performance project created successfully!' : 'Performance project updated successfully!'), 'success');
+                if (typeof refreshGlobalProjectSelectors === 'function') {
+                    refreshGlobalProjectSelectors(null, 'performance');
+                }
                 if (d.perf_job_id) {
                     // The record is saved; the venv + Locust install continues in the
                     // background. Keep the modal open so its phases stay visible.

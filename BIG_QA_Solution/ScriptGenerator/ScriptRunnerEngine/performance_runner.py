@@ -7,9 +7,11 @@ Configuration screen).
 
 Two execution modes are supported:
 
-* **Script check** - a headed, single-user validation run. Locust starts with
-  its web UI (so the run is watchable live), auto-starts, and auto-quits once
-  the short run window closes, leaving an HTML report behind.
+* **Script check** - a headed, single-user validation run of exactly one pass
+  of the journey. Locust starts with its web UI (so the run is watchable live),
+  auto-starts, and auto-quits once that pass finishes, leaving an HTML report
+  behind. The single pass comes from `locust_check_hook.py`, loaded as a second
+  locustfile; Locust has no flag for it.
 * **Performance test** - a headless run driven by the concurrent users / spawn
   rate / duration chosen in the run-configuration dialog.
 
@@ -21,6 +23,7 @@ import csv
 import json
 import os
 import re
+import shutil
 import socket
 import subprocess
 import sys
@@ -30,11 +33,14 @@ from pathlib import Path
 LOCUSTFILES_DIRNAME = "locustfiles"
 RESULTS_DIRNAME = "results"
 
-# A script check is a validation run, not a load run: one user, one spawn per
-# second, and a short window so the user gets a verdict quickly.
+# A script check is a validation run, not a load run: one user making one pass
+# of the journey. The single pass is enforced by SCRIPT_CHECK_HOOK, because
+# Locust itself has no "run once" switch - so SCRIPT_CHECK_RUN_TIME is only a
+# ceiling for a journey that hangs, not the length of the check.
 SCRIPT_CHECK_USERS = 1
 SCRIPT_CHECK_SPAWN_RATE = 1
 SCRIPT_CHECK_RUN_TIME = "30s"
+SCRIPT_CHECK_HOOK = "locust_check_hook.py"
 # Seconds Locust stays alive after the run so the web UI can be read before it exits.
 SCRIPT_CHECK_AUTOQUIT_SECONDS = 5
 
@@ -143,6 +149,39 @@ def resolve_script_path(perf_dir, file_name):
     return str(candidate) if candidate.is_file() else ""
 
 
+def count_run_artifacts(perf_dir, file_name):
+    """Number of results folders a script's past runs left behind."""
+    return len(_run_artifact_dirs(perf_dir, file_name))
+
+
+def remove_run_artifacts(perf_dir, file_name):
+    """
+    Delete the results folders of a script's past runs - the HTML reports and
+    Locust CSVs. Returns how many were removed.
+    """
+    removed = 0
+    for run_dir in _run_artifact_dirs(perf_dir, file_name):
+        shutil.rmtree(run_dir, ignore_errors=True)
+        if not run_dir.exists():
+            removed += 1
+    return removed
+
+
+def _run_artifact_dirs(perf_dir, file_name):
+    """
+    The `results/run_<stem>_<stamp>` folders belonging to one script.
+
+    Matched by prefix rather than `glob`, because a stem is free to contain the
+    characters glob treats as patterns (`[`, `*`, `?`).
+    """
+    stem = Path(os.path.basename(file_name or "")).stem
+    results_dir = Path(perf_dir) / RESULTS_DIRNAME
+    if not stem or not results_dir.is_dir():
+        return []
+    prefix = f"run_{stem}_"
+    return [d for d in results_dir.iterdir() if d.is_dir() and d.name.startswith(prefix)]
+
+
 def resolve_python(perf_dir):
     """Prefer the performance project's own venv interpreter; fall back to this app's."""
     venv_python = Path(perf_dir) / (".venv/Scripts/python.exe" if os.name == "nt" else ".venv/bin/python")
@@ -170,6 +209,20 @@ def normalize_run_time(run_duration):
     return text
 
 
+def script_check_locustfiles(script_path):
+    """
+    The `-f` value for a script check: the script plus the single-pass hook.
+
+    Returns the script alone when the hook cannot be passed - Locust splits
+    `-f` on commas, so a path containing one would be read as two locustfiles.
+    Such a check falls back to being bounded by `--run-time`.
+    """
+    hook = str(Path(__file__).resolve().parent / SCRIPT_CHECK_HOOK)
+    if "," in script_path or "," in hook or not os.path.isfile(hook):
+        return script_path
+    return f"{script_path},{hook}"
+
+
 def build_locust_command(python_exe, script_path, host, users, spawn_rate, run_time,
                          html_out, csv_prefix, headed=False, web_port=None):
     """
@@ -179,10 +232,14 @@ def build_locust_command(python_exe, script_path, host, users, spawn_rate, run_t
     Locust web UI up: `--autostart` begins the run without a click and
     `--autoquit` shuts the process down afterwards, so the HTML report is still
     written and the UI is still watchable while it happens.
+
+    A script check additionally loads `locust_check_hook.py`, which ends the run
+    after one pass of the journey. Locust has no flag for that, and without it a
+    one-user check repeats the journey until `--run-time` expires.
     """
     cmd = [
         python_exe, "-m", "locust",
-        "-f", script_path,
+        "-f", script_check_locustfiles(script_path) if headed else script_path,
         "--host", host,
         "--users", str(users),
         "--spawn-rate", str(spawn_rate),

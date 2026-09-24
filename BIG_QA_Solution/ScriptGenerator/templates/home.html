@@ -39,6 +39,7 @@
 
 
     document.addEventListener('DOMContentLoaded', () => {
+        setTestMode(document.documentElement.getAttribute('data-test-mode'));
         updateHealthStatus();
         setInterval(updateHealthStatus, 30000); // Update every 30 seconds
     });
@@ -65,10 +66,17 @@
         <span>Active Project Workspace</span>
     </div>
     <div style="display: flex; align-items: center; gap: 1rem; flex-wrap: wrap;">
-        <select id="homeActiveProject" class="input-glass" style="flex: 1 1 240px; max-width: 340px;" onchange="document.getElementById('globalActiveProject').value = this.value; setGlobalActiveProject(this);">
+        <!-- One selector per testing type; only the one matching data-test-mode is shown -->
+        <select id="homeActiveProject" data-project-type="functional" class="input-glass test-mode-functional" style="flex: 1 1 240px; max-width: 340px;" onchange="setGlobalActiveProject(this)">
             <option value="">-- Select a Project --</option>
             {% for proj in global_projects %}
                 <option value="{{ proj.id }}" data-path="{{ proj.project_path }}" {% if proj.id|string == active_project_id|string %}selected{% endif %}>{{ proj.project_name }}</option>
+            {% endfor %}
+        </select>
+        <select id="homeActivePerfProject" data-project-type="performance" class="input-glass test-mode-performance" style="flex: 1 1 240px; max-width: 340px;" onchange="setGlobalActiveProject(this)">
+            <option value="">-- Select a Performance Project --</option>
+            {% for proj in global_perf_projects %}
+                <option value="{{ proj.id }}" {% if proj.id|string == active_perf_project_id|string %}selected{% endif %}>{{ proj.project_name }}</option>
             {% endfor %}
         </select>
         <p style="color: var(--text-secondary); margin: 0; font-size: 0.9rem;">
@@ -99,39 +107,70 @@
     </div>
 </div>
 
+{% if user_role in ['qa', 'admin'] %}
+<!-- Testing Type Selector -->
+<div class="dashboard-grid">
+    <a href="#" onclick="setTestMode('functional'); return false;" data-mode="functional" role="button" class="test-type-card dashboard-card glassmorphism hover-effect animate-slide-up delay-1">
+        <div class="card-icon" style="background: rgba(0,120,212,0.12); color: #00bcf2; border-color: rgba(0,188,242,0.2);"><i class="fas fa-vial-circle-check"></i></div>
+        <h3>Functional Test</h3>
+        <p>Generate test cases, extract locators, build automation scripts, and execute functional test suites.</p>
+    </a>
+
+    <a href="#" onclick="setTestMode('performance'); return false;" data-mode="performance" role="button" class="test-type-card dashboard-card glassmorphism hover-effect animate-slide-up delay-2">
+        <div class="card-icon" style="background: rgba(236,72,153,0.1); color: #f472b6; border-color: rgba(236,72,153,0.2);"><i class="fas fa-gauge-high"></i></div>
+        <h3>Performance Test</h3>
+        <p>Record user journeys, run load tests, and analyze response times and throughput on the dashboard.</p>
+    </a>
+</div>
+{% endif %}
+
 <div class="dashboard-grid">
     {% if user_role in ['qa', 'admin'] %}
-    <!-- 1. Test Case Generator -->
-    <a href="{{ url_for('test_case_generator') }}" class="dashboard-card glassmorphism hover-effect animate-slide-up delay-1">
+    <!-- Functional: 1. Test Case Generator -->
+    <a href="{{ url_for('test_case_generator') }}" class="test-mode-functional dashboard-card glassmorphism hover-effect animate-slide-up delay-1">
         <div class="card-icon" style="background: rgba(0,120,212,0.12); color: #00bcf2; border-color: rgba(0,188,242,0.2);"><i class="fas fa-file-alt"></i></div>
         <h3>Test Case Generator</h3>
         <p>Convert business requirements into professional BDD scenarios or formatted manual test cases instantly using AI.</p>
     </a>
 
-    <!-- 2. Element Locator Extractor -->
-    <a href="#" onclick="launchElementLocator(); return false;" class="dashboard-card glassmorphism hover-effect animate-slide-up delay-2">
+    <!-- Functional: 2. Element Locator Studio -->
+    <a href="#" onclick="launchElementLocator(); return false;" class="test-mode-functional dashboard-card glassmorphism hover-effect animate-slide-up delay-2">
         <div class="card-icon" style="background: rgba(16,185,129,0.1); color: #10b981; border-color: rgba(16,185,129,0.2);"><i class="fas fa-crosshairs"></i></div>
-        <h3>Element Locator Extractor</h3>
+        <h3>Element Locator Studio</h3>
         <p>Launch the Desktop Studio to inspect elements and generate reliable AI-assisted locators for your framework.</p>
     </a>
 
-    <!-- 3. Code Generation -->
-    <a href="{{ url_for('script_developer') }}" class="dashboard-card glassmorphism hover-effect animate-slide-up delay-3">
+    <!-- Functional: 3. Code Generation -->
+    <a href="{{ url_for('script_developer') }}" class="test-mode-functional dashboard-card glassmorphism hover-effect animate-slide-up delay-3">
         <div class="card-icon" style="background: rgba(139,92,246,0.1); color: #a78bfa; border-color: rgba(139,92,246,0.2);"><i class="fas fa-code"></i></div>
         <h3>Script Generation</h3>
         <p>Convert BDD Feature or test cases files intelligently into Page Object Models, Locators, and Step Definitions using AI.</p>
     </a>
 
-    <!-- 4. Script Runner -->
-    <a href="{{ url_for('script_runner') }}" class="dashboard-card glassmorphism hover-effect animate-slide-up" style="animation-delay: 0.4s;">
+    <!-- Functional: 4. Script Runner -->
+    <a href="{{ url_for('script_runner') }}" class="test-mode-functional dashboard-card glassmorphism hover-effect animate-slide-up" style="animation-delay: 0.4s;">
         <div class="card-icon" style="background: rgba(245,158,11,0.1); color: #f59e0b; border-color: rgba(245,158,11,0.2);"><i class="fas fa-play-circle"></i></div>
         <h3>Script Runner</h3>
         <p>Execute tests seamlessly, generate reports, and analyze execution status via a centralized interface.</p>
     </a>
+
+    <!-- Performance: 1. Performance Test -->
+    <a href="{{ url_for('performance_test') }}" class="test-mode-performance dashboard-card glassmorphism hover-effect animate-slide-up delay-1">
+        <div class="card-icon" style="background: rgba(236,72,153,0.1); color: #f472b6; border-color: rgba(236,72,153,0.2);"><i class="fas fa-gauge-high"></i></div>
+        <h3>Performance Test</h3>
+        <p>Record browser flows into Locust scripts, parameterize payloads, and run load tests against your application.</p>
+    </a>
+
+    <!-- Performance: 2. Performance Dashboard -->
+    <a href="{{ url_for('performance_dashboard') }}" class="test-mode-performance dashboard-card glassmorphism hover-effect animate-slide-up delay-2">
+        <div class="card-icon" style="background: rgba(139,92,246,0.1); color: #a78bfa; border-color: rgba(139,92,246,0.2);"><i class="fas fa-chart-line"></i></div>
+        <h3>Performance Dashboard</h3>
+        <p>Analyze response times, throughput, and error rates across performance test runs.</p>
+    </a>
     {% endif %}
 
     {% if user_role == 'admin' %}
-    <!-- 5. Manage Users -->
+    <!-- Manage Users (shown for both testing types) -->
     <a href="{{ url_for('add_user') }}" class="dashboard-card glassmorphism hover-effect animate-slide-up" style="animation-delay: 0.5s;">
         <div class="card-icon" style="background: rgba(239,68,68,0.1); color: #f87171; border-color: rgba(239,68,68,0.2);"><i class="fas fa-user-plus"></i></div>
         <h3>Manage Users</h3>

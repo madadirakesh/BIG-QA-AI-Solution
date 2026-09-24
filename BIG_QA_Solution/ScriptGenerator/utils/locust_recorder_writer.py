@@ -69,6 +69,40 @@ def recorded_script_title(project_name, when=None):
     return f"Recorded — {(project_name or 'performance').strip()} ({when.strftime('%d %b %Y %H:%M')})"
 
 
+def sanitize_script_filename(raw):
+    """
+    Turn a tester-supplied script name into a safe `.py` file name.
+
+    Only the base name survives: a value carrying a path (`../x`, `a/b`) is
+    reduced to its last segment, so a crafted name cannot write outside the
+    project's locustfiles folder. Returns '' when nothing usable is left, which
+    tells the caller to fall back to the timestamped default.
+    """
+    base = os.path.basename((raw or "").strip().replace("\\", "/"))
+    if base.lower().endswith(".py"):
+        base = base[:-3]
+    stem = _NON_ALNUM.sub("_", base).strip("_")
+    if not stem:
+        return ""
+    # A leading digit is not a valid module name, and `list_scripts` treats a
+    # leading underscore as "helper, not a runnable script".
+    if stem[0].isdigit():
+        stem = f"{FILENAME_PREFIX}_{stem}"
+    return f"{stem}.py"
+
+
+def sanitize_script_title(raw):
+    """
+    Collapse a tester-supplied title to a single safe docstring line.
+
+    The title is written into the module docstring and read back from there by
+    `declared_title`, so a newline would truncate the label and a `\"\"\"` would
+    end the docstring early and break the generated file.
+    """
+    single_line = " ".join((raw or "").split())
+    return single_line.replace("\\", "/").replace('"""', "'''").strip()
+
+
 def _class_name(project_name):
     parts = [p for p in _NON_ALNUM.split(project_name or "") if p]
     name = "".join(part[:1].upper() + part[1:] for part in parts) or "Recorded"
@@ -217,7 +251,9 @@ def build_locust_script(journey):
     Render the recorded journey as Locust source.
 
     `journey` keys: project_name, application_url, steps, requests, secrets,
-    started_at, finished_at (both datetimes).
+    started_at, finished_at (both datetimes), plus the optional tester-supplied
+    `title` and `file_name` - when absent, both fall back to the generated
+    project-and-timestamp defaults.
     """
     project_name = journey.get("project_name") or "performance"
     application_url = journey.get("application_url") or ""
@@ -295,12 +331,15 @@ def build_locust_script(journey):
         notes.append([f"Passwords were replaced with the {PASSWORD_ENV_VAR} environment",
                       "variable, so this file is safe to commit."])
 
-    file_name = recorded_script_name(project_name, finished_at)
+    file_name = (sanitize_script_filename(journey.get("file_name"))
+                 or recorded_script_name(project_name, finished_at))
+    title = (sanitize_script_title(journey.get("title"))
+             or recorded_script_title(project_name, finished_at))
     header = [
         '"""',
         file_name,
         "-" * len(file_name),
-        f"Test Case: {recorded_script_title(project_name, finished_at)}",
+        f"Test Case: {title}",
         "",
         f"Recorded from : {application_url}",
         f"Recorded at   : {finished_at.strftime('%Y-%m-%d %H:%M:%S')}",
@@ -350,22 +389,29 @@ def write_recorded_script(locustfiles_dir, journey):
     """
     Write the generated script into the project's locustfiles folder.
 
-    Returns (absolute_path, file_name). A name collision (two recordings inside
-    the same second) gets a numeric suffix rather than overwriting.
+    The file is named from `journey['file_name']` when the tester supplied one,
+    otherwise from the project and timestamp.
+
+    Returns (absolute_path, file_name). A name already taken (a reused title, or
+    two recordings inside the same second) gets a numeric suffix rather than
+    overwriting.
     """
     finished_at = journey.get("finished_at") or datetime.now()
     project_name = journey.get("project_name") or "performance"
 
     os.makedirs(locustfiles_dir, exist_ok=True)
-    file_name = recorded_script_name(project_name, finished_at)
+    file_name = (sanitize_script_filename(journey.get("file_name"))
+                 or recorded_script_name(project_name, finished_at))
+    stem = file_name[:-3]
     path = os.path.join(locustfiles_dir, file_name)
     suffix = 2
     while os.path.exists(path):
-        stem = recorded_script_name(project_name, finished_at)[:-3]
         file_name = f"{stem}_{suffix}.py"
         path = os.path.join(locustfiles_dir, file_name)
         suffix += 1
 
+    # Render against the name the file actually lands under: the header quotes
+    # it in the `locust -f` hint, and a collision suffix changes it.
     with open(path, "w", encoding="utf-8", newline="\n") as handle:
-        handle.write(build_locust_script(journey))
+        handle.write(build_locust_script(dict(journey, file_name=file_name)))
     return path, file_name

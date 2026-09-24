@@ -837,6 +837,32 @@ hr {
     transform: translateX(0);
 }
 
+/* ── Testing type (functional / performance) ─────────────────── */
+html[data-test-mode="functional"] .test-mode-performance,
+html[data-test-mode="performance"] .test-mode-functional {
+    display: none !important;
+}
+
+.test-type-card {
+    cursor: pointer;
+}
+
+.test-type-card::after {
+    content: '\2713';
+}
+
+html[data-test-mode="functional"] .test-type-card[data-mode="functional"],
+html[data-test-mode="performance"] .test-type-card[data-mode="performance"] {
+    border-color: var(--accent-primary);
+    box-shadow: 0 0 0 1px var(--accent-primary), var(--shadow-md);
+}
+
+html[data-test-mode="functional"] .test-type-card[data-mode="functional"]::after,
+html[data-test-mode="performance"] .test-type-card[data-mode="performance"]::after {
+    opacity: 1;
+    transform: translateX(0);
+}
+
 .empty-card {
     opacity: 0.55;
     cursor: default;

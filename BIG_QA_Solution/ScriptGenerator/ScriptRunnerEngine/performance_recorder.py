@@ -153,6 +153,24 @@ _OVERLAY_JS = r"""
   if (window.top !== window) { return; }
 
   let ui = null;
+  // Which step is on screen ('' = the record controls), and the last status
+  // line the server pushed. The pushed message describes the record controls
+  // ("Paused. Press Resume…"), so while a step is up it is held back and shown
+  // again on the way out.
+  let step = '';
+  let lastMessage = '';
+  const STEP_MESSAGE = {
+    naming: 'Name this recording, then press Save to generate the script.',
+    closing: 'Close the recording without saving?',
+  };
+
+  const show = (next) => {
+    if (!ui) { return; }
+    step = next;
+    ui.$('panel').classList.toggle('naming', next === 'naming');
+    ui.$('panel').classList.toggle('closing', next === 'closing');
+    ui.$('state').textContent = STEP_MESSAGE[next] || lastMessage;
+  };
 
   const build = () => {
     const host = document.createElement('div');
@@ -206,12 +224,37 @@ _OVERLAY_JS = r"""
         button.act:disabled { opacity: 0.4; cursor: not-allowed; }
         button.start { background: #dc2626; }
         button.save  { background: #2563eb; margin-top: 8px; width: 100%; }
+        button.go    { background: #2563eb; }
+        button.danger { background: #dc2626; }
+        /* Two steps replace the record controls in place: naming (Save & close)
+           and the discard confirmation (the × in the header). Only one of the
+           two classes is ever set. */
+        .form, .discard { display: none; }
+        /* Scoped to .controls, not .row: each step has a .row of its own
+           buttons, and a bare .row selector hides those too. */
+        .panel.naming .controls, .panel.naming button.save,
+        .panel.closing .controls, .panel.closing button.save { display: none; }
+        .panel.naming .form { display: block; }
+        .panel.closing .discard { display: block; }
+        .warn { font-size: 12px; color: #fca5a5; margin-bottom: 10px; line-height: 1.45; }
+        .lbl {
+          display: block; font-size: 10px; text-transform: uppercase;
+          letter-spacing: 0.4px; color: #94a3b8; margin-bottom: 4px;
+        }
+        .inp {
+          width: 100%; margin-bottom: 9px; padding: 7px 8px; font-size: 12px;
+          border-radius: 7px; background: rgba(255,255,255,0.06); color: #e8ecf8;
+          border: 1px solid rgba(255,255,255,0.16); font-family: inherit;
+        }
+        .inp:focus { outline: none; border-color: #2563eb; }
+        .inp.bad { border-color: #ef4444; }
+        .err { font-size: 11px; color: #fca5a5; margin-bottom: 8px; min-height: 14px; }
       </style>
-      <div class="panel">
+      <div class="panel" id="panel">
         <div class="head" part="head">
           <span class="dot" id="dot"></span>
           <span class="title">BIG QA RECORDER</span>
-          <button class="close" id="close" title="Save &amp; close">&times;</button>
+          <button class="close" id="close" title="Close and discard">&times;</button>
         </div>
         <div class="body">
           <div class="state" id="state">Connecting…</div>
@@ -219,11 +262,34 @@ _OVERLAY_JS = r"""
             <div class="count"><b id="acts">0</b><span>Actions</span></div>
             <div class="count"><b id="reqs">0</b><span>Requests</span></div>
           </div>
-          <div class="row">
+          <div class="row controls">
             <button class="act start" id="start">Start</button>
             <button class="act" id="stop" disabled>Stop</button>
           </div>
           <button class="act save" id="save">Save &amp; close</button>
+          <div class="form" id="form">
+            <label class="lbl" for="tname">Test title</label>
+            <input class="inp" id="tname" type="text" maxlength="120" autocomplete="off"
+                   placeholder="Checkout journey">
+            <label class="lbl" for="fname">Script file name</label>
+            <input class="inp" id="fname" type="text" maxlength="120" autocomplete="off"
+                   placeholder="checkout_journey.py">
+            <div class="err" id="err"></div>
+            <div class="row">
+              <button class="act" id="back">Back</button>
+              <button class="act go" id="confirm">Save</button>
+            </div>
+          </div>
+          <div class="discard" id="discard">
+            <div class="warn">
+              Are you sure you want to close the recording? Everything recorded
+              so far is discarded and no script is saved.
+            </div>
+            <div class="row">
+              <button class="act" id="keep">Keep recording</button>
+              <button class="act danger" id="discardGo">Discard</button>
+            </div>
+          </div>
         </div>
       </div>`;
     (document.documentElement || document.body).appendChild(host);
@@ -231,8 +297,72 @@ _OVERLAY_JS = r"""
     const $ = (id) => root.getElementById(id);
     $('start').addEventListener('click', () => send({ kind: 'control', action: 'start' }));
     $('stop').addEventListener('click', () => send({ kind: 'control', action: 'stop' }));
-    $('save').addEventListener('click', () => send({ kind: 'control', action: 'finish' }));
-    $('close').addEventListener('click', () => send({ kind: 'control', action: 'finish' }));
+
+    /* -------------------------- naming step -------------------------- *
+     * Save & close does not finish straight away: the recording is named
+     * first, so the script is not left under a generated rec_<project>_
+     * <timestamp> name that says nothing about what it covers. Mirrors
+     * utils/locust_recorder_writer.sanitize_script_filename.             */
+    const slug = (value) => {
+      const base = String(value || '').trim().replace(/\\/g, '/').split('/').pop();
+      let stem = base.replace(/\.py$/i, '').replace(/[^A-Za-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+      if (!stem) { return ''; }
+      if (/^[0-9]/.test(stem)) { stem = 'rec_' + stem; }
+      return stem + '.py';
+    };
+
+    let fileEdited = false;
+    $('save').addEventListener('click', () => {
+      show('naming');
+      $('err').textContent = '';
+      $('tname').focus();
+    });
+    $('back').addEventListener('click', () => show(''));
+
+    /* The × discards rather than saves - it reads as "close this", and a
+     * recording saved by a stray click on it would land as a script nobody
+     * asked for. Confirmed first, because the journey cannot be recovered. */
+    $('close').addEventListener('click', () => show('closing'));
+    $('keep').addEventListener('click', () => show(''));
+    $('discardGo').addEventListener('click', () => {
+      $('discardGo').disabled = true;
+      $('keep').disabled = true;
+      send({ kind: 'control', action: 'cancel' });
+    });
+
+    // The file name tracks the title until it is edited directly.
+    $('tname').addEventListener('input', () => {
+      $('tname').classList.remove('bad');
+      if (fileEdited) { return; }
+      $('fname').value = slug($('tname').value);
+      $('fname').classList.remove('bad');
+    });
+    $('fname').addEventListener('input', () => {
+      fileEdited = true;
+      $('fname').classList.remove('bad');
+    });
+
+    const submit = () => {
+      const title = $('tname').value.trim();
+      const fileName = slug($('fname').value);
+      const fail = (field, message) => {
+        $(field).classList.add('bad');
+        $('err').textContent = message;
+        $(field).focus();
+      };
+      if (!title) { return fail('tname', 'Enter a test title.'); }
+      if (!fileName) { return fail('fname', 'Enter a script file name.'); }
+      $('confirm').disabled = true;
+      $('back').disabled = true;
+      $('err').textContent = '';
+      send({ kind: 'control', action: 'finish', title: title, file_name: fileName });
+    };
+    $('confirm').addEventListener('click', submit);
+    // Enter anywhere in the form submits it. The page-level Enter listener that
+    // records a keypress ignores anything inside the panel.
+    $('form').addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') { event.preventDefault(); submit(); }
+    });
 
     // Drag by the header so the panel can be moved off whatever it covers.
     let drag = null;
@@ -257,6 +387,10 @@ _OVERLAY_JS = r"""
     if (!document.documentElement) { return; }
     if (document.getElementById(HOST_ID)) { return; }
     ui = build();
+    // A single-page app can replace the DOM mid-step, which takes the form and
+    // anything typed into it with the old panel. Start the fresh one back at
+    // the record controls rather than on a step whose fields are now empty.
+    show('');
     if (window.__bigqaRecorderLastState) {
       window.__bigqaRecorderSetState(window.__bigqaRecorderLastState);
     }
@@ -267,7 +401,10 @@ _OVERLAY_JS = r"""
     if (!ui) { return; }
     let data;
     try { data = JSON.parse(raw); } catch (err) { return; }
-    ui.$('state').textContent = data.message || '';
+    lastMessage = data.message || '';
+    // A step owns the status line while it is up, so the record-control message
+    // does not contradict what the tester is being asked to do.
+    if (!step) { ui.$('state').textContent = lastMessage; }
     ui.$('acts').textContent = data.steps == null ? 0 : data.steps;
     ui.$('reqs').textContent = data.requests == null ? 0 : data.requests;
     ui.$('dot').className = 'dot' + (data.dot ? ' ' + data.dot : '');
@@ -275,6 +412,9 @@ _OVERLAY_JS = r"""
     ui.$('stop').disabled = !data.can_stop;
     ui.$('save').disabled = !data.can_finish;
     ui.$('start').textContent = data.start_label || 'Start';
+    // Saving has begun (or the session ended): neither step applies any more,
+    // and the panel has to fall back to showing the outcome message.
+    if (!data.can_finish && step) { show(''); }
   };
 
   if (document.readyState === 'loading') {
@@ -306,6 +446,13 @@ class RecordingSession:
         self.created_at = time.time()
         self.finished_at = None
 
+        # Set when the save is driven from the Performance Test page, which asks
+        # for a test title and file name first. Saves triggered from the panel
+        # inside the browser - or by closing that window - leave these empty and
+        # fall back to the generated project-and-timestamp naming.
+        self.requested_title = ""
+        self.requested_file_name = ""
+
         self._steps = []
         self._requests = []
         self._by_request_id = {}
@@ -328,7 +475,12 @@ class RecordingSession:
         self._thread = threading.Thread(target=self._run, name=f"perf-recorder-{self.id}", daemon=True)
         self._thread.start()
 
-    def request_finish(self):
+    def request_finish(self, title="", file_name=""):
+        with self._lock:
+            if title:
+                self.requested_title = title
+            if file_name:
+                self.requested_file_name = file_name
         self._finish_requested.set()
 
     def request_cancel(self):
@@ -384,6 +536,7 @@ class RecordingSession:
                        "paused", True, False, True),
             "saving": ("Generating the Locust script…", "done", False, False, False),
             "completed": (f"Saved {script_file}. This window can be closed.", "done", False, False, False),
+            "cancelled": ("Recording discarded. This window can be closed.", "", False, False, False),
             "error": ("The recording failed. See the Performance Test page.", "", False, False, False),
         }
         message, dot, can_start, can_stop, can_finish = presets.get(
@@ -541,7 +694,8 @@ class RecordingSession:
                 "at": time.time(),
             })
 
-    def _handle_control(self, action):
+    def _handle_control(self, action, payload=None):
+        payload = payload or {}
         if action == "start":
             with self._lock:
                 self._last_navigation = ""
@@ -552,7 +706,15 @@ class RecordingSession:
             self._set("paused", "Paused.")
             self._push_overlay()
         elif action == "finish":
-            self._finish_requested.set()
+            # The panel's Save & close collects a test title and file name, the
+            # same two the Performance Test page asks for. Go through
+            # request_finish so they reach the generated script; a bare finish
+            # (an older panel, or the browser window being closed) still falls
+            # back to the generated naming.
+            self.request_finish(
+                title=str(payload.get("title") or "")[:200],
+                file_name=str(payload.get("file_name") or "")[:200],
+            )
         elif action == "cancel":
             self.request_cancel()
 
@@ -563,7 +725,7 @@ class RecordingSession:
             except queue.Empty:
                 return
             if payload.get("kind") == "control":
-                self._handle_control(payload.get("action"))
+                self._handle_control(payload.get("action"), payload)
 
     # ── lifecycle ───────────────────────────────────────────────────────
 
@@ -644,6 +806,8 @@ class RecordingSession:
             journey = {
                 "project_name": self.project_name,
                 "application_url": self.application_url,
+                "title": self.requested_title,
+                "file_name": self.requested_file_name,
                 "steps": list(self._steps),
                 "requests": list(self._requests),
                 "secrets": list(self._secrets),

@@ -417,9 +417,12 @@ from ScriptRunnerEngine.performance_runner import (
     stream_run as stream_performance_run,
     stop_active_runs as stop_active_performance_runs,
     resolve_script_path as resolve_performance_script,
+    count_run_artifacts as count_performance_run_artifacts,
+    remove_run_artifacts as remove_performance_run_artifacts,
 )
 from utils import payload_parameterizer, performance_insights
 from utils.payload_parameterizer import PayloadError
+from utils.locust_recorder_writer import sanitize_script_filename, sanitize_script_title
 from ScriptRunnerEngine.performance_recorder import registry as recorder_registry
 
 # Load environment variables early
@@ -462,18 +465,28 @@ def close_connection(exception):
 def inject_user():
 
     projects = []
+    perf_projects = []
     if session.get('user_id'):
         try:
             # project_path lets the active-project selector run the shared dependency pre-check
             projects = fetch_data("SELECT id, project_name, project_path FROM ProjectDetails ORDER BY project_name ASC")
         except Exception:
             pass
+        try:
+            # Performance projects live in their own table with their own ids, so the
+            # active-project selectors keep a separate list (and selection) per testing type.
+            perf_projects = fetch_data("SELECT id, project_name FROM PerformanceDetails ORDER BY project_name ASC")
+        except Exception:
+            pass
     return dict(
         user_name=session.get('user_name', 'Guest'),
         user_role=session.get('user_role', 'guest').lower(),
         global_projects=projects,
+        global_perf_projects=perf_projects,
         active_project_id=session.get('active_project_id'),
-        active_project_name=session.get('active_project_name')
+        active_project_name=session.get('active_project_name'),
+        active_perf_project_id=session.get('active_perf_project_id'),
+        active_perf_project_name=session.get('active_perf_project_name')
     )
 
 def login_required(role=None):
@@ -648,16 +661,22 @@ def set_active_project():
     data = request.json
     project_id = data.get('project_id')
     project_name = data.get('project_name')
-    
+    # Functional (ProjectDetails) and performance (PerformanceDetails) ids overlap,
+    # so each testing type keeps its own active project in the session.
+    is_perf = data.get('project_type') == 'performance'
+    id_key = 'active_perf_project_id' if is_perf else 'active_project_id'
+    name_key = 'active_perf_project_name' if is_perf else 'active_project_name'
+    label = "Active performance project" if is_perf else "Active project"
+
     if project_id:
-        session['active_project_id'] = project_id
-        session['active_project_name'] = project_name
-        return jsonify({"status": "success", "message": f"Active project set to {project_name}"})
+        session[id_key] = project_id
+        session[name_key] = project_name
+        return jsonify({"status": "success", "message": f"{label} set to {project_name}"})
     else:
         # Clear it if passed empty
-        session.pop('active_project_id', None)
-        session.pop('active_project_name', None)
-        return jsonify({"status": "success", "message": "Active project cleared"})
+        session.pop(id_key, None)
+        session.pop(name_key, None)
+        return jsonify({"status": "success", "message": f"{label} cleared"})
 
 @app.route('/configurations')
 @login_required()
@@ -1499,6 +1518,7 @@ def performance_test_scripts():
         for script in scripts:
             script['last_report_url'] = _report_url(script.get('last_report'))
         _payload_summaries(perf_id, scripts)
+        _run_counts(perf_id, perf_dir, scripts)
 
         # A recording outlives the page that started it (it is a browser plus a
         # server-side thread), so hand back any live session for this project and
@@ -1777,6 +1797,24 @@ def _payload_summaries(perf_id, scripts):
             "row_count": config['row_count'],
             "threshold_count": len(config['thresholds']),
         }
+
+
+def _run_counts(perf_id, perf_dir, scripts):
+    """
+    Annotate the grid rows with what a delete would take with the script: the
+    stored runs and the report folders on disk.
+
+    One grouped query for the whole project rather than one per row.
+    """
+    rows = fetch_data(
+        "SELECT script_file, COUNT(DISTINCT run_id) AS runs FROM PerformanceRunStats "
+        "WHERE project_id = ? GROUP BY script_file",
+        (perf_id,),
+    )
+    runs_by_script = {row['script_file']: row['runs'] for row in rows}
+    for script in scripts:
+        script['run_count'] = runs_by_script.get(script['file_name'], 0)
+        script['report_count'] = count_performance_run_artifacts(perf_dir, script['file_name'])
 
 
 def _stored_payload_bytes(row):
@@ -2090,6 +2128,75 @@ def performance_payload_clear():
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
+@app.route('/api/performance-test/script/delete', methods=['POST'])
+@login_required()
+def performance_script_delete():
+    """
+    Delete a performance script for good: the file itself, everything generated
+    from it (the parameterised copy, the uploaded payload, the run reports) and
+    every database row keyed to it.
+
+    Scripts are keyed by file name throughout - PerformancePayloadConfig by
+    (perf_id, script_file), the two run tables by (project_id, script_file) -
+    so leaving any of it behind would attach a deleted script's history to the
+    next script recorded under the same name.
+    """
+    script_file = ''
+    try:
+        data = request.json or {}
+        perf_id = data.get('perf_id')
+        script_file = os.path.basename((data.get('script') or '').strip())
+        if not perf_id or not script_file:
+            return jsonify({"status": "error", "message": "A project and script are required."}), 400
+
+        record, perf_dir = _performance_project(perf_id)
+        if not record:
+            return jsonify({"status": "error", "message": "Performance project not found."}), 404
+
+        # resolve_script_path only returns a path inside the project's
+        # locustfiles folder, so a crafted name cannot delete an arbitrary file.
+        script_path = resolve_performance_script(perf_dir, script_file)
+        if not script_path:
+            return jsonify({
+                "status": "error",
+                "message": f"{script_file} is no longer in this project. Refresh the list."
+            }), 404
+
+        payload_row = _payload_config_row(perf_id, script_file)
+
+        # The script first: while it is on disk the entry is still runnable, so
+        # a failure here (a file lock, a permission) must leave everything else
+        # intact rather than stranding a script with no configuration.
+        os.remove(script_path)
+
+        payload_parameterizer.remove_generated_script(perf_dir, script_file)
+        if payload_row:
+            payload_parameterizer.remove_payload_copy(payload_row.get('payload_file'))
+        reports_removed = remove_performance_run_artifacts(perf_dir, script_file)
+
+        update_data("DELETE FROM PerformancePayloadConfig WHERE perf_id = ? AND script_file = ?",
+                    (perf_id, script_file))
+        update_data("DELETE FROM PerformanceRunStats WHERE project_id = ? AND script_file = ?",
+                    (perf_id, script_file))
+        update_data("DELETE FROM PerformanceRunHistory WHERE project_id = ? AND script_file = ?",
+                    (perf_id, script_file))
+
+        removed = []
+        if payload_row:
+            removed.append("its payload configuration")
+        if reports_removed:
+            removed.append(f"{reports_removed} run report folder(s)")
+        detail = f" Also removed {' and '.join(removed)}." if removed else ""
+        return jsonify({"status": "success", "message": f"Deleted {script_file}.{detail}"})
+    except OSError as e:
+        return jsonify({
+            "status": "error",
+            "message": f"Could not delete {script_file}: {e}. It may be open in another program."
+        }), 500
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Test recorder
 #
@@ -2158,7 +2265,31 @@ def performance_recorder_finish(session_id):
     session_obj = recorder_registry.get(session_id)
     if not session_obj:
         return jsonify({"status": "error", "message": "Recording session not found."}), 404
-    session_obj.request_finish()
+
+    # The page collects a test title and a file name before saving. Both stay
+    # optional here: the recorder panel inside the browser can also trigger the
+    # save, and closing that window saves too, neither of which can ask.
+    data = request.json or {}
+    title = sanitize_script_title(data.get('test_title'))
+    raw_file_name = (data.get('file_name') or '').strip()
+    file_name = sanitize_script_filename(raw_file_name)
+    if raw_file_name and not file_name:
+        return jsonify({
+            "status": "error",
+            "message": "The script file name needs at least one letter or number."
+        }), 400
+
+    # A name already on disk would otherwise be silently suffixed (_2), leaving
+    # the tester with a file they did not name. Say so while they can still edit.
+    if file_name:
+        existing = os.path.join(session_obj.perf_dir, 'locustfiles', file_name)
+        if os.path.exists(existing):
+            return jsonify({
+                "status": "error",
+                "message": f"{file_name} already exists in this project. Choose another file name."
+            }), 409
+
+    session_obj.request_finish(title=title, file_name=file_name)
     return jsonify({"status": "success", "message": "Finishing the recording…"})
 
 

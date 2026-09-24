@@ -16,8 +16,23 @@
     <!-- Font Awesome -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" integrity="sha512-iecdLmaskl7CVkqkXNQ/ZH/XLlvWZOJyj7Yy7tcenmpD1ypASozpmT/E0iPtmFIB46ZmdtAc9eNBvH0H/ZpiBw==" crossorigin="anonymous" referrerpolicy="no-referrer">
     <!-- Custom CSS -->
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=3.1">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=3.2">
     {% block extra_css %}{% endblock %}
+
+    <!-- Testing type (functional / performance) — applied before paint so the sidebar doesn't flicker.
+         Tool pages force their own mode so deep links always show the matching navigation. -->
+    <script data-forced-mode="{% if request.endpoint in ['performance_test', 'performance_dashboard'] %}performance{% elif request.endpoint in ['test_case_generator', 'script_developer', 'script_runner'] %}functional{% endif %}">
+        (function() {
+            var forced = document.currentScript.getAttribute('data-forced-mode') || null;
+            var mode = forced;
+            try {
+                mode = mode || localStorage.getItem('big-test-mode');
+                if (forced) localStorage.setItem('big-test-mode', forced);
+            } catch (e) {}
+            if (mode !== 'performance') mode = 'functional';
+            document.documentElement.setAttribute('data-test-mode', mode);
+        })();
+    </script>
 
     <!-- Global Anti-CSRF Fetch Interceptor -->
     <script>
@@ -115,13 +130,23 @@
                 </div>
                 <div class="user-greeting">
                     <!-- Global Active Project Selector -->
-                    {% if global_projects %}
-                    <div class="global-project-selector" title="Set Global Active Project">
+                    {% if global_projects or global_perf_projects %}
+                    <!-- One selector per testing type; only the one matching data-test-mode is shown -->
+                    <div class="global-project-selector test-mode-functional" title="Set Global Active Project">
                         <i class="fas fa-project-diagram"></i>
-                        <select id="globalActiveProject" onchange="setGlobalActiveProject(this)" class="input-glass" style="height:28px;min-height:28px;padding:0 26px 0 9px;font-size:0.75rem;min-width:160px;">
+                        <select id="globalActiveProject" data-project-type="functional" onchange="setGlobalActiveProject(this)" class="input-glass" style="height:28px;min-height:28px;padding:0 26px 0 9px;font-size:0.75rem;min-width:160px;">
                             <option value="">-- Select Active Project --</option>
                             {% for proj in global_projects %}
                                 <option value="{{ proj.id }}" data-path="{{ proj.project_path }}" {% if proj.id|string == active_project_id|string %}selected{% endif %}>{{ proj.project_name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="global-project-selector test-mode-performance" title="Set Global Active Performance Project">
+                        <i class="fas fa-gauge-high"></i>
+                        <select id="globalActivePerfProject" data-project-type="performance" onchange="setGlobalActiveProject(this)" class="input-glass" style="height:28px;min-height:28px;padding:0 26px 0 9px;font-size:0.75rem;min-width:160px;">
+                            <option value="">-- Select Performance Project --</option>
+                            {% for proj in global_perf_projects %}
+                                <option value="{{ proj.id }}" {% if proj.id|string == active_perf_project_id|string %}selected{% endif %}>{{ proj.project_name }}</option>
                             {% endfor %}
                         </select>
                     </div>
@@ -261,6 +286,16 @@
         function resolveAlert() {
             document.getElementById('alertBackdrop').classList.remove('active');
             if (_alertResolve) { _alertResolve(); _alertResolve = null; }
+        }
+
+        // ── Testing Type (Functional / Performance) ───────────────────
+        function setTestMode(mode) {
+            mode = mode === 'performance' ? 'performance' : 'functional';
+            document.documentElement.setAttribute('data-test-mode', mode);
+            try { localStorage.setItem('big-test-mode', mode); } catch (e) {}
+            document.querySelectorAll('.test-type-card').forEach(card => {
+                card.setAttribute('aria-pressed', card.dataset.mode === mode ? 'true' : 'false');
+            });
         }
 
         // ── H4: Sidebar mobile toggle ──────────────────────────────────
@@ -437,76 +472,106 @@
         });
 
         // ── Global Active Project ─────────────────────────────────────
-        async function refreshGlobalProjectSelectors(preferredProjectId = null) {
-            try {
-                const response = await fetch('/api/projects');
-                const data = await response.json();
-                if (data.status !== 'success') return;
+        // Functional and performance projects come from different tables, so each testing
+        // type has its own master selectors (header + home page) and its own page selectors.
+        const PROJECT_SELECTORS = {
+            functional: {
+                masters: ['globalActiveProject', 'homeActiveProject'],
+                pageSelects: 'select[name="project_id"], select[name="project"], #runProject, #projectSelect',
+                listUrl: '/api/projects'
+            },
+            performance: {
+                masters: ['globalActivePerfProject', 'homeActivePerfProject'],
+                pageSelects: '#perfProjectSelect, #dashProject',
+                listUrl: '/api/performance-projects'
+            }
+        };
 
-                const selectors = ['globalActiveProject', 'homeActiveProject']
+        function getProjectType(selectElement) {
+            return selectElement && selectElement.dataset.projectType === 'performance' ? 'performance' : 'functional';
+        }
+
+        async function refreshGlobalProjectSelectors(preferredProjectId = null, projectType = 'functional') {
+            for (const [type, config] of Object.entries(PROJECT_SELECTORS)) {
+                const selectors = config.masters
                     .map(id => document.getElementById(id))
                     .filter(Boolean);
-                if (!selectors.length) return;
+                if (!selectors.length) continue;
 
-                selectors.forEach(select => {
-                    const previousValue = select.value;
-                    const keepValue = preferredProjectId && String(previousValue) === String(preferredProjectId)
-                        ? String(preferredProjectId)
-                        : String(previousValue || '');
+                try {
+                    const response = await fetch(config.listUrl);
+                    const data = await response.json();
+                    if (data.status !== 'success') continue;
 
-                    select.innerHTML = '<option value="">-- Select Active Project --</option>';
-                    data.data.forEach(project => {
-                        const opt = document.createElement('option');
-                        opt.value = project.id;
-                        opt.textContent = project.project_name;
-                        opt.setAttribute('data-path', project.project_path || '');
-                        select.appendChild(opt);
+                    selectors.forEach(select => {
+                        const previousValue = select.value;
+                        const keepValue = type === projectType && preferredProjectId && String(previousValue) === String(preferredProjectId)
+                            ? String(preferredProjectId)
+                            : String(previousValue || '');
+                        const placeholder = select.options[0] ? select.options[0].text : '-- Select Active Project --';
+
+                        select.innerHTML = '';
+                        select.appendChild(new Option(placeholder, ''));
+                        data.data.forEach(project => {
+                            const opt = document.createElement('option');
+                            opt.value = project.id;
+                            opt.textContent = project.project_name;
+                            if (type === 'functional') opt.setAttribute('data-path', project.project_path || '');
+                            select.appendChild(opt);
+                        });
+
+                        if (keepValue && Array.from(select.options).some(opt => opt.value === keepValue)) {
+                            select.value = keepValue;
+                        }
                     });
-
-                    if (keepValue && Array.from(select.options).some(opt => opt.value === keepValue)) {
-                        select.value = keepValue;
-                    }
-                });
-            } catch (error) {
-                console.error('Failed to refresh active project selectors:', error);
+                } catch (error) {
+                    console.error(`Failed to refresh ${type} active project selectors:`, error);
+                }
             }
         }
 
         async function setGlobalActiveProject(selectElement) {
+            const projectType = getProjectType(selectElement);
+            const config = PROJECT_SELECTORS[projectType];
             const projectId = selectElement.value;
             const projectName = selectElement.options[selectElement.selectedIndex].text;
-            
+
+            // Mirror the choice into the other master selector (header <-> home page) right away,
+            // without re-firing its change handler — that would recurse into setGlobalActiveProject.
+            config.masters.forEach(id => {
+                const master = document.getElementById(id);
+                if (master && master !== selectElement) master.value = projectId;
+            });
+
             try {
                 const response = await fetch('/api/set-active-project', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ project_id: projectId, project_name: projectId ? projectName : null })
+                    body: JSON.stringify({ project_id: projectId, project_name: projectId ? projectName : null, project_type: projectType })
                 });
                 const data = await response.json();
                 if (data.status === 'success') {
                     showToast(data.message, 'success');
                     // Validate the chosen project's prerequisites; warn via popup if any are missing.
-                    if (projectId) {
+                    // The pre-check covers functional automation projects only.
+                    if (projectId && projectType === 'functional') {
                         const selOpt = selectElement.options[selectElement.selectedIndex];
                         const projPath = selOpt ? selOpt.getAttribute('data-path') : '';
                         validateProjectDependenciesPopup(projPath, 'Dependency Pre-check — ' + projectName);
                     }
-                    // Keep both master selectors (header + home page) in sync by value, without
-                    // re-firing their change handlers — that would recurse into setGlobalActiveProject.
-                    ['globalActiveProject', 'homeActiveProject'].forEach(id => {
-                        const master = document.getElementById(id);
-                        if (master && master !== selectElement) master.value = projectId;
-                    });
-                    // Sync any other project selectors on the page (e.g. Test Case Generator, Dashboard)
-                    const otherSelects = document.querySelectorAll('select[name="project_id"], select[name="project"], #runProject, #projectSelect');
+                    // Sync any other project selectors of the same type on the page (e.g. Test Case Generator, Performance Test)
+                    const otherSelects = document.querySelectorAll(config.pageSelects);
                     otherSelects.forEach(sel => {
                         if (sel !== selectElement) {
                             // If the option exists in the other dropdown, select it
                             for (let i = 0; i < sel.options.length; i++) {
                                 if (sel.options[i].value == projectId || sel.options[i].value === projectName) {
-                                    sel.selectedIndex = i;
-                                    // Trigger change event if needed
-                                    sel.dispatchEvent(new Event('change'));
+                                    // Only fire change when the selection actually moves — a page select that
+                                    // triggered this save already holds the value and must not reload twice.
+                                    if (sel.selectedIndex !== i) {
+                                        sel.selectedIndex = i;
+                                        sel.dispatchEvent(new Event('change'));
+                                    }
                                     break;
                                 }
                             }

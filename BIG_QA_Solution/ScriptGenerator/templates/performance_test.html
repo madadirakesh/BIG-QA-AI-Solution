@@ -25,10 +25,10 @@
 <div class="form-panel glassmorphism" style="padding:1.5rem;margin-bottom:1.5rem;">
     <div class="form-group" style="margin:0;max-width:480px;">
         <label for="perfProjectSelect" style="margin-bottom:6px;display:block;font-size:0.9rem;color:var(--text-secondary);">Performance Project</label>
-        <select id="perfProjectSelect" onchange="loadPerformanceScripts()">
+        <select id="perfProjectSelect" onchange="onPerfProjectChange()">
             <option value="">-- Choose Performance Project --</option>
             {% for project in performance_projects %}
-            <option value="{{ project.id }}">{{ project.project_name }}</option>
+            <option value="{{ project.id }}" {% if project.id|string == active_perf_project_id|string %}selected{% endif %}>{{ project.project_name }}</option>
             {% endfor %}
         </select>
     </div>
@@ -179,6 +179,37 @@
         <div style="display:flex;gap:10px;">
             <button id="perfRunSubmitBtn" onclick="submitRunConfiguration()" class="btn btn-primary" style="flex:1;"><i class="fas fa-bolt"></i> Submit</button>
             <button type="button" onclick="closeRunConfigModal()" class="btn btn-secondary" style="flex:1;"><i class="fas fa-times"></i> Cancel</button>
+        </div>
+    </div>
+</div>
+
+<!-- Save Recording lightbox: names the recorded script before it is generated. -->
+<div id="perfSaveScriptModal" class="confirm-backdrop" style="align-items:center;justify-content:center;display:none;z-index:1050;">
+    <div class="confirm-dialog" style="max-width:520px;width:95%;">
+        <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--glass-border);padding-bottom:1rem;margin-bottom:1.5rem;">
+            <h3 style="margin:0;font-size:1.2rem;"><i class="fas fa-floppy-disk" style="color:var(--accent-secondary);margin-right:8px;"></i>Save Recording</h3>
+            <button onclick="closeSaveScriptModal()" style="background:none;border:none;color:var(--text-secondary);font-size:1.5rem;cursor:pointer;line-height:1;">&times;</button>
+        </div>
+
+        <p id="perfSaveScriptSummary" style="margin:0 0 1.25rem 0;font-size:0.9rem;color:var(--text-secondary);"></p>
+
+        <div class="form-group" style="margin-bottom:1.25rem;">
+            <label for="saveScriptTitleInput" style="margin-bottom:6px;display:block;font-size:0.9rem;color:var(--text-secondary);">Test title <span style="color:#ef4444;">*</span></label>
+            <input type="text" id="saveScriptTitleInput" maxlength="120" autocomplete="off" oninput="onSaveScriptTitleInput()" placeholder="e.g. Checkout journey — guest user">
+            <small class="error-text" id="saveScriptTitleInputError"></small>
+            <small style="display:block;margin-top:5px;font-size:0.78rem;color:var(--text-secondary);">Shown in the Test Case column of the scripts grid.</small>
+        </div>
+
+        <div class="form-group" style="margin-bottom:1.5rem;">
+            <label for="saveScriptFileInput" style="margin-bottom:6px;display:block;font-size:0.9rem;color:var(--text-secondary);">Script file name <span style="color:#ef4444;">*</span></label>
+            <input type="text" id="saveScriptFileInput" maxlength="120" autocomplete="off" oninput="onSaveScriptFileInput()" placeholder="e.g. checkout_journey.py">
+            <small class="error-text" id="saveScriptFileInputError"></small>
+            <small id="perfSaveScriptFilePreview" style="display:block;margin-top:5px;font-size:0.78rem;color:var(--text-secondary);"></small>
+        </div>
+
+        <div style="display:flex;gap:10px;">
+            <button id="perfSaveScriptSubmitBtn" onclick="submitSaveScript()" class="btn btn-primary" style="flex:1;"><i class="fas fa-floppy-disk"></i> Save &amp; generate script</button>
+            <button type="button" onclick="closeSaveScriptModal()" class="btn btn-secondary" style="flex:1;"><i class="fas fa-times"></i> Cancel</button>
         </div>
     </div>
 </div>
@@ -462,6 +493,27 @@
         return perfEventSource !== null;
     }
 
+    function onPerfProjectChange() {
+        loadPerformanceScripts();
+        syncPerfSelectionToGlobalActiveProject();
+    }
+
+    // Push this page's project choice to the global active performance project
+    // (header + home selectors). Changes that came from the header already match
+    // it and stop here, so the two selectors never bounce saves off each other.
+    function syncPerfSelectionToGlobalActiveProject() {
+        const perfId = document.getElementById('perfProjectSelect').value;
+        const globalSelect = document.getElementById('globalActivePerfProject');
+        if (!globalSelect || typeof setGlobalActiveProject !== 'function') return;
+        if (String(globalSelect.value || '') === String(perfId)) return;
+
+        const matchingOption = Array.from(globalSelect.options).find(opt => String(opt.value) === String(perfId));
+        if (!matchingOption) return;
+
+        globalSelect.value = String(perfId);
+        setGlobalActiveProject(globalSelect);
+    }
+
     async function loadPerformanceScripts() {
         const perfId = document.getElementById('perfProjectSelect').value;
         const empty = document.getElementById('perfScriptsEmpty');
@@ -537,6 +589,11 @@
                             <button type="button" class="btn btn-secondary" ${dataAttrs} onclick="openPayloadModal(this)"><i class="fas fa-database"></i> Configure Payload</button>
                             <button type="button" class="btn btn-secondary" ${dataAttrs} onclick="runScriptCheck(this)"><i class="fas fa-vial"></i> Run Script Check</button>
                             <button type="button" class="btn btn-primary" ${dataAttrs} onclick="openRunConfigModal(this)"><i class="fas fa-bolt"></i> Run performance test</button>
+                            <button type="button" class="btn btn-danger" ${dataAttrs}
+                                    data-runs="${script.run_count || 0}"
+                                    data-reports="${script.report_count || 0}"
+                                    data-payload="${script.payload ? 1 : 0}"
+                                    onclick="deleteScript(this)"><i class="fas fa-trash"></i> Delete</button>
                         </div>
                     </td>`;
                 body.appendChild(row);
@@ -547,10 +604,82 @@
         }
     }
 
+    /* ------------------------------ Delete Script ----------------------------- */
+
+    /**
+     * Delete a script and everything keyed to it. The confirmation spells out
+     * what goes with it - a script's run history and payload configuration live
+     * in the database under its file name, so they are not obvious losses from
+     * looking at the grid.
+     */
+    async function deleteScript(button) {
+        if (isRunActive()) {
+            showToast('A run is in progress. Stop it before deleting a script.', 'error');
+            return;
+        }
+        const perfId = document.getElementById('perfProjectSelect').value;
+        if (!perfId) {
+            showToast('Select a performance project first.', 'error');
+            return;
+        }
+
+        const script = button.getAttribute('data-script');
+        const runs = parseInt(button.getAttribute('data-runs'), 10) || 0;
+        const reports = parseInt(button.getAttribute('data-reports'), 10) || 0;
+
+        const losses = [`the script file <strong>${perfEscape(script)}</strong>`];
+        if (button.getAttribute('data-payload') === '1') {
+            losses.push('its payload configuration and the uploaded payload file');
+        }
+        if (runs) losses.push(`<strong>${runs}</strong> stored run result(s), including dashboard history`);
+        if (reports) losses.push(`<strong>${reports}</strong> run report folder(s) on disk`);
+
+        const confirmed = await showConfirm(
+            'Delete this performance script?',
+            `<span style="display:block;margin-bottom:10px;">Deleting `
+            + `<strong>${perfEscape(button.getAttribute('data-title'))}</strong> removes:</span>`
+            + '<ul style="margin:0 0 10px 18px;padding:0;text-align:left;">'
+            + losses.map(item => `<li style="margin-bottom:4px;">${item}</li>`).join('')
+            + '</ul><span style="display:block;">This cannot be undone.</span>',
+            '🗑️', 'Delete', 'background:var(--error);color:white;', { html: true }
+        );
+        if (!confirmed) return;
+
+        button.disabled = true;
+        try {
+            const r = await fetch('/api/performance-test/script/delete', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ perf_id: parseInt(perfId), script: script })
+            });
+            const d = await r.json();
+            if (d.status !== 'success') {
+                showToast(d.message || 'Could not delete the script.', 'error');
+                button.disabled = false;
+                return;
+            }
+            showToast(d.message, 'success');
+            // Both caches are keyed by file name, so a script recorded under the
+            // same name later would otherwise inherit this one's dialog state.
+            delete payloadSummaries[script];
+            delete payloadStates[script];
+            await loadPerformanceScripts();
+        } catch (e) {
+            showToast('Could not delete the script.', 'error');
+            button.disabled = false;
+        }
+    }
+
     /* ------------------------------ Test Recorder ----------------------------- */
 
     let recorderSessionId = null;
     let recorderPollTimer = null;
+    // Kept so the Save Recording dialog can report what was captured.
+    let lastRecorderSnapshot = null;
+    // A save has been accepted but the session has not reported `saving` yet.
+    // Without this the next poll re-enables the button and the recording can be
+    // named twice.
+    let recorderFinishSubmitted = false;
 
     const RECORDER_STATES = {
         launching: { label: 'Opening browser…', dot: '' },
@@ -569,6 +698,7 @@
     }
 
     function renderRecorderState(snapshot) {
+        lastRecorderSnapshot = snapshot;
         const preset = RECORDER_STATES[snapshot.state] || { label: snapshot.state, dot: '' };
         document.getElementById('perfRecorderState').textContent = preset.label;
         document.getElementById('perfRecorderDot').className = 'recorder-dot ' + preset.dot;
@@ -578,8 +708,13 @@
             snapshot.message || 'Use the recorder panel inside the browser window.';
 
         const settled = ['completed', 'cancelled', 'error'].includes(snapshot.state);
+        // Once the session is saving or settled there is nothing left to name -
+        // the panel inside the browser can trigger the save on its own.
+        if (settled || snapshot.state === 'saving') closeSaveScriptModal();
+
         const cancelBtn = document.getElementById('perfRecorderCancelBtn');
-        document.getElementById('perfRecorderFinishBtn').disabled = settled || snapshot.state === 'saving';
+        document.getElementById('perfRecorderFinishBtn').disabled =
+            settled || snapshot.state === 'saving' || recorderFinishSubmitted;
         // Once a session has failed there is nothing left to discard, so the
         // button becomes the way to clear the card and record again.
         cancelBtn.disabled = snapshot.state === 'saving';
@@ -615,6 +750,7 @@
             }
 
             recorderSessionId = d.session_id;
+            recorderFinishSubmitted = false;
             showRecorderCard(true);
             renderRecorderState({ state: 'launching', steps: 0, requests: 0, message: d.message });
             pollRecorder();
@@ -673,6 +809,11 @@
         clearTimeout(recorderPollTimer);
         recorderPollTimer = null;
         recorderSessionId = null;
+        lastRecorderSnapshot = null;
+        recorderFinishSubmitted = false;
+        // The session can end while the naming dialog is open - the panel inside
+        // the browser saves too, and that window can be closed outright.
+        closeSaveScriptModal();
         showRecorderCard(false);
     }
 
@@ -690,15 +831,136 @@
         }
     }
 
-    async function finishTestRecording() {
-        if (!recorderSessionId) return;
-        document.getElementById('perfRecorderFinishBtn').disabled = true;
+    /* --------------------------- Save Recording ---------------------------- */
+    /* A recording is only useful if it can be found again, so the save asks for
+     * a test title and a file name instead of falling back to the timestamped
+     * rec_{Project}_{stamp}.py name. The title is written into the script's
+     * docstring, which is where the grid's Test Case column reads it from. */
+
+    const SAVE_SCRIPT_FILE_PATTERN = /^[A-Za-z0-9][A-Za-z0-9 _.-]*$/;
+    // Set once the tester types their own file name, which stops it tracking
+    // the title.
+    let saveScriptFileEdited = false;
+
+    /**
+     * Mirror of utils/locust_recorder_writer.sanitize_script_filename, so the
+     * dialog previews the name the file will actually land under.
+     */
+    function scriptFileNameFrom(raw) {
+        const base = String(raw || '').trim().replace(/\\/g, '/').split('/').pop();
+        let stem = base.replace(/\.py$/i, '').replace(/[^A-Za-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+        if (!stem) return '';
+        if (/^[0-9]/.test(stem)) stem = 'rec_' + stem;
+        return stem + '.py';
+    }
+
+    function finishTestRecording() {
+        if (!recorderSessionId || recorderFinishSubmitted) return;
+
+        const snapshot = lastRecorderSnapshot || {};
+        if (!snapshot.steps && !snapshot.requests) {
+            showToast('Nothing has been recorded yet. Use the panel in the browser to record a journey first.', 'error');
+            return;
+        }
+
+        document.getElementById('perfSaveScriptSummary').textContent =
+            `${snapshot.steps || 0} action(s) and ${snapshot.requests || 0} request(s) captured. `
+            + 'Name the test before the script is generated.';
+        document.getElementById('saveScriptTitleInput').value = '';
+        document.getElementById('saveScriptFileInput').value = '';
+        document.getElementById('perfSaveScriptFilePreview').textContent = '';
+        document.getElementById('perfSaveScriptSubmitBtn').disabled = false;
+        saveScriptFileEdited = false;
+        ['saveScriptTitleInput', 'saveScriptFileInput'].forEach(clearPerfFieldError);
+
+        document.getElementById('perfSaveScriptModal').style.display = 'flex';
+        document.getElementById('saveScriptTitleInput').focus();
+    }
+
+    function closeSaveScriptModal() {
+        document.getElementById('perfSaveScriptModal').style.display = 'none';
+    }
+
+    function onSaveScriptTitleInput() {
+        clearPerfFieldError('saveScriptTitleInput');
+        if (saveScriptFileEdited) return;
+        document.getElementById('saveScriptFileInput').value =
+            scriptFileNameFrom(document.getElementById('saveScriptTitleInput').value);
+        clearPerfFieldError('saveScriptFileInput');
+        renderSaveScriptPreview();
+    }
+
+    function onSaveScriptFileInput() {
+        saveScriptFileEdited = true;
+        clearPerfFieldError('saveScriptFileInput');
+        renderSaveScriptPreview();
+    }
+
+    function renderSaveScriptPreview() {
+        const resolved = scriptFileNameFrom(document.getElementById('saveScriptFileInput').value);
+        document.getElementById('perfSaveScriptFilePreview').textContent =
+            resolved ? `Saved as locustfiles/${resolved}` : '';
+    }
+
+    function validateSaveScript(values) {
+        const schema = {
+            saveScriptTitleInput: { required: true, message: 'Test title is required.' },
+            saveScriptFileInput: {
+                required: true,
+                pattern: SAVE_SCRIPT_FILE_PATTERN,
+                message: 'File name must start with a letter or number, and use only letters, numbers, spaces, _ . and -'
+            }
+        };
+        return typeof validateForm === 'function'
+            ? validateForm(schema, values)
+            : Object.keys(schema).every(function (inputId) {
+                const rule = schema[inputId] || {};
+                const value = (values[inputId] || '').trim();
+                return !(rule.required && !value) && !(rule.pattern && value && !rule.pattern.test(value));
+            });
+    }
+
+    async function submitSaveScript() {
+        if (!recorderSessionId) {
+            closeSaveScriptModal();
+            return;
+        }
+        const values = {
+            saveScriptTitleInput: document.getElementById('saveScriptTitleInput').value.trim(),
+            saveScriptFileInput: document.getElementById('saveScriptFileInput').value.trim()
+        };
+        if (!validateSaveScript(values)) return;
+
+        const submitBtn = document.getElementById('perfSaveScriptSubmitBtn');
+        submitBtn.disabled = true;
         try {
-            const r = await fetch('/api/performance-test/recorder/finish/' + recorderSessionId, { method: 'POST' });
+            const r = await fetch('/api/performance-test/recorder/finish/' + recorderSessionId, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    test_title: values.saveScriptTitleInput,
+                    file_name: scriptFileNameFrom(values.saveScriptFileInput)
+                })
+            });
             const d = await r.json();
-            if (d.status !== 'success') showToast(d.message || 'Could not finish the recording.', 'error');
+            if (d.status !== 'success') {
+                // A rejected name is fixable right here, so keep the dialog open
+                // with the reason on the field that caused it.
+                if (r.status === 400 || r.status === 409) {
+                    setFieldError('saveScriptFileInput', d.message);
+                } else {
+                    showToast(d.message || 'Could not finish the recording.', 'error');
+                    closeSaveScriptModal();
+                }
+                submitBtn.disabled = false;
+                return;
+            }
+            recorderFinishSubmitted = true;
+            closeSaveScriptModal();
+            document.getElementById('perfRecorderFinishBtn').disabled = true;
         } catch (e) {
             showToast('Could not finish the recording.', 'error');
+            submitBtn.disabled = false;
         }
     }
 
@@ -1637,6 +1899,12 @@
 
     window.addEventListener('beforeunload', () => {
         if (perfEventSource) perfEventSource.close();
+    });
+
+    // The active performance project (set from the header or home page) arrives
+    // pre-selected; load its scripts straight away.
+    document.addEventListener('DOMContentLoaded', () => {
+        if (document.getElementById('perfProjectSelect').value) loadPerformanceScripts();
     });
 </script>
 {% endblock %}

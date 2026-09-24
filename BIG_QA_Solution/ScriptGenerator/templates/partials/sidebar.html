@@ -19,33 +19,37 @@
                     <i class="fas fa-cogs"></i> <span>Configurations</span>
                 </a>
             </li>
-            <li class="sidebar-section-label">Tools</li>
-            <li>
+            <!-- Functional testing tools -->
+            <li class="sidebar-section-label test-mode-functional">Functional Testing</li>
+            <li class="test-mode-functional">
                 <a href="{{ url_for('test_case_generator') }}" class="{% if request.endpoint == 'test_case_generator' %}active{% endif %}">
                     <i class="fas fa-file-alt"></i> <span>Test Case Generator</span>
                 </a>
             </li>
-            <li>
+            <li class="test-mode-functional">
                 <a href="#" onclick="launchElementLocator(); return false;" class="{% if request.endpoint == 'launch_element_locator' %}active{% endif %}">
                     <i class="fas fa-crosshairs"></i> <span>Element Locator</span>
                 </a>
             </li>
-            <li>
+            <li class="test-mode-functional">
                 <a href="{{ url_for('script_developer') }}" class="{% if request.endpoint == 'script_developer' %}active{% endif %}">
                     <i class="fas fa-code"></i> <span>Script Generation</span>
                 </a>
             </li>
-            <li>
+            <li class="test-mode-functional">
                 <a href="{{ url_for('script_runner') }}" class="{% if request.endpoint == 'script_runner' %}active{% endif %}">
                     <i class="fas fa-play-circle"></i> <span>Script Runner</span>
                 </a>
             </li>
-            <li>
+
+            <!-- Performance testing tools -->
+            <li class="sidebar-section-label test-mode-performance">Performance Testing</li>
+            <li class="test-mode-performance">
                 <a href="{{ url_for('performance_test') }}" class="{% if request.endpoint == 'performance_test' %}active{% endif %}">
                     <i class="fas fa-gauge-high"></i> <span>Performance Test</span>
                 </a>
             </li>
-            <li>
+            <li class="test-mode-performance">
                 <a href="{{ url_for('performance_dashboard') }}" class="{% if request.endpoint == 'performance_dashboard' %}active{% endif %}">
                     <i class="fas fa-chart-line"></i> <span>Performance Dashboard</span>
                 </a>
