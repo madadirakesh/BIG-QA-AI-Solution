@@ -1175,7 +1175,7 @@ def ensure_payload_loader(perf_dir, template_dir=None):
     loader = core_dir / "payload_loader.py"
 
     template_dir = Path(template_dir) if template_dir else (
-        Path(__file__).resolve().parent.parent / "scripts" / "templates" / "performance_framework"
+        Path(__file__).resolve().parent.parent / "scripts" / "templates" / "Locust_framework"
     )
     source = template_dir / CORE_DIRNAME / "payload_loader.py"
     if not source.is_file():

@@ -1,7 +1,8 @@
 """
 performance_runner.py
 ---------------------
-Discovers and executes the Locust scripts of a scaffolded performance project
+Discovers the scripts of a performance project (Locust locustfiles, or the
+JMeter framework's TestScripts plans) and executes the Locust ones
 (`<project path>/<project name>_perf`, created from the Performance
 Configuration screen).
 
@@ -32,6 +33,21 @@ from pathlib import Path
 
 LOCUSTFILES_DIRNAME = "locustfiles"
 RESULTS_DIRNAME = "results"
+
+# Recorded Functional journeys of a Locust project are Selenium pytests.
+FUNCTIONAL_DIRNAME = "functional"
+
+# JMeter projects keep their test plans in TestScripts/<type>/*.jmx.
+JMETER_TOOL = "Jmeter"
+JMETER_SCRIPTS_DIRNAME = "TestScripts"
+
+# Script types shown in the grid's Type column.
+SCRIPT_TYPE_API = "API"
+SCRIPT_TYPE_CLI = "CLI"
+SCRIPT_TYPE_FUNCTIONAL = "Functional"
+_SCRIPT_TYPES = {t.lower(): t for t in (SCRIPT_TYPE_API, SCRIPT_TYPE_CLI, SCRIPT_TYPE_FUNCTIONAL)}
+# The JMeter framework's folder per script type.
+_JMETER_TYPE_FOLDERS = {"api": SCRIPT_TYPE_API, "cli": SCRIPT_TYPE_CLI, "functional": SCRIPT_TYPE_FUNCTIONAL}
 
 # A script check is a validation run, not a load run: one user making one pass
 # of the journey. The single pass is enforced by SCRIPT_CHECK_HOOK, because
@@ -74,6 +90,11 @@ def script_title(filename):
 # module docstring; when one is present it wins over the filename.
 _TEST_CASE_MARKER = re.compile(r"^\s*Test Case:\s*(.+?)\s*$", re.MULTILINE)
 _TITLE_SCAN_BYTES = 2000
+# Generated scripts also declare their type (`Script Type: API`).
+_SCRIPT_TYPE_MARKER = re.compile(r"^\s*Script Type:\s*(.+?)\s*$", re.MULTILINE)
+# The recorder's docstring header, for recordings made before the type marker existed.
+_RECORDED_MARKER = re.compile(r"^\s*Recorded from\s*:", re.MULTILINE)
+_JMX_TEST_PLAN_NAME = re.compile(r'<TestPlan\b[^>]*\btestname="([^"]*)"')
 
 
 def declared_title(script_file):
@@ -85,6 +106,37 @@ def declared_title(script_file):
         return ""
     match = _TEST_CASE_MARKER.search(head)
     return match.group(1).strip() if match else ""
+
+
+def _read_head(script_file, limit=_TITLE_SCAN_BYTES):
+    try:
+        with open(script_file, "r", encoding="utf-8", errors="ignore") as handle:
+            return handle.read(limit)
+    except OSError:
+        return ""
+
+
+def declared_script_type(head):
+    """The `Script Type:` a script declares, normalised to API / CLI / Functional; '' when none."""
+    match = _SCRIPT_TYPE_MARKER.search(head or "")
+    return _SCRIPT_TYPES.get(match.group(1).strip().lower(), "") if match else ""
+
+
+def locust_script_type(script_file):
+    """
+    Type of a Locust script: its declared marker, else CLI for a browser
+    recording (its HTTP traffic replayed - the CLI choice in Create Test), else
+    API - the framework's own sample locustfiles are all protocol-level API tests.
+    """
+    head = _read_head(script_file)
+    return declared_script_type(head) or (
+        SCRIPT_TYPE_CLI if _RECORDED_MARKER.search(head) else SCRIPT_TYPE_API)
+
+
+def _unescape_xml(text):
+    for entity, char in (("&lt;", "<"), ("&gt;", ">"), ("&quot;", '"'), ("&apos;", "'"), ("&amp;", "&")):
+        text = text.replace(entity, char)
+    return text
 
 
 def _latest_report(results_dir, stem):
@@ -102,22 +154,53 @@ def _latest_report(results_dir, stem):
     return str(newest)
 
 
-def list_scripts(perf_dir):
+def _list_jmeter_scripts(perf_path):
     """
-    List the performance scripts of a scaffolded project.
+    The `*.jmx` test plans under TestScripts/. The type is the plan's folder
+    (api / cli / functional), else its declared marker, else API; the title is
+    the plan's declared `Test Case:`, else its TestPlan name, else the file name.
+    """
+    scripts_dir = perf_path / JMETER_SCRIPTS_DIRNAME
+    if not scripts_dir.is_dir():
+        return []
+    scripts = []
+    for script_file in sorted(scripts_dir.rglob("*.jmx"), key=lambda p: str(p).lower()):
+        relative = script_file.relative_to(scripts_dir)
+        head = _unescape_xml(_read_head(script_file, limit=6000))
+        folder = relative.parts[0].lower() if len(relative.parts) > 1 else ""
+        plan_name = _JMX_TEST_PLAN_NAME.search(head)
+        declared = _TEST_CASE_MARKER.search(head)
+        scripts.append({
+            "title": (declared.group(1).strip() if declared else "")
+                     or (plan_name.group(1).strip() if plan_name else "")
+                     or script_title(script_file.name),
+            "file_name": script_file.name,
+            "relative_path": f"{JMETER_SCRIPTS_DIRNAME}/{relative.as_posix()}",
+            "script_type": _JMETER_TYPE_FOLDERS.get(folder) or declared_script_type(head) or SCRIPT_TYPE_API,
+            # JMeter runs are not driven from this screen yet, so there is no report to link.
+            "last_report": "",
+            "last_run_at": "",
+        })
+    return scripts
 
-    Returns a list of dicts: {title, file_name, relative_path, last_report,
-    last_run_at}. Private/`__init__` modules are skipped - they are helpers,
-    not runnable Locust scripts.
+
+def list_scripts(perf_dir, tool=""):
+    """
+    List the performance scripts of a project.
+
+    Returns a list of dicts: {title, file_name, relative_path, script_type,
+    last_report, last_run_at}. For Locust, private/`__init__` modules are
+    skipped - they are helpers, not runnable Locust scripts. JMeter projects
+    list their TestScripts/**/*.jmx plans.
     """
     perf_path = Path(perf_dir)
+    if tool == JMETER_TOOL:
+        return _list_jmeter_scripts(perf_path)
     locust_dir = perf_path / LOCUSTFILES_DIRNAME
     results_dir = perf_path / RESULTS_DIRNAME
-    if not locust_dir.is_dir():
-        return []
 
     scripts = []
-    for script_file in sorted(locust_dir.glob("*.py")):
+    for script_file in sorted(locust_dir.glob("*.py")) if locust_dir.is_dir() else []:
         if script_file.name.startswith("_"):
             continue
         last_report = _latest_report(results_dir, script_file.stem)
@@ -125,28 +208,60 @@ def list_scripts(perf_dir):
             "title": declared_title(script_file) or script_title(script_file.name),
             "file_name": script_file.name,
             "relative_path": f"{LOCUSTFILES_DIRNAME}/{script_file.name}",
+            "script_type": locust_script_type(script_file),
             "last_report": last_report,
             "last_run_at": (
                 datetime.fromtimestamp(os.path.getmtime(last_report)).strftime("%Y-%m-%d %H:%M")
                 if last_report else ""
             ),
         })
+
+    # Recorded Functional journeys: Selenium pytests, run with pytest rather
+    # than Locust, so there is no Locust report to link.
+    functional_dir = perf_path / FUNCTIONAL_DIRNAME
+    for script_file in sorted(functional_dir.glob("test_*.py")) if functional_dir.is_dir() else []:
+        scripts.append({
+            "title": declared_title(script_file) or script_title(script_file.name),
+            "file_name": script_file.name,
+            "relative_path": f"{FUNCTIONAL_DIRNAME}/{script_file.name}",
+            "script_type": declared_script_type(_read_head(script_file)) or SCRIPT_TYPE_FUNCTIONAL,
+            "last_report": "",
+            "last_run_at": "",
+        })
     return scripts
 
 
-def resolve_script_path(perf_dir, file_name):
+def resolve_script_path(perf_dir, file_name, tool="", include_functional=False):
     """
     Resolve a script name to an absolute path inside the project's locustfiles
-    folder. Returns '' when the name escapes that folder or does not exist, so a
-    crafted request can never execute an arbitrary file.
+    folder (JMeter: anywhere under TestScripts/, matched by base name). Returns
+    '' when the name escapes that folder or does not exist, so a crafted request
+    can never execute an arbitrary file.
+
+    `include_functional` also looks in functional/ (the Selenium pytests). It is
+    off by default because every caller but delete hands the path to Locust.
     """
-    locust_dir = Path(perf_dir) / LOCUSTFILES_DIRNAME
-    candidate = (locust_dir / os.path.basename(file_name or "")).resolve()
-    try:
-        candidate.relative_to(locust_dir.resolve())
-    except ValueError:
+    if tool == JMETER_TOOL:
+        scripts_dir = (Path(perf_dir) / JMETER_SCRIPTS_DIRNAME).resolve()
+        name = os.path.basename(file_name or "")
+        if not name.lower().endswith(".jmx") or not scripts_dir.is_dir():
+            return ""
+        for candidate in scripts_dir.rglob(name):
+            if candidate.is_file() and candidate.name == name:
+                return str(candidate)
         return ""
-    return str(candidate) if candidate.is_file() else ""
+
+    locust_dir = Path(perf_dir) / LOCUSTFILES_DIRNAME
+    folders = [locust_dir] + ([Path(perf_dir) / FUNCTIONAL_DIRNAME] if include_functional else [])
+    for folder in folders:
+        candidate = (folder / os.path.basename(file_name or "")).resolve()
+        try:
+            candidate.relative_to(folder.resolve())
+        except ValueError:
+            continue
+        if candidate.is_file():
+            return str(candidate)
+    return ""
 
 
 def count_run_artifacts(perf_dir, file_name):

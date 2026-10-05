@@ -19,7 +19,7 @@
 
 <div class="page-header">
     <h1><i class="fas fa-gauge-high"></i> Performance Test</h1>
-    <p>Validate and load-test the Locust scripts of your performance projects.</p>
+    <p>Create, validate and load-test the Locust / JMeter scripts of your performance projects.</p>
 </div>
 
 <div class="form-panel glassmorphism" style="padding:1.5rem;margin-bottom:1.5rem;">
@@ -39,7 +39,7 @@
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;">
         <h3 style="margin:0;font-size:1.05rem;"><i class="fas fa-list-check" style="color:var(--accent-secondary);margin-right:8px;"></i>Recorded Test Cases</h3>
         <div style="display:flex;gap:10px;">
-            <button type="button" id="perfCreateTestBtn" class="btn btn-primary" onclick="startTestRecording()" style="padding:8px 14px;"><i class="fas fa-circle-dot"></i> Create Test</button>
+            <button type="button" id="perfCreateTestBtn" class="btn btn-primary" onclick="openCreateTestModal()" style="padding:8px 14px;"><i class="fas fa-circle-dot"></i> Create Test</button>
             <button type="button" class="btn btn-secondary" onclick="loadPerformanceScripts()" style="padding:8px 14px;"><i class="fas fa-rotate"></i> Refresh</button>
         </div>
     </div>
@@ -72,6 +72,7 @@
                 <tr>
                     <th style="width:44px;">#</th>
                     <th>Test Case</th>
+                    <th style="width:110px;">Type</th>
                     <th>Script File</th>
                     <th>Last Run</th>
                     <th style="width:430px;">Actions</th>
@@ -183,6 +184,88 @@
     </div>
 </div>
 
+<!-- Create Test lightbox: picks the script type, then either starts the browser
+     recorder (Functional / CLI) or generates a script from an API document (API). -->
+<div id="perfCreateTestModal" class="confirm-backdrop" style="align-items:center;justify-content:center;display:none;z-index:1050;">
+    <div class="confirm-dialog" style="max-width:600px;width:95%;max-height:88vh;overflow-y:auto;">
+        <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--glass-border);padding-bottom:1rem;margin-bottom:1.25rem;">
+            <h3 style="margin:0;font-size:1.2rem;"><i class="fas fa-circle-dot" style="color:var(--accent-secondary);margin-right:8px;"></i><span id="perfCreateTestHeading">Create Test</span></h3>
+            <button onclick="closeCreateTestModal()" style="background:none;border:none;color:var(--text-secondary);font-size:1.5rem;cursor:pointer;line-height:1;">&times;</button>
+        </div>
+
+        <!-- Step 1: script type -->
+        <div id="createTestTypeStep">
+            <p style="margin:0 0 1rem 0;font-size:0.9rem;color:var(--text-secondary);">What type of script do you want to create?</p>
+            <div id="createTestTypeGroup" class="create-type-group">
+                <label class="create-type" id="createTypeFunctional">
+                    <input type="radio" name="createTestType" value="Functional" onchange="onCreateTestTypeChange()">
+                    <span class="create-type-icon"><i class="fas fa-window-maximize"></i></span>
+                    <span class="create-type-text">
+                        <strong>Functional</strong>
+                        <small id="createTypeFunctionalNote"></small>
+                    </span>
+                </label>
+                <label class="create-type" id="createTypeApi">
+                    <input type="radio" name="createTestType" value="API" onchange="onCreateTestTypeChange()">
+                    <span class="create-type-icon"><i class="fas fa-plug"></i></span>
+                    <span class="create-type-text">
+                        <strong>API</strong>
+                        <small id="createTypeApiNote"></small>
+                    </span>
+                </label>
+                <label class="create-type" id="createTypeCli">
+                    <input type="radio" name="createTestType" value="CLI" onchange="onCreateTestTypeChange()">
+                    <span class="create-type-icon"><i class="fas fa-terminal"></i></span>
+                    <span class="create-type-text">
+                        <strong>CLI</strong>
+                        <small id="createTypeCliNote"></small>
+                    </span>
+                </label>
+            </div>
+            <small class="error-text" id="createTestTypeGroupError"></small>
+        </div>
+
+        <!-- Step 2: API document -->
+        <div id="createTestApiStep" style="display:none;">
+            <div class="form-group" style="margin-bottom:1.25rem;">
+                <label for="apiTestTitleInput" style="margin-bottom:6px;display:block;font-size:0.9rem;color:var(--text-secondary);">Test title <span style="color:#ef4444;">*</span></label>
+                <input type="text" id="apiTestTitleInput" maxlength="120" autocomplete="off" oninput="onApiTestTitleInput()" placeholder="e.g. Orders API — smoke load">
+                <small class="error-text" id="apiTestTitleInputError"></small>
+                <small style="display:block;margin-top:5px;font-size:0.78rem;color:var(--text-secondary);">Shown in the Test Case column of the scripts grid.</small>
+            </div>
+
+            <div class="form-group" style="margin-bottom:1.25rem;">
+                <label for="apiScriptFileInput" style="margin-bottom:6px;display:block;font-size:0.9rem;color:var(--text-secondary);">Script file name <span style="color:#ef4444;">*</span></label>
+                <input type="text" id="apiScriptFileInput" maxlength="120" autocomplete="off" oninput="onApiScriptFileInput()" placeholder="e.g. orders_api">
+                <small class="error-text" id="apiScriptFileInputError"></small>
+                <small id="apiScriptFilePreview" style="display:block;margin-top:5px;font-size:0.78rem;color:var(--text-secondary);"></small>
+            </div>
+
+            <div class="form-group" style="margin-bottom:1.25rem;">
+                <label for="apiDocumentInput" style="margin-bottom:6px;display:block;font-size:0.9rem;color:var(--text-secondary);">API document <span style="color:#ef4444;">*</span></label>
+                <input type="file" id="apiDocumentInput" class="payload-file-input" accept=".json,.yaml,.yml,.txt,.md,.doc,.docx" onchange="onApiDocumentChange()">
+                <small class="error-text" id="apiDocumentInputError"></small>
+                <small style="display:block;margin-top:5px;font-size:0.78rem;color:var(--text-secondary);">
+                    Swagger / OpenAPI (.json, .yaml) and Postman collections (.json) are read directly.
+                    Word (.doc, .docx) and text (.txt, .md) documents are read by the configured AI provider.
+                </small>
+            </div>
+
+            <div id="apiScriptStatus" class="api-script-status" style="display:none;">
+                <i id="apiScriptStatusIcon" class="fas fa-spinner fa-spin"></i>
+                <span id="apiScriptStatusText"></span>
+            </div>
+        </div>
+
+        <div style="display:flex;gap:10px;margin-top:1.25rem;">
+            <button type="button" id="createTestBackBtn" onclick="backToCreateTestType()" class="btn btn-secondary" style="display:none;"><i class="fas fa-arrow-left"></i> Back</button>
+            <button type="button" id="createTestContinueBtn" onclick="continueCreateTest()" class="btn btn-primary" style="flex:1;"><i class="fas fa-arrow-right"></i> Continue</button>
+            <button type="button" id="createTestGenerateBtn" onclick="submitApiScript()" class="btn btn-primary" style="flex:1;display:none;"><i class="fas fa-wand-magic-sparkles"></i> Generate script</button>
+            <button type="button" onclick="closeCreateTestModal()" class="btn btn-secondary" style="flex:1;"><i class="fas fa-times"></i> Cancel</button>
+        </div>
+    </div>
+</div>
+
 <!-- Save Recording lightbox: names the recorded script before it is generated. -->
 <div id="perfSaveScriptModal" class="confirm-backdrop" style="align-items:center;justify-content:center;display:none;z-index:1050;">
     <div class="confirm-dialog" style="max-width:520px;width:95%;">
@@ -202,7 +285,7 @@
 
         <div class="form-group" style="margin-bottom:1.5rem;">
             <label for="saveScriptFileInput" style="margin-bottom:6px;display:block;font-size:0.9rem;color:var(--text-secondary);">Script file name <span style="color:#ef4444;">*</span></label>
-            <input type="text" id="saveScriptFileInput" maxlength="120" autocomplete="off" oninput="onSaveScriptFileInput()" placeholder="e.g. checkout_journey.py">
+            <input type="text" id="saveScriptFileInput" maxlength="120" autocomplete="off" oninput="onSaveScriptFileInput()" placeholder="e.g. checkout_journey">
             <small class="error-text" id="saveScriptFileInputError"></small>
             <small id="perfSaveScriptFilePreview" style="display:block;margin-top:5px;font-size:0.78rem;color:var(--text-secondary);"></small>
         </div>
@@ -275,6 +358,62 @@
     }
     .perf-actions .btn { padding: 7px 12px; font-size: 0.8rem; white-space: nowrap; }
     .data-table td .script-title { color: var(--text-primary); font-weight: 600; }
+    .script-type-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        padding: 3px 10px;
+        border-radius: 20px;
+        font-size: 0.72rem;
+        font-weight: 600;
+        border: 1px solid var(--glass-border);
+        white-space: nowrap;
+    }
+    .script-type-badge.type-api        { color: #60a5fa; background: rgba(96, 165, 250, 0.12); border-color: rgba(96, 165, 250, 0.35); }
+    .script-type-badge.type-functional { color: #34d399; background: rgba(52, 211, 153, 0.12); border-color: rgba(52, 211, 153, 0.35); }
+    .script-type-badge.type-cli        { color: #fbbf24; background: rgba(251, 191, 36, 0.12); border-color: rgba(251, 191, 36, 0.35); }
+    .create-type-group { display: flex; flex-direction: column; gap: 10px; }
+    .create-type {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 12px 14px;
+        border-radius: 10px;
+        border: 1px solid var(--glass-border);
+        background: var(--bg-primary);
+        cursor: pointer;
+    }
+    .create-type:has(input:checked) {
+        border-color: var(--accent-secondary);
+        background: rgba(0, 120, 212, 0.12);
+    }
+    .create-type:has(input:disabled) { opacity: 0.55; cursor: not-allowed; }
+    .create-type input { accent-color: var(--accent-secondary); cursor: inherit; }
+    .create-type-icon {
+        flex: none;
+        width: 34px;
+        height: 34px;
+        border-radius: 8px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        background: rgba(255, 255, 255, 0.05);
+        color: var(--accent-secondary);
+    }
+    .create-type-text { display: flex; flex-direction: column; gap: 2px; }
+    .create-type-text strong { color: var(--text-primary); font-size: 0.92rem; }
+    .create-type-text small { color: var(--text-secondary); font-size: 0.78rem; line-height: 1.4; }
+    .api-script-status {
+        padding: 10px 12px;
+        border-radius: 8px;
+        border: 1px solid var(--glass-border);
+        background: var(--bg-primary);
+        font-size: 0.85rem;
+        color: var(--text-secondary);
+        white-space: pre-wrap;
+        line-height: 1.5;
+    }
+    .api-script-status i { margin-right: 8px; color: var(--accent-secondary); }
     .recorder-card {
         margin-bottom: 1.25rem;
         padding: 14px 16px;
@@ -553,6 +692,7 @@
                 pollRecorder();
             }
             meta.innerHTML = [
+                `<span class="perf-chip">Tool: <strong>${perfEscape(d.project.performance_tool || 'Locust')}</strong></span>`,
                 `<span class="perf-chip">Application URL: <strong>${perfEscape(d.project.application_url || '—')}</strong></span>`,
                 `<span class="perf-chip">Default users: <strong>${perfEscape(d.project.concurrent_user_count ?? '—')}</strong></span>`,
                 `<span class="perf-chip">Spawn rate: <strong>${perfEscape(d.project.spawn_rate ?? '—')}</strong></span>`,
@@ -564,13 +704,26 @@
             if (!d.data.length) {
                 empty.style.display = 'flex';
                 empty.querySelector('h4').textContent = 'No performance scripts found';
-                empty.querySelector('p').textContent = d.message || 'This project has no scripts in its locustfiles folder yet.';
+                empty.querySelector('p').textContent = d.message || (d.project.performance_tool === 'Jmeter'
+                    ? 'This project has no test plans in its TestScripts folder yet. Use Create Test to add one.'
+                    : 'This project has no scripts in its locustfiles folder yet. Use Create Test to add one.');
                 return;
             }
 
             empty.style.display = 'none';
             wrapper.style.display = 'block';
+            // Payload configuration and runs drive Locust; a JMeter plan can be
+            // listed and deleted here, but is executed with Maven for now.
+            const jmeter = d.project.performance_tool === 'Jmeter';
             d.data.forEach((script, index) => {
+                // Payload configuration and the run buttons drive Locust. JMeter
+                // plans run with Maven and recorded Selenium journeys with pytest.
+                const pytestJourney = !jmeter && (script.relative_path || '').indexOf('functional/') === 0;
+                const locustOnly = jmeter
+                    ? 'disabled title="Not available for JMeter scripts yet - run them with Maven (mvn clean verify)."'
+                    : pytestJourney
+                        ? `disabled title="Selenium journey - run it with pytest: pytest ${perfEscape(script.relative_path)} -s"`
+                        : '';
                 const row = document.createElement('tr');
                 const lastRun = script.last_report_url
                     ? `<a href="${perfEscape(script.last_report_url)}" target="_blank" rel="noopener">${perfEscape(script.last_run_at)}</a>`
@@ -582,13 +735,14 @@
                         <span class="script-title">${perfEscape(script.title)}</span>
                         ${payloadChip(script.payload)}
                     </td>
+                    <td>${scriptTypeBadge(script.script_type)}</td>
                     <td title="${perfEscape(script.relative_path)}">${perfEscape(script.file_name)}</td>
                     <td>${lastRun}</td>
                     <td>
                         <div class="perf-actions">
-                            <button type="button" class="btn btn-secondary" ${dataAttrs} onclick="openPayloadModal(this)"><i class="fas fa-database"></i> Configure Payload</button>
-                            <button type="button" class="btn btn-secondary" ${dataAttrs} onclick="runScriptCheck(this)"><i class="fas fa-vial"></i> Run Script Check</button>
-                            <button type="button" class="btn btn-primary" ${dataAttrs} onclick="openRunConfigModal(this)"><i class="fas fa-bolt"></i> Run performance test</button>
+                            <button type="button" class="btn btn-secondary" ${dataAttrs} ${locustOnly} onclick="openPayloadModal(this)"><i class="fas fa-database"></i> Configure Payload</button>
+                            <button type="button" class="btn btn-secondary" ${dataAttrs} ${locustOnly} onclick="runScriptCheck(this)"><i class="fas fa-vial"></i> Run Script Check</button>
+                            <button type="button" class="btn btn-primary" ${dataAttrs} ${locustOnly} onclick="openRunConfigModal(this)"><i class="fas fa-bolt"></i> Run performance test</button>
                             <button type="button" class="btn btn-danger" ${dataAttrs}
                                     data-runs="${script.run_count || 0}"
                                     data-reports="${script.report_count || 0}"
@@ -602,6 +756,282 @@
         } catch (e) {
             showToast('Failed to load performance scripts.', 'error');
         }
+    }
+
+    const SCRIPT_TYPE_ICONS = { API: 'fa-plug', Functional: 'fa-window-maximize', CLI: 'fa-terminal' };
+
+    function scriptTypeBadge(type) {
+        // No type means the server did not report one - show that rather than
+        // guessing, so a mismatch is visible instead of mislabelled.
+        if (!type) return '<span style="color:var(--text-secondary);">—</span>';
+        const label = type;
+        return `<span class="script-type-badge type-${perfEscape(label.toLowerCase())}">`
+            + `<i class="fas ${SCRIPT_TYPE_ICONS[label] || 'fa-file-code'}"></i>${perfEscape(label)}</span>`;
+    }
+
+    /* ------------------------------- Create Test ------------------------------- */
+    /* Create Test first asks what kind of script to build. Functional hands over
+     * to the browser recorder; API generates a script from an uploaded API
+     * document into the framework's own folder (Locust: locustfiles/, JMeter:
+     * TestScripts/api/). */
+
+    const API_DOCUMENT_EXTENSIONS = ['.json', '.yaml', '.yml', '.txt', '.md', '.doc', '.docx'];
+    const API_SCRIPT_FILE_PATTERN = /^[A-Za-z0-9][A-Za-z0-9 _.-]*$/;
+    let apiScriptFileEdited = false;
+    // Bumped when the dialog is reopened, so a finishing job from an earlier
+    // generation reports as a toast without writing into the new dialog.
+    let apiScriptToken = 0;
+    let apiScriptRunning = false;
+
+    function currentPerfTool() {
+        return (perfProjectInfo && perfProjectInfo.performance_tool) || 'Locust';
+    }
+
+    function openCreateTestModal() {
+        const perfId = document.getElementById('perfProjectSelect').value;
+        if (!perfId || !perfProjectInfo) {
+            showToast('Select a performance project first.', 'error');
+            return;
+        }
+        if (isRunActive()) {
+            showToast('A run is in progress. Stop it before creating a new test.', 'error');
+            return;
+        }
+        if (apiScriptRunning) {
+            document.getElementById('perfCreateTestModal').style.display = 'flex';
+            return;
+        }
+
+        const tool = currentPerfTool();
+        const jmeter = tool === 'Jmeter';
+        document.getElementById('createTypeFunctionalNote').textContent = jmeter
+            ? 'Record a journey in the browser; its UI steps become a Java Selenium journey that JMeter '
+              + 'runs and times step by step (TestScripts/functional/).'
+            : 'Record a journey in the browser; its UI steps become a Selenium pytest (functional/).';
+        document.getElementById('createTypeCliNote').textContent = jmeter
+            ? 'Record a journey in the browser; its HTTP traffic becomes a JMeter test plan (TestScripts/cli/).'
+            : 'Record a journey in the browser; its HTTP traffic becomes a Locust script (locustfiles/).';
+        document.getElementById('createTypeApiNote').textContent =
+            `Generate a ${jmeter ? 'JMeter' : 'Locust'} API test from an API document `
+            + '(Swagger / OpenAPI, Postman collection, .doc / .docx / .txt).';
+
+        document.querySelectorAll('input[name="createTestType"]').forEach(radio => { radio.checked = false; });
+        clearPerfFieldError('createTestTypeGroup');
+        showCreateTestStep('type');
+        document.getElementById('perfCreateTestModal').style.display = 'flex';
+    }
+
+    function closeCreateTestModal() {
+        document.getElementById('perfCreateTestModal').style.display = 'none';
+    }
+
+    function showCreateTestStep(step) {
+        const api = step === 'api';
+        document.getElementById('createTestTypeStep').style.display = api ? 'none' : 'block';
+        document.getElementById('createTestApiStep').style.display = api ? 'block' : 'none';
+        document.getElementById('createTestBackBtn').style.display = api ? '' : 'none';
+        document.getElementById('createTestContinueBtn').style.display = api ? 'none' : '';
+        document.getElementById('createTestGenerateBtn').style.display = api ? '' : 'none';
+        document.getElementById('perfCreateTestHeading').textContent = api ? 'Create API Test' : 'Create Test';
+    }
+
+    function onCreateTestTypeChange() {
+        clearPerfFieldError('createTestTypeGroup');
+    }
+
+    function continueCreateTest() {
+        const selected = document.querySelector('input[name="createTestType"]:checked');
+        if (!selected) {
+            if (typeof setFieldError === 'function') setFieldError('createTestTypeGroup', 'Select the type of script to create.');
+            return;
+        }
+        if (selected.value === 'Functional' || selected.value === 'CLI') {
+            closeCreateTestModal();
+            startTestRecording(selected.value);
+            return;
+        }
+        if (selected.value === 'API') {
+            resetApiScriptForm();
+            showCreateTestStep('api');
+            document.getElementById('apiTestTitleInput').focus();
+        }
+    }
+
+    function backToCreateTestType() {
+        if (apiScriptRunning) return;
+        showCreateTestStep('type');
+    }
+
+    function resetApiScriptForm() {
+        apiScriptToken++;
+        apiScriptFileEdited = false;
+        document.getElementById('apiTestTitleInput').value = '';
+        document.getElementById('apiScriptFileInput').value = '';
+        document.getElementById('apiDocumentInput').value = '';
+        document.getElementById('apiScriptFilePreview').textContent = '';
+        ['apiTestTitleInput', 'apiScriptFileInput', 'apiDocumentInput'].forEach(clearPerfFieldError);
+        setApiScriptStatus('');
+        setApiScriptBusy(false);
+    }
+
+    /** Mirror of utils/api_script_generator.script_file_name, for the preview. */
+    function apiScriptFileNameFrom(raw) {
+        const base = String(raw || '').trim().replace(/\\/g, '/').split('/').pop();
+        let stem = base.replace(/\.(py|jmx)$/i, '').replace(/[^A-Za-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+        if (!stem) return '';
+        if (/^[0-9]/.test(stem)) stem = 'api_' + stem;
+        return stem + (currentPerfTool() === 'Jmeter' ? '.jmx' : '.py');
+    }
+
+    function onApiTestTitleInput() {
+        clearPerfFieldError('apiTestTitleInput');
+        if (apiScriptFileEdited) return;
+        const stem = apiScriptFileNameFrom(document.getElementById('apiTestTitleInput').value).replace(/\.(py|jmx)$/, '');
+        document.getElementById('apiScriptFileInput').value = stem;
+        clearPerfFieldError('apiScriptFileInput');
+        renderApiScriptFilePreview();
+    }
+
+    function onApiScriptFileInput() {
+        apiScriptFileEdited = true;
+        clearPerfFieldError('apiScriptFileInput');
+        renderApiScriptFilePreview();
+    }
+
+    function renderApiScriptFilePreview() {
+        const resolved = apiScriptFileNameFrom(document.getElementById('apiScriptFileInput').value);
+        const folder = currentPerfTool() === 'Jmeter' ? 'TestScripts/api/' : 'locustfiles/';
+        document.getElementById('apiScriptFilePreview').textContent = resolved ? `Saved as ${folder}${resolved}` : '';
+    }
+
+    function apiDocumentExtension(name) {
+        const match = /\.[^.]+$/.exec(name || '');
+        return match ? match[0].toLowerCase() : '';
+    }
+
+    function onApiDocumentChange() {
+        clearPerfFieldError('apiDocumentInput');
+        const file = document.getElementById('apiDocumentInput').files[0];
+        if (file && !API_DOCUMENT_EXTENSIONS.includes(apiDocumentExtension(file.name))) {
+            setFieldError('apiDocumentInput', 'Upload a .json, .yaml, .yml, .txt, .md, .doc or .docx document.');
+        }
+    }
+
+    function setApiScriptStatus(message, state) {
+        const panel = document.getElementById('apiScriptStatus');
+        const icon = document.getElementById('apiScriptStatusIcon');
+        if (!message) {
+            panel.style.display = 'none';
+            return;
+        }
+        panel.style.display = 'block';
+        document.getElementById('apiScriptStatusText').textContent = message;
+        if (state === 'error') {
+            icon.className = 'fas fa-triangle-exclamation';
+            icon.style.color = '#ef4444';
+        } else if (state === 'success') {
+            icon.className = 'fas fa-circle-check';
+            icon.style.color = '#22c55e';
+        } else {
+            icon.className = 'fas fa-spinner fa-spin';
+            icon.style.color = 'var(--accent-secondary)';
+        }
+    }
+
+    function setApiScriptBusy(busy) {
+        apiScriptRunning = busy;
+        const btn = document.getElementById('createTestGenerateBtn');
+        btn.disabled = busy;
+        btn.innerHTML = busy
+            ? '<i class="fas fa-spinner fa-spin"></i> Generating...'
+            : '<i class="fas fa-wand-magic-sparkles"></i> Generate script';
+        document.getElementById('createTestBackBtn').disabled = busy;
+        ['apiTestTitleInput', 'apiScriptFileInput', 'apiDocumentInput'].forEach(id => {
+            document.getElementById(id).disabled = busy;
+        });
+    }
+
+    async function submitApiScript() {
+        if (apiScriptRunning) return;
+        const perfId = document.getElementById('perfProjectSelect').value;
+        const title = document.getElementById('apiTestTitleInput').value.trim();
+        const fileName = document.getElementById('apiScriptFileInput').value.trim();
+        const file = document.getElementById('apiDocumentInput').files[0];
+
+        const schema = {
+            apiTestTitleInput: { required: true, message: 'Test title is required.' },
+            apiScriptFileInput: {
+                required: true,
+                pattern: API_SCRIPT_FILE_PATTERN,
+                message: 'File name must start with a letter or number, and use only letters, numbers, spaces, _ . and -'
+            },
+            apiDocumentInput: { required: true, message: 'Upload the API document.' }
+        };
+        const values = { apiTestTitleInput: title, apiScriptFileInput: fileName, apiDocumentInput: file ? file.name : '' };
+        if (typeof validateForm === 'function' && !validateForm(schema, values)) return;
+        if (!API_DOCUMENT_EXTENSIONS.includes(apiDocumentExtension(file.name))) {
+            setFieldError('apiDocumentInput', 'Upload a .json, .yaml, .yml, .txt, .md, .doc or .docx document.');
+            return;
+        }
+
+        const form = new FormData();
+        form.append('perf_id', perfId);
+        form.append('test_title', title);
+        form.append('file_name', fileName);
+        form.append('document', file);
+
+        const token = ++apiScriptToken;
+        setApiScriptBusy(true);
+        setApiScriptStatus('Uploading the API document...');
+        try {
+            const r = await fetch('/api/performance-test/api-script/generate', { method: 'POST', body: form });
+            const d = await r.json();
+            if (d.status !== 'success') {
+                setApiScriptBusy(false);
+                if (d.field && typeof setFieldError === 'function') {
+                    setFieldError(d.field, d.message);
+                    setApiScriptStatus('');
+                } else {
+                    setApiScriptStatus(d.message || 'Could not start the script generation.', 'error');
+                }
+                return;
+            }
+            pollApiScript(d.job_id, token);
+        } catch (e) {
+            setApiScriptBusy(false);
+            setApiScriptStatus('Could not upload the API document.', 'error');
+        }
+    }
+
+    function pollApiScript(jobId, token) {
+        const isCurrent = () => token === apiScriptToken;
+        const tick = async () => {
+            try {
+                const r = await fetch('/api/performance-test/api-script/status/' + jobId);
+                const d = await r.json();
+                if (d.status === 'processing') {
+                    if (isCurrent()) setApiScriptStatus(d.message || 'Generating the script...');
+                    setTimeout(tick, 1500);
+                    return;
+                }
+                setApiScriptBusy(false);
+                if (d.status === 'completed') {
+                    showToast(d.message || 'API script generated.', 'success');
+                    if (isCurrent()) closeCreateTestModal();
+                    await loadPerformanceScripts();
+                    highlightScriptRow(d.script_file);
+                } else {
+                    // Kept in the dialog: the reason (unreadable document, no
+                    // endpoints, AI not configured) is what the user has to fix.
+                    showToast(d.message || 'Could not generate the API script.', 'error');
+                    if (isCurrent()) setApiScriptStatus(d.message || 'Could not generate the API script.', 'error');
+                }
+            } catch (e) {
+                setApiScriptBusy(false);
+                if (isCurrent()) setApiScriptStatus('Lost contact with the script generation. Check the app logs.', 'error');
+            }
+        };
+        setTimeout(tick, 800);
     }
 
     /* ------------------------------ Delete Script ----------------------------- */
@@ -700,7 +1130,10 @@
     function renderRecorderState(snapshot) {
         lastRecorderSnapshot = snapshot;
         const preset = RECORDER_STATES[snapshot.state] || { label: snapshot.state, dot: '' };
-        document.getElementById('perfRecorderState').textContent = preset.label;
+        const label = snapshot.state === 'saving' && snapshot.output_label
+            ? `Generating the ${snapshot.output_label}…` : preset.label;
+        document.getElementById('perfRecorderState').textContent =
+            snapshot.script_type ? `${label} · ${snapshot.script_type}` : label;
         document.getElementById('perfRecorderDot').className = 'recorder-dot ' + preset.dot;
         document.getElementById('perfRecorderCounts').textContent =
             `${snapshot.steps} action(s) · ${snapshot.requests} request(s)`;
@@ -723,7 +1156,7 @@
             : '<i class="fas fa-times"></i> Discard';
     }
 
-    async function startTestRecording() {
+    async function startTestRecording(scriptType) {
         const perfId = document.getElementById('perfProjectSelect').value;
         if (!perfId) {
             showToast('Select a performance project first.', 'error');
@@ -740,7 +1173,7 @@
             const r = await fetch('/api/performance-test/recorder/start', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ perf_id: parseInt(perfId) })
+                body: JSON.stringify({ perf_id: parseInt(perfId), script_type: scriptType || 'CLI' })
             });
             const d = await r.json();
             if (d.status !== 'success') {
@@ -752,7 +1185,8 @@
             recorderSessionId = d.session_id;
             recorderFinishSubmitted = false;
             showRecorderCard(true);
-            renderRecorderState({ state: 'launching', steps: 0, requests: 0, message: d.message });
+            renderRecorderState({ state: 'launching', steps: 0, requests: 0, message: d.message,
+                                  naming: d.naming, output_label: d.output_label, script_type: d.script_type });
             pollRecorder();
         } catch (e) {
             showToast('Failed to start the recorder.', 'error');
@@ -842,16 +1276,26 @@
     // the title.
     let saveScriptFileEdited = false;
 
+    function recorderNaming() {
+        return (lastRecorderSnapshot && lastRecorderSnapshot.naming)
+            || { folder: 'locustfiles/', prefix: '', extension: '.py' };
+    }
+
     /**
-     * Mirror of utils/locust_recorder_writer.sanitize_script_filename, so the
-     * dialog previews the name the file will actually land under.
+     * Mirror of utils/recorded_script_writers.recorded_file_name, so the dialog
+     * previews the name the file will actually land under - the prefix and
+     * extension depend on the project's tool and the recording's script type.
      */
     function scriptFileNameFrom(raw) {
+        const naming = recorderNaming();
         const base = String(raw || '').trim().replace(/\\/g, '/').split('/').pop();
-        let stem = base.replace(/\.py$/i, '').replace(/[^A-Za-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+        let stem = base.replace(/\.(py|jmx|java)$/i, '').replace(/[^A-Za-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+        if (naming.prefix && stem.toLowerCase().indexOf(naming.prefix) === 0) {
+            stem = stem.slice(naming.prefix.length).replace(/^_+/, '');
+        }
         if (!stem) return '';
-        if (/^[0-9]/.test(stem)) stem = 'rec_' + stem;
-        return stem + '.py';
+        if (/^[0-9]/.test(stem) && !naming.prefix) stem = 'rec_' + stem;
+        return naming.prefix + stem + naming.extension;
     }
 
     function finishTestRecording() {
@@ -865,7 +1309,7 @@
 
         document.getElementById('perfSaveScriptSummary').textContent =
             `${snapshot.steps || 0} action(s) and ${snapshot.requests || 0} request(s) captured. `
-            + 'Name the test before the script is generated.';
+            + `Name the test before the ${snapshot.output_label || 'script'} is generated.`;
         document.getElementById('saveScriptTitleInput').value = '';
         document.getElementById('saveScriptFileInput').value = '';
         document.getElementById('perfSaveScriptFilePreview').textContent = '';
@@ -899,7 +1343,7 @@
     function renderSaveScriptPreview() {
         const resolved = scriptFileNameFrom(document.getElementById('saveScriptFileInput').value);
         document.getElementById('perfSaveScriptFilePreview').textContent =
-            resolved ? `Saved as locustfiles/${resolved}` : '';
+            resolved ? `Saved as ${recorderNaming().folder}${resolved}` : '';
     }
 
     function validateSaveScript(values) {

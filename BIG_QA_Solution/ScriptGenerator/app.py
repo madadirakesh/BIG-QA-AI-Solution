@@ -411,7 +411,13 @@ from utils.performance_scaffolder import (
     scaffold_performance_project,
     performance_dir_path,
     install_performance_dependencies,
+    preflight_performance_project,
+    detect_framework_tools,
+    normalize_tool as normalize_performance_tool,
+    LOCUST_TOOL,
+    JMETER_TOOL,
 )
+from utils import api_script_generator
 from ScriptRunnerEngine.performance_runner import (
     list_scripts as list_performance_scripts,
     stream_run as stream_performance_run,
@@ -422,7 +428,8 @@ from ScriptRunnerEngine.performance_runner import (
 )
 from utils import payload_parameterizer, performance_insights
 from utils.payload_parameterizer import PayloadError
-from utils.locust_recorder_writer import sanitize_script_filename, sanitize_script_title
+from utils.locust_recorder_writer import sanitize_script_title
+from utils import recorded_script_writers
 from ScriptRunnerEngine.performance_recorder import registry as recorder_registry
 
 # Load environment variables early
@@ -435,6 +442,11 @@ bootstrapper_jobs = {}
 # pulling Locust takes minutes on a cold pip cache, far longer than a form POST should
 # block, so the save endpoint returns immediately and the modal polls this dict.
 performance_setup_jobs = {}
+
+# API test script generation from an uploaded API document. A free-form document
+# goes through the AI provider, which can take a minute, so the Create Test
+# dialog polls this dict rather than holding the upload request open.
+api_script_jobs = {}
 
 # Tracks the currently running Element Locator Studio subprocess.
 # Prevents launching a duplicate when the user accidentally clicks the
@@ -795,11 +807,12 @@ def _bootstrapper_worker(job_id, p_name, p_path, tool, lang, fw, pm, url, user, 
         bootstrapper_jobs[job_id] = {"status": "error", "message": str(e)}
 
 
-def _performance_dependency_worker(job_id, perf_dir):
+def _performance_dependency_worker(job_id, perf_dir, tool=LOCUST_TOOL):
     """
-    Provision the scaffolded performance project's Python environment in the
-    background: pre-flight Python/Pip, create `<perf project>/.venv`, install
-    requirements.txt (Locust) into it.
+    Provision the performance project's dependencies in the background:
+      Locust - pre-flight Python/Pip, create `<perf project>/.venv`, install
+               requirements.txt (Locust) into it.
+      JMeter - pre-flight JDK/Maven, resolve the Maven plugins and download JMeter.
 
     Mirrors _bootstrapper_worker's contract - the job dict always ends up with a
     terminal status ("completed" / "error") so the poller can stop.
@@ -808,7 +821,7 @@ def _performance_dependency_worker(job_id, perf_dir):
         performance_setup_jobs[job_id] = {"status": "processing", "message": phase_message}
 
     try:
-        result = install_performance_dependencies(perf_dir, status_cb=_update_status)
+        result = install_performance_dependencies(perf_dir, status_cb=_update_status, tool=tool)
         status = result.get("status")
         if status in ("installed", "already_installed", "skipped"):
             performance_setup_jobs[job_id] = {
@@ -1471,13 +1484,19 @@ def _report_url(report_path):
     return '/api/script-runner/report?path=' + quote(str(report_path))
 
 
+def _performance_tool(record):
+    """The project's performance tool ('Locust' / 'Jmeter'); older records are Locust."""
+    return normalize_performance_tool((record or {}).get('performance_tool')) or LOCUST_TOOL
+
+
 def _performance_project(perf_id):
     """Return (record, performance directory) for a performance project, or (None, '')."""
     rows = fetch_data("SELECT * FROM PerformanceDetails WHERE id = ?", (perf_id,))
     if not rows:
         return None, ''
     record = dict(rows[0])
-    return record, performance_dir_path(record.get('project_name'), record.get('project_path'))
+    return record, performance_dir_path(record.get('project_name'), record.get('project_path'),
+                                        bool(record.get('framework_exists')))
 
 
 @app.route('/api/performance-test/scripts', methods=['GET'])
@@ -1498,6 +1517,7 @@ def performance_test_scripts():
             "application_url": record.get('application_url', ''),
             "project_path": record.get('project_path', '') or '',
             "performance_dir": perf_dir,
+            "performance_tool": _performance_tool(record),
             "concurrent_user_count": record.get('concurrent_user_count'),
             "spawn_rate": record.get('spawn_rate'),
             "run_duration": record.get('run_duration')
@@ -1514,7 +1534,7 @@ def performance_test_scripts():
                 "message": f"The performance framework folder was not found at {perf_dir}."
             })
 
-        scripts = list_performance_scripts(perf_dir)
+        scripts = list_performance_scripts(perf_dir, _performance_tool(record))
         for script in scripts:
             script['last_report_url'] = _report_url(script.get('last_report'))
         _payload_summaries(perf_id, scripts)
@@ -2154,8 +2174,10 @@ def performance_script_delete():
             return jsonify({"status": "error", "message": "Performance project not found."}), 404
 
         # resolve_script_path only returns a path inside the project's
-        # locustfiles folder, so a crafted name cannot delete an arbitrary file.
-        script_path = resolve_performance_script(perf_dir, script_file)
+        # locustfiles (JMeter: TestScripts) folder, so a crafted name cannot
+        # delete an arbitrary file.
+        script_path = resolve_performance_script(perf_dir, script_file, _performance_tool(record),
+                                                 include_functional=True)
         if not script_path:
             return jsonify({
                 "status": "error",
@@ -2164,10 +2186,19 @@ def performance_script_delete():
 
         payload_row = _payload_config_row(perf_id, script_file)
 
+        # A recorded JMeter functional plan drives a generated Java journey,
+        # which goes with it. Read before the plan itself is removed.
+        companions = recorded_script_writers.companion_files(perf_dir, script_path)
+
         # The script first: while it is on disk the entry is still runnable, so
         # a failure here (a file lock, a permission) must leave everything else
         # intact rather than stranding a script with no configuration.
         os.remove(script_path)
+        for companion in companions:
+            try:
+                os.remove(companion)
+            except OSError:
+                app.logger.warning("Could not delete %s", companion)
 
         payload_parameterizer.remove_generated_script(perf_dir, script_file)
         if payload_row:
@@ -2182,6 +2213,8 @@ def performance_script_delete():
                     (perf_id, script_file))
 
         removed = []
+        if companions:
+            removed.append(", ".join(os.path.basename(c) for c in companions))
         if payload_row:
             removed.append("its payload configuration")
         if reports_removed:
@@ -2206,6 +2239,123 @@ def performance_script_delete():
 # so the page can mirror it, and expose a fallback finish for when the browser
 # is no longer reachable. Script generation happens inside the session.
 # ─────────────────────────────────────────────────────────────────────────────
+
+def _api_script_ai_call(prompt):
+    """Synchronous bridge to the configured AI provider for the generator worker thread."""
+    from api.backend import call_ai
+    return asyncio.run(call_ai(prompt, expect_json=True))
+
+
+def _api_script_worker(job_id, perf_dir, tool, document_name, raw, title, file_name, application_url):
+    def update(message):
+        api_script_jobs[job_id] = {"status": "processing", "message": message}
+
+    try:
+        update("Reading the API document...")
+        kind, content = api_script_generator.read_document(document_name, raw)
+        if kind == "text":
+            update("Extracting the endpoints with AI (this can take a minute)...")
+        else:
+            update(f"Parsing the {api_script_generator.SOURCE_LABELS[kind]} document...")
+        model = api_script_generator.build_api_model(kind, content, ai_call=_api_script_ai_call)
+
+        update(f"Generating the {tool} script for {len(model['endpoints'])} endpoint(s)...")
+        _, written_name, relative = api_script_generator.write_api_script(
+            perf_dir, tool, model, title, file_name, application_url, document_name, kind)
+
+        api_script_jobs[job_id] = {
+            "status": "completed",
+            "message": (f"Generated {relative} with {len(model['endpoints'])} endpoint(s) "
+                        f"from {document_name}."),
+            "script_file": written_name,
+            "relative_path": relative,
+            "endpoints": len(model['endpoints']),
+        }
+    except api_script_generator.ApiDocumentError as e:
+        api_script_jobs[job_id] = {"status": "error", "message": str(e)}
+    except Exception as e:
+        app.logger.exception("API script generation failed")
+        api_script_jobs[job_id] = {"status": "error", "message": f"Could not generate the API script: {e}"}
+
+
+@app.route('/api/performance-test/api-script/generate', methods=['POST'])
+@login_required()
+def performance_api_script_generate():
+    """
+    Create an API test script from an uploaded API document (Swagger/OpenAPI,
+    Postman collection, or a free-form .doc/.docx/.txt read by the AI). The
+    script is written into the framework's own folder - locustfiles/ for
+    Locust, TestScripts/api/ for JMeter - and the dialog polls the job.
+    """
+    try:
+        perf_id = request.form.get('perf_id', type=int)
+        title = api_script_generator.sanitize_title(request.form.get('test_title', ''))
+        upload = request.files.get('document')
+        if not perf_id:
+            return jsonify({"status": "error", "message": "A performance project must be selected."}), 400
+        if not title:
+            return jsonify({"status": "error", "field": "apiTestTitleInput",
+                            "message": "Test title is required."}), 400
+        if not upload or not upload.filename:
+            return jsonify({"status": "error", "field": "apiDocumentInput",
+                            "message": "Upload the API document."}), 400
+
+        record, perf_dir = _performance_project(perf_id)
+        if not record:
+            return jsonify({"status": "error", "message": "Performance project not found."}), 404
+        if not perf_dir or not os.path.isdir(perf_dir):
+            return jsonify({
+                "status": "error",
+                "message": ("The performance framework folder for this project does not exist. "
+                            "Re-save it from Configurations > Performance Configuration to scaffold it.")
+            }), 400
+
+        tool = _performance_tool(record)
+        file_name = api_script_generator.script_file_name(
+            request.form.get('file_name', '') or title, tool)
+        if not file_name:
+            return jsonify({"status": "error", "field": "apiScriptFileInput",
+                            "message": "Enter a script file name with at least one letter or number."}), 400
+
+        document_name = os.path.basename(upload.filename)
+        extension = os.path.splitext(document_name)[1].lower()
+        if extension not in api_script_generator.SUPPORTED_EXTENSIONS:
+            return jsonify({
+                "status": "error", "field": "apiDocumentInput",
+                "message": (f"Unsupported document type '{extension or document_name}'. Upload one of: "
+                            f"{', '.join(api_script_generator.SUPPORTED_EXTENSIONS)}.")
+            }), 400
+        raw = upload.read(api_script_generator.MAX_DOCUMENT_BYTES + 1)
+        if len(raw) > api_script_generator.MAX_DOCUMENT_BYTES:
+            return jsonify({"status": "error", "field": "apiDocumentInput",
+                            "message": "The document is larger than 10 MB."}), 400
+        if not raw:
+            return jsonify({"status": "error", "field": "apiDocumentInput",
+                            "message": "The uploaded document is empty."}), 400
+
+        job_id = str(uuid.uuid4())
+        api_script_jobs[job_id] = {"status": "processing", "message": "Reading the API document..."}
+        threading.Thread(
+            target=_api_script_worker,
+            args=(job_id, perf_dir, tool, document_name, raw, title, file_name,
+                  (record.get('application_url') or '').strip()),
+            daemon=True,
+        ).start()
+        return jsonify({"status": "success", "job_id": job_id, "tool": tool})
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.route('/api/performance-test/api-script/status/<job_id>', methods=['GET'])
+@login_required()
+def performance_api_script_status(job_id):
+    job = api_script_jobs.get(job_id)
+    if not job:
+        return jsonify({"status": "error", "message": "Job ID not found"})
+    if job.get("status") in ("completed", "error"):
+        api_script_jobs.pop(job_id, None)
+    return jsonify(job)
+
 
 @app.route('/api/performance-test/recorder/start', methods=['POST'])
 @login_required()
@@ -2238,13 +2388,24 @@ def performance_recorder_start():
                 "session_id": existing.id
             }), 409
 
+        # Create Test's choice decides what the recording becomes: the HTTP
+        # traffic (CLI) or the UI steps (Functional), written for the
+        # project's own tool - see utils/recorded_script_writers.
+        script_type = recorded_script_writers.normalize_script_type(data.get('script_type'))
+        tool = _performance_tool(record)
         session_id = str(uuid.uuid4())
-        recorder_registry.create(session_id, perf_dir, record.get('project_name', ''), application_url)
+        session_obj = recorder_registry.create(session_id, perf_dir, record.get('project_name', ''),
+                                               application_url, tool=tool, script_type=script_type)
         return jsonify({
             "status": "success",
             "session_id": session_id,
             "application_url": application_url,
-            "message": f"Opening {application_url} with the recorder panel…"
+            "tool": tool,
+            "script_type": script_type,
+            "naming": session_obj.naming,
+            "output_label": session_obj.output_label,
+            "message": (f"Opening {application_url} with the recorder panel. The recording becomes "
+                        f"a {session_obj.output_label} ({script_type}).")
         })
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
@@ -2272,7 +2433,8 @@ def performance_recorder_finish(session_id):
     data = request.json or {}
     title = sanitize_script_title(data.get('test_title'))
     raw_file_name = (data.get('file_name') or '').strip()
-    file_name = sanitize_script_filename(raw_file_name)
+    file_name = recorded_script_writers.recorded_file_name(
+        raw_file_name, session_obj.tool, session_obj.script_type)
     if raw_file_name and not file_name:
         return jsonify({
             "status": "error",
@@ -2281,13 +2443,12 @@ def performance_recorder_finish(session_id):
 
     # A name already on disk would otherwise be silently suffixed (_2), leaving
     # the tester with a file they did not name. Say so while they can still edit.
-    if file_name:
-        existing = os.path.join(session_obj.perf_dir, 'locustfiles', file_name)
-        if os.path.exists(existing):
-            return jsonify({
-                "status": "error",
-                "message": f"{file_name} already exists in this project. Choose another file name."
-            }), 409
+    if file_name and recorded_script_writers.name_in_use(
+            session_obj.perf_dir, session_obj.tool, session_obj.script_type, file_name):
+        return jsonify({
+            "status": "error",
+            "message": f"{file_name} already exists in this project. Choose another file name."
+        }), 409
 
     session_obj.request_finish(title=title, file_name=file_name)
     return jsonify({"status": "success", "message": "Finishing the recording…"})
@@ -3098,7 +3259,9 @@ def get_performance_config(perf_id):
                 "project_path": row.get('project_path', '') or '',
                 "concurrent_user_count": row.get('concurrent_user_count'),
                 "spawn_rate": row.get('spawn_rate'),
-                "run_duration": row.get('run_duration')
+                "run_duration": row.get('run_duration'),
+                "performance_tool": row.get('performance_tool') or LOCUST_TOOL,
+                "framework_exists": bool(row.get('framework_exists'))
             }
         })
     except Exception as e:
@@ -3114,12 +3277,16 @@ def save_performance_config():
         perf_id = data.get('perf_id')
 
         project_name = (data.get('project_name', '') or '').strip()
+        performance_tool = normalize_performance_tool(data.get('performance_tool'))
+        framework_exists = bool(data.get('framework_exists'))
         application_url = (data.get('application_url', '') or '').strip()
         project_path = normalize_project_path(data.get('project_path', ''))
 
         # 1. Validation
         if not project_name:
             return jsonify({"status": "error", "message": "Project Name is required."}), 400
+        if not performance_tool:
+            return jsonify({"status": "error", "message": "Performance Tool is required. Choose Locust or Jmeter."}), 400
         if not application_url:
             return jsonify({"status": "error", "message": "Application URL is required."}), 400
         if not re.match(r'^https?://\S+$', application_url, re.IGNORECASE):
@@ -3135,6 +3302,8 @@ def save_performance_config():
         if error:
             return jsonify({"status": "error", "message": error}), 400
 
+        if framework_exists and not project_path:
+            return jsonify({"status": "error", "message": "Performance Project path is required when Framework Exists is Yes."}), 400
         if project_path and not os.path.isdir(project_path):
             return jsonify({"status": "error", "message": f"Performance Project path does not exist: {project_path}"}), 400
 
@@ -3155,30 +3324,67 @@ def save_performance_config():
             if duplicate:
                 return jsonify({"status": "error", "message": f"Performance project '{project_name}' is already used by another record."}), 400
 
-        # 2. Scaffold the performance framework before touching the DB, so a
-        #    failed scaffold never leaves an orphaned record behind.
+        # 2. An existing framework must be one for the selected tool. A mismatch
+        #    is returned as its own status so the modal can offer to correct the
+        #    tool and resubmit, instead of saving a record the runner cannot use.
+        if framework_exists:
+            detected_tools = detect_framework_tools(project_path)
+            if not detected_tools:
+                return jsonify({
+                    "status": "error",
+                    "message": f"No Locust or JMeter framework was found at {project_path}. "
+                               f"Select the framework's root folder, or set Framework Exists to No "
+                               f"to scaffold a new one."
+                }), 400
+            if performance_tool not in detected_tools:
+                detected_tool = detected_tools[0]
+                return jsonify({
+                    "status": "tool_mismatch",
+                    "selected_tool": performance_tool,
+                    "detected_tool": detected_tool,
+                    "message": f"The selected tool is {performance_tool} and the framework tool is "
+                               f"{detected_tool} - they are different. Do you want to correct it?"
+                }), 409
+
+        # 3. Pre-flight the tool's system prerequisites (Python/Pip for Locust,
+        #    JDK/Maven for JMeter), then scaffold the framework - all before
+        #    touching the DB, so a failure never leaves an orphaned record behind.
         scaffold_message = ""
         scaffold_path = ""
         if project_path:
-            try:
-                result = scaffold_performance_project(
-                    project_name, project_path, application_url,
-                    user_count, spawn_rate, run_duration
-                )
-                scaffold_message = result.get('message', '')
-                scaffold_path = result.get('path', '')
-            except Exception as scaffold_error:
+            ready, preflight_message, dependency_report = preflight_performance_project(performance_tool)
+            if not ready:
                 return jsonify({
                     "status": "error",
-                    "message": f"Failed to scaffold the performance project: {scaffold_error}"
-                }), 500
+                    "message": preflight_message,
+                    "dependencies": dependency_report
+                }), 400
 
-        # 3. Insert or Update PerformanceDetails
+            if framework_exists:
+                scaffold_path = performance_dir_path(project_name, project_path, framework_exists=True)
+                scaffold_message = f"Using the existing {performance_tool} framework at {scaffold_path}."
+            else:
+                try:
+                    result = scaffold_performance_project(
+                        project_name, project_path, application_url,
+                        user_count, spawn_rate, run_duration, tool=performance_tool
+                    )
+                    scaffold_message = result.get('message', '')
+                    scaffold_path = result.get('path', '')
+                except Exception as scaffold_error:
+                    return jsonify({
+                        "status": "error",
+                        "message": f"Failed to scaffold the {performance_tool} performance project: {scaffold_error}"
+                    }), 500
+
+        # 4. Insert or Update PerformanceDetails
         if is_new_project:
             insert_data(
                 "INSERT INTO PerformanceDetails (project_name, application_url, project_path, "
-                "concurrent_user_count, spawn_rate, run_duration) VALUES (?, ?, ?, ?, ?, ?)",
-                (project_name, application_url, project_path, user_count, spawn_rate, run_duration)
+                "concurrent_user_count, spawn_rate, run_duration, performance_tool, framework_exists) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (project_name, application_url, project_path, user_count, spawn_rate, run_duration,
+                 performance_tool, int(framework_exists))
             )
             new_rows = fetch_data("SELECT id FROM PerformanceDetails WHERE project_name = ?", (project_name,))
             if not new_rows:
@@ -3187,14 +3393,17 @@ def save_performance_config():
         else:
             update_data(
                 "UPDATE PerformanceDetails SET project_name=?, application_url=?, project_path=?, "
-                "concurrent_user_count=?, spawn_rate=?, run_duration=? WHERE id=?",
-                (project_name, application_url, project_path, user_count, spawn_rate, run_duration, perf_id)
+                "concurrent_user_count=?, spawn_rate=?, run_duration=?, performance_tool=?, "
+                "framework_exists=? WHERE id=?",
+                (project_name, application_url, project_path, user_count, spawn_rate, run_duration,
+                 performance_tool, int(framework_exists), perf_id)
             )
 
-        # 4. Provision the project's Python environment (venv + Locust) in the
-        #    background. The record already exists at this point, so a failed or
-        #    slow install never blocks the save - the modal polls the job below
-        #    and reports what happened.
+        # 5. Provision the project's dependencies (Locust: venv + requirements;
+        #    JMeter: Maven plugins + JMeter download) in the background. The
+        #    record already exists at this point, so a failed or slow install
+        #    never blocks the save - the modal polls the job below and reports
+        #    what happened.
         perf_job_id = ""
         if scaffold_path:
             perf_job_id = str(uuid.uuid4())
@@ -3203,7 +3412,7 @@ def save_performance_config():
                 "message": "Preparing the performance project environment...",
             }
             threading.Thread(target=_performance_dependency_worker,
-                             args=(perf_job_id, scaffold_path),
+                             args=(perf_job_id, scaffold_path, performance_tool),
                              daemon=True).start()
 
         message = "Performance project created successfully." if is_new_project else "Performance project updated successfully."

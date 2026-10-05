@@ -1,7 +1,7 @@
 """
 performance_recorder.py
 -----------------------
-Record a user journey in a real browser and turn it into a Locust script.
+Record a user journey in a real browser and turn it into a performance script.
 
 Flow, from the Performance Test page's "Create Test" button:
 
@@ -12,9 +12,13 @@ Flow, from the Performance Test page's "Create Test" button:
        * functional UI actions (clicks, typing, selects, submits, navigations),
          reported by the injected script through a CDP binding
        * document / XHR / fetch traffic, read straight off CDP's Network domain
-  4. Closing the panel finalizes the session: the journey is converted to a
-     Locust script, written into the project's locustfiles/ folder, and the
-     browser closes.
+  4. Closing the panel finalizes the session: the journey is converted to the
+     script the project's tool and the chosen script type call for (see
+     utils/recorded_script_writers) and the browser closes:
+       CLI        -> the HTTP traffic: a Locust script / a JMeter test plan
+       Functional -> the UI steps: a Selenium pytest / a Java Selenium journey
+                     run by JMeter
+     Every action carries a Selenium locator for that functional replay.
 
 Why CDP rather than Playwright: the app already ships Selenium and its own
 CDPClient (webperf_monitor), so a recorder built on those adds no dependency and
@@ -35,9 +39,13 @@ import threading
 import time
 from datetime import datetime
 
-from utils.locust_recorder_writer import write_recorded_script
-
-LOCUSTFILES_DIRNAME = "locustfiles"
+from utils.recorded_script_writers import (
+    JMETER_TOOL,
+    SCRIPT_TYPE_FUNCTIONAL,
+    naming_rules,
+    normalize_script_type,
+    write_recording,
+)
 
 # CDP binding the injected panel calls to reach Python.
 BINDING_NAME = "__bigqaRecorderSend"
@@ -99,6 +107,80 @@ _OVERLAY_JS = r"""
     return label ? kind + " '" + label + "'" : kind;
   };
 
+  /* Selenium locator for an element, recorded with every action so a
+   * Functional script can replay it. Preference order: test ids, a stable id,
+   * a unique name, aria-label / placeholder / title / alt, a submit button's
+   * value, the element's exact text, then a CSS path as the last resort. */
+  const cssEscape = (value) => (window.CSS && CSS.escape)
+    ? CSS.escape(value) : String(value).replace(/[^a-zA-Z0-9_-]/g, (ch) => '\\' + ch);
+  const attrValue = (value) => '"' + String(value).replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"';
+  const countCss = (selector) => {
+    try { return document.querySelectorAll(selector).length; } catch (err) { return 0; }
+  };
+  const xpathLiteral = (text) => {
+    if (text.indexOf("'") === -1) { return "'" + text + "'"; }
+    if (text.indexOf('"') === -1) { return '"' + text + '"'; }
+    return 'concat(' + text.split("'").map((part) => "'" + part + "'").join(', "\'", ') + ')';
+  };
+  const countXpath = (xpath) => {
+    try {
+      return document.evaluate('count(' + xpath + ')', document, null, XPathResult.NUMBER_TYPE, null).numberValue;
+    } catch (err) { return 0; }
+  };
+  // Framework-generated ids change between builds and page loads.
+  const unstable = (value) => /\d{3,}|[0-9a-f]{8,}|^(ember|react|mui|ng-|radix|headlessui|:r)|__/i.test(value);
+
+  const cssPath = (el) => {
+    const parts = [];
+    let node = el;
+    while (node && node.nodeType === 1 && node !== document.documentElement) {
+      if (node.id && !unstable(node.id) && countCss('#' + cssEscape(node.id)) === 1) {
+        parts.unshift('#' + cssEscape(node.id));
+        break;
+      }
+      let index = 1;
+      let sibling = node;
+      while ((sibling = sibling.previousElementSibling)) {
+        if (sibling.tagName === node.tagName) { index += 1; }
+      }
+      parts.unshift(node.tagName.toLowerCase() + ':nth-of-type(' + index + ')');
+      node = node.parentElement;
+    }
+    return parts.join(' > ');
+  };
+
+  const locate = (el) => {
+    if (!el || !el.tagName) { return null; }
+    const tag = el.tagName.toLowerCase();
+    const attr = (name) => (el.getAttribute && el.getAttribute(name)) || '';
+    for (const name of ['data-testid', 'data-test-id', 'data-test', 'data-qa', 'data-cy']) {
+      const value = attr(name);
+      const selector = '[' + name + '=' + attrValue(value) + ']';
+      if (value && countCss(selector) === 1) { return { by: 'css', value: selector }; }
+    }
+    const id = attr('id');
+    if (id && !unstable(id) && countCss('#' + cssEscape(id)) === 1) { return { by: 'id', value: id }; }
+    const name = attr('name');
+    if (name && countCss('[name=' + attrValue(name) + ']') === 1) { return { by: 'name', value: name }; }
+    for (const name of ['aria-label', 'placeholder', 'title', 'alt']) {
+      const value = attr(name);
+      const selector = tag + '[' + name + '=' + attrValue(value) + ']';
+      if (value && countCss(selector) === 1) { return { by: 'css', value: selector }; }
+    }
+    const type = attr('type').toLowerCase();
+    if (tag === 'input' && ['submit', 'button', 'reset'].indexOf(type) !== -1 && attr('value')) {
+      const selector = 'input[type=' + attrValue(type) + '][value=' + attrValue(attr('value')) + ']';
+      if (countCss(selector) === 1) { return { by: 'css', value: selector }; }
+    }
+    const text = (el.textContent || '').replace(/\s+/g, ' ').trim();
+    if (text && text.length <= 80 && ['input', 'select', 'textarea'].indexOf(tag) === -1) {
+      const xpath = '//' + tag + '[normalize-space()=' + xpathLiteral(text) + ']';
+      if (countXpath(xpath) === 1) { return { by: 'xpath', value: xpath }; }
+    }
+    return { by: 'css', value: cssPath(el) };
+  };
+  const inFrame = window.top !== window;
+
   const INTERACTIVE = 'a,button,input,select,textarea,label,[role=button],[role=link],[role=tab],[onclick]';
 
   document.addEventListener('click', (event) => {
@@ -107,7 +189,14 @@ _OVERLAY_JS = r"""
     const el = (raw.closest && raw.closest(INTERACTIVE)) || raw;
     const tag = el.tagName.toLowerCase();
     if (tag === 'html' || tag === 'body') { return; }
-    send({ kind: 'action', type: 'click', target: describe(el) });
+    // These are recorded by the change listener with their new value; the raw
+    // click (and the synthetic one a label fires on its control) would replay
+    // as a second toggle.
+    if (tag === 'select' || tag === 'option') { return; }
+    const toggles = (node) => !!node && /^(checkbox|radio)$/i.test(node.type || '');
+    if (tag === 'input' && toggles(el)) { return; }
+    if (tag === 'label' && toggles(el.control)) { return; }
+    send({ kind: 'action', type: 'click', target: describe(el), locator: locate(el), frame: inFrame });
   }, true);
 
   document.addEventListener('change', (event) => {
@@ -118,12 +207,12 @@ _OVERLAY_JS = r"""
 
     if (tag === 'select') {
       const option = el.options && el.options[el.selectedIndex];
-      send({ kind: 'action', type: 'select', target: describe(el),
-             value: clean(option ? option.text : el.value) });
+      send({ kind: 'action', type: 'select', target: describe(el), locator: locate(el), frame: inFrame,
+             value: option ? (option.text || '').replace(/\s+/g, ' ').trim() : el.value });
       return;
     }
     if (type === 'checkbox' || type === 'radio') {
-      send({ kind: 'action', type: 'click', target: describe(el),
+      send({ kind: 'action', type: 'click', target: describe(el), locator: locate(el), frame: inFrame,
              value: el.checked ? 'checked' : 'unchecked' });
       return;
     }
@@ -131,20 +220,22 @@ _OVERLAY_JS = r"""
       // The real value of a password field is sent so the backend can find and
       // redact it from recorded request bodies. It is never written to the
       // generated script - see locust_recorder_writer.
-      send({ kind: 'action', type: 'input', target: describe(el),
-             value: el.value == null ? '' : String(el.value).slice(0, 200),
+      send({ kind: 'action', type: 'input', target: describe(el), locator: locate(el), frame: inFrame,
+             value: el.value == null ? '' : String(el.value).slice(0, 2000),
              secret: type === 'password' });
     }
   }, true);
 
   document.addEventListener('submit', (event) => {
     if (isRecorderUi(event.target)) { return; }
-    send({ kind: 'action', type: 'submit', target: describe(event.target) });
+    send({ kind: 'action', type: 'submit', target: describe(event.target),
+           locator: locate(event.target), frame: inFrame });
   }, true);
 
   document.addEventListener('keydown', (event) => {
     if (event.key !== 'Enter' || isRecorderUi(event.target)) { return; }
-    send({ kind: 'action', type: 'press', target: describe(event.target), value: 'Enter' });
+    send({ kind: 'action', type: 'press', target: describe(event.target), value: 'Enter',
+           locator: locate(event.target), frame: inFrame });
   }, true);
 
   /* ---------------------------------------------------------------- *
@@ -302,13 +393,19 @@ _OVERLAY_JS = r"""
      * Save & close does not finish straight away: the recording is named
      * first, so the script is not left under a generated rec_<project>_
      * <timestamp> name that says nothing about what it covers. Mirrors
-     * utils/locust_recorder_writer.sanitize_script_filename.             */
+     * utils/recorded_script_writers.recorded_file_name; the prefix and
+     * extension depend on the project's tool and the script type.        */
+    const NAME_PREFIX = '__NAME_PREFIX__';
+    const NAME_EXT = '__NAME_EXT__';
     const slug = (value) => {
       const base = String(value || '').trim().replace(/\\/g, '/').split('/').pop();
-      let stem = base.replace(/\.py$/i, '').replace(/[^A-Za-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+      let stem = base.replace(/\.(py|jmx|java)$/i, '').replace(/[^A-Za-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+      if (NAME_PREFIX && stem.toLowerCase().indexOf(NAME_PREFIX) === 0) {
+        stem = stem.slice(NAME_PREFIX.length).replace(/^_+/, '');
+      }
       if (!stem) { return ''; }
-      if (/^[0-9]/.test(stem)) { stem = 'rec_' + stem; }
-      return stem + '.py';
+      if (/^[0-9]/.test(stem) && !NAME_PREFIX) { stem = 'rec_' + stem; }
+      return NAME_PREFIX + stem + NAME_EXT;
     };
 
     let fileEdited = false;
@@ -432,11 +529,18 @@ _OVERLAY_JS = r"""
 class RecordingSession:
     """One browser recording. Owns a Selenium driver, a CDP client and a thread."""
 
-    def __init__(self, session_id, perf_dir, project_name, application_url):
+    def __init__(self, session_id, perf_dir, project_name, application_url,
+                 tool="Locust", script_type="CLI"):
         self.id = session_id
         self.perf_dir = perf_dir
         self.project_name = project_name
         self.application_url = application_url
+        # What the recording becomes: the project's tool plus the script type
+        # chosen in Create Test (see utils/recorded_script_writers).
+        self.tool = JMETER_TOOL if tool == JMETER_TOOL else "Locust"
+        self.script_type = normalize_script_type(script_type)
+        self.naming = naming_rules(self.tool, self.script_type)
+        self.notes = []
 
         self.state = "launching"
         self.message = "Opening the browser…"
@@ -507,7 +611,19 @@ class RecordingSession:
                 "application_url": self.application_url,
                 "active": self.is_active,
                 "last_action": self._steps[-1].get("target", "") if self._steps else "",
+                "tool": self.tool,
+                "script_type": self.script_type,
+                "naming": self.naming,
+                "output_label": self.output_label,
+                "notes": list(self.notes),
             }
+
+    @property
+    def output_label(self):
+        """What the recording is being turned into, for status messages."""
+        if self.script_type == SCRIPT_TYPE_FUNCTIONAL:
+            return "Java Selenium journey" if self.tool == JMETER_TOOL else "Selenium pytest"
+        return "JMeter test plan" if self.tool == JMETER_TOOL else "Locust script"
 
     # ── state helpers ───────────────────────────────────────────────────
 
@@ -534,7 +650,7 @@ class RecordingSession:
                           "rec", False, True, True),
             "paused": ("Paused. Press Resume to continue, or Save & close to finish.",
                        "paused", True, False, True),
-            "saving": ("Generating the Locust script…", "done", False, False, False),
+            "saving": (f"Generating the {self.output_label}…", "done", False, False, False),
             "completed": (f"Saved {script_file}. This window can be closed.", "done", False, False, False),
             "cancelled": ("Recording discarded. This window can be closed.", "", False, False, False),
             "error": ("The recording failed. See the Performance Test page.", "", False, False, False),
@@ -651,11 +767,17 @@ class RecordingSession:
             if secret and value and value not in self._secrets:
                 # Kept in memory only, to redact this value out of request bodies.
                 self._secrets.append(value)
+            locator = payload.get("locator") if isinstance(payload.get("locator"), dict) else None
             self._append_step_locked({
                 "type": payload.get("type") or "action",
                 "target": payload.get("target") or "",
                 "value": value,
                 "secret": secret,
+                # Selenium locator + whether the action happened inside an
+                # iframe, for the Functional (UI replay) scripts.
+                "locator": ({"by": str(locator.get("by") or ""), "value": str(locator.get("value") or "")[:1000]}
+                            if locator else None),
+                "frame": bool(payload.get("frame")),
             })
 
     def _current_url(self):
@@ -764,7 +886,9 @@ class RecordingSession:
         self._client.send("Runtime.addBinding", {"name": BINDING_NAME})
         # Registered before the first navigation so the very first document the
         # tester sees already carries the panel.
-        self._client.send("Page.addScriptToEvaluateOnNewDocument", {"source": _OVERLAY_JS})
+        overlay = (_OVERLAY_JS.replace("__NAME_PREFIX__", self.naming["prefix"])
+                   .replace("__NAME_EXT__", self.naming["extension"]))
+        self._client.send("Page.addScriptToEvaluateOnNewDocument", {"source": overlay})
 
         self._client.on("Runtime.bindingCalled", self._on_binding)
         self._client.on("Network.requestWillBeSent", self._on_request)
@@ -799,7 +923,7 @@ class RecordingSession:
             self._set("cancelled", "Recording discarded.")
             return
 
-        self._set("saving", "Generating the Locust script…")
+        self._set("saving", f"Generating the {self.output_label}…")
         self._push_overlay()
 
         with self._lock:
@@ -815,16 +939,19 @@ class RecordingSession:
                 "finished_at": datetime.now(),
             }
 
-        path, file_name = write_recorded_script(
-            os.path.join(self.perf_dir, LOCUSTFILES_DIRNAME), journey)
+        result = write_recording(self.perf_dir, self.tool, self.script_type, journey)
+        file_name = result["file_name"]
 
         with self._lock:
-            self.script_path = path
+            self.script_path = result["path"]
             self.script_file = file_name
+            self.notes = result["notes"]
             self.state = "completed"
+            extra = f" (+ {', '.join(result['extra_files'])})" if result["extra_files"] else ""
             self.message = (
-                f"Saved {file_name} — {len(journey['steps'])} action(s), "
+                f"Saved {result['relative_path']}{extra} — {len(journey['steps'])} action(s), "
                 f"{len(journey['requests'])} request(s)."
+                + (" " + " ".join(result["notes"]) if result["notes"] else "")
             )
         # Let the panel show the confirmation before the window disappears.
         self._push_overlay()
@@ -875,8 +1002,10 @@ class RecorderRegistry:
                     return session
         return None
 
-    def create(self, session_id, perf_dir, project_name, application_url):
-        session = RecordingSession(session_id, perf_dir, project_name, application_url)
+    def create(self, session_id, perf_dir, project_name, application_url,
+               tool="Locust", script_type="CLI"):
+        session = RecordingSession(session_id, perf_dir, project_name, application_url,
+                                   tool=tool, script_type=script_type)
         with self._lock:
             self._sessions[session_id] = session
         self._purge()

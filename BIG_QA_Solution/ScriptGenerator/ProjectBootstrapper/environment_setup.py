@@ -863,6 +863,10 @@ class EnvironmentSetup:
         # than inside _run_command keeps the warning-on-insecure-TLS log to one line per
         # install instead of one per phase.
         run_env = EnvironmentSetup._download_env()
+        if package_manager == "JMeter" or "Maven" in package_manager:
+            # `mvn` refuses to start when JAVA_HOME points at a stale JDK or its bin folder,
+            # even with `java` on PATH - repair it the same way the script runner does.
+            run_env = EnvironmentSetup.prepare_runtime_env("mvn -version", base_env=run_env)
 
         # Run each phase in order, surfacing its label before kicking off the subprocess.
         # We bail on the first failure so the UI gets a meaningful "this exact step failed"
@@ -901,6 +905,17 @@ class EnvironmentSetup:
         hung. The first-run hint disappears on subsequent runs because the caches make it
         near-instant.
         """
+        if package_manager == "JMeter":
+            # `test-compile` resolves the project's dependencies and compiles the payload
+            # validation tests; the jmeter-maven-plugin's `configure` goal, invoked
+            # explicitly, downloads JMeter + test-plan libraries into target/. Neither starts a
+            # load test (the framework runs those at integration-test, e.g. via `mvn install`).
+            # No -DskipTests: the plugin treats it as "skip configure" too.
+            return [(
+                "Resolving Maven dependencies and downloading JMeter (~1–3 min on first run)...",
+                "mvn -B test-compile com.lazerycode.jmeter:jmeter-maven-plugin:configure",
+            )]
+
         if "Maven" in package_manager:
             phases = [(
                 "Resolving Maven dependencies (~1–2 min on first run)...",

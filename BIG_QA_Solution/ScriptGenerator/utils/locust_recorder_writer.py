@@ -340,6 +340,9 @@ def build_locust_script(journey):
         file_name,
         "-" * len(file_name),
         f"Test Case: {title}",
+        # Read back by performance_runner for the grid's Type column. The HTTP
+        # replay of a recording is the "CLI" script type in Create Test.
+        f"Script Type: {journey.get('script_type') or 'CLI'}",
         "",
         f"Recorded from : {application_url}",
         f"Recorded at   : {finished_at.strftime('%Y-%m-%d %H:%M:%S')}",

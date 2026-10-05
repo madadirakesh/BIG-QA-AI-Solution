@@ -244,7 +244,8 @@
         // ── H8: Confirm Dialog ─────────────────────────────────────────
         let _confirmResolve = null;
         // opts.html renders rich markup instead of plain text; opts.okOnly hides Cancel for
-        // acknowledgement-only popups (e.g. the dependency pre-check result).
+        // acknowledgement-only popups (e.g. the dependency pre-check result); opts.cancelLabel
+        // renames Cancel for Yes / No questions.
         function showConfirm(title, message, icon = '⚠️', okLabel = 'Confirm', okStyle = 'background:var(--error);color:white;', opts = {}) {
             document.getElementById('confirmTitle').textContent = title;
             const msgEl = document.getElementById('confirmMessage');
@@ -253,7 +254,10 @@
             document.getElementById('confirmOkBtn').setAttribute('style', okStyle);
             document.getElementById('confirmOkBtn').textContent = okLabel;
             const cancelBtn = document.querySelector('#confirmBackdrop .confirm-actions .btn:not(#confirmOkBtn)');
-            if (cancelBtn) cancelBtn.style.display = opts.okOnly ? 'none' : '';
+            if (cancelBtn) {
+                cancelBtn.style.display = opts.okOnly ? 'none' : '';
+                cancelBtn.textContent = opts.cancelLabel || 'Cancel';
+            }
             document.getElementById('confirmBackdrop').classList.add('active');
             return new Promise(resolve => { _confirmResolve = resolve; });
         }

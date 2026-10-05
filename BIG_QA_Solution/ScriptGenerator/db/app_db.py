@@ -470,7 +470,9 @@ def init_db():
         project_path TEXT,
         concurrent_user_count INTEGER,
         spawn_rate INTEGER,
-        run_duration INTEGER
+        run_duration INTEGER,
+        performance_tool TEXT DEFAULT 'Locust',
+        framework_exists INTEGER DEFAULT 0
     );
     """
 
@@ -656,6 +658,15 @@ def init_db():
 
             try:
                 cursor.execute("ALTER TABLE PerformanceRunStats ADD COLUMN run_id INTEGER")
+            except Exception: pass
+
+            # Projects created before the tool choice existed are Locust scaffolds.
+            try:
+                cursor.execute("ALTER TABLE PerformanceDetails ADD COLUMN performance_tool TEXT DEFAULT 'Locust'")
+            except Exception: pass
+
+            try:
+                cursor.execute("ALTER TABLE PerformanceDetails ADD COLUMN framework_exists INTEGER DEFAULT 0")
             except Exception: pass
 
             # Indexed after the migration above, so a table created before

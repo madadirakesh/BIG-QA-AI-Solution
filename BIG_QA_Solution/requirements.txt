@@ -25,3 +25,5 @@ cryptography
 # webperf_monitor (browser performance monitoring during Script Runner executions)
 psutil
 websocket-client
+# Performance Test > Create Test > API: reads Swagger/OpenAPI .yaml documents
+PyYAML
