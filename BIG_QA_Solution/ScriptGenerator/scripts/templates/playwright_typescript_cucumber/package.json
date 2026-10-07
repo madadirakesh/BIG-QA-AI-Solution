@@ -4,8 +4,7 @@
   "description": "Enterprise Playwright TypeScript BDD Framework",
   "main": "index.js",
   "scripts": {
-    "test": "node test-runner.js",
-    "report": "npx ts-node test/utils/reports.ts"
+    "test": "cucumber-js && node generate-report.js"
   },
   "engines": {
     "node": ">= {{NODE_VERSION}}"
