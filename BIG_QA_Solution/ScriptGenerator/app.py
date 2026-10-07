@@ -426,7 +426,8 @@ from ScriptRunnerEngine.performance_runner import (
     count_run_artifacts as count_performance_run_artifacts,
     remove_run_artifacts as remove_performance_run_artifacts,
 )
-from utils import payload_parameterizer, performance_insights
+from utils import payload_parameterizer, performance_insights, jmeter_payload
+from utils import perf_project_layout
 from utils.payload_parameterizer import PayloadError
 from utils.locust_recorder_writer import sanitize_script_title
 from utils import recorded_script_writers
@@ -1499,6 +1500,18 @@ def _performance_project(perf_id):
                                         bool(record.get('framework_exists')))
 
 
+def _script_locations(perf_dir, tool):
+    """Folder (relative, ending in '/') each script type is created in, read from the project layout."""
+    def folder(path):
+        rel = perf_project_layout.relative_folder(perf_dir, path)
+        return f"{rel}/" if rel else "./"
+    if tool == JMETER_TOOL:
+        return {kind: folder(perf_project_layout.jmeter_type_dir(perf_dir, kind))
+                for kind in ("api", "cli", "functional")}
+    locust_dir = folder(perf_project_layout.locust_script_dir(perf_dir))
+    return {"api": locust_dir, "cli": locust_dir, "functional": locust_dir}
+
+
 @app.route('/api/performance-test/scripts', methods=['GET'])
 @login_required()
 def performance_test_scripts():
@@ -1534,11 +1547,14 @@ def performance_test_scripts():
                 "message": f"The performance framework folder was not found at {perf_dir}."
             })
 
-        scripts = list_performance_scripts(perf_dir, _performance_tool(record))
+        tool = _performance_tool(record)
+        perf_project_layout.invalidate(perf_dir)
+        project["script_locations"] = _script_locations(perf_dir, tool)
+        scripts = list_performance_scripts(perf_dir, tool)
         for script in scripts:
             script['last_report_url'] = _report_url(script.get('last_report'))
         _payload_summaries(perf_id, scripts)
-        _run_counts(perf_id, perf_dir, scripts)
+        _run_counts(perf_id, perf_dir, scripts, tool)
 
         # A recording outlives the page that started it (it is a browser plus a
         # server-side thread), so hand back any live session for this project and
@@ -1597,7 +1613,8 @@ def performance_test_stream():
     # A script with a saved payload configuration runs as its parameterised
     # copy. It is rebuilt here rather than reused so an edit to the recorded
     # script (or to the payload file) is always picked up by the next run.
-    run_script, prelude, payload_error = _prepare_payload_script(perf_id, perf_dir, script_file)
+    tool = _performance_tool(record)
+    run_script, prelude, payload_error = _prepare_payload_script(perf_id, perf_dir, script_file, tool)
     if payload_error:
         return Response(stream_with_context(error_stream(payload_error)), mimetype='text/event-stream')
 
@@ -1643,12 +1660,13 @@ def performance_test_stream():
             # Run" link keeps working for a payload-driven run.
             result_stem=Path(script_file).stem,
             stats_sink=save_run_stats,
+            tool=tool,
         )
 
     return Response(stream_with_context(run_stream()), mimetype='text/event-stream')
 
 
-def _prepare_payload_script(perf_id, perf_dir, script_file):
+def _prepare_payload_script(perf_id, perf_dir, script_file, tool=LOCUST_TOOL):
     """
     Return (script to run, log lines for the console, error message).
 
@@ -1664,12 +1682,13 @@ def _prepare_payload_script(perf_id, perf_dir, script_file):
     if not config['mappings'] and not config['thresholds']:
         return script_file, [], ""
 
-    script_path = resolve_performance_script(perf_dir, script_file)
+    script_path = resolve_performance_script(perf_dir, script_file, tool)
     if not script_path:
         return script_file, [], f"Script '{script_file}' was not found in this performance project."
 
     prelude = []
     nodes = None
+    raw = None
     if config['mappings']:
         raw, read_error = _stored_payload_bytes(row)
         if raw is None:
@@ -1693,12 +1712,13 @@ def _prepare_payload_script(perf_id, perf_dir, script_file):
             f"{payload_parameterizer.describe_thresholds(config['thresholds'])} are failed.")
 
     try:
-        _, generated_name = _generate_payload_script(
-            perf_dir, os.path.basename(script_file), script_path, config, nodes=nodes)
+        generated_path, generated_name = _generate_payload_script(
+            perf_dir, os.path.basename(script_file), script_path, config, nodes=nodes, tool=tool, raw=raw)
     except PayloadError as e:
         return script_file, [], f"The payload configuration could not be applied: {e}"
 
-    prelude.append(f"[Config] Running the generated copy locustfiles/{generated_name}.")
+    relative = os.path.relpath(generated_path, perf_dir).replace('\\', '/')
+    prelude.append(f"[Config] Running the generated copy {relative}.")
     return generated_name, prelude, ""
 
 
@@ -1717,9 +1737,10 @@ def performance_test_stop():
 # "Configure Payload" maps the parameterisable fields of a test script (request
 # body keys, query parameters) onto the nodes of a CSV / JSON / XML payload
 # file. The mapping is saved per (performance project, script) and compiled into
-# a parameterised copy of the script - `locustfiles/_bigqa_param_<stem>.py` -
-# which the runner executes instead of the original, so the recorded script
-# itself is never rewritten.
+# a parameterised copy beside the script - `_bigqa_param_<stem>.py` for Locust
+# (utils/payload_parameterizer), `_bigqa_param_<stem>.jmx` + `.csv` for JMeter
+# (utils/jmeter_payload) - which the runner executes instead of the original,
+# so the recorded script itself is never rewritten.
 #
 # An upload is held in memory until Submit. That is what makes Cancel a true
 # discard (nothing lands in the project's data/ folder) while still letting the
@@ -1762,10 +1783,30 @@ def _resolve_perf_script(perf_id, script_file):
         return None, ("The performance framework folder for this project does not exist. "
                       "Re-save it from Configurations > Performance Configuration to scaffold it."), 400
 
-    script_path = resolve_performance_script(perf_dir, script_file)
+    script_path = resolve_performance_script(perf_dir, script_file, _performance_tool(record))
     if not script_path:
         return None, f"Script '{script_file}' was not found in this performance project.", 404
     return (record, perf_dir, script_path), "", 200
+
+
+def _script_parameters(record, script_path):
+    """The payload-drivable parameters of a script, for its tool."""
+    if _performance_tool(record) == JMETER_TOOL:
+        return jmeter_payload.extract_parameters(script_path)
+    return payload_parameterizer.extract_parameters(script_path)
+
+
+def _script_requests(record, script_path):
+    """The requests of a script a response-time threshold can be set on, for its tool."""
+    if _performance_tool(record) == JMETER_TOOL:
+        return jmeter_payload.extract_requests(script_path)
+    return payload_parameterizer.extract_requests(script_path)
+
+
+def _remove_generated_copy(perf_dir, script_file, tool):
+    if tool == JMETER_TOOL:
+        return jmeter_payload.remove_generated_plan(perf_dir, script_file)
+    return payload_parameterizer.remove_generated_script(perf_dir, script_file)
 
 
 def _payload_config_row(perf_id, script_file):
@@ -1819,7 +1860,7 @@ def _payload_summaries(perf_id, scripts):
         }
 
 
-def _run_counts(perf_id, perf_dir, scripts):
+def _run_counts(perf_id, perf_dir, scripts, tool=LOCUST_TOOL):
     """
     Annotate the grid rows with what a delete would take with the script: the
     stored runs and the report folders on disk.
@@ -1834,7 +1875,7 @@ def _run_counts(perf_id, perf_dir, scripts):
     runs_by_script = {row['script_file']: row['runs'] for row in rows}
     for script in scripts:
         script['run_count'] = runs_by_script.get(script['file_name'], 0)
-        script['report_count'] = count_performance_run_artifacts(perf_dir, script['file_name'])
+        script['report_count'] = count_performance_run_artifacts(perf_dir, script['file_name'], tool)
 
 
 def _stored_payload_bytes(row):
@@ -1865,11 +1906,11 @@ def performance_payload_config():
         resolved, message, code = _resolve_perf_script(perf_id, script_file)
         if not resolved:
             return jsonify({"status": "error", "message": message}), code
-        _, _, script_path = resolved
+        record, _, script_path = resolved
 
         try:
-            parameters = payload_parameterizer.extract_parameters(script_path)
-            requests_in_script = payload_parameterizer.extract_requests(script_path)
+            parameters = _script_parameters(record, script_path)
+            requests_in_script = _script_requests(record, script_path)
         except PayloadError as e:
             return jsonify({"status": "error", "message": str(e)}), 400
 
@@ -1943,8 +1984,13 @@ def performance_payload_upload():
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
-def _generate_payload_script(perf_dir, script_file, script_path, config, nodes=None):
-    """Compile the saved mapping and thresholds into the copy of the script."""
+def _generate_payload_script(perf_dir, script_file, script_path, config, nodes=None,
+                             tool=LOCUST_TOOL, raw=None):
+    """Compile the saved mapping and thresholds into the copy of the script (or JMeter plan)."""
+    if tool == JMETER_TOOL:
+        return jmeter_payload.write_parameterized_plan(
+            perf_dir, script_file, script_path, config['mappings'], raw=raw,
+            payload_type=config['payload_type'], thresholds=config.get('thresholds') or [])
     return payload_parameterizer.write_parameterized_script(
         perf_dir=perf_dir,
         script_file=script_file,
@@ -1981,7 +2027,8 @@ def performance_payload_save():
         resolved, message, code = _resolve_perf_script(perf_id, script_file)
         if not resolved:
             return jsonify({"status": "error", "message": message}), code
-        _, perf_dir, script_path = resolved
+        record, perf_dir, script_path = resolved
+        tool = _performance_tool(record)
 
         existing = _payload_config_row(perf_id, script_file)
         staged = payload_uploads.get(upload_id) if upload_id else None
@@ -2015,10 +2062,10 @@ def performance_payload_save():
         try:
             parameters = {
                 param['id']: param
-                for param in payload_parameterizer.extract_parameters(script_path)
+                for param in _script_parameters(record, script_path)
             }
             clean_thresholds, threshold_errors = payload_parameterizer.validate_thresholds(
-                thresholds, payload_parameterizer.extract_requests(script_path))
+                thresholds, _script_requests(record, script_path))
             if threshold_errors:
                 return jsonify({"status": "error",
                                 "message": " ".join(dict.fromkeys(threshold_errors))}), 400
@@ -2033,7 +2080,7 @@ def performance_payload_save():
                 if errors:
                     return jsonify({"status": "error", "message": " ".join(dict.fromkeys(errors))}), 400
                 payload_path, payload_name = payload_parameterizer.store_payload_file(
-                    perf_dir, script_file, source_file_name, raw, payload['payload_type'])
+                    perf_dir, script_file, source_file_name, raw, payload['payload_type'], tool=tool)
 
             if not clean and not clean_thresholds:
                 return jsonify({
@@ -2052,7 +2099,7 @@ def performance_payload_save():
             }
             _, generated_name = _generate_payload_script(
                 perf_dir, script_file, script_path, config,
-                nodes=payload['nodes'] if payload else None)
+                nodes=payload['nodes'] if payload else None, tool=tool, raw=raw)
         except PayloadError as e:
             return jsonify({"status": "error", "message": str(e)}), 400
 
@@ -2137,7 +2184,7 @@ def performance_payload_clear():
             return jsonify({"status": "success", "message": "This script has no payload configuration."})
 
         if perf_dir and os.path.isdir(perf_dir):
-            payload_parameterizer.remove_generated_script(perf_dir, script_file)
+            _remove_generated_copy(perf_dir, script_file, _performance_tool(record))
         payload_parameterizer.remove_payload_copy(row.get('payload_file'))
         update_data(
             "DELETE FROM PerformancePayloadConfig WHERE perf_id = ? AND script_file = ?",
@@ -2173,11 +2220,10 @@ def performance_script_delete():
         if not record:
             return jsonify({"status": "error", "message": "Performance project not found."}), 404
 
-        # resolve_script_path only returns a path inside the project's
-        # locustfiles (JMeter: TestScripts) folder, so a crafted name cannot
-        # delete an arbitrary file.
-        script_path = resolve_performance_script(perf_dir, script_file, _performance_tool(record),
-                                                 include_functional=True)
+        # resolve_script_path only returns a script the project discovery
+        # found, so a crafted name cannot delete an arbitrary file.
+        tool = _performance_tool(record)
+        script_path = resolve_performance_script(perf_dir, script_file, tool)
         if not script_path:
             return jsonify({
                 "status": "error",
@@ -2200,10 +2246,18 @@ def performance_script_delete():
             except OSError:
                 app.logger.warning("Could not delete %s", companion)
 
-        payload_parameterizer.remove_generated_script(perf_dir, script_file)
+        _remove_generated_copy(perf_dir, script_file, tool)
+        # The Locust wrapper a Selenium pytest journey was run through.
+        for wrapper in payload_parameterizer.generated_copies(
+                perf_dir, f"_bigqa_ui_{Path(script_file).stem}.py"):
+            try:
+                wrapper.unlink()
+            except OSError:
+                pass
+        perf_project_layout.invalidate(perf_dir)
         if payload_row:
             payload_parameterizer.remove_payload_copy(payload_row.get('payload_file'))
-        reports_removed = remove_performance_run_artifacts(perf_dir, script_file)
+        reports_removed = remove_performance_run_artifacts(perf_dir, script_file, tool)
 
         update_data("DELETE FROM PerformancePayloadConfig WHERE perf_id = ? AND script_file = ?",
                     (perf_id, script_file))
@@ -2284,8 +2338,8 @@ def performance_api_script_generate():
     """
     Create an API test script from an uploaded API document (Swagger/OpenAPI,
     Postman collection, or a free-form .doc/.docx/.txt read by the AI). The
-    script is written into the framework's own folder - locustfiles/ for
-    Locust, TestScripts/api/ for JMeter - and the dialog polls the job.
+    script is written where the project keeps its scripts (see
+    utils/perf_project_layout) and the dialog polls the job.
     """
     try:
         perf_id = request.form.get('perf_id', type=int)

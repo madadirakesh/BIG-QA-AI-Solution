@@ -1,10 +1,15 @@
 """
 performance_runner.py
 ---------------------
-Discovers the scripts of a performance project (Locust locustfiles, or the
-JMeter framework's TestScripts plans) and executes the Locust ones
-(`<project path>/<project name>_perf`, created from the Performance
-Configuration screen).
+Discovers the scripts of a performance project and executes them. Where the
+scripts live is read from the project itself (utils/perf_project_layout), so a
+framework onboarded in place works as well as one scaffolded by this
+application:
+
+  * Locust   - every module that declares a Locust User, wherever it sits, plus
+               Selenium pytest journeys recorded by older versions (run through
+               a generated Locust wrapper, so they behave like any other script)
+  * JMeter   - every *.jmx plan; runs are delegated to jmeter_runner.py
 
 Two execution modes are supported:
 
@@ -31,15 +36,16 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-LOCUSTFILES_DIRNAME = "locustfiles"
-RESULTS_DIRNAME = "results"
+from utils import perf_project_layout as layout
 
-# Recorded Functional journeys of a Locust project are Selenium pytests.
-FUNCTIONAL_DIRNAME = "functional"
-
-# JMeter projects keep their test plans in TestScripts/<type>/*.jmx.
 JMETER_TOOL = "Jmeter"
-JMETER_SCRIPTS_DIRNAME = "TestScripts"
+
+# Generated next to a Selenium pytest journey so Locust can run it.
+UI_WRAPPER_PREFIX = "_bigqa_ui_"
+UI_SUPPORT_IMPORT = "core.ui_journey"
+UI_REQUIREMENT = "selenium>=4.20"
+# A browser journey needs far longer than an HTTP one for its single checked pass.
+SCRIPT_CHECK_UI_RUN_TIME = "5m"
 
 # Script types shown in the grid's Type column.
 SCRIPT_TYPE_API = "API"
@@ -144,145 +150,157 @@ def _latest_report(results_dir, stem):
     if not results_dir.is_dir():
         return ""
     candidates = []
-    for run_dir in results_dir.glob(f"run_{stem}_*"):
-        if not run_dir.is_dir():
+    prefix = f"run_{stem}_"
+    for run_dir in results_dir.iterdir():
+        if not run_dir.is_dir() or not run_dir.name.startswith(prefix):
             continue
         candidates.extend(run_dir.glob("*.html"))
+        # JMeter writes its dashboard as html/index.html.
+        dashboard = run_dir / "html" / "index.html"
+        if dashboard.is_file():
+            candidates.append(dashboard)
     if not candidates:
         return ""
     newest = max(candidates, key=lambda p: p.stat().st_mtime)
     return str(newest)
 
 
-def _list_jmeter_scripts(perf_path):
+def _results_path(perf_dir, tool=""):
+    return Path(layout.results_dir(perf_dir, JMETER_TOOL if tool == JMETER_TOOL else layout.LOCUST_TOOL))
+
+
+def _last_run(results_dir, stem):
+    last_report = _latest_report(results_dir, stem)
+    return last_report, (
+        datetime.fromtimestamp(os.path.getmtime(last_report)).strftime("%Y-%m-%d %H:%M")
+        if last_report else "")
+
+
+def _relative_path(perf_dir, path):
+    return os.path.relpath(path, perf_dir).replace("\\", "/")
+
+
+def _jmeter_script_type(plans_root, script_file, head):
+    """The plan's type folder (api / cli / functional) anywhere under the root, else its marker, else API."""
+    try:
+        parts = Path(script_file).resolve().relative_to(Path(plans_root).resolve()).parts[:-1]
+    except ValueError:
+        parts = Path(script_file).parts[:-1]
+    for part in parts:
+        if part.lower() in _JMETER_TYPE_FOLDERS:
+            return _JMETER_TYPE_FOLDERS[part.lower()]
+    return declared_script_type(head) or SCRIPT_TYPE_API
+
+
+def _list_jmeter_scripts(perf_dir):
     """
-    The `*.jmx` test plans under TestScripts/. The type is the plan's folder
-    (api / cli / functional), else its declared marker, else API; the title is
-    the plan's declared `Test Case:`, else its TestPlan name, else the file name.
+    Every `*.jmx` plan of the project. The title is the plan's declared
+    `Test Case:`, else its TestPlan name, else the file name.
     """
-    scripts_dir = perf_path / JMETER_SCRIPTS_DIRNAME
-    if not scripts_dir.is_dir():
-        return []
+    plans_root = layout.jmeter_plans_root(perf_dir)
+    results_dir = _results_path(perf_dir, JMETER_TOOL)
     scripts = []
-    for script_file in sorted(scripts_dir.rglob("*.jmx"), key=lambda p: str(p).lower()):
-        relative = script_file.relative_to(scripts_dir)
+    for path in sorted(layout.detect_layout(perf_dir, JMETER_TOOL)["plans"], key=lambda p: p.lower()):
+        script_file = Path(path)
         head = _unescape_xml(_read_head(script_file, limit=6000))
-        folder = relative.parts[0].lower() if len(relative.parts) > 1 else ""
         plan_name = _JMX_TEST_PLAN_NAME.search(head)
         declared = _TEST_CASE_MARKER.search(head)
+        last_report, last_run_at = _last_run(results_dir, script_file.stem)
         scripts.append({
             "title": (declared.group(1).strip() if declared else "")
                      or (plan_name.group(1).strip() if plan_name else "")
                      or script_title(script_file.name),
             "file_name": script_file.name,
-            "relative_path": f"{JMETER_SCRIPTS_DIRNAME}/{relative.as_posix()}",
-            "script_type": _JMETER_TYPE_FOLDERS.get(folder) or declared_script_type(head) or SCRIPT_TYPE_API,
-            # JMeter runs are not driven from this screen yet, so there is no report to link.
-            "last_report": "",
-            "last_run_at": "",
+            "relative_path": _relative_path(perf_dir, script_file),
+            "script_type": _jmeter_script_type(plans_root, script_file, head),
+            "last_report": last_report,
+            "last_run_at": last_run_at,
         })
     return scripts
 
 
 def list_scripts(perf_dir, tool=""):
     """
-    List the performance scripts of a project.
+    List the performance scripts of a project, wherever they live.
 
     Returns a list of dicts: {title, file_name, relative_path, script_type,
-    last_report, last_run_at}. For Locust, private/`__init__` modules are
-    skipped - they are helpers, not runnable Locust scripts. JMeter projects
-    list their TestScripts/**/*.jmx plans.
+    last_report, last_run_at}. Private / generated modules (leading `_`) are
+    never listed - they are helpers, not scripts. JMeter projects list their
+    *.jmx plans.
     """
-    perf_path = Path(perf_dir)
     if tool == JMETER_TOOL:
-        return _list_jmeter_scripts(perf_path)
-    locust_dir = perf_path / LOCUSTFILES_DIRNAME
-    results_dir = perf_path / RESULTS_DIRNAME
+        return _list_jmeter_scripts(perf_dir)
+    detected = layout.detect_layout(perf_dir, layout.LOCUST_TOOL)
+    results_dir = _results_path(perf_dir)
 
     scripts = []
-    for script_file in sorted(locust_dir.glob("*.py")) if locust_dir.is_dir() else []:
-        if script_file.name.startswith("_"):
-            continue
-        last_report = _latest_report(results_dir, script_file.stem)
+    entries = [(p, False) for p in detected["scripts"]] + [(p, True) for p in detected["journeys"]]
+    for path, journey in sorted(entries, key=lambda e: (_relative_path(perf_dir, e[0]).lower())):
+        script_file = Path(path)
+        last_report, last_run_at = _last_run(results_dir, script_file.stem)
         scripts.append({
             "title": declared_title(script_file) or script_title(script_file.name),
             "file_name": script_file.name,
-            "relative_path": f"{LOCUSTFILES_DIRNAME}/{script_file.name}",
-            "script_type": locust_script_type(script_file),
+            "relative_path": _relative_path(perf_dir, script_file),
+            "script_type": (declared_script_type(_read_head(script_file)) or SCRIPT_TYPE_FUNCTIONAL)
+                           if journey else locust_script_type(script_file),
             "last_report": last_report,
-            "last_run_at": (
-                datetime.fromtimestamp(os.path.getmtime(last_report)).strftime("%Y-%m-%d %H:%M")
-                if last_report else ""
-            ),
-        })
-
-    # Recorded Functional journeys: Selenium pytests, run with pytest rather
-    # than Locust, so there is no Locust report to link.
-    functional_dir = perf_path / FUNCTIONAL_DIRNAME
-    for script_file in sorted(functional_dir.glob("test_*.py")) if functional_dir.is_dir() else []:
-        scripts.append({
-            "title": declared_title(script_file) or script_title(script_file.name),
-            "file_name": script_file.name,
-            "relative_path": f"{FUNCTIONAL_DIRNAME}/{script_file.name}",
-            "script_type": declared_script_type(_read_head(script_file)) or SCRIPT_TYPE_FUNCTIONAL,
-            "last_report": "",
-            "last_run_at": "",
+            "last_run_at": last_run_at,
         })
     return scripts
 
 
-def resolve_script_path(perf_dir, file_name, tool="", include_functional=False):
+def resolve_script_path(perf_dir, file_name, tool="", include_functional=True):
     """
-    Resolve a script name to an absolute path inside the project's locustfiles
-    folder (JMeter: anywhere under TestScripts/, matched by base name). Returns
-    '' when the name escapes that folder or does not exist, so a crafted request
-    can never execute an arbitrary file.
+    Resolve a script name to the absolute path of a script of this project.
 
-    `include_functional` also looks in functional/ (the Selenium pytests). It is
-    off by default because every caller but delete hands the path to Locust.
+    Scripts are addressed by base name. Only files the project discovery found
+    (or a generated `_bigqa_*` sibling of one) are returned, so a crafted
+    request can never execute or delete an arbitrary file. Returns '' when
+    nothing matches. `include_functional` is kept for older callers: Functional
+    journeys are always runnable now.
     """
-    if tool == JMETER_TOOL:
-        scripts_dir = (Path(perf_dir) / JMETER_SCRIPTS_DIRNAME).resolve()
-        name = os.path.basename(file_name or "")
-        if not name.lower().endswith(".jmx") or not scripts_dir.is_dir():
-            return ""
-        for candidate in scripts_dir.rglob(name):
-            if candidate.is_file() and candidate.name == name:
-                return str(candidate)
+    name = os.path.basename(file_name or "")
+    if not name or not perf_dir or not os.path.isdir(perf_dir):
         return ""
-
-    locust_dir = Path(perf_dir) / LOCUSTFILES_DIRNAME
-    folders = [locust_dir] + ([Path(perf_dir) / FUNCTIONAL_DIRNAME] if include_functional else [])
-    for folder in folders:
-        candidate = (folder / os.path.basename(file_name or "")).resolve()
-        try:
-            candidate.relative_to(folder.resolve())
-        except ValueError:
-            continue
-        if candidate.is_file():
-            return str(candidate)
+    tool = JMETER_TOOL if tool == JMETER_TOOL else layout.LOCUST_TOOL
+    for fresh in (False, True):
+        detected = layout.detect_layout(perf_dir, tool, fresh=fresh)
+        candidates = layout.all_script_paths(perf_dir, tool)
+        # The folder new scripts go to wins a base-name clash.
+        preferred = layout.abs_dir(perf_dir, detected.get("script_dir") or detected.get("plans_root") or "")
+        candidates.sort(key=lambda p: os.path.dirname(p) != preferred)
+        for candidate in candidates:
+            if os.path.basename(candidate) == name and os.path.isfile(candidate):
+                return candidate
+        if name.startswith(layout.GENERATED_PREFIX):
+            folders = {os.path.dirname(p) for p in candidates} | {preferred}
+            for folder in folders:
+                candidate = os.path.join(folder, name)
+                if os.path.isfile(candidate):
+                    return candidate
     return ""
 
 
-def count_run_artifacts(perf_dir, file_name):
+def count_run_artifacts(perf_dir, file_name, tool=""):
     """Number of results folders a script's past runs left behind."""
-    return len(_run_artifact_dirs(perf_dir, file_name))
+    return len(_run_artifact_dirs(perf_dir, file_name, tool))
 
 
-def remove_run_artifacts(perf_dir, file_name):
+def remove_run_artifacts(perf_dir, file_name, tool=""):
     """
     Delete the results folders of a script's past runs - the HTML reports and
-    Locust CSVs. Returns how many were removed.
+    CSVs. Returns how many were removed.
     """
     removed = 0
-    for run_dir in _run_artifact_dirs(perf_dir, file_name):
+    for run_dir in _run_artifact_dirs(perf_dir, file_name, tool):
         shutil.rmtree(run_dir, ignore_errors=True)
         if not run_dir.exists():
             removed += 1
     return removed
 
 
-def _run_artifact_dirs(perf_dir, file_name):
+def _run_artifact_dirs(perf_dir, file_name, tool=""):
     """
     The `results/run_<stem>_<stamp>` folders belonging to one script.
 
@@ -290,7 +308,7 @@ def _run_artifact_dirs(perf_dir, file_name):
     characters glob treats as patterns (`[`, `*`, `?`).
     """
     stem = Path(os.path.basename(file_name or "")).stem
-    results_dir = Path(perf_dir) / RESULTS_DIRNAME
+    results_dir = _results_path(perf_dir, tool)
     if not stem or not results_dir.is_dir():
         return []
     prefix = f"run_{stem}_"
@@ -464,8 +482,107 @@ def _count_threshold_breaches(csv_prefix):
     return total
 
 
+def is_ui_script(script_path):
+    """True for a Functional journey: a Locust Selenium script or a Selenium pytest."""
+    head = _read_head(script_path, limit=20_000)
+    return UI_SUPPORT_IMPORT in head or layout.is_ui_journey_source(head)
+
+
+def ui_wrapper_source(target_name, levels):
+    """A Locust script that runs the `test_*` functions of a Selenium pytest journey."""
+    stem = Path(target_name).stem
+    root = "Path(__file__).resolve()" + ".parent" * (levels + 1)
+    return "\n".join([
+        f'"""Generated by BIG QA - runs {target_name} (a Selenium pytest journey) as a Locust user."""',
+        "",
+        "import importlib.util",
+        "import sys",
+        "from pathlib import Path",
+        "",
+        "from locust import User, between, task",
+        "",
+        f"sys.path.insert(0, str({root}))",
+        "",
+        "from core.ui_journey import UiSession  # noqa: E402",
+        "",
+        f"_SPEC = importlib.util.spec_from_file_location({('_bigqa_journey_' + stem)!r},",
+        f"                                               Path(__file__).resolve().parent / {target_name!r})",
+        "_MODULE = importlib.util.module_from_spec(_SPEC)",
+        "_SPEC.loader.exec_module(_MODULE)",
+        "_TESTS = [value for name, value in vars(_MODULE).items() if name.startswith('test_') and callable(value)]",
+        "",
+        "",
+        "class JourneyUser(User):",
+        "    wait_time = between(1, 3)",
+        "",
+        "    def on_start(self):",
+        f"        self.ui = UiSession(self.environment, base_url=self.host, name={stem!r})",
+        "",
+        "    def on_stop(self):",
+        "        self.ui.quit()",
+        "",
+        "    @task",
+        "    def journey(self):",
+        "        for test in _TESTS:",
+        "            test(self.ui)",
+        "",
+    ])
+
+
+def _locust_entry_point(perf_dir, script_path):
+    """
+    The file to hand Locust. A Selenium pytest journey gets a generated Locust
+    wrapper beside it; every other script runs as it is.
+    """
+    if not layout.is_ui_journey_source(_read_head(script_path, limit=20_000)):
+        return script_path
+    folder = os.path.dirname(script_path)
+    wrapper = os.path.join(folder, f"{UI_WRAPPER_PREFIX}{Path(script_path).stem}.py")
+    with open(wrapper, "w", encoding="utf-8", newline="\n") as handle:
+        handle.write(ui_wrapper_source(os.path.basename(script_path), layout.depth_below_root(perf_dir, folder)))
+    return wrapper
+
+
+def _module_available(python_exe, module, env):
+    try:
+        probe = subprocess.run([python_exe, "-c", f"import {module}"], capture_output=True, env=env, timeout=60)
+        return probe.returncode == 0
+    except Exception:
+        return False
+
+
+def _install_ui_requirements(perf_dir, python_exe, env):
+    """
+    Make the project ready for a browser journey: core/ui_journey.py and
+    Selenium in its interpreter. Yields log lines; the last item is
+    (ok, message).
+    """
+    from utils.recorded_script_writers import ensure_ui_support
+    for note in ensure_ui_support(perf_dir):
+        yield f"[Setup] {note}"
+    if _module_available(python_exe, "selenium", env):
+        yield (True, "")
+        return
+    yield "[Setup] Installing Selenium into the project's environment (first browser run only)..."
+    try:
+        process = subprocess.Popen(
+            [python_exe, "-m", "pip", "install", UI_REQUIREMENT], cwd=perf_dir, env=env,
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding="utf-8", errors="replace")
+        for line in iter(process.stdout.readline, ""):
+            if line.strip():
+                yield f"[pip] {line.rstrip()}"
+        process.stdout.close()
+        ok = process.wait() == 0
+    except Exception as error:
+        yield (False, f"Selenium could not be installed: {error}")
+        return
+    yield (ok, "" if ok else (f"Selenium could not be installed. Run \"{python_exe} -m pip install "
+                              f"{UI_REQUIREMENT}\" inside {perf_dir} and try again."))
+
+
 def stream_run(perf_dir, script_file, host, mode="check", users=None, spawn_rate=None,
-               run_duration=None, report_url_builder=None, result_stem=None, stats_sink=None):
+               run_duration=None, report_url_builder=None, result_stem=None, stats_sink=None,
+               tool=""):
     """
     Execute one performance script and yield Server-Sent Events.
 
@@ -487,7 +604,7 @@ def stream_run(perf_dir, script_file, host, mode="check", users=None, spawn_rate
             return ""
         return report_url_builder(path) if report_url_builder else ""
 
-    script_path = resolve_script_path(perf_dir, script_file)
+    script_path = resolve_script_path(perf_dir, script_file, tool)
     if not script_path:
         yield _sse("result", {"status": "error", "message": f"Script '{script_file}' was not found in this performance project."})
         return
@@ -495,9 +612,19 @@ def stream_run(perf_dir, script_file, host, mode="check", users=None, spawn_rate
         yield _sse("result", {"status": "error", "message": "This performance project has no Application URL configured."})
         return
 
+    if tool == JMETER_TOOL:
+        from ScriptRunnerEngine.jmeter_runner import stream_jmeter_run
+        yield from stream_jmeter_run(
+            perf_dir, script_path, host, mode=mode, users=users, spawn_rate=spawn_rate,
+            run_duration=run_duration, report_url=report_url, result_stem=result_stem,
+            stats_sink=stats_sink, results_root=str(_results_path(perf_dir, JMETER_TOOL)))
+        return
+
+    ui_journey = is_ui_script(script_path)
     headed = mode == "check"
     if headed:
-        users, spawn_rate, run_time = SCRIPT_CHECK_USERS, SCRIPT_CHECK_SPAWN_RATE, SCRIPT_CHECK_RUN_TIME
+        users, spawn_rate = SCRIPT_CHECK_USERS, SCRIPT_CHECK_SPAWN_RATE
+        run_time = SCRIPT_CHECK_UI_RUN_TIME if ui_journey else SCRIPT_CHECK_RUN_TIME
     else:
         users = int(users)
         spawn_rate = int(spawn_rate) if spawn_rate else DEFAULT_SPAWN_RATE
@@ -505,7 +632,7 @@ def stream_run(perf_dir, script_file, host, mode="check", users=None, spawn_rate
 
     stem = result_stem or Path(script_path).stem
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    result_dir = Path(perf_dir) / RESULTS_DIRNAME / f"run_{stem}_{timestamp}"
+    result_dir = _results_path(perf_dir) / f"run_{stem}_{timestamp}"
     result_dir.mkdir(parents=True, exist_ok=True)
     html_out = str(result_dir / f"{stem}_report.html")
     csv_prefix = str(result_dir / stem)
@@ -519,6 +646,22 @@ def stream_run(perf_dir, script_file, host, mode="check", users=None, spawn_rate
                         f"\"{python_exe} -m pip install -r requirements.txt\" inside {perf_dir} and try again."),
         })
         return
+
+    if ui_journey:
+        # Browser journeys: one Chrome per user, visible during a script check.
+        env["PERF_BASE_URL"] = host
+        if headed:
+            env["PERF_UI_HEADED"] = "1"
+        outcome = (False, "")
+        for item in _install_ui_requirements(perf_dir, python_exe, env):
+            if isinstance(item, tuple):
+                outcome = item
+            else:
+                yield _sse("log", {"msg": item})
+        if not outcome[0]:
+            yield _sse("result", {"status": "error", "message": outcome[1]})
+            return
+        script_path = _locust_entry_point(perf_dir, script_path)
 
     web_port = _find_free_port() if headed else None
     cmd = build_locust_command(python_exe, script_path, host, users, spawn_rate,

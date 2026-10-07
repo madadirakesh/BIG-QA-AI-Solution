@@ -12,12 +12,18 @@ in Create Test:
   Type         Locust project                      JMeter project
   ----------   ---------------------------------   ------------------------------------------
   CLI          HTTP traffic -> Locust HttpUser      HTTP traffic -> JMeter test plan
-               locustfiles/<name>.py                TestScripts/cli/<name>.jmx
+               <scripts>/<name>.py                  <plans>/cli/<name>.jmx
                (utils/locust_recorder_writer)
-  Functional   UI steps -> Selenium pytest          UI steps -> Java Selenium journey, run by a
-               functional/test_<name>.py            JMeter plan (one timed sample per step)
-                                                    src/test/java/.../functional/<Name>.java
-                                                    TestScripts/functional/<name>.jmx
+  Functional   UI steps -> Locust User driving      UI steps -> Java Selenium journey, run by a
+               Selenium (one timed "UI" request     JMeter plan (one timed sample per step)
+               per step, core/ui_journey.py)        src/test/java/.../functional/<Name>.java
+               <scripts>/<name>.py                  <plans>/functional/<name>.jmx
+
+<scripts> and <plans> are wherever the project already keeps its Locust scripts
+or JMeter plans (utils/perf_project_layout) - `locustfiles/` and
+`TestScripts/` only for a project that has none yet. A Functional journey is a
+Locust script like any other, so it can be checked, load tested and driven by
+a payload from the Performance Test page.
 
 Every script carries `Test Case:` and `Script Type:` markers, which is what the
 Performance Test grid reads back for its Test Case and Type columns.
@@ -45,6 +51,7 @@ from utils.locust_recorder_writer import (
     write_recorded_script,
 )
 from utils.api_script_generator import _header_manager, _prop, _x
+from utils import perf_project_layout as layout
 
 LOCUST_TOOL = "Locust"
 JMETER_TOOL = "Jmeter"
@@ -59,7 +66,6 @@ SUPPORT_CLASS = "SeleniumSupport"
 # bundled with JMeter 5.6.3 cannot read Java 22+ class files).
 SAMPLER_CLASS = "JourneySampler"
 SUPPORT_FILES = (SUPPORT_CLASS, SAMPLER_CLASS)
-FUNCTIONAL_DIRNAME = "functional"
 LOCUSTFILES_DIRNAME = "locustfiles"
 JMETER_SCRIPTS_DIRNAME = "TestScripts"
 # Marker in a JMeter functional plan pointing at its Java journey, so deleting
@@ -87,15 +93,25 @@ def normalize_script_type(value):
     return SCRIPT_TYPE_FUNCTIONAL if str(value or "").strip().lower() == "functional" else SCRIPT_TYPE_CLI
 
 
-def naming_rules(tool, script_type):
-    """Where a recording lands and how its file is named: {folder, prefix, extension}."""
+def _relative_folder(perf_dir, folder):
+    rel = os.path.relpath(folder, perf_dir).replace("\\", "/")
+    return "" if rel == "." else rel + "/"
+
+
+def naming_rules(tool, script_type, perf_dir=None):
+    """
+    Where a recording lands and how its file is named: {folder, prefix, extension}.
+    `folder` is relative to the project and comes from its own layout when
+    `perf_dir` is given.
+    """
     if tool == JMETER_TOOL:
-        folder = "TestScripts/functional/" if script_type == SCRIPT_TYPE_FUNCTIONAL else "TestScripts/cli/"
+        kind = "functional" if script_type == SCRIPT_TYPE_FUNCTIONAL else "cli"
+        folder = (_relative_folder(perf_dir, layout.jmeter_type_dir(perf_dir, kind)) if perf_dir
+                  else f"{JMETER_SCRIPTS_DIRNAME}/{kind}/")
         return {"folder": folder, "prefix": "", "extension": ".jmx"}
-    if script_type == SCRIPT_TYPE_FUNCTIONAL:
-        # pytest only discovers test_*.py files by default.
-        return {"folder": f"{FUNCTIONAL_DIRNAME}/", "prefix": "test_", "extension": ".py"}
-    return {"folder": f"{LOCUSTFILES_DIRNAME}/", "prefix": "", "extension": ".py"}
+    folder = (_relative_folder(perf_dir, layout.locust_script_dir(perf_dir)) if perf_dir
+              else f"{LOCUSTFILES_DIRNAME}/")
+    return {"folder": folder, "prefix": "", "extension": ".py"}
 
 
 def recorded_file_name(raw, tool, script_type):
@@ -119,7 +135,9 @@ def recorded_file_name(raw, tool, script_type):
 
 
 def target_directory(perf_dir, tool, script_type):
-    return os.path.join(perf_dir, *naming_rules(tool, script_type)["folder"].strip("/").split("/"))
+    if tool == JMETER_TOOL:
+        return layout.jmeter_type_dir(perf_dir, "functional" if script_type == SCRIPT_TYPE_FUNCTIONAL else "cli")
+    return layout.locust_script_dir(perf_dir)
 
 
 def _java_class_name(file_name):
@@ -136,19 +154,13 @@ def _java_class_name(file_name):
 def _name_taken(perf_dir, tool, script_type, file_name):
     if os.path.exists(os.path.join(target_directory(perf_dir, tool, script_type), file_name)):
         return True
-    if tool == JMETER_TOOL:
-        # JMeter plans are addressed by base name across every TestScripts folder.
-        for _current, _dirs, files in os.walk(os.path.join(perf_dir, JMETER_SCRIPTS_DIRNAME)):
-            if file_name in files:
-                return True
-        if script_type == SCRIPT_TYPE_FUNCTIONAL and os.path.exists(
-                os.path.join(perf_dir, JAVA_SOURCE_DIR, _java_class_name(file_name) + ".java")):
-            return True
-    else:
-        # Locust scripts are addressed by base name across locustfiles/ and functional/.
-        other = SCRIPT_TYPE_CLI if script_type == SCRIPT_TYPE_FUNCTIONAL else SCRIPT_TYPE_FUNCTIONAL
-        if os.path.exists(os.path.join(target_directory(perf_dir, tool, other), file_name)):
-            return True
+    # Scripts are addressed by base name across every folder of the project.
+    wanted = file_name.lower()
+    if any(os.path.basename(p).lower() == wanted for p in layout.all_script_paths(perf_dir, tool)):
+        return True
+    if tool == JMETER_TOOL and script_type == SCRIPT_TYPE_FUNCTIONAL and os.path.exists(
+            os.path.join(perf_dir, JAVA_SOURCE_DIR, _java_class_name(file_name) + ".java")):
+        return True
     return False
 
 
@@ -294,80 +306,138 @@ def _header(journey, file_name, title, script_type, counts, notes, run_lines):
 
 
 # ---------------------------------------------------------------------------
-# Locust project, Functional: Selenium pytest
+# Locust project, Functional: a Locust User driving Selenium
 # ---------------------------------------------------------------------------
 
 _PY_BY = {"id": "By.ID", "name": "By.NAME", "css": "By.CSS_SELECTOR", "xpath": "By.XPATH"}
-_REQUIREMENTS = ("selenium>=4.20", "pytest>=8.0")
+_REQUIREMENTS = ("selenium>=4.20",)
+UI_SUPPORT_MODULE = "ui_journey.py"
+_UI_VERSION_RE = re.compile(r"^LOADER_VERSION\s*=\s*(\d+)", re.MULTILINE)
 
 
 def _py_locator(locator):
     return f"{_PY_BY[locator[0]]}, {locator[1]!r}"
 
 
-def build_selenium_pytest(journey, file_name, title, actions):
+def core_import_lines(levels):
+    """Put the project root (`levels` folders above the script) on sys.path for `core`."""
+    return [
+        "# The framework's core package sits at the project root.",
+        f"sys.path.insert(0, str(Path(__file__).resolve(){'.parent' * (levels + 1)}))",
+    ]
+
+
+def ui_action_call(action):
+    """The UiSession call replaying one recorded action ('' for a note)."""
+    kind = action["kind"]
+    if kind == "open":
+        return f"ui.open({action['target']!r})"
+    if kind == "wait_url":
+        return f"ui.wait_for_url({action['fragment']!r})"
+    if kind == "click":
+        return f"ui.click({_py_locator(action['locator'])})"
+    if kind == "check":
+        return f"ui.set_checked({_py_locator(action['locator'])}, {action['checked']})"
+    if kind == "type":
+        text = "PASSWORD" if action["secret"] else repr(action["value"])
+        return f"ui.type({_py_locator(action['locator'])}, {text})"
+    if kind == "select":
+        return f"ui.select({_py_locator(action['locator'])}, {action['value']!r})"
+    if kind == "enter":
+        return f"ui.press_enter({_py_locator(action['locator'])})"
+    if kind == "submit":
+        return f"ui.submit({_py_locator(action['locator'])})"
+    return ""
+
+
+def build_selenium_locust(journey, file_name, title, actions, levels=1, script_folder="locustfiles"):
+    """
+    A Locust script whose users each drive a Chrome browser through the
+    recorded UI steps. Every step is one Locust request of type "UI", timed
+    around the action and its waits.
+    """
     origin = host_origin(journey.get("application_url"))
     uses_password = any(a.get("secret") for a in actions)
-    test_name = "test_" + (_NON_ALNUM.sub("_", os.path.splitext(file_name)[0]).strip("_").lower()
-                           .removeprefix("test_") or "recorded_journey")
+    stem = os.path.splitext(file_name)[0]
+    base = _java_class_name(file_name)[:-len("Journey")] or "Recorded"
+    class_name = base + ("JourneyUser" if base in ("User", "Http", "FastHttp") else "User")
 
-    notes = ["Each step waits for its element, so the printed step timings are what a user waits for.",
+    notes = ["Each virtual user runs its own Chrome; keep user counts modest.",
+             "Every step waits for its element and is reported as one UI request, so the "
+             "report shows what a real user waits for.",
              "Locators prefer test ids, ids and names; review CSS/XPath fallbacks after page changes."]
     if uses_password:
         notes.append(f"Passwords are read from the {PASSWORD_ENV_VAR} environment variable.")
     if any(a["kind"] == "note" for a in actions):
         notes.append("Some actions had no locator and are left as comments to complete by hand.")
 
+    hint = f"{script_folder.strip('/')}/{file_name}" if script_folder.strip("/") else file_name
     header = _header(
         journey, file_name, title, SCRIPT_TYPE_FUNCTIONAL, f"{len(actions)} replayed step(s)", notes,
         ["Run (from the perf project root, after installing requirements.txt):",
-         f"    pytest {FUNCTIONAL_DIRNAME}/{file_name} -s            # headless",
-         f"    pytest {FUNCTIONAL_DIRNAME}/{file_name} -s --headed   # watch the browser"])
-    lines = ['"""'] + header + ['"""', "", "import os", "", "from selenium.webdriver.common.by import By", ""]
-    lines.append(f'BASE_URL = os.getenv("PERF_BASE_URL", {origin!r})')
+         f"    locust -f {hint}" + (f" --host {origin}" if origin else ""),
+         "    (set PERF_UI_HEADED=1 to watch the browser)"])
+    lines = ['"""'] + header + ['"""', "", "import os", "import sys", "from pathlib import Path", "",
+                                "from locust import User, between, task",
+                                "from selenium.webdriver.common.by import By", ""]
+    lines += core_import_lines(levels)
+    lines += ["", "from core.ui_journey import UiSession  # noqa: E402", ""]
     if uses_password:
         lines.append(f'PASSWORD = os.getenv("{PASSWORD_ENV_VAR}", "")')
-    lines += ["", "", f"def {test_name}(ui):"]
-
+    lines += [
+        "", "",
+        f"class {class_name}(User):",
+        '    """One virtual user = one browser replaying the recorded journey."""',
+        f"    host = {origin!r}" if origin else "    # host comes from --host",
+        "    wait_time = between(1, 3)",
+        "",
+        "    def on_start(self):",
+        f"        self.ui = UiSession(self.environment, base_url=self.host, name={stem!r})",
+        "",
+        "    def on_stop(self):",
+        "        self.ui.quit()",
+        "",
+        "    @task",
+        "    def journey(self):",
+        "        ui = self.ui",
+    ]
     for number, action in enumerate(actions, start=1):
-        label = f"{number}. {action['label']}"
-        kind = action["kind"]
-        if kind == "note":
-            lines += [f"    # {label}", ""]
+        label = f"{number:02d}. {action['label']}"
+        call = ui_action_call(action)
+        if not call:
+            lines += [f"        # {label}", ""]
             continue
-        if kind == "open":
-            call = (f"ui.open(BASE_URL + {action['target']!r})" if action["relative"]
-                    else f"ui.open({action['target']!r})")
-        elif kind == "wait_url":
-            call = f"ui.wait_for_url({action['fragment']!r})"
-        elif kind == "click":
-            call = f"ui.click({_py_locator(action['locator'])})"
-        elif kind == "check":
-            call = f"ui.set_checked({_py_locator(action['locator'])}, {action['checked']})"
-        elif kind == "type":
-            text = "PASSWORD" if action["secret"] else repr(action["value"])
-            call = f"ui.type({_py_locator(action['locator'])}, {text})"
-        elif kind == "select":
-            call = f"ui.select({_py_locator(action['locator'])}, {action['value']!r})"
-        elif kind == "enter":
-            call = f"ui.press_enter({_py_locator(action['locator'])})"
-        else:
-            call = f"ui.submit({_py_locator(action['locator'])})"
-        lines += [f"    with ui.step({label!r}):", f"        {call}", ""]
+        lines += [f"        with ui.step({label!r}):", f"            {call}", ""]
     return "\n".join(lines).rstrip() + "\n"
 
 
-def _ensure_python_functional_support(perf_dir):
-    """Copy functional/conftest.py and add Selenium + pytest to requirements.txt when missing."""
+def _module_version(path):
+    try:
+        with open(path, "r", encoding="utf-8") as handle:
+            match = _UI_VERSION_RE.search(handle.read())
+    except OSError:
+        return -1
+    return int(match.group(1)) if match else 0
+
+
+def ensure_ui_support(perf_dir):
+    """
+    Make a Locust project able to run Functional journeys: core/ui_journey.py
+    (refreshed when the bundled copy is newer) and Selenium in requirements.txt.
+    Returns human-readable notes about anything the tester has to do.
+    """
     notes = []
-    functional_dir = os.path.join(perf_dir, FUNCTIONAL_DIRNAME)
-    os.makedirs(functional_dir, exist_ok=True)
-    conftest = os.path.join(functional_dir, "conftest.py")
-    if not os.path.isfile(conftest):
-        source = os.path.join(_TEMPLATES_ROOT, "Locust_framework", FUNCTIONAL_DIRNAME, "conftest.py")
+    core_dir = os.path.join(perf_dir, "core")
+    os.makedirs(core_dir, exist_ok=True)
+    init_file = os.path.join(core_dir, "__init__.py")
+    if not os.path.exists(init_file):
+        open(init_file, "w", encoding="utf-8").close()
+    target = os.path.join(core_dir, UI_SUPPORT_MODULE)
+    source = os.path.join(_TEMPLATES_ROOT, "Locust_framework", "core", UI_SUPPORT_MODULE)
+    if os.path.isfile(source) and _module_version(target) < _module_version(source):
         with open(source, "r", encoding="utf-8") as handle:
             content = handle.read()
-        with open(conftest, "w", encoding="utf-8", newline="\n") as handle:
+        with open(target, "w", encoding="utf-8", newline="\n") as handle:
             handle.write(content)
 
     requirements = os.path.join(perf_dir, "requirements.txt")
@@ -383,8 +453,8 @@ def _ensure_python_functional_support(perf_dir):
                 handle.write("\n")
             handle.write("# Functional (Selenium) journeys recorded from the Performance Test page\n")
             handle.write("\n".join(missing) + "\n")
-        notes.append(f"Added {', '.join(r.split('>')[0] for r in missing)} to requirements.txt - install them "
-                     f"into .venv (pip install -r requirements.txt) before running the test.")
+        notes.append(f"Added {', '.join(r.split('>')[0] for r in missing)} to requirements.txt; it is "
+                     f"installed into .venv automatically on the first run.")
     return notes
 
 
@@ -410,7 +480,7 @@ def _java_locator(locator):
     return f"{_JAVA_BY[locator[0]]}({_java_string(locator[1])})"
 
 
-def build_java_journey(journey, class_name, file_name, title, actions):
+def build_java_journey(journey, class_name, file_name, title, actions, plan_path=""):
     origin = host_origin(journey.get("application_url"))
     uses_password = any(a.get("secret") for a in actions)
     method_lines, names = [], []
@@ -453,7 +523,7 @@ def build_java_journey(journey, class_name, file_name, title, actions):
         f" * Script Type: {SCRIPT_TYPE_FUNCTIONAL}",
         f" * Recorded from : {_java_comment(journey.get('application_url') or '')}",
         f" * Recorded at   : {finished_at.strftime('%Y-%m-%d %H:%M:%S')}",
-        f" * JMeter plan   : TestScripts/functional/{file_name}",
+        f" * JMeter plan   : {_java_comment(plan_path or 'TestScripts/functional/' + file_name)}",
         " *",
         " * Each stepNN() is one JMeter sample in the plan, so the reports time every user action.",
     ]
@@ -571,15 +641,16 @@ def _test_plan(title, comments, body):
 """
 
 
-def build_java_journey_plan(journey, class_name, file_name, title, actions):
+def build_java_journey_plan(journey, class_name, file_name, title, actions, plan_path=""):
     origin = host_origin(journey.get("application_url"))
     qualified = f"{JAVA_PACKAGE}.{class_name}"
     comments = "\n".join(_header(
         journey, file_name, title, SCRIPT_TYPE_FUNCTIONAL, f"{len(actions)} replayed step(s)",
         ["Every step is one sample, timed around the Selenium action and its waits.",
-         f"Base URL: -Jselenium.baseUrl (default {origin}); browser: pw.headless; users: -Jselenium.threads."],
+         f"Base URL: -Jselenium.baseUrl (default {origin}); browser: -Jselenium.headless; "
+         "users / iterations / seconds: -Jthreads / -Jloops / -Jduration."],
         [f"{JAVA_CLASS_MARKER}: {JAVA_SOURCE_DIR.replace(os.sep, '/')}/{class_name}.java",
-         f"Run: mvn clean verify -Pfunctional   (or -Dperf.tests=functional/{file_name})"]))
+         f"Run from the Performance Test page, or: jmeter -n -t {plan_path or file_name} -Jthreads=1 -Jloops=1"]))
 
     # Each virtual user launches its own Chrome, runs one sample per recorded
     # action (JourneySampler calls journey.stepNN()), then closes the browser.
@@ -591,8 +662,8 @@ def build_java_journey_plan(journey, class_name, file_name, title, actions):
                                       {"journey": qualified, "action": "step", "step": f"step{number:02d}"}, 8))
     samplers.append(_java_request("99 - Close browser", {"journey": qualified, "action": "close", "step": ""}, 8))
 
-    body = _thread_group("Browser Users", "${__P(selenium.threads,1)}", "${__P(selenium.loops,1)}",
-                         "".join(samplers))
+    body = _thread_group("Browser Users", "${__P(threads,${__P(selenium.threads,1)})}", "${__P(loops,1)}",
+                         "".join(samplers), duration=True)
     return _test_plan(title, comments, body)
 
 
@@ -818,7 +889,7 @@ def build_recorded_jmeter_plan(journey, file_name, title):
     comments = "\n".join(_header(
         journey, file_name, title, SCRIPT_TYPE_CLI,
         f"{len(steps)} user action(s), {len(requests)} request(s)", notes,
-        [f"Run: mvn clean verify -Pcli   (or -Dperf.tests=cli/{file_name})"]))
+        ["Run from the Performance Test page, or: jmeter -n -t <plan> -Jthreads=5 -Jduration=60"]))
 
     parts = urlsplit(application_url)
     defaults = f"""      <ConfigTestElement guiclass="HttpDefaultsGui" testclass="ConfigTestElement" testname="HTTP Request Defaults" enabled="true">
@@ -844,7 +915,8 @@ def build_recorded_jmeter_plan(journey, file_name, title):
     if not transactions:
         transactions.append(_transaction("01 - Open the application", _recorded_sampler(
             {"method": "GET", "url": origin + "/" if origin else "/"}, origin, secrets, 10), 8))
-    body = defaults + _thread_group("Recorded Users", "${__P(threads,5)}", "-1", "".join(transactions), duration=True)
+    body = defaults + _thread_group("Recorded Users", "${__P(threads,5)}", "${__P(loops,-1)}",
+                                    "".join(transactions), duration=True)
     return _test_plan(title, comments, body)
 
 
@@ -854,19 +926,23 @@ def build_recorded_jmeter_plan(journey, file_name, title):
 
 def write_recording(perf_dir, tool, script_type, journey):
     """
-    Write the recording as the script `tool` + `script_type` call for.
+    Write the recording as the script `tool` + `script_type` call for, into
+    the folder the project already keeps such scripts in.
 
     Returns {"path", "file_name", "relative_path", "notes": [...], "extra_files": [...]}.
     A name already taken gets a numeric suffix rather than overwriting.
     """
     tool = JMETER_TOOL if tool == JMETER_TOOL else LOCUST_TOOL
     script_type = normalize_script_type(script_type)
+    directory = target_directory(perf_dir, tool, script_type)
+    folder = _relative_folder(perf_dir, directory)
 
     if tool == LOCUST_TOOL and script_type == SCRIPT_TYPE_CLI:
         path, file_name = write_recorded_script(
-            os.path.join(perf_dir, LOCUSTFILES_DIRNAME), dict(journey, script_type=SCRIPT_TYPE_CLI))
+            directory, dict(journey, script_type=SCRIPT_TYPE_CLI, script_folder=folder))
+        layout.invalidate(perf_dir)
         return {"path": path, "file_name": file_name,
-                "relative_path": f"{LOCUSTFILES_DIRNAME}/{file_name}", "notes": [], "extra_files": []}
+                "relative_path": f"{folder}{file_name}", "notes": [], "extra_files": []}
 
     file_name = (recorded_file_name(journey.get("file_name"), tool, script_type)
                  or _default_file_name(journey, tool, script_type))
@@ -874,15 +950,16 @@ def write_recording(perf_dir, tool, script_type, journey):
     title = (sanitize_script_title(journey.get("title"))
              or recorded_script_title(journey.get("project_name"), journey.get("finished_at")))
     origin = host_origin(journey.get("application_url"))
-    directory = target_directory(perf_dir, tool, script_type)
     os.makedirs(directory, exist_ok=True)
     path = os.path.join(directory, file_name)
     notes, extra_files = [], []
 
     if tool == LOCUST_TOOL:
-        notes += _ensure_python_functional_support(perf_dir)
-        source = build_selenium_pytest(journey, file_name, title, ui_actions(journey.get("steps"), origin))
-        compile(source, file_name, "exec")  # never write a test that cannot even be imported
+        notes += ensure_ui_support(perf_dir)
+        source = build_selenium_locust(journey, file_name, title, ui_actions(journey.get("steps"), origin),
+                                       levels=layout.depth_below_root(perf_dir, directory),
+                                       script_folder=folder)
+        compile(source, file_name, "exec")  # never write a script that cannot even be imported
     elif script_type == SCRIPT_TYPE_CLI:
         source = build_recorded_jmeter_plan(journey, file_name, title)
     else:
@@ -891,13 +968,15 @@ def write_recording(perf_dir, tool, script_type, journey):
         notes += ensure_selenium_support(perf_dir)
         java_path = os.path.join(perf_dir, JAVA_SOURCE_DIR, f"{class_name}.java")
         os.makedirs(os.path.dirname(java_path), exist_ok=True)
+        plan_path = f"{folder}{file_name}"
         with open(java_path, "w", encoding="utf-8", newline="\n") as handle:
-            handle.write(build_java_journey(journey, class_name, file_name, title, actions))
+            handle.write(build_java_journey(journey, class_name, file_name, title, actions, plan_path))
         extra_files.append(os.path.relpath(java_path, perf_dir).replace("\\", "/"))
-        source = build_java_journey_plan(journey, class_name, file_name, title, actions)
+        source = build_java_journey_plan(journey, class_name, file_name, title, actions, plan_path)
 
     with open(path, "w", encoding="utf-8", newline="\n") as handle:
         handle.write(source)
+    layout.invalidate(perf_dir)
     return {"path": path, "file_name": file_name,
             "relative_path": os.path.relpath(path, perf_dir).replace("\\", "/"),
             "notes": notes, "extra_files": extra_files}

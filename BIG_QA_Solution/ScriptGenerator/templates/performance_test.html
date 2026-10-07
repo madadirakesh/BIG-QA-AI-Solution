@@ -705,25 +705,17 @@
                 empty.style.display = 'flex';
                 empty.querySelector('h4').textContent = 'No performance scripts found';
                 empty.querySelector('p').textContent = d.message || (d.project.performance_tool === 'Jmeter'
-                    ? 'This project has no test plans in its TestScripts folder yet. Use Create Test to add one.'
-                    : 'This project has no scripts in its locustfiles folder yet. Use Create Test to add one.');
+                    ? 'No JMeter test plans (*.jmx) were found in this project yet. Use Create Test to add one.'
+                    : 'No Locust scripts were found in this project yet. Use Create Test to add one.');
                 return;
             }
 
             empty.style.display = 'none';
             wrapper.style.display = 'block';
-            // Payload configuration and runs drive Locust; a JMeter plan can be
-            // listed and deleted here, but is executed with Maven for now.
-            const jmeter = d.project.performance_tool === 'Jmeter';
+            // Every script the project discovery found is runnable: Locust
+            // scripts and Functional (Selenium) journeys run through Locust,
+            // JMeter plans through JMeter, wherever they sit in the project.
             d.data.forEach((script, index) => {
-                // Payload configuration and the run buttons drive Locust. JMeter
-                // plans run with Maven and recorded Selenium journeys with pytest.
-                const pytestJourney = !jmeter && (script.relative_path || '').indexOf('functional/') === 0;
-                const locustOnly = jmeter
-                    ? 'disabled title="Not available for JMeter scripts yet - run them with Maven (mvn clean verify)."'
-                    : pytestJourney
-                        ? `disabled title="Selenium journey - run it with pytest: pytest ${perfEscape(script.relative_path)} -s"`
-                        : '';
                 const row = document.createElement('tr');
                 const lastRun = script.last_report_url
                     ? `<a href="${perfEscape(script.last_report_url)}" target="_blank" rel="noopener">${perfEscape(script.last_run_at)}</a>`
@@ -740,9 +732,9 @@
                     <td>${lastRun}</td>
                     <td>
                         <div class="perf-actions">
-                            <button type="button" class="btn btn-secondary" ${dataAttrs} ${locustOnly} onclick="openPayloadModal(this)"><i class="fas fa-database"></i> Configure Payload</button>
-                            <button type="button" class="btn btn-secondary" ${dataAttrs} ${locustOnly} onclick="runScriptCheck(this)"><i class="fas fa-vial"></i> Run Script Check</button>
-                            <button type="button" class="btn btn-primary" ${dataAttrs} ${locustOnly} onclick="openRunConfigModal(this)"><i class="fas fa-bolt"></i> Run performance test</button>
+                            <button type="button" class="btn btn-secondary" ${dataAttrs} onclick="openPayloadModal(this)"><i class="fas fa-database"></i> Configure Payload</button>
+                            <button type="button" class="btn btn-secondary" ${dataAttrs} onclick="runScriptCheck(this)"><i class="fas fa-vial"></i> Run Script Check</button>
+                            <button type="button" class="btn btn-primary" ${dataAttrs} onclick="openRunConfigModal(this)"><i class="fas fa-bolt"></i> Run performance test</button>
                             <button type="button" class="btn btn-danger" ${dataAttrs}
                                     data-runs="${script.run_count || 0}"
                                     data-reports="${script.report_count || 0}"
@@ -772,8 +764,8 @@
     /* ------------------------------- Create Test ------------------------------- */
     /* Create Test first asks what kind of script to build. Functional hands over
      * to the browser recorder; API generates a script from an uploaded API
-     * document into the framework's own folder (Locust: locustfiles/, JMeter:
-     * TestScripts/api/). */
+     * document. Every script is written where the project already keeps its
+     * scripts - the server reports those folders as project.script_locations. */
 
     const API_DOCUMENT_EXTENSIONS = ['.json', '.yaml', '.yml', '.txt', '.md', '.doc', '.docx'];
     const API_SCRIPT_FILE_PATTERN = /^[A-Za-z0-9][A-Za-z0-9 _.-]*$/;
@@ -785,6 +777,13 @@
 
     function currentPerfTool() {
         return (perfProjectInfo && perfProjectInfo.performance_tool) || 'Locust';
+    }
+
+    /** Folder a new script of `kind` (api / cli / functional) is written to in this project. */
+    function scriptFolder(kind) {
+        const locations = (perfProjectInfo && perfProjectInfo.script_locations) || {};
+        if (locations[kind]) return locations[kind];
+        return currentPerfTool() === 'Jmeter' ? `TestScripts/${kind}/` : 'locustfiles/';
     }
 
     function openCreateTestModal() {
@@ -806,11 +805,12 @@
         const jmeter = tool === 'Jmeter';
         document.getElementById('createTypeFunctionalNote').textContent = jmeter
             ? 'Record a journey in the browser; its UI steps become a Java Selenium journey that JMeter '
-              + 'runs and times step by step (TestScripts/functional/).'
-            : 'Record a journey in the browser; its UI steps become a Selenium pytest (functional/).';
+              + `runs and times step by step (${scriptFolder('functional')}).`
+            : 'Record a journey in the browser; its UI steps become a Locust script that drives a real '
+              + `browser and times every step (${scriptFolder('functional')}).`;
         document.getElementById('createTypeCliNote').textContent = jmeter
-            ? 'Record a journey in the browser; its HTTP traffic becomes a JMeter test plan (TestScripts/cli/).'
-            : 'Record a journey in the browser; its HTTP traffic becomes a Locust script (locustfiles/).';
+            ? `Record a journey in the browser; its HTTP traffic becomes a JMeter test plan (${scriptFolder('cli')}).`
+            : `Record a journey in the browser; its HTTP traffic becomes a Locust script (${scriptFolder('cli')}).`;
         document.getElementById('createTypeApiNote').textContent =
             `Generate a ${jmeter ? 'JMeter' : 'Locust'} API test from an API document `
             + '(Swagger / OpenAPI, Postman collection, .doc / .docx / .txt).';
@@ -900,7 +900,7 @@
 
     function renderApiScriptFilePreview() {
         const resolved = apiScriptFileNameFrom(document.getElementById('apiScriptFileInput').value);
-        const folder = currentPerfTool() === 'Jmeter' ? 'TestScripts/api/' : 'locustfiles/';
+        const folder = scriptFolder('api');
         document.getElementById('apiScriptFilePreview').textContent = resolved ? `Saved as ${folder}${resolved}` : '';
     }
 

@@ -103,6 +103,12 @@ def sanitize_script_title(raw):
     return single_line.replace("\\", "/").replace('"""', "'''").strip()
 
 
+def _script_hint(journey, file_name):
+    """The script's path from the project root, for the `locust -f` hint."""
+    folder = (journey.get("script_folder") or "locustfiles").strip("/")
+    return f"{folder}/{file_name}" if folder else file_name
+
+
 def _class_name(project_name):
     parts = [p for p in _NON_ALNUM.split(project_name or "") if p]
     name = "".join(part[:1].upper() + part[1:] for part in parts) or "Recorded"
@@ -356,7 +362,7 @@ def build_locust_script(journey):
     header += [
         "",
         "Run standalone (from the perf project root):",
-        f"    locust -f locustfiles/{file_name}" + (f" --host {origin}" if origin else ""),
+        f"    locust -f {_script_hint(journey, file_name)}" + (f" --host {origin}" if origin else ""),
         '"""',
         "",
     ]

@@ -16,7 +16,7 @@ Flow, from the Performance Test page's "Create Test" button:
      script the project's tool and the chosen script type call for (see
      utils/recorded_script_writers) and the browser closes:
        CLI        -> the HTTP traffic: a Locust script / a JMeter test plan
-       Functional -> the UI steps: a Selenium pytest / a Java Selenium journey
+       Functional -> the UI steps: a Locust Selenium journey / a Java Selenium journey
                      run by JMeter
      Every action carries a Selenium locator for that functional replay.
 
@@ -539,7 +539,7 @@ class RecordingSession:
         # chosen in Create Test (see utils/recorded_script_writers).
         self.tool = JMETER_TOOL if tool == JMETER_TOOL else "Locust"
         self.script_type = normalize_script_type(script_type)
-        self.naming = naming_rules(self.tool, self.script_type)
+        self.naming = naming_rules(self.tool, self.script_type, perf_dir)
         self.notes = []
 
         self.state = "launching"
@@ -622,7 +622,7 @@ class RecordingSession:
     def output_label(self):
         """What the recording is being turned into, for status messages."""
         if self.script_type == SCRIPT_TYPE_FUNCTIONAL:
-            return "Java Selenium journey" if self.tool == JMETER_TOOL else "Selenium pytest"
+            return "Java Selenium journey" if self.tool == JMETER_TOOL else "Locust Selenium journey"
         return "JMeter test plan" if self.tool == JMETER_TOOL else "Locust script"
 
     # ── state helpers ───────────────────────────────────────────────────

@@ -13,7 +13,9 @@ Four jobs:
 
   2. `extract_parameters()` scans a Locust script for the fields a payload can
      drive: request body keys (`json=` / `data=` dict literals), `params=`
-     entries, and the query string of the request URL itself.
+     entries, the query string of the request URL itself, and - in a
+     Functional (Selenium) journey - the values typed or selected by
+     `ui.type(...)` / `ui.select(...)`.
      `extract_requests()` scans the same calls for the requests themselves, which
      is what the response-time threshold dropdown is populated from.
 
@@ -25,7 +27,7 @@ Four jobs:
      slower than its limit is reported to Locust as a failure.
 
 The rewrite never touches the recorded script. It produces a sibling
-`_bigqa_param_<stem>.py` inside `locustfiles/` - the leading underscore keeps it
+`_bigqa_param_<stem>.py` in the script's own folder - the leading underscore keeps it
 out of the Performance Test grid (`performance_runner.list_scripts` skips
 private modules) - and the runner executes that copy instead. The original stays
 the reviewable artefact, and regenerating after an edit is always safe because
@@ -56,7 +58,8 @@ from datetime import datetime
 from pathlib import Path
 from urllib.parse import parse_qsl, quote_plus, urlsplit
 
-LOCUSTFILES_DIRNAME = "locustfiles"
+from utils import perf_project_layout as layout
+
 DATA_DIRNAME = "data"
 CORE_DIRNAME = "core"
 GENERATED_PREFIX = "_bigqa_param_"
@@ -95,7 +98,12 @@ CLIENT_METHODS = {"get", "post", "put", "patch", "delete", "head", "options", "r
 # Call keyword -> the parameter "source" it produces.
 BODY_KEYWORDS = {"json": "body", "data": "body", "params": "query"}
 
-SOURCE_LABELS = {"body": "request body", "query": "query parameter"}
+SOURCE_LABELS = {"body": "request body", "query": "query parameter", "input": "typed value"}
+# Functional journeys: `ui.type(by, locator, text)` / `ui.select(by, locator, option)`.
+UI_VALUE_METHODS = {"type": 2, "select": 2}
+UI_METHOD = "UI"
+# Folders a stored payload copy may be deleted from.
+_DATA_FOLDER_NAMES = {"data", "payloads", "test_data", "testdata", "csv", "json", "xml"}
 
 _UNSAFE_FILENAME = re.compile(r"[^A-Za-z0-9._-]+")
 _SAMPLE_MAX_CHARS = 60
@@ -374,6 +382,45 @@ def _is_client_call(call):
     return isinstance(owner, ast.Name) and owner.id == "client"
 
 
+def _is_ui_owner(node):
+    """`ui` or `self.ui` - the UiSession of a Functional journey."""
+    if isinstance(node, ast.Name):
+        return node.id == "ui"
+    return isinstance(node, ast.Attribute) and node.attr == "ui"
+
+
+def _is_ui_value_call(call):
+    func = call.func
+    return (isinstance(func, ast.Attribute) and func.attr in UI_VALUE_METHODS
+            and _is_ui_owner(func.value) and len(call.args) > UI_VALUE_METHODS[func.attr])
+
+
+def _ui_step_label(item):
+    """The label of `with ui.step("...")`, or None for any other context manager."""
+    call = item.context_expr
+    if (isinstance(call, ast.Call) and isinstance(call.func, ast.Attribute)
+            and call.func.attr == "step" and _is_ui_owner(call.func.value) and call.args
+            and isinstance(call.args[0], ast.Constant) and isinstance(call.args[0].value, str)):
+        return call.args[0].value
+    return None
+
+
+def _ui_step_index(tree):
+    """Map every node to the label of the `ui.step(...)` block it sits in."""
+    index = {}
+
+    def visit(node, label):
+        if isinstance(node, (ast.With, ast.AsyncWith)):
+            for item in node.items:
+                label = _ui_step_label(item) or label
+        index[id(node)] = label
+        for child in ast.iter_child_nodes(node):
+            visit(child, label)
+
+    visit(tree, None)
+    return index
+
+
 def _call_method(call):
     attr = call.func.attr
     if attr != "request":
@@ -520,7 +567,18 @@ def _collect_parameters(tree, source):
             occurrence["end"] = resolve(url_node.end_lineno, url_node.end_col_offset)
         parameter["occurrences"].append(occurrence)
 
+    steps = _ui_step_index(tree)
     for node in ast.walk(tree):
+        if isinstance(node, ast.Call) and _is_ui_value_call(node):
+            value_node = node.args[UI_VALUE_METHODS[node.func.attr]]
+            locator = node.args[1]
+            field = (locator.value if isinstance(locator, ast.Constant) and isinstance(locator.value, str)
+                     else _safe_unparse(locator) or "field")
+            sample = (value_node.value if isinstance(value_node, ast.Constant)
+                      else _safe_unparse(value_node))
+            record("input", UI_METHOD, steps.get(id(node)) or node.func.attr, field, value_node,
+                   functions.get(id(node)), sample=_sample_text(sample))
+            continue
         if not isinstance(node, ast.Call) or not _is_client_call(node):
             continue
 
@@ -598,6 +656,19 @@ def _collect_requests(tree):
     """
     requests = {}
     for node in ast.walk(tree):
+        if isinstance(node, (ast.With, ast.AsyncWith)):
+            # A Functional journey's steps are its "requests": each is one UI
+            # request in the Locust report.
+            for item in node.items:
+                label = _ui_step_label(item)
+                if label is None:
+                    continue
+                key = request_id(UI_METHOD, label)
+                if key in requests:
+                    requests[key]["occurrences"] += 1
+                else:
+                    requests[key] = {"id": key, "method": UI_METHOD, "name": label, "occurrences": 1}
+            continue
         if not isinstance(node, ast.Call) or not _is_client_call(node):
             continue
         method = _call_method(node)
@@ -817,9 +888,14 @@ def _rewrite_url(url_value, mapped_keys, bindable):
     )
 
 
+def _root_expr(levels, path_name="Path"):
+    """Source for the project root, `levels` folders above the generated script."""
+    return f"{path_name}(__file__).resolve()" + ".parent" * (levels + 1)
+
+
 def _preamble(script_file, payload_name, payload_type, record_tag, strategy,
-              mapping_count, row_count, needs_quote):
-    payload_relative = f"{DATA_DIRNAME}/{payload_name}"
+              mapping_count, row_count, needs_quote, levels=1, data_rel=DATA_DIRNAME):
+    payload_relative = f"{data_rel}/{payload_name}" if data_rel else payload_name
     header = [
         "# ── BIG QA payload parameterisation (generated — do not edit) ─────────────",
         f"# Source script : {script_file}",
@@ -836,13 +912,14 @@ def _preamble(script_file, payload_name, payload_type, record_tag, strategy,
         header.append("from urllib.parse import quote_plus")
     header += [
         "",
-        "# The framework's core package sits one level above locustfiles/.",
-        "sys.path.insert(0, str(Path(__file__).resolve().parent.parent))",
+        "# The framework's core package sits at the project root.",
+        f"sys.path.insert(0, str({_root_expr(levels)}))",
         "",
         "from core.payload_loader import PayloadLoader",
         "",
-        f'{PAYLOAD_FILE_CONST} = str(Path(__file__).resolve().parent.parent '
-        f'/ "{DATA_DIRNAME}" / {json.dumps(payload_name)})',
+        f"{PAYLOAD_FILE_CONST} = str({_root_expr(levels)}"
+        + "".join(f" / {json.dumps(part)}" for part in (data_rel or "").split("/") if part)
+        + f" / {json.dumps(payload_name)})",
         f"{LOADER_VAR} = PayloadLoader(",
         f'    {PAYLOAD_FILE_CONST}, strategy="{strategy}", '
         f'xml_record_tag={json.dumps(record_tag or "record")}',
@@ -871,7 +948,7 @@ def _preamble(script_file, payload_name, payload_type, record_tag, strategy,
     return "\n".join(header)
 
 
-def _threshold_preamble(thresholds):
+def _threshold_preamble(thresholds, levels=1, has_ui=False):
     """
     Source for the block that turns the saved NFR limits into pass/fail.
 
@@ -969,6 +1046,17 @@ def _threshold_preamble(thresholds):
         "else:",
         "    _bigqa_enforce_thresholds(_BigQaFastHttpSession)",
         "",
+    ] + ([
+        "# A Functional journey reports its UI steps through core.ui_journey.",
+        "import sys as _bigqa_sys",
+        "from pathlib import Path as _BigQaPath",
+        "",
+        f"_bigqa_sys.path.insert(0, str({_root_expr(levels, '_BigQaPath')}))",
+        "from core import ui_journey as _bigqa_ui  # noqa: E402",
+        "",
+        "_bigqa_ui.set_thresholds(_BIGQA_THRESHOLD_MS, _BIGQA_DEFAULT_THRESHOLD_MS)",
+        "",
+    ] if has_ui else []) + [
         "# ── end BIG QA response-time thresholds ──────────────────────────────────",
         "",
     ]
@@ -993,7 +1081,7 @@ def _preamble_position(tree, source):
 
 def build_parameterized_script(script_path, mappings, payload_name, payload_type,
                                record_tag="record", strategy="round_robin", row_count=0,
-                               nodes=None, thresholds=None):
+                               nodes=None, thresholds=None, levels=1, data_rel=DATA_DIRNAME):
     """
     Return the source of the parameterised copy of `script_path`.
 
@@ -1070,9 +1158,11 @@ def build_parameterized_script(script_path, mappings, payload_name, payload_type
     blocks = []
     if clean:
         blocks.append(_preamble(os.path.basename(script_path), payload_name, payload_type,
-                                record_tag, strategy, len(clean), row_count, needs_quote))
+                                record_tag, strategy, len(clean), row_count, needs_quote,
+                                levels=levels, data_rel=data_rel))
     if clean_thresholds:
-        blocks.append(_threshold_preamble(clean_thresholds))
+        has_ui = any(entry["method"] == UI_METHOD for entry in _collect_requests(tree))
+        blocks.append(_threshold_preamble(clean_thresholds, levels=levels, has_ui=has_ui))
 
     preamble_at = _preamble_position(tree, source)
     edits.append((preamble_at, preamble_at, "".join(blocks)))
@@ -1105,14 +1195,14 @@ def safe_payload_name(script_file, file_name, payload_type):
 
 def remove_payload_copy(path):
     """
-    Delete a payload copy this module stored in a project's `data/` folder.
+    Delete a payload copy this module stored in a project's data folder.
 
-    Only files inside `data/` that carry the generated prefix are touched, so a
+    Only files inside a data folder that carry the generated prefix are touched, so a
     stale database row can never point the delete at the framework's own sample
     data (or anywhere else on disk).
     """
     target = Path(path or "")
-    if not target.is_file() or target.parent.name != DATA_DIRNAME:
+    if not target.is_file() or target.parent.name.lower() not in _DATA_FOLDER_NAMES:
         return False
     if not target.name.startswith(PAYLOAD_COPY_PREFIX):
         return False
@@ -1123,9 +1213,10 @@ def remove_payload_copy(path):
         return False
 
 
-def store_payload_file(perf_dir, script_file, file_name, raw, payload_type):
+def store_payload_file(perf_dir, script_file, file_name, raw, payload_type, tool=layout.LOCUST_TOOL):
     """
-    Write the uploaded payload into `<perf project>/data/`. Returns (path, name).
+    Write the uploaded payload into the project's data folder (`data/`, or
+    `Payloads/` for JMeter - whichever the project already has). Returns (path, name).
 
     A UTF-8 BOM is stripped on the way in. This parser reads it with utf-8-sig,
     but PayloadLoader opens the stored file as plain utf-8 at run time, where a
@@ -1133,7 +1224,7 @@ def store_payload_file(perf_dir, script_file, file_name, raw, payload_type):
     outright - the nodes offered here would then not be the nodes that exist
     during the run.
     """
-    data_dir = Path(perf_dir) / DATA_DIRNAME
+    data_dir = Path(layout.data_dir(perf_dir, tool))
     data_dir.mkdir(parents=True, exist_ok=True)
     payload_name = safe_payload_name(script_file, file_name, payload_type)
     target = data_dir / payload_name
@@ -1208,26 +1299,55 @@ def write_parameterized_script(perf_dir, script_file, script_path, mappings, pay
             "Performance Configuration to refresh its framework files."
         )
 
+    folder = os.path.dirname(os.path.abspath(script_path))
+    data_rel = layout.relative_folder(perf_dir, layout.data_dir(perf_dir, layout.LOCUST_TOOL))
     source = build_parameterized_script(
         script_path, mappings, payload_name, payload_type,
         record_tag=record_tag, strategy=strategy, row_count=row_count, nodes=nodes,
-        thresholds=thresholds,
+        thresholds=thresholds, levels=layout.depth_below_root(perf_dir, folder), data_rel=data_rel,
     )
     # Fail here rather than inside Locust if the rewrite produced something odd.
     _parse_script(source, "generated script")
 
-    target = Path(perf_dir) / LOCUSTFILES_DIRNAME / generated_script_name(script_file)
-    target.parent.mkdir(parents=True, exist_ok=True)
+    target = Path(folder) / generated_script_name(script_file)
     with open(target, "w", encoding="utf-8", newline="\n") as handle:
         handle.write(source)
     return str(target), target.name
 
 
+def generated_copies(perf_dir, name):
+    """Every file called `name` in the project's folders (the same pruned walk as discovery)."""
+    return [Path(current) / name for current, files in layout.walk(perf_dir) if name in files]
+
+
 def remove_generated_script(perf_dir, script_file):
     """Delete the parameterised copy of a script; returns True when one was removed."""
-    target = Path(perf_dir) / LOCUSTFILES_DIRNAME / generated_script_name(script_file)
-    try:
-        target.unlink()
-        return True
-    except OSError:
-        return False
+    removed = False
+    for target in generated_copies(perf_dir, generated_script_name(script_file)):
+        try:
+            target.unlink()
+            removed = True
+        except OSError:
+            pass
+    return removed
+
+
+def payload_records(raw, payload_type):
+    """
+    The records of a payload as flat dicts keyed by node path - the same paths
+    `parse_payload` offers as nodes. A JMeter CSV Data Set is written from these.
+    """
+    payload_type = normalize_payload_type(payload_type)
+    text = _decode(raw)
+    if payload_type == "csv":
+        _, records = _parse_csv(text)
+    elif payload_type == "json":
+        records = _parse_json(text)
+    else:
+        _, records = _parse_xml(text)
+    flat = []
+    for record in records:
+        out = {}
+        _flatten_record(record, "", out)
+        flat.append(out)
+    return flat
