@@ -938,15 +938,51 @@ class EnvironmentSetup:
                     ))
             return phases
 
+        # if "NPM" in package_manager:
+        #     phases = [("Installing npm packages from package.json...", "npm install")]
+        #     if tool == "Playwright":
+        #         phases.append((
+        #             "Downloading Playwright Chromium browser (~130 MB)...",
+        #             # --no-install guarantees npx uses the package restored into this project
+        #             # instead of silently downloading an unrelated global/latest CLI.
+        #             "npx --no-install playwright install chromium",
+        #         ))
+        #     return phases
+
+        # Neeraj Kumar: Modified on 5th October 2026 - changes made to run Playwright-Typescript/Cucumber - "requireModule" in cucumber.js file = ["tsx/cjs"]
         if "NPM" in package_manager:
             phases = [("Installing npm packages from package.json...", "npm install")]
+
             if tool == "Playwright":
                 phases.append((
                     "Downloading Playwright Chromium browser (~130 MB)...",
-                    # --no-install guarantees npx uses the package restored into this project
-                    # instead of silently downloading an unrelated global/latest CLI.
                     "npx --no-install playwright install chromium",
                 ))
+
+                phases.append((
+                    "Installing tsx for TypeScript support...",
+                    "npm install --save-dev tsx",
+                ))
+
+                def update_cucumber_config():
+                    import os
+                    import json
+
+                    config_files = ["cucumber.json", "cucumber.js"]
+                    for file in config_files:
+                        if os.path.exists(file):
+                            if file.endswith(".json"):
+                                with open(file, "r+") as f:
+                                    data = json.load(f)
+                                    # Ensure default profile has requireModule set to tsx/cjs
+                                    for profile in data.values():
+                                        profile["requireModule"] = ["tsx/cjs"]
+                                    f.seek(0)
+                                    json.dump(data, f, indent=2)
+                                    f.truncate()
+                            break
+
+                update_cucumber_config()
             return phases
 
         if "NuGet" in package_manager:

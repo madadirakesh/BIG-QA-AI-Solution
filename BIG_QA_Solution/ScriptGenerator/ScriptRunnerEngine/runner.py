@@ -222,8 +222,8 @@ class ScriptRunnerService:
 
         if manifests.get("package_json"):
             if tool == "playwright":
-                return ['npm test', 'npm run report']
-            return ['npm test']
+                return ['npx cucumber-js', 'npm run report']
+            return ['npx cucumber-js']
         if manifests.get("pom_xml"):
             return ['mvn test']
         if manifests.get("build_gradle"):

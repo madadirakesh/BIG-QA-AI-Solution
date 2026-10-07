@@ -8,7 +8,7 @@ module.exports = {
   default: {
     // Compile the TypeScript support/step files on the fly so we can run .ts sources directly,
     // with no separate `tsc` build step.
-    requireModule: ["ts-node/register"],
+    requireModule: ["tsx/cjs"],
 
     // Support code, in load order: hooks (Before/After + setDefaultTimeout), step definitions,
     // page objects, and the .env config reader. Globs that currently match nothing — e.g.

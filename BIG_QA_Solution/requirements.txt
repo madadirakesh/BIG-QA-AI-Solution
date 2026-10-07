@@ -22,3 +22,4 @@ anthropic
 jira
 mcp
 cryptography
+pywintypes
