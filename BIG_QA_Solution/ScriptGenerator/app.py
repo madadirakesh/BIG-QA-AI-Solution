@@ -4868,7 +4868,8 @@ def launch_backend():
             sys.executable, "-m", "uvicorn", 
             "api.backend:app", 
             "--host", "127.0.0.1", 
-            "--port", "8000"
+            "--port", "8000",
+            "--reload"
         ]
         
         subprocess.Popen(cmd, cwd=str(BASE_DIR), env=env)
