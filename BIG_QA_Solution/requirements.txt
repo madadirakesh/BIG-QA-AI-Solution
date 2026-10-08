@@ -11,6 +11,7 @@ python-dotenv
 tiktoken
 pandas
 openpyxl
+xlrd
 pytz
 selenium
 pytest

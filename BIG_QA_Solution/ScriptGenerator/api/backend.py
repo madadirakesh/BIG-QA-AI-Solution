@@ -1475,6 +1475,49 @@ class UniversalScriptGenerator(CodeGenerator):
             return sanitize_step_quoting(parsed, bdd_content)
         return parsed
 
+
+class UniversalNonBddScriptGenerator(CodeGenerator):
+    def __init__(self, provider: str, tool: str, language: str, framework: str):
+        super().__init__(provider)
+        self.tool = tool
+        self.language = language
+        self.framework = framework
+        self.standards = self._get_standards()
+
+    def _get_standards(self):
+        t = self.tool.lower()
+        l = self.language.lower()
+        if t == "selenium":
+            if l == "python": return sg_prompts.SELENIUM_STANDARDS_PYTHON
+            if l == "java": return sg_prompts.SELENIUM_STANDARDS_JAVA
+            if "c#" in l: return "Follow Selenium 4 C# standards strictly."
+        elif t == "playwright":
+            if "ts" in l or "js" in l or "typescript" in l or "javascript" in l: return sg_prompts.PLAYWRIGHT_STANDARDS_TS
+            if l == "python": return "Follow Playwright Python async standards strictly."
+            if l == "java": return "Follow Playwright Java standards strictly."
+        return f"Follow best practices for {self.tool} with {self.language} using {self.framework}."
+
+    async def generate(self, scenario_text, support_content, file_content) -> dict:
+        reload_prompts()
+        self.standards = self._get_standards()
+        prompt = sg_prompts.get_universal_non_bdd_script_generation_prompt(
+            self.framework, self.tool, self.language, self.standards, support_content, scenario_text
+        )
+
+        language = self.language.lower()
+        ext = (
+            "py" if language == "python"
+            else "java" if language == "java"
+            else "ts" if ("typescript" in language or language == "ts")
+            else "js" if ("javascript" in language or language == "js")
+            else "cs"
+        )
+        fallback = f"tests/test_script.{ext}"
+        
+        parsed = await self._call_ai_and_parse(prompt, fallback)
+        return parsed
+
+
 async def route_code_generation(
     language: str,
     framework: str,

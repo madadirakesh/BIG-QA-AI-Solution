@@ -319,7 +319,7 @@
                         </div>
                         <div class="summary-card-content">
                             <div class="summary-card-val" id="statsNewSteps">0</div>
-                            <div class="summary-card-label">New Step Definitions</div>
+                            <div class="summary-card-label" id="lblNewSteps">New Step Definitions</div>
                         </div>
                     </div>
                     <div class="summary-card">
@@ -328,7 +328,7 @@
                         </div>
                         <div class="summary-card-content">
                             <div class="summary-card-val" id="statsExistingSteps">0</div>
-                            <div class="summary-card-label">Existing Steps</div>
+                            <div class="summary-card-label" id="lblExistingSteps">Existing Steps</div>
                         </div>
                     </div>
                     <div class="summary-card">
@@ -337,7 +337,7 @@
                         </div>
                         <div class="summary-card-content">
                             <div class="summary-card-val" id="statsStepFiles">0</div>
-                            <div class="summary-card-label">Step Def Files</div>
+                            <div class="summary-card-label" id="lblStepFiles">Step Def Files</div>
                         </div>
                     </div>
                     <div class="summary-card">
@@ -346,7 +346,7 @@
                         </div>
                         <div class="summary-card-content">
                             <div class="summary-card-val" id="statsScenarios">0</div>
-                            <div class="summary-card-label">For Scenarios</div>
+                            <div class="summary-card-label" id="lblScenarios">For Scenarios</div>
                         </div>
                     </div>
                 </div>
@@ -2251,29 +2251,47 @@ async function generateCode() {
             // Set statistics
             document.getElementById('generationStatsStep3').style.display = 'block';
             let stats = res.stats || {};
-            let newSteps = stats.new_step_definitions ?? 0;
-            let existingSteps = stats.existing_steps ?? 0;
-            let stepFiles = stats.step_def_files_generated ?? 0;
-            let scenarios = stats.scenarios_count ?? 0;
+            let isNonBdd = stats.is_non_bdd || fileType === 'Excel';
 
-            // Fallback calculations in JS if needed
-            if (newSteps === 0 || stepFiles === 0) {
-                const fallback = getJSFallbackStats(res.files, language);
-                if (newSteps === 0) newSteps = fallback.newSteps;
-                if (stepFiles === 0) stepFiles = fallback.stepFiles;
-            }
-            if (scenarios === 0) {
-                let scenariosContent = "";
-                if (fileType === 'BDD' && document.getElementById('bddContentEditor').value.trim()) {
-                    scenariosContent = document.getElementById('bddContentEditor').value;
+            if (isNonBdd) {
+                document.getElementById('lblNewSteps').innerText = 'Test Script Files';
+                document.getElementById('lblExistingSteps').innerText = 'Page Objects';
+                document.getElementById('lblStepFiles').innerText = 'Total Files';
+                document.getElementById('lblScenarios').innerText = 'Test Cases';
+
+                document.getElementById('statsNewSteps').innerText = stats.test_files_generated ?? 1;
+                document.getElementById('statsExistingSteps').innerText = stats.page_objects_generated ?? 1;
+                document.getElementById('statsStepFiles').innerText = stats.total_files ?? (res.files ? res.files.length : 0);
+                document.getElementById('statsScenarios').innerText = stats.scenarios_count ?? 1;
+            } else {
+                document.getElementById('lblNewSteps').innerText = 'New Step Definitions';
+                document.getElementById('lblExistingSteps').innerText = 'Existing Steps';
+                document.getElementById('lblStepFiles').innerText = 'Step Def Files';
+                document.getElementById('lblScenarios').innerText = 'For Scenarios';
+
+                let newSteps = stats.new_step_definitions ?? 0;
+                let existingSteps = stats.existing_steps ?? 0;
+                let stepFiles = stats.step_def_files_generated ?? 0;
+                let scenarios = stats.scenarios_count ?? 0;
+
+                if (newSteps === 0 || stepFiles === 0) {
+                    const fallback = getJSFallbackStats(res.files, language);
+                    if (newSteps === 0) newSteps = fallback.newSteps;
+                    if (stepFiles === 0) stepFiles = fallback.stepFiles;
                 }
-                scenarios = countScenariosFallback(scenariosContent, fileType);
-            }
+                if (scenarios === 0) {
+                    let scenariosContent = "";
+                    if (fileType === 'BDD' && document.getElementById('bddContentEditor').value.trim()) {
+                        scenariosContent = document.getElementById('bddContentEditor').value;
+                    }
+                    scenarios = countScenariosFallback(scenariosContent, fileType);
+                }
 
-            document.getElementById('statsNewSteps').innerText = newSteps;
-            document.getElementById('statsExistingSteps').innerText = existingSteps;
-            document.getElementById('statsStepFiles').innerText = stepFiles;
-            document.getElementById('statsScenarios').innerText = scenarios;
+                document.getElementById('statsNewSteps').innerText = newSteps;
+                document.getElementById('statsExistingSteps').innerText = existingSteps;
+                document.getElementById('statsStepFiles').innerText = stepFiles;
+                document.getElementById('statsScenarios').innerText = scenarios;
+            }
 
             renderCodeResults(res.files);
         } else {

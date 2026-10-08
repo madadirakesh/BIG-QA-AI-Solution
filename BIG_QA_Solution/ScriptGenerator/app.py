@@ -4889,9 +4889,10 @@ def check_and_initialize_db():
         return False
 
 import asyncio
+import io
 import pandas as pd
 from api.code_injector import CodeInjector
-from api.backend import UniversalScriptGenerator, get_effective_ai_provider
+from api.backend import UniversalScriptGenerator, UniversalNonBddScriptGenerator, get_effective_ai_provider
 import re
 
 def _count_step_definitions(content: str) -> int:
@@ -4962,14 +4963,38 @@ def generate_bdd_code():
             scenarios_text = _safe_decode(scenario_file.read())
         elif file_type == 'Excel':
             try:
-                # Need openpyxl for xlsx
-                df = pd.read_excel(scenario_file)
+                filename = (scenario_file.filename or '').lower()
+                file_content = scenario_file.read()
+                scenario_file.seek(0)
+                file_bytes = io.BytesIO(file_content)
+
+                if filename.endswith('.csv'):
+                    df = pd.read_csv(file_bytes)
+                elif filename.endswith('.xls'):
+                    try:
+                        df = pd.read_excel(file_bytes, engine='xlrd')
+                    except ImportError as ie:
+                        return jsonify({'status':'error', 'message': f'Missing xlrd dependency required for .xls Excel files. Run: pip install xlrd ({ie})'}), 500
+                    except Exception:
+                        file_bytes.seek(0)
+                        df = pd.read_excel(file_bytes)
+                elif filename.endswith(('.xlsx', '.xlsm', '.xltx', '.xltm')):
+                    try:
+                        df = pd.read_excel(file_bytes, engine='openpyxl')
+                    except ImportError as ie:
+                        return jsonify({'status':'error', 'message': f'Missing openpyxl dependency required for .xlsx Excel files. Run: pip install openpyxl ({ie})'}), 500
+                    except Exception:
+                        file_bytes.seek(0)
+                        df = pd.read_excel(file_bytes)
+                else:
+                    df = pd.read_excel(file_bytes)
+
                 df = df.head(10)
                 scenarios_text = df.to_string()
-            except ImportError:
-                return jsonify({'status':'error', 'message': 'Missing pandas or openpyxl. Run: pip install pandas openpyxl'}), 500
+            except ImportError as ie:
+                return jsonify({'status':'error', 'message': f'Missing Excel processing dependency: {ie}. Run: pip install pandas openpyxl xlrd'}), 500
             except Exception as e:
-                return jsonify({'status':'error', 'message': f'Error reading Excel: {e}'}), 500
+                return jsonify({'status':'error', 'message': f'Error reading Excel file: {e}'}), 500
             
         framework = request.form.get('framework')
         if not framework:
@@ -4986,6 +5011,7 @@ def generate_bdd_code():
         discovered_features = "features"
         discovered_steps = "steps"
         discovered_pages = "pages"
+        discovered_tests = "tests"
         
         if project_path and os.path.exists(project_path):
             for root, dirs, files in os.walk(project_path):
@@ -5012,51 +5038,76 @@ def generate_bdd_code():
                     if discovered_steps == "steps": discovered_steps = rel_path
                 if "page" in basename_lower or any("page" in f.lower() for f in files):
                     if discovered_pages == "pages": discovered_pages = rel_path
+                if any(k in basename_lower for k in ["test", "tests", "spec", "specs"]) or any(f.startswith("test_") or f.endswith(("test.py", "test.java", "spec.ts", "spec.js", "tests.cs")) for f in files):
+                    if discovered_tests == "tests": discovered_tests = rel_path
 
-        support_content += f"\nProject Layout Mappings (CRITICAL):\n- Feature Files MUST be placed inside: {discovered_features}\n- Step Definition Files MUST be placed inside: {discovered_steps}\n- Page Object Files MUST be placed inside: {discovered_pages}\n"
+        if file_type == 'Excel':
+            support_content += f"\nProject Layout Mappings (CRITICAL):\n- Test Script Files MUST be placed inside: {discovered_tests}\n- Page Object Files MUST be placed inside: {discovered_pages}\n"
+        else:
+            support_content += f"\nProject Layout Mappings (CRITICAL):\n- Feature Files MUST be placed inside: {discovered_features}\n- Step Definition Files MUST be placed inside: {discovered_steps}\n- Page Object Files MUST be placed inside: {discovered_pages}\n"
 
-        # Collect existing step definitions to avoid regenerating them and to match style
-        if project_path and os.path.exists(project_path):
-            try:
-                steps_dir = os.path.join(project_path, discovered_steps)
-                if os.path.exists(steps_dir) and os.path.isdir(steps_dir):
-                    existing_steps = []
-                    for root, _, files in os.walk(steps_dir):
-                        for f in files:
-                            if f.endswith(('.py', '.java', '.ts', '.js', '.cs')):
-                                try:
-                                    with open(os.path.join(root, f), 'r', encoding='utf-8', errors='ignore') as st_file:
-                                        st_content = st_file.read()
-                                        existing_steps.append(f"--- {f} ---\n{st_content}")
-                                        existing_steps_count += _count_step_definitions(st_content)
-                                except Exception:
-                                    pass
-                    if existing_steps:
-                        # Truncate to avoid massive context payloads, but usually steps are manageable
-                        steps_text = "\n".join(existing_steps)[:20000]
-                        support_content += (
-                            "\nEXISTING STEP DEFINITIONS (STRICT DUPLICATE-PREVENTION REFERENCE):\n"
-                            "The following step definition files ALREADY EXIST in the project. Use them as the\n"
-                            "authoritative reference for coding style, naming, imports, and patterns.\n\n"
-                            "STRICT RULES (MUST be followed exactly):\n"
-                            "1. DO NOT generate, re-create, or re-emit a step definition for ANY step whose\n"
-                            "   definition already exists below. Match by the step's regex/expression pattern\n"
-                            "   AND its meaning - if an existing definition already matches a Gherkin step\n"
-                            "   (Given/When/Then/And/But/Or), that step is ALREADY IMPLEMENTED. Skip it entirely.\n"
-                            "2. Treat parameterized steps as matching: a step like \"I enter \\\"admin\\\"\" is covered\n"
-                            "   by an existing definition with a string/regex parameter. Do NOT create a new one.\n"
-                            "3. ONLY generate step definitions for steps that have NO matching existing definition.\n"
-                            "   If every step in a scenario is already defined, produce NO new step definition code\n"
-                            "   for that scenario.\n"
-                            "4. NEVER redefine, override, or duplicate an existing step - doing so causes\n"
-                            "   'Ambiguous'/'DuplicateStepException' errors at runtime.\n"
-                            "5. Reuse the existing definitions and page-object methods they call; do not invent\n"
-                            "   parallel implementations.\n"
-                            "6. Import all required packages while generating the step definition files \n"
-                            f"{steps_text}\n"
-                        )
-            except Exception as e:
-                app.logger.warning(f"Error scanning existing steps: {e}")
+        # Collect existing test scripts for Non-BDD (Excel) or step definitions for BDD
+        if file_type == 'Excel':
+            if project_path and os.path.exists(project_path):
+                try:
+                    tests_dir = os.path.join(project_path, discovered_tests)
+                    if os.path.exists(tests_dir) and os.path.isdir(tests_dir):
+                        existing_tests = []
+                        for root, _, files in os.walk(tests_dir):
+                            for f in files:
+                                if f.endswith(('.py', '.java', '.ts', '.js', '.cs')) and not any(k in f.lower() for k in ['page', 'locators', 'util']):
+                                    try:
+                                        with open(os.path.join(root, f), 'r', encoding='utf-8', errors='ignore') as t_file:
+                                            existing_tests.append(f"--- {f} ---\n{t_file.read()}")
+                                    except Exception:
+                                        pass
+                        if existing_tests:
+                            tests_text = "\n".join(existing_tests)[:20000]
+                            support_content += f"\nEXISTING TEST SCRIPTS (STYLE REFERENCE - Match styling, imports, annotations & assertion patterns exactly):\n{tests_text}\n"
+                except Exception as e:
+                    app.logger.warning(f"Error scanning existing tests: {e}")
+        else:
+            # Collect existing step definitions to avoid regenerating them and to match style
+            if project_path and os.path.exists(project_path):
+                try:
+                    steps_dir = os.path.join(project_path, discovered_steps)
+                    if os.path.exists(steps_dir) and os.path.isdir(steps_dir):
+                        existing_steps = []
+                        for root, _, files in os.walk(steps_dir):
+                            for f in files:
+                                if f.endswith(('.py', '.java', '.ts', '.js', '.cs')):
+                                    try:
+                                        with open(os.path.join(root, f), 'r', encoding='utf-8', errors='ignore') as st_file:
+                                            st_content = st_file.read()
+                                            existing_steps.append(f"--- {f} ---\n{st_content}")
+                                            existing_steps_count += _count_step_definitions(st_content)
+                                    except Exception:
+                                        pass
+                        if existing_steps:
+                            steps_text = "\n".join(existing_steps)[:20000]
+                            support_content += (
+                                "\nEXISTING STEP DEFINITIONS (STRICT DUPLICATE-PREVENTION REFERENCE):\n"
+                                "The following step definition files ALREADY EXIST in the project. Use them as the\n"
+                                "authoritative reference for coding style, naming, imports, and patterns.\n\n"
+                                "STRICT RULES (MUST be followed exactly):\n"
+                                "1. DO NOT generate, re-create, or re-emit a step definition for ANY step whose\n"
+                                "   definition already exists below. Match by the step's regex/expression pattern\n"
+                                "   AND its meaning - if an existing definition already matches a Gherkin step\n"
+                                "   (Given/When/Then/And/But/Or), that step is ALREADY IMPLEMENTED. Skip it entirely.\n"
+                                "2. Treat parameterized steps as matching: a step like \"I enter \\\"admin\\\"\" is covered\n"
+                                "   by an existing definition with a string/regex parameter. Do NOT create a new one.\n"
+                                "3. ONLY generate step definitions for steps that have NO matching existing definition.\n"
+                                "   If every step in a scenario is already defined, produce NO new step definition code\n"
+                                "   for that scenario.\n"
+                                "4. NEVER redefine, override, or duplicate an existing step - doing so causes\n"
+                                "   'Ambiguous'/'DuplicateStepException' errors at runtime.\n"
+                                "5. Reuse the existing definitions and page-object methods they call; do not invent\n"
+                                "   parallel implementations.\n"
+                                "6. Import all required packages while generating the step definition files \n"
+                                f"{steps_text}\n"
+                            )
+                except Exception as e:
+                    app.logger.warning(f"Error scanning existing steps: {e}")
 
         # Collect existing Page Objects for style and pattern matching
         if project_path and os.path.exists(project_path):
@@ -5110,7 +5161,11 @@ def generate_bdd_code():
                         except Exception:
                             pass
 
-        generator = UniversalScriptGenerator(ai_provider or get_effective_ai_provider(), tool, language, framework)
+        if file_type == 'Excel':
+            generator = UniversalNonBddScriptGenerator(ai_provider or get_effective_ai_provider(), tool, language, framework)
+        else:
+            generator = UniversalScriptGenerator(ai_provider or get_effective_ai_provider(), tool, language, framework)
+
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         
@@ -5120,6 +5175,8 @@ def generate_bdd_code():
         
         new_step_definitions_count = 0
         step_def_files_count = 0
+        test_files_count = 0
+        page_objects_count = 0
         scenarios_count = _count_scenarios(scenarios_text, file_type)
 
         if isinstance(parsed_files, dict):
@@ -5127,7 +5184,7 @@ def generate_bdd_code():
             keys_to_delete = []
             for k in parsed_files.keys():
                 k_lower = k.lower()
-                if "\nDO NOT generate the .feature file.\n" in support_content and k_lower.endswith(".feature"):
+                if ("\nDO NOT generate the .feature file.\n" in support_content or file_type == 'Excel') and k_lower.endswith(".feature"):
                     keys_to_delete.append(k)
                 elif "\nDO NOT generate Page Object classes.\n" in support_content and ("page" in k_lower or "pom" in k_lower):
                     keys_to_delete.append(k)
@@ -5140,9 +5197,14 @@ def generate_bdd_code():
             # Calculate stats for remaining files
             for k, v in parsed_files.items():
                 k_norm = k.replace('\\', '/').lower()
-                if k_norm.endswith(('.py', '.java', '.ts', '.js', '.cs')) and ('step' in k_norm or 'definition' in k_norm):
-                    step_def_files_count += 1
-                    new_step_definitions_count += _count_step_definitions(v)
+                if k_norm.endswith(('.py', '.java', '.ts', '.js', '.cs')):
+                    if 'page' in k_norm or 'pom' in k_norm or 'locator' in k_norm:
+                        page_objects_count += 1
+                    elif 'step' in k_norm or 'definition' in k_norm:
+                        step_def_files_count += 1
+                        new_step_definitions_count += _count_step_definitions(v)
+                    else:
+                        test_files_count += 1
                 
         result_files = []
         if isinstance(parsed_files, dict):
@@ -5155,7 +5217,11 @@ def generate_bdd_code():
             'new_step_definitions': new_step_definitions_count,
             'existing_steps': existing_steps_count,
             'step_def_files_generated': step_def_files_count,
-            'scenarios_count': scenarios_count
+            'test_files_generated': test_files_count,
+            'page_objects_generated': page_objects_count,
+            'total_files': len(parsed_files) if isinstance(parsed_files, dict) else 0,
+            'scenarios_count': scenarios_count,
+            'is_non_bdd': (file_type == 'Excel')
         }
 
         return jsonify({'status': 'success', 'files': result_files, 'stats': stats})

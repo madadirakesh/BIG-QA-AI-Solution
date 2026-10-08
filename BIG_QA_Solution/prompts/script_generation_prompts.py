@@ -595,3 +595,51 @@ def get_universal_script_generation_prompt(framework: str, tool: str, language: 
         BDD Content:
         {bdd_content}
         """
+
+
+def get_universal_non_bdd_script_generation_prompt(framework: str, tool: str, language: str, standards: str, support_content: str, scenario_text: str) -> str:
+    """
+    Returns the prompt for generating NON-BDD automated test scripts and Page Objects.
+    Used for Testcase Excel input and standard non-Gherkin script generation.
+    """
+    return f"""
+        You are an expert QA automation engineer specialized in creating NON-BDD automated test suites using {framework} with {tool} in {language}.
+
+        Your task: Generate a COMPLETE, FULLY WORKING Non-BDD test suite based on the provided Test Case / Scenario details.
+
+        ── OUTPUT FORMAT ──────────────────────────────────────────────────────────────
+        Return ONLY a single valid JSON object. Keys are relative file paths, values are the complete file contents as strings.
+        No conversational text, no markdown fences.
+
+        ── NON-BDD ARCHITECTURE REQUIREMENTS ──────────────────────────────────────────
+        1. STRICT NON-BDD ONLY:
+           - DO NOT generate any .feature files.
+           - DO NOT generate any Gherkin Step Definition files or annotations (@given, @when, @then, Given, When, Then).
+           - Generate standard executable test script files containing test methods/functions:
+             - Python (Pytest): test_*.py with test functions (e.g. `def test_login(browser): ...`) or Test class.
+             - Java (JUnit / TestNG): *Test.java class with `@Test` methods.
+             - TypeScript / JavaScript (Playwright): *.spec.ts / *.spec.js with `test('name', async ({{ page }}) => {{ ... }})`.
+             - C# (NUnit / MSTest): *Tests.cs class with `[Test]` methods.
+        2. PAGE OBJECT MODEL (POM):
+           - Generate Page Object class file(s) containing element locators and action methods.
+           - The Test Script file MUST instantiate and call methods on the Page Object class(es).
+           - If 'DO NOT generate Page Object classes' is in Supporting Information, reuse existing/local Page Objects and only generate the Test Script file.
+        3. CRITICAL STYLE HARMONIZATION:
+           - Analyze 'EXISTING TEST SCRIPTS' and 'EXISTING PAGE OBJECTS' in Supporting Information.
+           - Mirror their EXACT coding style, imports, test runner patterns, assertion libraries, naming conventions, wait strategies, and comment style.
+        4. LOCATORS & REUSABLE UTILITIES:
+           - Use provided element locators from DB Locators or Supporting Information.
+           - Always invoke reusable functions from 'Project Reusable Utilities' (e.g. ConfigReader for APP_URL and credentials) instead of hardcoding.
+        5. DO NOT GENERATE boilerplate project configuration files (e.g. pom.xml, package.json, playwright.config.ts, tsconfig.json, .csproj). ONLY generate actual test script and page object files.
+
+        {standards}
+        {LOCATOR_USAGE_STANDARDS}
+        {ENV_CONFIG_STANDARDS}
+
+        Supporting Information:
+        {support_content}
+
+        Test Cases / Scenarios:
+        {scenario_text}
+        """
+
