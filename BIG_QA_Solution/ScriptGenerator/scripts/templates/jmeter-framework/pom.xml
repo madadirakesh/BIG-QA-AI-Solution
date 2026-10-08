@@ -1,0 +1,197 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <groupId>com.perf.framework</groupId>
+  <artifactId>jmeter-performance-framework</artifactId>
+  <version>1.0.0</version>
+  <packaging>jar</packaging>
+  <name>JMeter Performance Framework</name>
+
+  <properties>
+    <maven.compiler.release>17</maven.compiler.release>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+
+    <jmeter.version>5.6.3</jmeter.version>
+    <jmeter.plugin.version>3.8.0</jmeter.plugin.version>
+    <playwright.version>1.47.0</playwright.version>
+
+    <!-- Which test plans to run (relative to TestScripts/). Profiles override this. -->
+    <perf.tests>**/*.jmx</perf.tests>
+
+    <!-- Load settings for the API test plan (override with -Dperf.threads=20 etc.) -->
+    <perf.threads>5</perf.threads>
+    <perf.rampup>5</perf.rampup>
+    <perf.duration>30</perf.duration>
+    <perf.apiHost>httpbin.org</perf.apiHost>
+    <perf.apiProtocol>https</perf.apiProtocol>
+
+    <!-- Playwright (functional) settings -->
+    <perf.pw.headless>true</perf.pw.headless>
+    <perf.pw.baseUrl>https://example.com</perf.pw.baseUrl>
+    <perf.pw.expectedHeading>Example Domain</perf.pw.expectedHeading>
+
+    <!-- Fail the build when samples fail -->
+    <perf.ignoreFailures>false</perf.ignoreFailures>
+    <selenium.version>4.49.0</selenium.version>
+  </properties>
+
+  <dependencies>
+    <!-- Payload validation tests (run before JMeter) -->
+    <dependency>
+      <groupId>org.junit.jupiter</groupId>
+      <artifactId>junit-jupiter</artifactId>
+      <version>5.10.2</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.fasterxml.jackson.core</groupId>
+      <artifactId>jackson-databind</artifactId>
+      <version>2.17.1</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.apache.commons</groupId>
+      <artifactId>commons-csv</artifactId>
+      <version>1.10.0</version>
+      <scope>test</scope>
+    </dependency>
+    <!-- Only used to install Playwright browsers (profile install-browsers) -->
+    <dependency>
+      <groupId>com.microsoft.playwright</groupId>
+      <artifactId>playwright</artifactId>
+      <version>${playwright.version}</version>
+      <scope>test</scope>
+    </dependency>
+    <!-- Selenium for recorded functional journeys (compiled with the tests, run by JMeter) -->
+    <dependency>
+      <groupId>org.seleniumhq.selenium</groupId>
+      <artifactId>selenium-java</artifactId>
+      <version>${selenium.version}</version>
+      <scope>test</scope>
+    </dependency>
+    <!-- JMeter's Java Request API, for JourneySampler (JMeter itself provides it at run time) -->
+    <dependency>
+      <groupId>org.apache.jmeter</groupId>
+      <artifactId>ApacheJMeter_java</artifactId>
+      <version>${jmeter.version}</version>
+      <scope>provided</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-surefire-plugin</artifactId>
+        <version>3.2.5</version>
+      </plugin>
+
+      <plugin>
+        <groupId>com.lazerycode.jmeter</groupId>
+        <artifactId>jmeter-maven-plugin</artifactId>
+        <version>${jmeter.plugin.version}</version>
+        <executions>
+          <execution>
+            <id>configuration</id>
+            <goals><goal>configure</goal></goals>
+          </execution>
+          <execution>
+            <id>run-tests</id>
+            <goals><goal>jmeter</goal></goals>
+          </execution>
+          <execution>
+            <id>check-results</id>
+            <goals><goal>results</goal></goals>
+          </execution>
+        </executions>
+        <configuration>
+          <jmeterVersion>${jmeter.version}</jmeterVersion>
+
+          <!-- Folder layout -->
+          <testFilesDirectory>${project.basedir}/TestScripts</testFilesDirectory>
+          <resultsDirectory>${project.basedir}/Results/csv</resultsDirectory>
+          <reportDirectory>${project.basedir}/Results/html</reportDirectory>
+
+          <testFilesIncluded>
+            <jMeterTestFile>${perf.tests}</jMeterTestFile>
+          </testFilesIncluded>
+
+          <!-- CSV results + HTML dashboard -->
+          <resultsFileFormat>csv</resultsFileFormat>
+          <generateReports>true</generateReports>
+          <ignoreResultFailures>${perf.ignoreFailures}</ignoreResultFailures>
+
+          <!-- Playwright and Selenium for Java (and their transitive deps) on the JMeter classpath -->
+          <testPlanLibraries>
+            <artifact>com.microsoft.playwright:playwright:${playwright.version}</artifact>
+            <artifact>org.seleniumhq.selenium:selenium-java:${selenium.version}</artifact>
+          </testPlanLibraries>
+
+          <!-- Passed to every test plan as JMeter properties (read with __P) -->
+          <propertiesUser>
+            <payloads.dir>${project.basedir}/Payloads</payloads.dir>
+            <testscripts.dir>${project.basedir}/TestScripts</testscripts.dir>
+            <results.dir>${project.basedir}/Results</results.dir>
+            <threads>${perf.threads}</threads>
+            <rampup>${perf.rampup}</rampup>
+            <duration>${perf.duration}</duration>
+            <api.host>${perf.apiHost}</api.host>
+            <api.protocol>${perf.apiProtocol}</api.protocol>
+            <pw.headless>${perf.pw.headless}</pw.headless>
+            <pw.baseUrl>${perf.pw.baseUrl}</pw.baseUrl>
+            <pw.expectedHeading>${perf.pw.expectedHeading}</pw.expectedHeading>
+            <!-- Compiled test classes (recorded Selenium journeys) on the JMeter classpath -->
+            <user.classpath>${project.build.testOutputDirectory}</user.classpath>
+          </propertiesUser>
+        </configuration>
+      </plugin>
+    </plugins>
+  </build>
+
+  <profiles>
+    <profile>
+      <id>api</id>
+      <properties><perf.tests>api/**/*.jmx</perf.tests></properties>
+    </profile>
+    <profile>
+      <id>functional</id>
+      <properties><perf.tests>functional/**/*.jmx</perf.tests></properties>
+    </profile>
+    <profile>
+      <id>cli</id>
+      <properties><perf.tests>cli/**/*.jmx</perf.tests></properties>
+    </profile>
+
+    <!-- One-off: mvn -Pinstall-browsers generate-resources -->
+    <profile>
+      <id>install-browsers</id>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.codehaus.mojo</groupId>
+            <artifactId>exec-maven-plugin</artifactId>
+            <version>3.4.1</version>
+            <executions>
+              <execution>
+                <id>install-playwright-browsers</id>
+                <phase>generate-resources</phase>
+                <goals><goal>java</goal></goals>
+              </execution>
+            </executions>
+            <configuration>
+              <mainClass>com.microsoft.playwright.CLI</mainClass>
+              <classpathScope>test</classpathScope>
+              <arguments>
+                <argument>install</argument>
+                <argument>chromium</argument>
+              </arguments>
+            </configuration>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+  </profiles>
+</project>

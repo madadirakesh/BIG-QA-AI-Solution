@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "webperf-monitor"
+version = "0.1.0"
+description = "Lighthouse-style web performance monitoring for Selenium/Playwright, via the Chrome DevTools Protocol"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+dependencies = [
+    "websocket-client>=1.6",
+    "requests>=2.28",
+    "psutil>=5.9",
+]
+
+[project.optional-dependencies]
+selenium = ["selenium>=4.0"]
+playwright = ["playwright>=1.30"]
+
+[project.scripts]
+webperf-monitor = "webperf_monitor.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["webperf_monitor*"]

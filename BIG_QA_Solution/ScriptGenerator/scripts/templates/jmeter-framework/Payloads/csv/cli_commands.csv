@@ -1,0 +1,4 @@
+command,argument,expectedReturnCode
+java,-version,0
+java,-help,0
+java,--list-modules,0

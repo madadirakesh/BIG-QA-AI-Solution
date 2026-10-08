@@ -1,0 +1,41 @@
+# smoke_test.yaml
+# Fast, low-load sanity check - typically run in CI on every build to
+# catch obvious breakages before running a full load/stress/soak suite.
+
+run_name: smoke_test
+parallel: true
+max_parallel_workers: 3
+
+tests:
+  - name: api_smoke
+    locustfile: locustfiles/http_api_test.py
+    host: https://api.example.com
+    users: 5
+    spawn_rate: 1
+    run_time: 1m
+    thresholds_file: config/thresholds.yaml
+    distributed:
+      enabled: false
+    extra_args: []
+
+  - name: orders_smoke
+    locustfile: locustfiles/http_json_payload_test.py
+    host: https://api.example.com
+    users: 5
+    spawn_rate: 1
+    run_time: 1m
+    thresholds_file: config/thresholds.yaml
+    distributed:
+      enabled: false
+    extra_args: []
+
+  - name: payments_smoke
+    locustfile: locustfiles/http_xml_payload_test.py
+    host: https://api.example.com
+    users: 5
+    spawn_rate: 1
+    run_time: 1m
+    thresholds_file: config/thresholds.yaml
+    distributed:
+      enabled: false
+    extra_args: []

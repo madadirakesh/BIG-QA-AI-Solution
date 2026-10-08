@@ -1,0 +1,8 @@
+{
+  "records": [
+    { "product_id": "SKU-1001", "quantity": 2, "customer_id": "C-001" },
+    { "product_id": "SKU-1002", "quantity": 1, "customer_id": "C-002" },
+    { "product_id": "SKU-1003", "quantity": 5, "customer_id": "C-003" },
+    { "product_id": "SKU-1004", "quantity": 3, "customer_id": "C-004" }
+  ]
+}

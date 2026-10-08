@@ -1,0 +1,9 @@
+websocket-client>=1.6
+requests>=2.28
+psutil>=5.9
+
+[playwright]
+playwright>=1.30
+
+[selenium]
+selenium>=4.0

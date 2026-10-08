@@ -54,9 +54,21 @@ Before(async function (this: ICustomWorld) {
     const browserType = process.env.BROWSER || "chromium";
     const launchOptions = { headless: process.env.HEADLESS === "true" };
 
+    // Chromium only: open a CDP endpoint so the Script Runner's performance
+    // monitor (webperf_monitor) can attach and produce a Lighthouse-style
+    // report for this run. Playwright itself drives the browser over a
+    // debugging *pipe*, which an external process cannot see - without an
+    // explicit port there is nothing to attach to.
+    // Port 0 means "let the OS pick a free one", which is what chromedriver
+    // does: it avoids collisions and, because each scenario's browser gets a
+    // distinct port, every scenario is captured as its own session. A fixed
+    // port (e.g. 9222) would make the monitor treat later browsers as
+    // duplicates of the first and skip them.
+    const chromiumArgs = ["--remote-debugging-port=0"];
+
     if (browserType === "firefox") browser = await firefox.launch(launchOptions);
     else if (browserType === "webkit") browser = await webkit.launch(launchOptions);
-    else browser = await chromium.launch(launchOptions);
+    else browser = await chromium.launch({ ...launchOptions, args: chromiumArgs });
 
     // Bypassing SSL errors as standard QA practice
     context = await browser.newContext({ ignoreHTTPSErrors: true });

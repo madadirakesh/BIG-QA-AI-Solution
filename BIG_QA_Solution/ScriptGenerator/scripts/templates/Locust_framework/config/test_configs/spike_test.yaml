@@ -1,0 +1,21 @@
+# spike_test.yaml
+# Simulates a sudden burst of traffic with a very high spawn_rate so the
+# target has to absorb a large number of users almost instantly.
+
+run_name: spike_test
+parallel: false
+max_parallel_workers: 1
+
+tests:
+  - name: api_spike
+    locustfile: locustfiles/http_api_test.py
+    host: https://api.example.com
+    users: 1000
+    spawn_rate: 500     # nearly all users spawn within ~2 seconds
+    run_time: 3m
+    thresholds_file: config/thresholds.yaml
+    distributed:
+      enabled: true
+      worker_count: 4
+      master_bind_port: 5557
+    extra_args: []

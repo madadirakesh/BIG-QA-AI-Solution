@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<order>
+  <orderId>${orderId}</orderId>
+  <customer>
+    <name>${username}</name>
+    <email>${email}</email>
+  </customer>
+  <items>
+    <item sku="SKU-1" quantity="2"/>
+  </items>
+</order>

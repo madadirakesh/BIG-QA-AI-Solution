@@ -1,0 +1,6 @@
+{
+  "username": "${username}",
+  "email": "${email}",
+  "role": "${role}",
+  "active": true
+}
