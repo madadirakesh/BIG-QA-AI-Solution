@@ -1,0 +1,30 @@
+Flask
+flask-cors
+Flask-WTF
+fastapi
+fastapi-csrf-protect
+uvicorn
+requests
+openai
+google-genai
+python-dotenv
+tiktoken
+pandas
+openpyxl
+xlrd
+pytz
+selenium
+pytest
+pytest-html
+webdriver-manager
+PyQt6
+PyQt6-WebEngine
+anthropic
+jira
+mcp
+cryptography
+# webperf_monitor (browser performance monitoring during Script Runner executions)
+psutil
+websocket-client
+# Performance Test > Create Test > API: reads Swagger/OpenAPI .yaml documents
+PyYAML
