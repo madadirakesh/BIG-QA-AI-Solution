@@ -1,2 +1,0 @@
-[console_scripts]
-webperf-monitor = webperf_monitor.cli:main

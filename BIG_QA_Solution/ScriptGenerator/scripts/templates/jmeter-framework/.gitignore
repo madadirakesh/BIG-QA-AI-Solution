@@ -1,5 +1,0 @@
-target/
-Results/*
-!Results/.gitkeep
-.idea/
-*.iml
