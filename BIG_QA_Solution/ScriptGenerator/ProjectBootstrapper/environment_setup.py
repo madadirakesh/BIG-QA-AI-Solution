@@ -810,14 +810,8 @@ class EnvironmentSetup:
                 pass
             return False, str(e)
 
-    @classmethod
-    def python_launcher_command(cls):
-        """Public accessor for the best local Python launcher (quoted, ready for a shell)."""
-        return cls._python_launcher_command()
-
     @staticmethod
-    def install_project_dependencies(project_path, package_manager, tool="", status_cb=None,
-                                     venv_dir="venv"):
+    def install_project_dependencies(project_path, package_manager, tool="", status_cb=None):
         """
         Run the package-manager install + (for Playwright) browser-binary download for a
         scaffolded project.
@@ -841,11 +835,6 @@ class EnvironmentSetup:
             If provided, called with a human-readable string before each phase starts.
             Used by the Flask worker to update the polling endpoint's status message so the
             frontend's loading panel reflects the current phase.
-        venv_dir : str
-            Name of the virtual environment folder created inside `project_path` for the
-            Pip flow. Defaults to "venv" (what the automation templates and their run
-            commands expect); the performance framework passes ".venv" because that is the
-            interpreter performance_runner.resolve_python() looks for.
 
         Returns
         -------
@@ -854,7 +843,7 @@ class EnvironmentSetup:
         if not os.path.exists(project_path):
             return False, f"Project path {project_path} does not exist."
 
-        phases = EnvironmentSetup._build_install_phases(package_manager, tool, venv_dir=venv_dir)
+        phases = EnvironmentSetup._build_install_phases(package_manager, tool)
         if not phases:
             return False, f"Unknown package manager {package_manager}"
 
@@ -863,10 +852,6 @@ class EnvironmentSetup:
         # than inside _run_command keeps the warning-on-insecure-TLS log to one line per
         # install instead of one per phase.
         run_env = EnvironmentSetup._download_env()
-        if package_manager == "JMeter" or "Maven" in package_manager:
-            # `mvn` refuses to start when JAVA_HOME points at a stale JDK or its bin folder,
-            # even with `java` on PATH - repair it the same way the script runner does.
-            run_env = EnvironmentSetup.prepare_runtime_env("mvn -version", base_env=run_env)
 
         # Run each phase in order, surfacing its label before kicking off the subprocess.
         # We bail on the first failure so the UI gets a meaningful "this exact step failed"
@@ -890,7 +875,7 @@ class EnvironmentSetup:
         return True, "All dependencies installed."
 
     @staticmethod
-    def _build_install_phases(package_manager, tool, venv_dir="venv"):
+    def _build_install_phases(package_manager, tool):
         """
         Return an ordered list of (status_message, shell_command) tuples for the requested
         package manager + tool combo.
@@ -905,17 +890,6 @@ class EnvironmentSetup:
         hung. The first-run hint disappears on subsequent runs because the caches make it
         near-instant.
         """
-        if package_manager == "JMeter":
-            # `test-compile` resolves the project's dependencies and compiles the payload
-            # validation tests; the jmeter-maven-plugin's `configure` goal, invoked
-            # explicitly, downloads JMeter + test-plan libraries into target/. Neither starts a
-            # load test (the framework runs those at integration-test, e.g. via `mvn install`).
-            # No -DskipTests: the plugin treats it as "skip configure" too.
-            return [(
-                "Resolving Maven dependencies and downloading JMeter (~1–3 min on first run)...",
-                "mvn -B test-compile com.lazerycode.jmeter:jmeter-maven-plugin:configure",
-            )]
-
         if "Maven" in package_manager:
             phases = [(
                 "Resolving Maven dependencies (~1–2 min on first run)...",
@@ -938,34 +912,29 @@ class EnvironmentSetup:
 
         if "Pip" in package_manager:
             python_cmd = EnvironmentSetup._python_launcher_command()
-            venv = venv_dir or "venv"
             if EnvironmentSetup.is_windows():
-                venv_pip = f"{venv}\\Scripts\\pip"
-                venv_python = f"{venv}\\Scripts\\python"
                 phases = [
-                    ("Creating Python virtual environment...", f"{python_cmd} -m venv {venv}"),
+                    ("Creating Python virtual environment...", f"{python_cmd} -m venv venv"),
                     ("Installing Python packages from requirements.txt...",
-                     f"{venv_pip} install -r requirements.txt"),
+                     "venv\\Scripts\\pip install -r requirements.txt"),
                 ]
                 if tool == "Playwright":
                     phases.append((
                         "Downloading Playwright Chromium browser (~130 MB)...",
-                        f"{venv_python} -m playwright install chromium",
+                        "venv\\Scripts\\python -m playwright install chromium",
                     ))
             else:
-                venv_pip = f"{venv}/bin/pip"
-                venv_python = f"{venv}/bin/python"
                 phases = [
-                    ("Creating Python virtual environment...", f"{python_cmd} -m venv {venv}"),
+                    ("Creating Python virtual environment...", f"{python_cmd} -m venv venv"),
                     ("Upgrading pip / setuptools / wheel...",
-                     f"{venv_pip} install --upgrade pip setuptools wheel"),
+                     "venv/bin/pip install --upgrade pip setuptools wheel"),
                     ("Installing Python packages from requirements.txt...",
-                     f"{venv_pip} install -r requirements.txt"),
+                     "venv/bin/pip install -r requirements.txt"),
                 ]
                 if tool == "Playwright":
                     phases.append((
                         "Downloading Playwright Chromium browser (~130 MB)...",
-                        f"{venv_python} -m playwright install chromium",
+                        "venv/bin/python -m playwright install chromium",
                     ))
             return phases
 

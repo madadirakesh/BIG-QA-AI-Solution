@@ -5,185 +5,13 @@ import glob
 import shutil
 import subprocess
 import signal
-import threading
 import time
 import html
 import re
-from collections import deque
 from datetime import datetime
 from urllib.parse import quote
 
 active_processes = {} # pid -> process object
-
-# Browser-performance monitors that are currently running, one per streaming
-# execution. The abort endpoint finalizes these directly so a force-killed run
-# still writes its report instead of losing it.
-active_perf_sessions = []
-_perf_sessions_lock = threading.Lock()
-
-
-class WebPerfSession:
-    """
-    Runs webperf_monitor's auto-detect Watcher for the lifetime of one test
-    execution, so clicking "Launch Execution" also profiles whatever browser
-    the tests drive - with no change to the project under test.
-
-    The watcher polls the local process list for Chromium browsers carrying
-    automation switches (which is exactly what Selenium/chromedriver
-    produces), attaches over CDP, and writes ONE consolidated
-    Lighthouse-style report when stopped.
-
-    Everything here is best-effort by design: monitoring must never break the
-    run it observes, so each entry point swallows its own errors and surfaces
-    them as a console line instead of raising.
-    """
-
-    ENV_FLAG = "BIGQA_WEBPERF"
-
-    def __init__(self, full_path: str, start_time: float):
-        stamp = datetime.fromtimestamp(start_time).strftime("%Y%m%d_%H%M%S")
-        # Written inside the project folder, which serve_report() already
-        # treats as an allowed base - so the HTML report is viewable in-app.
-        self.output_dir = os.path.join(full_path, "webperf_reports", stamp)
-        self._watcher = None
-        self._lock = threading.Lock()
-        # Set once finalization has completed (or once we know there is
-        # nothing to finalize). Lets a second caller wait for the first
-        # caller's result instead of racing past an empty one - see stop().
-        self._done = threading.Event()
-        # Diagnostics from the watcher's own threads, drained into the run's
-        # console by the streaming generator. Bounded so a pathological run
-        # can't grow it without limit.
-        self._logs = deque(maxlen=500)
-        self.report_path = None
-        self.summary = None
-
-    @classmethod
-    def is_enabled(cls) -> bool:
-        """Monitoring is on by default; set BIGQA_WEBPERF=0 to turn it off."""
-        return os.environ.get(cls.ENV_FLAG, "1").strip().lower() not in ("0", "false", "no", "off")
-
-    def start(self):
-        """Start monitoring. Returns a console line to show, or None if off."""
-        if not self.is_enabled():
-            self._done.set()
-            return None
-        try:
-            parent_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-            if parent_dir not in sys.path:
-                sys.path.insert(0, parent_dir)
-            from webperf_monitor.watcher import Watcher
-        except Exception as e:
-            self._done.set()
-            return (f"[WebPerf] Performance monitoring unavailable ({e}). "
-                    f"Install its dependency with: pip install psutil")
-        try:
-            # 0.5s so a short-lived browser isn't missed between scans.
-            self._watcher = self._build_watcher(Watcher).start()
-        except Exception as e:
-            self._watcher = None
-            self._done.set()
-            return f"[WebPerf] Could not start performance monitoring: {e}"
-        with _perf_sessions_lock:
-            active_perf_sessions.append(self)
-        return ("[WebPerf] Browser performance monitoring started - any automated "
-                "browser this run launches will be profiled.")
-
-    def _build_watcher(self, watcher_cls):
-        """
-        Watcher subclass whose diagnostics land in this run's console instead
-        of the Flask server's stdout. Detection is a heuristic - when it does
-        not fire, or a CDP attach fails, the person who clicked "Launch
-        Execution" is the one who needs to see why.
-        """
-        sink = self._logs
-
-        class _SinkWatcher(watcher_cls):
-            def _log(self, msg):
-                sink.append(f"[WebPerf] {msg}")
-
-        return _SinkWatcher(output_dir=self.output_dir, poll_interval=0.5, verbose=True)
-
-    def drain_logs(self) -> list:
-        """Pop everything the watcher threads have logged since the last call."""
-        lines = []
-        while True:
-            try:
-                lines.append(self._logs.popleft())
-            except IndexError:
-                return lines
-
-    def stop(self, timeout: float = 25.0):
-        """
-        Finalize monitoring and write the consolidated report.
-
-        Idempotent and thread-safe: the streaming generator and the abort
-        endpoint may both call this, from different threads, in either order.
-        The first caller does the work and returns the summary; a second
-        caller waits for that work to finish (so it sees the finished report
-        path rather than racing past an empty one) and returns None.
-        """
-        with self._lock:
-            watcher, self._watcher = self._watcher, None
-        if watcher is None:
-            # Either monitoring never started - in which case _done is already
-            # set and this returns immediately - or another thread is
-            # finalizing right now and we wait for it.
-            self._done.wait(timeout=timeout)
-            return None
-        with _perf_sessions_lock:
-            if self in active_perf_sessions:
-                active_perf_sessions.remove(self)
-        try:
-            try:
-                paths = watcher.stop(timeout=timeout)
-            except Exception as e:
-                self.summary = f"[WebPerf] Error while finalizing the performance report: {e}"
-                return self.summary
-            if not paths:
-                self.summary = ("[WebPerf] No automated browser session was detected during this run, "
-                                "so no performance report was written. (Expected for API/non-UI tests. "
-                                "Playwright needs --remote-debugging-port to be visible to the watcher.)")
-                return self.summary
-            self.report_path = paths.get("html")
-            result = paths.get("result") or {}
-            self.summary = (f"[WebPerf] Performance report ready - {result.get('session_count', 0)} browser "
-                            f"session(s), {result.get('total_urls', 0)} URL(s), average score "
-                            f"{result.get('performance_score')}.")
-            return self.summary
-        finally:
-            self._done.set()
-
-    @property
-    def report_url(self) -> str:
-        if not self.report_path:
-            return ""
-        return (f"/api/script-runner/report?path={quote(self.report_path, safe='')}"
-                f"&run={int(time.time() * 1000)}")
-
-
-def stop_all_perf_sessions() -> int:
-    """
-    Finalize every in-flight performance monitor. Called by the abort endpoint:
-    force-killing the test process tree also kills the browser being profiled,
-    so the report has to be written here rather than waiting for the stream to
-    unwind. Returns how many sessions were finalized.
-    """
-    with _perf_sessions_lock:
-        sessions = list(active_perf_sessions)
-    stopped = 0
-    for session in sessions:
-        try:
-            # Shorter than the streaming path's timeout: this one blocks an
-            # interactive "Stop" click, so it must not hang the UI.
-            session.stop(timeout=15.0)
-            # Count sessions that ended up finalized, whether this call did the
-            # work or the unwinding stream beat us to it.
-            if session.summary:
-                stopped += 1
-        except Exception:
-            pass
-    return stopped
 
 
 def _runtime_env_with_ca():
@@ -230,28 +58,6 @@ def _runtime_env_for_command(cmd: str):
 
 class ScriptRunnerService:
     MAX_HEALING_RETRIES = 3
-
-    # Self-healing is deliberately narrow: it repairs element locators, and it
-    # only ever rewrites Page Object files. Step definitions, feature files,
-    # hooks, config and test data are the human-authored contract of the suite -
-    # editing them would silently change what the test asserts, so any failure
-    # that is not a locator failure in a Page Object fails the run instead.
-    PAGE_OBJECT_DIR_NAMES = {
-        'pages', 'page', 'pageobjects', 'page_objects', 'pageobject', 'page_object'
-    }
-    PAGE_OBJECT_EXTENSIONS = {'.py', '.java', '.ts', '.js', '.cs'}
-    NON_HEALABLE_DIR_NAMES = {
-        'steps', 'step', 'stepdefinitions', 'step_definitions', 'stepdefs',
-        'features', 'feature', 'hooks', 'support', 'utils', 'util', 'utilities',
-        'helpers', 'helper', 'runners', 'runner', 'config', 'configs', 'configuration',
-        'testdata', 'test_data', 'data', 'resources', 'reports', 'results'
-    }
-    # Applied to the file name too, so a step definition parked in `pages/` is
-    # still rejected.
-    NON_HEALABLE_FILE_MARKERS = (
-        'step', 'hook', 'runner', 'config', 'environment', 'conftest', 'fixture'
-    )
-
     REPORT_EXTENSIONS = {'.html', '.htm', '.pdf', '.json', '.xml', '.png', '.txt'}
     REPORT_DIR_HINTS = ("results", "reports", "outputs", "allure-results", "allure-report", "playwright-report")
     REPORT_SKIP_DIRS = {
@@ -677,225 +483,11 @@ class ScriptRunnerService:
             print(f"AI call failed: {e}")
             return {}
 
-    @staticmethod
-    def _load_healing_prompts():
-        """Import the healing prompts, adding BIG_QA_Solution to sys.path if needed."""
-        parent_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        if parent_dir not in sys.path:
-            sys.path.insert(0, parent_dir)
-        from prompts.script_runner_prompts import (
-            get_diagnose_locator_error_prompt,
-            get_heal_locator_prompt,
-        )
-        return get_diagnose_locator_error_prompt, get_heal_locator_prompt
-
-    @classmethod
-    def _resolve_page_object_target(cls, full_path: str, file_to_fix: str):
-        """
-        Resolve the file the AI nominated, accepting it only if it is a Page Object.
-
-        The diagnosis prompt is already told to return Page Objects only, but the
-        answer is model output - this is the guard that actually keeps step
-        definitions, feature files, hooks and config out of the healing path.
-
-        Returns (absolute_path, "") when healing may proceed, otherwise
-        ("", reason) explaining why the file is off-limits.
-        """
-        rel_path = (file_to_fix or '').strip().strip('"').strip("'").replace('\\', '/')
-        if not rel_path:
-            return "", "no Page Object file was identified"
-
-        project_root = os.path.abspath(full_path)
-        candidate = os.path.abspath(rel_path if os.path.isabs(rel_path) else os.path.join(project_root, rel_path))
-        try:
-            # Never let a hallucinated path escape the project under test.
-            if os.path.commonpath([candidate, project_root]) != project_root:
-                raise ValueError
-        except ValueError:
-            return "", f"'{rel_path}' is outside the project directory"
-
-        display = os.path.relpath(candidate, project_root).replace('\\', '/')
-        segments = display.lower().split('/')
-        directories, filename = segments[:-1], segments[-1]
-        stem, ext = os.path.splitext(filename)
-
-        if ext not in cls.PAGE_OBJECT_EXTENSIONS:
-            return "", f"'{display}' is not a Page Object source file"
-        if any(directory in cls.NON_HEALABLE_DIR_NAMES for directory in directories):
-            return "", f"'{display}' is a step definition/feature/support file, not a Page Object"
-        if any(marker in stem for marker in cls.NON_HEALABLE_FILE_MARKERS):
-            return "", f"'{display}' is a step definition/hook/config file, not a Page Object"
-        if not (any(directory in cls.PAGE_OBJECT_DIR_NAMES for directory in directories) or 'page' in stem):
-            return "", f"'{display}' does not look like a Page Object file"
-        if not os.path.isfile(candidate):
-            return "", f"'{display}' does not exist in the project"
-        return candidate, ""
-
-    @staticmethod
-    def _python_syntax_error(display: str, source: str) -> str:
-        """Return a message if healed Python source would not compile, else ''."""
-        if not display.endswith('.py'):
-            return ""
-        import ast
-        try:
-            ast.parse(source, filename=display)
-        except SyntaxError as exc:
-            return f"line {exc.lineno}: {exc.msg}"
-        return ""
-
-    @classmethod
-    def _attempt_locator_heal(cls, full_path: str, cmd: str, cmd_output: str, attempt: int):
-        """
-        Decide whether a failed command can be self-healed, and heal it if so.
-
-        Healing is limited to element locator failures, and the only file ever
-        modified is the Page Object that declares the failing locator. Every
-        other failure - assertion, syntax, import, undefined step, application
-        or data error - is reported back as unhealable so the caller fails the
-        test rather than rewriting the suite.
-
-        Returns (outcome, messages):
-          "HEALED"        - a Page Object locator was rewritten; re-run the command
-          "COMMAND_ERROR" - the command/environment is wrong; no file was touched
-          "FAILED"        - not healable; fail the test
-        `messages` are console lines for the caller to stream.
-        """
-        get_diagnose_locator_error_prompt, get_heal_locator_prompt = cls._load_healing_prompts()
-        messages = []
-
-        diagnosis = cls._call_ai_sync_json(get_diagnose_locator_error_prompt(cmd, cmd_output))
-        category = (diagnosis.get("error_category") or "OTHER").strip().upper()
-        reason = (diagnosis.get("reason") or "").strip()
-        reason_suffix = f" ({reason})" if reason else ""
-
-        if category == "COMMAND":
-            messages.append(f"[Self-Healing] Failure is a command/environment problem, not an element "
-                            f"locator{reason_suffix}. No project file will be modified.")
-            return "COMMAND_ERROR", messages
-
-        if category != "LOCATOR":
-            messages.append(f"[Self-Healing] Failure is not an element locator issue{reason_suffix}. "
-                            f"Self-healing only repairs locators in Page Object files - failing the test.")
-            return "FAILED", messages
-
-        file_target, rejection = cls._resolve_page_object_target(full_path, diagnosis.get("file_to_fix", ""))
-        if rejection:
-            messages.append(f"[Self-Healing] Cannot heal: {rejection}. Only Page Object files are "
-                            f"modified - failing the test.")
-            return "FAILED", messages
-
-        display = os.path.relpath(file_target, os.path.abspath(full_path)).replace('\\', '/')
-        failed_locator = (diagnosis.get("failed_locator") or "").strip()
-        messages.append(f"[Self-Healing] Locator failure in Page Object {display}: "
-                        f"'{failed_locator}'{reason_suffix}.")
-
-        try:
-            with open(file_target, 'r', encoding='utf-8') as page_object_file:
-                original_content = page_object_file.read()
-        except OSError as read_err:
-            messages.append(f"[Self-Healing] Could not read {display}: {read_err} - failing the test.")
-            return "FAILED", messages
-
-        fix_response = cls._call_ai_sync_json(
-            get_heal_locator_prompt(display, original_content, failed_locator, cmd_output)
-        )
-        healed_content = fix_response.get("healed_content", "")
-        if not healed_content or healed_content.strip() == original_content.strip():
-            messages.append("[Self-Healing] AI did not return a usable locator fix - failing the test.")
-            return "FAILED", messages
-
-        # Validate before writing: a half-rewritten Page Object would break every
-        # scenario that uses it, including ones that were passing.
-        syntax_error = cls._python_syntax_error(display, healed_content)
-        if syntax_error:
-            messages.append(f"[Self-Healing] Healed content for {display} is not valid Python "
-                            f"({syntax_error}). Left the file untouched and failing the test.")
-            return "FAILED", messages
-
-        backup_target = f"{file_target}.bak.healing.{attempt}"
-        try:
-            shutil.copy2(file_target, backup_target)
-            with open(file_target, 'w', encoding='utf-8') as page_object_file:
-                page_object_file.write(healed_content)
-        except OSError as write_err:
-            messages.append(f"[Self-Healing] Could not apply the locator fix to {display}: "
-                            f"{write_err} - failing the test.")
-            return "FAILED", messages
-
-        explanation = (fix_response.get("explanation") or "").strip()
-        messages.append(f"[Self-Healing] Updated locator in {display} (backup: "
-                        f"{display}.bak.healing.{attempt}). {explanation} Retrying execution...")
-        return "HEALED", messages
-
-    @staticmethod
-    def _resolve_full_path(meta: dict) -> str:
-        project_path = meta.get('path', '') or meta.get('project_path', '')
-        project_name = meta.get('name', '') or meta.get('project_name', '')
-        return os.path.join(project_path, project_name) if project_name not in project_path else project_path
-
     @classmethod
     def execute_with_streaming(cls, meta: dict, env: str, browser: str, tags: str, custom_commands: str = ""):
-        """
-        Public streaming entry point for "Launch Execution".
-
-        Wraps the actual run so browser performance monitoring starts before
-        the first command and is ALWAYS finalized afterwards:
-          - normal completion  -> stopped just before the final result event,
-                                  so the report exists by the time the UI is
-                                  told the run is over
-          - user force-stop    -> the /stop endpoint finalizes it directly
-                                  (stop() is idempotent, so the unwinding
-                                  stream calling it again is harmless)
-          - client disconnect  -> Flask closes this generator and the finally
-                                  block finalizes it
-
-        The finally block deliberately does not yield: a generator being
-        closed early receives GeneratorExit and must not produce more output.
-        """
-        perf = WebPerfSession(cls._resolve_full_path(meta), time.time())
-        start_msg = perf.start()
-        if start_msg:
-            yield f"event: progress\ndata: {json.dumps({'msg': start_msg, 'type': 'system'})}\n\n"
-
-        try:
-            for chunk in cls._stream_execution(meta, env, browser, tags, custom_commands):
-                # Interleave the monitor's own diagnostics (browser detected,
-                # CDP attached, attach failed, ...) with the test output.
-                yield from cls._perf_log_events(perf)
-                if chunk.startswith("event: result"):
-                    yield from cls._finalize_perf_and_result(perf, chunk)
-                else:
-                    yield chunk
-        finally:
-            perf.stop(timeout=10.0)
-
-    @staticmethod
-    def _perf_log_events(perf: "WebPerfSession"):
-        for line in perf.drain_logs():
-            yield f"event: progress\ndata: {json.dumps({'msg': line, 'type': 'system'})}\n\n"
-
-    @classmethod
-    def _finalize_perf_and_result(cls, perf: "WebPerfSession", result_chunk: str):
-        """Stop monitoring, then re-emit the run's result event carrying the
-        performance report URL alongside the functional report URL."""
-        # `or perf.summary` covers the abort path: the /stop endpoint already
-        # finalized this same session object, so stop() is a no-op here but the
-        # summary and report path it produced are still worth reporting.
-        summary = perf.stop() or perf.summary
-        yield from cls._perf_log_events(perf)  # anything logged during finalization
-        if summary:
-            yield f"event: progress\ndata: {json.dumps({'msg': summary, 'type': 'system'})}\n\n"
-        try:
-            payload = json.loads(result_chunk.split("data: ", 1)[1].strip())
-        except (IndexError, ValueError):
-            yield result_chunk  # malformed - pass through untouched
-            return
-        payload["perf_report_url"] = perf.report_url
-        yield f"event: result\ndata: {json.dumps(payload)}\n\n"
-
-    @classmethod
-    def _stream_execution(cls, meta: dict, env: str, browser: str, tags: str, custom_commands: str = ""):
-        full_path = cls._resolve_full_path(meta)
+        project_path = meta.get('path', '') or meta.get('project_path', '')
+        project_name = meta.get('name', '') or meta.get('project_name', '')
+        full_path = os.path.join(project_path, project_name) if project_name not in project_path else project_path
 
         language = meta.get('language') or meta.get('lang') or meta.get('project_lang', '')
         framework = meta.get('framework') or meta.get('fw') or meta.get('project_fw', '')
@@ -903,6 +495,15 @@ class ScriptRunnerService:
         
         start_time = time.time()
         print(f"DEBUG: Starting streaming in {full_path}")
+        
+        # Import prompts for self-healing
+        parent_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        if parent_dir not in sys.path:
+            sys.path.insert(0, parent_dir)
+        from prompts.script_runner_prompts import (
+            get_diagnose_locator_error_prompt,
+            get_heal_locator_prompt
+        )
         
         # Mode A: Custom Sequential Commands
         if custom_commands.strip():
@@ -965,21 +566,64 @@ class ScriptRunnerService:
                         # Check for self-healing possibilities if we haven't exhausted retries
                         if attempt < max_retries:
                             yield f"event: progress\ndata: {json.dumps({'msg': '[Self-Healing] Command failed. Diagnosing logs for element locator issues...', 'type': 'system'})}\n\n"
-
-                            outcome, heal_messages = cls._attempt_locator_heal(full_path, cmd, cmd_output, attempt)
-                            for heal_msg in heal_messages:
-                                execution_log += f"\n{heal_msg}\n"
-                                yield f"event: progress\ndata: {json.dumps({'msg': heal_msg, 'type': 'system'})}\n\n"
-
-                            if outcome == "HEALED":
-                                attempt += 1
-                                continue
-
-                            # Anything other than a healed Page Object locator is a real
-                            # failure: report it as such instead of retrying blindly.
-                            yield f"event: progress\ndata: {json.dumps({'msg': f'[Error] Command failed with exit code {return_code}', 'type': 'step_fail', 'step': i+1})}\n\n"
-                            success = False
-                            break
+                            
+                            # Diagnose if it's a locator error
+                            prompt_diag = get_diagnose_locator_error_prompt(cmd, cmd_output)
+                            diag_resp = cls._call_ai_sync_json(prompt_diag)
+                            
+                            is_locator_error = diag_resp.get("is_locator_error", False)
+                            file_to_fix = diag_resp.get("file_to_fix", "").strip()
+                            failed_locator = diag_resp.get("failed_locator", "").strip()
+                            reason = diag_resp.get("reason", "").strip()
+                            
+                            if is_locator_error and file_to_fix:
+                                file_target = os.path.join(full_path, file_to_fix)
+                                if os.path.exists(file_target):
+                                    # Create backup
+                                    backup_target = file_target + f".bak.healing.{attempt}"
+                                    try:
+                                        shutil.copy2(file_target, backup_target)
+                                    except Exception as backup_err:
+                                        print(f"Error creating backup: {backup_err}")
+                                        
+                                    log_msg = f"[Self-Healing] Diagnosed element locator failure in {file_to_fix}: '{failed_locator}' (Reason: {reason}). Backup created at {file_to_fix}.bak.healing.{attempt}"
+                                    yield f"event: progress\ndata: {json.dumps({'msg': log_msg, 'type': 'system'})}\n\n"
+                                    
+                                    try:
+                                        with open(file_target, 'r', encoding='utf-8') as f:
+                                            file_content = f.read()
+                                            
+                                        # Call AI to heal locator
+                                        prompt_fix = get_heal_locator_prompt(file_to_fix, file_content, failed_locator, cmd_output)
+                                        fix_resp = cls._call_ai_sync_json(prompt_fix)
+                                        healed_code = fix_resp.get("healed_content", "")
+                                        explanation = fix_resp.get("explanation", "")
+                                        
+                                        if healed_code:
+                                            with open(file_target, 'w', encoding='utf-8') as f:
+                                                f.write(healed_code)
+                                            log_msg = f"[Self-Healing] Corrected element locator: {explanation}. Retrying execution..."
+                                            yield f"event: progress\ndata: {json.dumps({'msg': log_msg, 'type': 'system'})}\n\n"
+                                            attempt += 1
+                                            continue
+                                        else:
+                                            log_msg = "[Self-Healing] AI did not return a locator fix. Stopping retry loop."
+                                            yield f"event: progress\ndata: {json.dumps({'msg': log_msg, 'type': 'system'})}\n\n"
+                                            break
+                                    except Exception as fix_err:
+                                        log_msg = f"[Self-Healing] Error applying locator fix: {fix_err}"
+                                        yield f"event: progress\ndata: {json.dumps({'msg': log_msg, 'type': 'system'})}\n\n"
+                                        break
+                                else:
+                                    log_msg = f"[Self-Healing] Target file '{file_to_fix}' not found. Cannot perform healing."
+                                    yield f"event: progress\ndata: {json.dumps({'msg': log_msg, 'type': 'system'})}\n\n"
+                                    break
+                            else:
+                                log_msg = "[Self-Healing] Error does not appear to be element locator-related. Cannot self-heal."
+                                yield f"event: progress\ndata: {json.dumps({'msg': log_msg, 'type': 'system'})}\n\n"
+                                yield f"event: progress\ndata: {json.dumps({'msg': f'[Error] Command failed with exit code {return_code}', 'type': 'step_fail', 'step': i+1})}\n\n"
+                                success = False
+                                break
                         else:
                             yield f"event: progress\ndata: {json.dumps({'msg': f'[Error] Command failed with exit code {return_code} after all retries.', 'type': 'step_fail', 'step': i+1})}\n\n"
                             success = False
@@ -1004,7 +648,7 @@ class ScriptRunnerService:
         parent_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
         if parent_dir not in sys.path:
             sys.path.insert(0, parent_dir)
-        from prompts.script_runner_prompts import get_execution_command_prompt, get_correct_command_prompt
+        from prompts.script_runner_prompts import get_execution_command_prompt, get_diagnose_error_prompt, get_fix_script_prompt, get_correct_command_prompt
 
         prompt = get_execution_command_prompt(
             tool=tool,
@@ -1077,19 +721,48 @@ class ScriptRunnerService:
                     
                     if attempts < max_retries:
                         yield f"event: progress\ndata: {json.dumps({'msg': '[Self-Healing] Diagnosing error...', 'type': 'system'})}\n\n"
+                        # Execution failed. Let's ask AI to diagnose the error (COMMAND vs SCRIPT)
                         error_output = cmd_output
-                        outcome, heal_messages = cls._attempt_locator_heal(full_path, cmd, error_output, attempts)
-                        for heal_msg in heal_messages:
-                            output_log += f"\n{heal_msg}\n"
-                            yield f"event: progress\ndata: {json.dumps({'msg': heal_msg, 'type': 'system'})}\n\n"
-
-                        if outcome == "FAILED":
-                            # Not a Page Object locator failure - do not touch the suite.
-                            break
-
-                        if outcome == "COMMAND_ERROR":
-                            # The command this mode generated may simply be wrong. Correcting
-                            # it changes no project file, so it stays allowed.
+                        prompt_diag = get_diagnose_error_prompt(cmd, error_output)
+                        diag_resp = cls._call_ai_sync_json(prompt_diag)
+                        error_type = diag_resp.get("error_type", "COMMAND_ERROR")
+                        file_to_fix = diag_resp.get("file_to_fix", "")
+                        
+                        if error_type == "SCRIPT_ERROR" and file_to_fix:
+                            file_target = os.path.join(full_path, file_to_fix)
+                            if os.path.exists(file_target):
+                                backup_target = file_target + f".bak.{attempts}"
+                                shutil.copy2(file_target, backup_target)
+                                log_msg = f"[Self-Healing] Diagnosed SCRIPT_ERROR in {file_to_fix}. Backup created at {file_to_fix}.bak.{attempts}"
+                                output_log += f"\n{log_msg}\n"
+                                yield f"event: progress\ndata: {json.dumps({'msg': log_msg, 'type': 'system'})}\n\n"
+                                
+                                with open(file_target, 'r', encoding='utf-8') as f:
+                                    file_content = f.read()
+                                    
+                                prompt_fix = get_fix_script_prompt(error_output, file_to_fix, file_content)
+                                fix_resp = cls._call_ai_sync_json(prompt_fix)
+                                fixed_code = fix_resp.get("fixed_content", "")
+                                
+                                if fixed_code:
+                                    with open(file_target, 'w', encoding='utf-8') as f:
+                                        f.write(fixed_code)
+                                    log_msg = f"[Self-Healing] File {file_to_fix} rewritten successfully. Retrying execution..."
+                                    output_log += f"\n{log_msg}\n"
+                                    yield f"event: progress\ndata: {json.dumps({'msg': log_msg, 'type': 'system'})}\n\n"
+                                    # Keep cmd the same, it will retry in the while loop
+                                else:
+                                    log_msg = "[Self-Healing] AI failed to provide a fix. Falling back to command retry."
+                                    output_log += f"\n{log_msg}\n"
+                                    yield f"event: progress\ndata: {json.dumps({'msg': log_msg, 'type': 'system'})}\n\n"
+                                    error_type = "COMMAND_ERROR" # Fallback
+                            else:
+                                log_msg = f"[Self-Healing] Identified file {file_to_fix} but it does not exist. Falling back..."
+                                output_log += f"\n{log_msg}\n"
+                                yield f"event: progress\ndata: {json.dumps({'msg': log_msg, 'type': 'system'})}\n\n"
+                                error_type = "COMMAND_ERROR" # Fallback
+                                
+                        if error_type == "COMMAND_ERROR" or not file_to_fix:
                             prompt2 = get_correct_command_prompt(
                                 cmd=cmd,
                                 error_output=error_output,
@@ -1098,13 +771,13 @@ class ScriptRunnerService:
                             )
                             ai_correction = cls._call_ai_sync_json(prompt2)
                             new_cmd = ai_correction.get("command", "")
-                            if not new_cmd:
+                            if new_cmd:
+                                cmd = new_cmd
+                                log_msg = f"[Self-Healing] AI suggested corrected command: {cmd}"
+                                output_log += f"\n{log_msg}\n"
+                                yield f"event: progress\ndata: {json.dumps({'msg': log_msg, 'type': 'system'})}\n\n"
+                            else:
                                 break
-                            cmd = new_cmd
-                            log_msg = f"[Self-Healing] AI suggested corrected command: {cmd}"
-                            output_log += f"\n{log_msg}\n"
-                            yield f"event: progress\ndata: {json.dumps({'msg': log_msg, 'type': 'system'})}\n\n"
-                        # "HEALED" keeps the same command and re-runs it.
                     else:
                         break
             except Exception as e:
