@@ -31,7 +31,9 @@ module.exports = {
     // Console progress only. The machine-readable JSON report path is timestamped per run
     // (results/<timestamp>/cucumber_report.json), so test-runner.js appends that --format on the
     // CLI rather than hard-coding a fixed path here.
-    format: ["progress-bar"],
+    format: ["progress",
+    "json:Results/cucumber_report.json",
+    ],
 
     parallel: 1,
 

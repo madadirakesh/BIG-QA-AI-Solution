@@ -964,6 +964,11 @@ class EnvironmentSetup:
                     "npm install --save-dev tsx",
                 ))
 
+                phases.append((
+                    "Installing cucumber-html-reporter...",
+                    "npm install --save-dev cucumber-html-reporter",
+                ))
+
                 def update_cucumber_config():
                     import os
                     import json
