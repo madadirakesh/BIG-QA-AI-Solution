@@ -831,7 +831,9 @@ class ScriptRunnerService:
     def _resolve_full_path(meta: dict) -> str:
         project_path = meta.get('path', '') or meta.get('project_path', '')
         project_name = meta.get('name', '') or meta.get('project_name', '')
-        return os.path.join(project_path, project_name) if project_name not in project_path else project_path
+        if project_path and os.path.exists(project_path):
+            return project_path
+        return os.path.join(project_path, project_name) if (project_name and project_name not in project_path) else project_path
 
     @classmethod
     def execute_with_streaming(cls, meta: dict, env: str, browser: str, tags: str, custom_commands: str = ""):

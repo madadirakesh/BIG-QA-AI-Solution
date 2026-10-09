@@ -1293,7 +1293,9 @@ def remove_missing_projects():
     
     for p in projects:
         # Check if project directory exists
-        full_path = os.path.join(p['project_path'], p['project_name'])
+        p_path = (p.get('project_path') or '').strip()
+        p_name = (p.get('project_name') or '').strip()
+        full_path = p_path if (p_path and os.path.exists(p_path)) else os.path.join(p_path, p_name)
         if not os.path.exists(full_path):
             update_data("DELETE FROM ProjectDetails WHERE id = ?", (p['id'],))
             removed.append(p['project_name'])
@@ -3106,11 +3108,7 @@ def save_project_config():
                 git_res = GitService.download_project_from_git(project_path, auth_config)
                 if not git_res["success"]:
                     return jsonify({"status": "error", "message": f"Git clone/setup failed: {git_res['message']}"}), 500
-            elif project_path:
-                os.makedirs(project_path, exist_ok=True)
         else:
-            if project_path:
-                os.makedirs(project_path, exist_ok=True)
             if git_repo_url:
                 auth_config = {
                     "repo_url": git_repo_url,

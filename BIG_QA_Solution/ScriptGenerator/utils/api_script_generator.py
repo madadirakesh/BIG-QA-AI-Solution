@@ -340,6 +340,29 @@ def _openapi_auth(spec, kind):
     return {"type": ""}
 
 
+def _openapi_base_url(spec, kind):
+    if kind == "swagger":
+        host = (spec.get("host") or "").strip()
+        schemes = spec.get("schemes") or []
+        scheme = schemes[0] if (isinstance(schemes, list) and schemes) else "https"
+        base_path = (spec.get("basePath") or "").strip()
+        if host:
+            if "://" in host:
+                return f"{host}{base_path}"
+            return f"{scheme}://{host}{base_path}"
+        return base_path
+
+    servers = spec.get("servers") or []
+    if servers and isinstance(servers[0], dict):
+        url = (servers[0].get("url") or "").strip()
+        vars_dict = servers[0].get("variables") or {}
+        for vname, vobj in vars_dict.items():
+            if isinstance(vobj, dict) and "default" in vobj:
+                url = url.replace("{" + vname + "}", str(vobj["default"]))
+        return url
+    return ""
+
+
 def _openapi_base_path(spec, kind):
     if kind == "swagger":
         return (spec.get("basePath") or "").rstrip("/")
@@ -413,8 +436,8 @@ def parse_openapi(spec, kind):
                 "body_type": body_type,
                 "body": body,
             })
-    return {"base_path": _openapi_base_path(spec, kind), "auth": _openapi_auth(spec, kind),
-            "endpoints": endpoints}
+    return {"base_url": _openapi_base_url(spec, kind), "base_path": _openapi_base_path(spec, kind),
+            "auth": _openapi_auth(spec, kind), "endpoints": endpoints}
 
 
 # ---------------------------------------------------------------------------
@@ -526,8 +549,59 @@ def parse_postman(collection):
                 "body": body,
             })
 
+def _postman_base_url(collection, endpoints):
+    variables = _postman_vars(collection)
+    for key in ("baseUrl", "base_url", "url", "host", "domain", "server", "BASE_URL", "BASEURL"):
+        val = variables.get(key)
+        if isinstance(val, str) and (val.startswith("http://") or val.startswith("https://")):
+            return val.strip()
+
+    for ep in (endpoints or []):
+        p = ep.get("path", "")
+        if p.startswith("http://") or p.startswith("https://"):
+            parts = urlsplit(p)
+            return f"{parts.scheme}://{parts.netloc}"
+    return ""
+
+
+def parse_postman(collection):
+    variables = _postman_vars(collection)
+    auth = _postman_auth(collection.get("auth"))
+    endpoints = []
+
+    def walk(items, folder_auth):
+        nonlocal auth
+        for item in items or []:
+            if not isinstance(item, dict):
+                continue
+            if isinstance(item.get("item"), list):
+                walk(item["item"], _postman_auth(item.get("auth")) if item.get("auth") else folder_auth)
+                continue
+            request = item.get("request")
+            if isinstance(request, str):
+                request = {"method": "GET", "url": request}
+            if not isinstance(request, dict):
+                continue
+            path, query = _postman_url(request.get("url"), variables)
+            headers = {h.get("key"): h.get("value", "") for h in request.get("header") or []
+                       if isinstance(h, dict) and h.get("key") and not h.get("disabled")
+                       and h["key"].lower() not in ("authorization", "content-type", "accept")}
+            body_type, body = _postman_body(request.get("body"), variables)
+            if not auth.get("type"):
+                auth = _postman_auth(request.get("auth")) if request.get("auth") else folder_auth
+            endpoints.append({
+                "name": item.get("name") or f"{request.get('method', 'GET')} {path}",
+                "method": (request.get("method") or "GET").upper(),
+                "path": path,
+                "path_samples": {},
+                "query": query,
+                "headers": headers,
+                "body_type": body_type,
+                "body": body,
+            })
+
     walk(collection.get("item"), auth)
-    return {"base_path": "", "auth": auth, "endpoints": endpoints}
+    return {"base_url": _postman_base_url(collection, endpoints), "base_path": "", "auth": auth, "endpoints": endpoints}
 
 
 # ---------------------------------------------------------------------------
@@ -538,6 +612,7 @@ AI_EXTRACTION_PROMPT = """You extract HTTP API endpoints from API documentation 
 
 Return ONLY a JSON object, no prose and no markdown fences, with exactly this shape:
 {{
+  "base_url": "the full base URL specified in the document, e.g. https://api.example.com/v1 or http://localhost:8080 (or empty string if not specified)",
   "base_path": "common path prefix shared by every endpoint, e.g. /api/v1, or empty string",
   "auth": {{"type": "bearer" | "apikey" | "basic" | "", "name": "header name when type is apikey"}},
   "endpoints": [
@@ -556,10 +631,11 @@ Return ONLY a JSON object, no prose and no markdown fences, with exactly this sh
 
 Rules:
 - Include every distinct endpoint the document describes, in the order it describes them.
+- Extract the base_url if mentioned in the document (e.g. https://api.example.com/v1 or http://localhost:8080).
 - Use sample values that appear in the document; otherwise invent realistic ones matching the described types.
 - Do not put Authorization, Content-Type or Accept in headers - authentication goes in "auth".
 - Paths must start with "/". Never include the scheme or host in a path.
-- If the document describes no HTTP endpoints, return {{"base_path": "", "auth": {{"type": ""}}, "endpoints": []}}.
+- If the document describes no HTTP endpoints, return {{"base_url": "", "base_path": "", "auth": {{"type": ""}}, "endpoints": []}}.
 
 API documentation:
 <<<
@@ -595,6 +671,7 @@ def extract_with_ai(document_text, ai_call):
     data = _extract_json_object(ai_call(prompt))
     if not isinstance(data, dict):
         raise ApiDocumentError("The AI response was not a JSON object.")
+    data.setdefault("base_url", "")
     data.setdefault("base_path", "")
     data.setdefault("auth", {"type": ""})
     data["truncated"] = truncated
@@ -626,15 +703,24 @@ def _clean_endpoint(raw):
 
     body_type = str(raw.get("body_type") or "").lower()
     body = raw.get("body")
-    if body_type not in ("json", "form", "xml", "text"):
+    if method in ("GET", "HEAD", "OPTIONS", "DELETE"):
+        body_type = ""
+        body = None
+    elif body_type == "json":
+        if isinstance(body, str) and body.strip():
+            try:
+                body = json.loads(body)
+            except Exception:
+                pass
+        if not isinstance(body, (dict, list)):
+            body = {}
+    elif body_type not in ("form", "xml", "text"):
         body_type = "json" if isinstance(body, (dict, list)) else ""
     if body_type == "form" and not isinstance(body, dict):
         body_type = "text" if isinstance(body, str) and body else ""
     if body_type in ("xml", "text") and not isinstance(body, str):
         body = json.dumps(body) if body is not None else ""
     if body_type and body in (None, "", {}, []) and body_type != "json":
-        body_type = ""
-    if method in ("GET", "HEAD", "OPTIONS", "DELETE") and body_type and body in (None, {}):
         body_type = ""
 
     headers = raw.get("headers") if isinstance(raw.get("headers"), dict) else {}
@@ -657,16 +743,37 @@ def normalize_api_model(model):
         raise ApiDocumentError("No HTTP endpoints were found in the document.")
     auth = model.get("auth") if isinstance(model.get("auth"), dict) else {}
     auth_type = str(auth.get("type") or "").lower()
-    base_path = str(model.get("base_path") or "").strip()
-    if "://" in base_path:
-        base_path = urlsplit(base_path).path
+
+    raw_base_url = str(model.get("base_url") or "").strip()
+    raw_base_path = str(model.get("base_path") or "").strip()
+
+    doc_origin = ""
+    base_path = ""
+
+    if raw_base_url.startswith("http://") or raw_base_url.startswith("https://"):
+        parts = urlsplit(raw_base_url)
+        doc_origin = f"{parts.scheme}://{parts.netloc}"
+        if parts.path and parts.path != "/":
+            base_path = parts.path
+    elif "://" in raw_base_path:
+        parts = urlsplit(raw_base_path)
+        doc_origin = f"{parts.scheme}://{parts.netloc}"
+        if parts.path and parts.path != "/":
+            base_path = parts.path
+
+    if not base_path and raw_base_path and not "://" in raw_base_path:
+        base_path = raw_base_path
+
     base_path = ("/" + base_path.strip("/")) if base_path.strip("/") else ""
+
     if base_path:
-        # An endpoint given as a full URL already carries the base path.
         for endpoint in endpoints:
             if endpoint["path"] == base_path or endpoint["path"].startswith(base_path + "/"):
                 endpoint["path"] = endpoint["path"][len(base_path):] or "/"
+
     return {
+        "base_url": raw_base_url,
+        "doc_origin": doc_origin,
         "base_path": base_path,
         "auth": {"type": auth_type if auth_type in ("bearer", "apikey", "basic") else "",
                  "name": str(auth.get("name") or "X-API-Key")},
@@ -695,25 +802,47 @@ def build_api_model(kind, content, ai_call=None):
 
 def _request_path(endpoint, prefix):
     """(concrete path with samples, templated stats name) under `prefix`."""
-    templated = f"{prefix}{endpoint['path']}" if prefix else endpoint["path"]
+    raw_path = endpoint["path"]
+    templated = f"{prefix}{raw_path}" if prefix else raw_path
+    templated = re.sub(r"/{2,}", "/", templated)
     samples = endpoint.get("path_samples") or {}
 
     def fill(match):
-        value = samples.get(match.group(1), 1)
-        if value in (None, "", "string"):
-            # A schema placeholder makes a poor URL segment; 1 is accepted by most ids.
+        pname = match.group(1)
+        value = samples.get(pname)
+        if value is None:
+            value = next((v for k, v in samples.items() if k.lower() == pname.lower()), None)
+        if value in (None, "", "string", "{%s}" % pname, "str", "integer", "number"):
             value = 1
         return str(value).replace("/", "%2F").replace(" ", "%20")
+
     concrete = re.sub(r"\{([^}/]+)\}", fill, templated)
     return concrete, templated
 
 
-def _effective_prefix(base_path, application_url):
-    """Doc base path, unless the Application URL already ends with it."""
-    app_path = urlsplit(application_url or "").path.rstrip("/")
-    if not base_path or (app_path and app_path.endswith(base_path)):
-        return ""
-    return base_path
+def _resolve_target_server(model, application_url):
+    """
+    Determines origin (scheme + netloc) and prefix (base path) to use for requests.
+    Prioritises the API document's base URL / doc_origin. Falls back to project's application_url if not specified.
+    """
+    doc_origin = (model.get("doc_origin") or "").strip()
+    base_path = (model.get("base_path") or "").strip()
+    app_url = (application_url or "").strip()
+
+    if doc_origin:
+        origin = doc_origin
+        prefix = base_path
+    elif app_url.startswith("http://") or app_url.startswith("https://"):
+        parts = urlsplit(app_url)
+        origin = f"{parts.scheme}://{parts.netloc}"
+        app_path = parts.path.rstrip("/")
+        prefix = f"{app_path}{base_path}" if base_path else app_path
+    else:
+        origin = ""
+        prefix = base_path
+
+    prefix = ("/" + prefix.strip("/")) if prefix.strip("/") else ""
+    return origin, prefix
 
 
 def _query_string(query):
@@ -725,11 +854,6 @@ def _query_string(query):
             value = str(value).lower()
         items.append((key, "" if value is None else value))
     return urlencode(items)
-
-
-def _origin(application_url):
-    parts = urlsplit((application_url or "").strip())
-    return f"{parts.scheme}://{parts.netloc}" if parts.scheme and parts.netloc else ""
 
 
 def _header_lines(model, generated_from, source_label, title, file_name, tool):
@@ -776,8 +900,7 @@ def _literal(value, indent):
 def build_locust_script(model, title, file_name, application_url, generated_from, source_label,
                         script_folder="locustfiles"):
     header = _header_lines(model, generated_from, source_label, title, file_name, LOCUST_TOOL)
-    origin = _origin(application_url)
-    prefix = _effective_prefix(model["base_path"], application_url)
+    origin, prefix = _resolve_target_server(model, application_url)
     auth = model["auth"]
 
     lines = ['"""', file_name, "-" * len(file_name)] + header["lines"] + [
@@ -806,9 +929,9 @@ def build_locust_script(model, title, file_name, application_url, generated_from
                       "        if api_key:",
                       f"            self.client.headers[{auth['name']!r}] = api_key"]
         else:
-            lines += [f'        username = os.getenv("{USERNAME_ENV_VAR}", "")',
+            lines += [f'        username = os.getenv("{USERNAME_ENV_VAR}", "user")',
                       "        if username:",
-                      f'            self.client.auth = (username, os.getenv("{PASSWORD_ENV_VAR}", ""))']
+                      f'            self.client.auth = (username, os.getenv("{PASSWORD_ENV_VAR}", "password"))']
         lines += [""]
 
     lines += ["    @task", "    def api_journey(self):"]
@@ -818,17 +941,21 @@ def build_locust_script(model, title, file_name, application_url, generated_from
         target = f"{concrete}?{query}" if query else concrete
         args = [repr(target)]
         body_type, body = endpoint["body_type"], endpoint["body"]
+        headers = dict(endpoint["headers"])
+
         if body_type == "json":
             args.append(f"json={_literal(body, 12)}")
+            headers = {k: v for k, v in headers.items() if k.lower() != "content-type"}
         elif body_type == "form":
             args.append(f"data={_literal(body, 12)}")
+            headers = {k: v for k, v in headers.items() if k.lower() != "content-type"}
         elif body_type in ("xml", "text"):
             args.append(f"data={_literal(body, 12)}")
-        headers = dict(endpoint["headers"])
-        if body_type == "xml":
-            headers.setdefault("Content-Type", "application/xml")
-        elif body_type == "text":
-            headers.setdefault("Content-Type", "text/plain")
+            if body_type == "xml":
+                headers.setdefault("Content-Type", "application/xml")
+            elif body_type == "text":
+                headers.setdefault("Content-Type", "text/plain")
+
         if headers:
             args.append(f"headers={_literal(headers, 12)}")
         args.append(f"name={templated!r}")
@@ -945,16 +1072,11 @@ def _sampler(endpoint, prefix, indent):
 def build_jmeter_script(model, title, file_name, application_url, generated_from, source_label):
     header = _header_lines(model, generated_from, source_label, title, file_name, JMETER_TOOL)
     comments = "\n".join(header["lines"] + [""] + [f"* {note}" for note in header["notes"]])
-    parts = urlsplit(application_url or "")
+    origin, prefix = _resolve_target_server(model, application_url)
+    parts = urlsplit(origin or application_url or "")
     host = parts.hostname or "localhost"
     protocol = (parts.scheme or "https").lower()
     port = str(parts.port or "")
-    prefix = _effective_prefix(model["base_path"], application_url)
-    app_path = parts.path.rstrip("/")
-    if app_path:
-        # JMeter's defaults element has no base-path field, so the Application
-        # URL's own path is folded into every sampler.
-        prefix = f"{app_path}{prefix}"
 
     auth = model["auth"]
     common_headers = {"Accept": "application/json"}
@@ -963,7 +1085,7 @@ def build_jmeter_script(model, title, file_name, application_url, generated_from
     elif auth["type"] == "apikey":
         common_headers[auth["name"]] = "${__P(api.key,)}"
     elif auth["type"] == "basic":
-        common_headers["Authorization"] = "Basic ${__base64Encode(${__P(api.username,)}:${__P(api.password,)})}"
+        common_headers["Authorization"] = "Basic ${__base64Encode(${__P(api.username,user)}:${__P(api.password,password)})}"
 
     samplers = "".join(_sampler(e, prefix, 8) for e in model["endpoints"])
     return f"""<?xml version="1.0" encoding="UTF-8"?>
