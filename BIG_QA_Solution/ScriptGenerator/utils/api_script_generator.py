@@ -359,7 +359,11 @@ def _openapi_base_url(spec, kind):
         for vname, vobj in vars_dict.items():
             if isinstance(vobj, dict) and "default" in vobj:
                 url = url.replace("{" + vname + "}", str(vobj["default"]))
-        return url
+        if url:
+            return url
+    host = (spec.get("host") or "").strip()
+    if host:
+        return host if "://" in host else f"https://{host}"
     return ""
 
 
@@ -513,54 +517,35 @@ def _postman_body(body, variables):
     return "", None
 
 
-def parse_postman(collection):
+def _postman_base_url(collection, endpoints=None):
     variables = _postman_vars(collection)
-    auth = _postman_auth(collection.get("auth"))
-    endpoints = []
+    for key in ("baseUrl", "base_url", "url", "host", "domain", "server", "BASE_URL", "BASEURL"):
+        val = variables.get(key)
+        if isinstance(val, str) and (val.startswith("http://") or val.startswith("https://") or "." in val):
+            val = val.strip()
+            return val if "://" in val else f"https://{val}"
 
-    def walk(items, folder_auth):
-        nonlocal auth
+    def find_url(items):
         for item in items or []:
             if not isinstance(item, dict):
                 continue
             if isinstance(item.get("item"), list):
-                walk(item["item"], _postman_auth(item.get("auth")) if item.get("auth") else folder_auth)
-                continue
-            request = item.get("request")
-            if isinstance(request, str):
-                request = {"method": "GET", "url": request}
-            if not isinstance(request, dict):
-                continue
-            path, query = _postman_url(request.get("url"), variables)
-            headers = {h.get("key"): h.get("value", "") for h in request.get("header") or []
-                       if isinstance(h, dict) and h.get("key") and not h.get("disabled")
-                       and h["key"].lower() not in ("authorization", "content-type", "accept")}
-            body_type, body = _postman_body(request.get("body"), variables)
-            if not auth.get("type"):
-                auth = _postman_auth(request.get("auth")) if request.get("auth") else folder_auth
-            endpoints.append({
-                "name": item.get("name") or f"{request.get('method', 'GET')} {path}",
-                "method": (request.get("method") or "GET").upper(),
-                "path": path,
-                "path_samples": {},
-                "query": query,
-                "headers": headers,
-                "body_type": body_type,
-                "body": body,
-            })
+                found = find_url(item["item"])
+                if found:
+                    return found
+            req = item.get("request")
+            if isinstance(req, dict):
+                raw = req.get("url")
+                raw_str = raw.get("raw", "") if isinstance(raw, dict) else str(raw or "")
+                if "://" in raw_str:
+                    parts = urlsplit(raw_str)
+                    if parts.netloc and not parts.netloc.startswith("{{"):
+                        return f"{parts.scheme}://{parts.netloc}"
+        return ""
 
-def _postman_base_url(collection, endpoints):
-    variables = _postman_vars(collection)
-    for key in ("baseUrl", "base_url", "url", "host", "domain", "server", "BASE_URL", "BASEURL"):
-        val = variables.get(key)
-        if isinstance(val, str) and (val.startswith("http://") or val.startswith("https://")):
-            return val.strip()
-
-    for ep in (endpoints or []):
-        p = ep.get("path", "")
-        if p.startswith("http://") or p.startswith("https://"):
-            parts = urlsplit(p)
-            return f"{parts.scheme}://{parts.netloc}"
+    found = find_url(collection.get("item"))
+    if found:
+        return found
     return ""
 
 
@@ -750,18 +735,23 @@ def normalize_api_model(model):
     doc_origin = ""
     base_path = ""
 
-    if raw_base_url.startswith("http://") or raw_base_url.startswith("https://"):
-        parts = urlsplit(raw_base_url)
-        doc_origin = f"{parts.scheme}://{parts.netloc}"
-        if parts.path and parts.path != "/":
-            base_path = parts.path
-    elif "://" in raw_base_path:
+    if raw_base_url:
+        target_url = raw_base_url if "://" in raw_base_url else (
+            f"https:{raw_base_url}" if raw_base_url.startswith("//") else f"https://{raw_base_url}"
+        )
+        parts = urlsplit(target_url)
+        if parts.netloc:
+            doc_origin = f"{parts.scheme or 'https'}://{parts.netloc}"
+            if parts.path and parts.path != "/":
+                base_path = parts.path
+    if not doc_origin and "://" in raw_base_path:
         parts = urlsplit(raw_base_path)
-        doc_origin = f"{parts.scheme}://{parts.netloc}"
-        if parts.path and parts.path != "/":
-            base_path = parts.path
+        if parts.netloc:
+            doc_origin = f"{parts.scheme or 'https'}://{parts.netloc}"
+            if parts.path and parts.path != "/":
+                base_path = parts.path
 
-    if not base_path and raw_base_path and not "://" in raw_base_path:
+    if not base_path and raw_base_path and "://" not in raw_base_path:
         base_path = raw_base_path
 
     base_path = ("/" + base_path.strip("/")) if base_path.strip("/") else ""
@@ -820,23 +810,19 @@ def _request_path(endpoint, prefix):
     return concrete, templated
 
 
-def _resolve_target_server(model, application_url):
+def _resolve_target_server(model, application_url=None):
     """
     Determines origin (scheme + netloc) and prefix (base path) to use for requests.
-    Prioritises the API document's base URL / doc_origin. Falls back to project's application_url if not specified.
+    Prioritises the API document's base URL / doc_origin.
+    The Application URL captured at project creation is for CLI and Functional
+    recording, not API documents.
     """
     doc_origin = (model.get("doc_origin") or "").strip()
     base_path = (model.get("base_path") or "").strip()
-    app_url = (application_url or "").strip()
 
     if doc_origin:
         origin = doc_origin
         prefix = base_path
-    elif app_url.startswith("http://") or app_url.startswith("https://"):
-        parts = urlsplit(app_url)
-        origin = f"{parts.scheme}://{parts.netloc}"
-        app_path = parts.path.rstrip("/")
-        prefix = f"{app_path}{base_path}" if base_path else app_path
     else:
         origin = ""
         prefix = base_path
@@ -897,7 +883,7 @@ def _literal(value, indent):
     return text.replace("\n", "\n" + " " * indent)
 
 
-def build_locust_script(model, title, file_name, application_url, generated_from, source_label,
+def build_locust_script(model, title, file_name, application_url=None, generated_from="", source_label="",
                         script_folder="locustfiles"):
     header = _header_lines(model, generated_from, source_label, title, file_name, LOCUST_TOOL)
     origin, prefix = _resolve_target_server(model, application_url)
@@ -997,7 +983,7 @@ def _header_manager(name, headers, indent):
             f'{pad}</HeaderManager>\n{pad}<hashTree/>\n')
 
 
-def _sampler(endpoint, prefix, indent):
+def _sampler(endpoint, prefix, indent, host="", protocol="", port=""):
     pad = " " * indent
     concrete, templated = _request_path(endpoint, prefix)
     body_type, body = endpoint["body_type"], endpoint["body"]
@@ -1036,15 +1022,18 @@ def _sampler(endpoint, prefix, indent):
 
     args_xml = ("\n" + "\n".join(arguments) + f"\n{pad}    ") if arguments else ""
     label = f"{endpoint['method']} {templated} - {endpoint['name']}"
+    domain_val = f"${{__P(api.host,{host})}}" if host else ""
+    port_val = f"${{__P(api.port,{port})}}" if port else ""
+    proto_val = f"${{__P(api.protocol,{protocol})}}" if protocol else ""
     xml = (
         f'{pad}<HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="{_x(label)}" enabled="true">\n'
         f'{pad}  <boolProp name="HTTPSampler.postBodyRaw">{"true" if raw_body else "false"}</boolProp>\n'
         f'{pad}  <elementProp name="HTTPsampler.Arguments" elementType="Arguments">\n'
         f'{pad}    <collectionProp name="Arguments.arguments">{args_xml}</collectionProp>\n'
         f'{pad}  </elementProp>\n'
-        f'{pad}  {_prop("HTTPSampler.domain", "")}\n'
-        f'{pad}  {_prop("HTTPSampler.port", "")}\n'
-        f'{pad}  {_prop("HTTPSampler.protocol", "")}\n'
+        f'{pad}  {_prop("HTTPSampler.domain", domain_val)}\n'
+        f'{pad}  {_prop("HTTPSampler.port", port_val)}\n'
+        f'{pad}  {_prop("HTTPSampler.protocol", proto_val)}\n'
         f'{pad}  {_prop("HTTPSampler.path", path)}\n'
         f'{pad}  {_prop("HTTPSampler.method", endpoint["method"])}\n'
         f'{pad}  <boolProp name="HTTPSampler.follow_redirects">true</boolProp>\n'
@@ -1069,13 +1058,13 @@ def _sampler(endpoint, prefix, indent):
     return xml
 
 
-def build_jmeter_script(model, title, file_name, application_url, generated_from, source_label):
+def build_jmeter_script(model, title, file_name, application_url=None, generated_from="", source_label=""):
     header = _header_lines(model, generated_from, source_label, title, file_name, JMETER_TOOL)
     comments = "\n".join(header["lines"] + [""] + [f"* {note}" for note in header["notes"]])
     origin, prefix = _resolve_target_server(model, application_url)
-    parts = urlsplit(origin or application_url or "")
-    host = parts.hostname or "localhost"
-    protocol = (parts.scheme or "https").lower()
+    parts = urlsplit(origin or "")
+    host = parts.hostname or ""
+    protocol = (parts.scheme or "https").lower() if host else "https"
     port = str(parts.port or "")
 
     auth = model["auth"]
@@ -1087,7 +1076,10 @@ def build_jmeter_script(model, title, file_name, application_url, generated_from
     elif auth["type"] == "basic":
         common_headers["Authorization"] = "Basic ${__base64Encode(${__P(api.username,user)}:${__P(api.password,password)})}"
 
-    samplers = "".join(_sampler(e, prefix, 8) for e in model["endpoints"])
+    samplers = "".join(_sampler(e, prefix, 8, host=host, protocol=protocol, port=port) for e in model["endpoints"])
+    domain_val = f"${{__P(api.host,{host})}}" if host else "${__P(api.host,)}"
+    port_val = f"${{__P(api.port,{port})}}" if port else ""
+    proto_val = f"${{__P(api.protocol,{protocol})}}" if protocol else "${__P(api.protocol,https)}"
     return f"""<?xml version="1.0" encoding="UTF-8"?>
 <jmeterTestPlan version="1.2" properties="5.0" jmeter="5.6.3">
   <hashTree>
@@ -1104,9 +1096,9 @@ def build_jmeter_script(model, title, file_name, application_url, generated_from
         <elementProp name="HTTPsampler.Arguments" elementType="Arguments" guiclass="HTTPArgumentsPanel" testclass="Arguments" testname="User Defined Variables" enabled="true">
           <collectionProp name="Arguments.arguments"/>
         </elementProp>
-        {_prop("HTTPSampler.domain", "${__P(api.host," + host + ")}")}
-        {_prop("HTTPSampler.port", "${__P(api.port," + port + ")}" if port else "")}
-        {_prop("HTTPSampler.protocol", "${__P(api.protocol," + protocol + ")}")}
+        {_prop("HTTPSampler.domain", domain_val)}
+        {_prop("HTTPSampler.port", port_val)}
+        {_prop("HTTPSampler.protocol", proto_val)}
         {_prop("HTTPSampler.contentEncoding", "UTF-8")}
         {_prop("HTTPSampler.path", "")}
         {_prop("HTTPSampler.connect_timeout", "10000")}
@@ -1160,7 +1152,7 @@ def _name_taken(perf_dir, tool, directory, file_name):
     return any(os.path.basename(p).lower() == wanted for p in layout.all_script_paths(perf_dir, tool))
 
 
-def write_api_script(perf_dir, tool, model, title, file_name, application_url, generated_from, kind):
+def write_api_script(perf_dir, tool, model, title, file_name, application_url=None, generated_from="", kind=""):
     """
     Render and write the script; a taken name gets a numeric suffix.
 

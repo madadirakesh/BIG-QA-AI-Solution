@@ -139,6 +139,44 @@ def locust_script_type(script_file):
         SCRIPT_TYPE_CLI if _RECORDED_MARKER.search(head) else SCRIPT_TYPE_API)
 
 
+def extract_jmeter_script_host(script_path_or_content):
+    """Extract host/base URL from a JMeter test plan (e.g. https://api.weather.gov)."""
+    try:
+        if os.path.exists(script_path_or_content):
+            head = _read_head(script_path_or_content, limit=20000)
+        else:
+            head = str(script_path_or_content)[:20000]
+    except (OSError, ValueError):
+        head = str(script_path_or_content)[:20000]
+    domain_match = re.search(r'<stringProp name="HTTPSampler\.domain">(?:(?:\$\{__P\(api\.host,([^)}]*)\)\})|([^<]*))</stringProp>', head)
+    proto_match = re.search(r'<stringProp name="HTTPSampler\.protocol">(?:(?:\$\{__P\(api\.protocol,([^)}]*)\)\})|([^<]*))</stringProp>', head)
+    port_match = re.search(r'<stringProp name="HTTPSampler\.port">(?:(?:\$\{__P\(api\.port,([^)}]*)\)\})|([^<]*))</stringProp>', head)
+    domain = (domain_match.group(1) or domain_match.group(2) or "").strip() if domain_match else ""
+    proto = (proto_match.group(1) or proto_match.group(2) or "").strip() if proto_match else "https"
+    port = (port_match.group(1) or port_match.group(2) or "").strip() if port_match else ""
+    if domain:
+        url = f"{proto}://{domain}"
+        if port:
+            url += f":{port}"
+        return url
+    return ""
+
+
+def extract_locust_script_host(script_path_or_content):
+    """Extract host/base URL from a Locust script (e.g. https://api.weather.gov)."""
+    try:
+        if os.path.exists(script_path_or_content):
+            head = _read_head(script_path_or_content, limit=5000)
+        else:
+            head = str(script_path_or_content)[:5000]
+    except (OSError, ValueError):
+        head = str(script_path_or_content)[:5000]
+    match = re.search(r'^\s*host\s*=\s*["\']([^"\']+)["\']', head, re.MULTILINE)
+    if match:
+        return match.group(1).strip()
+    return ""
+
+
 def _unescape_xml(text):
     for entity, char in (("&lt;", "<"), ("&gt;", ">"), ("&quot;", '"'), ("&apos;", "'"), ("&amp;", "&")):
         text = text.replace(entity, char)
@@ -608,8 +646,25 @@ def stream_run(perf_dir, script_file, host, mode="check", users=None, spawn_rate
     if not script_path:
         yield _sse("result", {"status": "error", "message": f"Script '{script_file}' was not found in this performance project."})
         return
+
+    if tool == JMETER_TOOL:
+        plans_root = layout.jmeter_plans_root(perf_dir)
+        stype = _jmeter_script_type(plans_root, Path(script_path), _read_head(script_path))
+    else:
+        stype = locust_script_type(script_path)
+
+    if stype == SCRIPT_TYPE_API:
+        # For API scripts, use the Base URL from the script / uploaded document,
+        # not the Application URL configured for CLI and Functional recording.
+        script_host = extract_jmeter_script_host(script_path) if tool == JMETER_TOOL else extract_locust_script_host(script_path)
+        if script_host:
+            host = script_host
+
     if not host:
-        yield _sse("result", {"status": "error", "message": "This performance project has no Application URL configured."})
+        if stype == SCRIPT_TYPE_API:
+            yield _sse("result", {"status": "error", "message": "No Base URL found in this API script."})
+        else:
+            yield _sse("result", {"status": "error", "message": "This performance project has no Application URL configured."})
         return
 
     if tool == JMETER_TOOL:

@@ -2302,7 +2302,7 @@ def _api_script_ai_call(prompt):
     return asyncio.run(call_ai(prompt, expect_json=True))
 
 
-def _api_script_worker(job_id, perf_dir, tool, document_name, raw, title, file_name, application_url):
+def _api_script_worker(job_id, perf_dir, tool, document_name, raw, title, file_name, application_url=""):
     def update(message):
         api_script_jobs[job_id] = {"status": "processing", "message": message}
 
@@ -2393,8 +2393,7 @@ def performance_api_script_generate():
         api_script_jobs[job_id] = {"status": "processing", "message": "Reading the API document..."}
         threading.Thread(
             target=_api_script_worker,
-            args=(job_id, perf_dir, tool, document_name, raw, title, file_name,
-                  (record.get('application_url') or '').strip()),
+            args=(job_id, perf_dir, tool, document_name, raw, title, file_name, ""),
             daemon=True,
         ).start()
         return jsonify({"status": "success", "job_id": job_id, "tool": tool})
