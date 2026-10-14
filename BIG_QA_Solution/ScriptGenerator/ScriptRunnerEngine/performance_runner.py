@@ -33,6 +33,7 @@ import shutil
 import socket
 import subprocess
 import sys
+import time
 from datetime import datetime
 from pathlib import Path
 
@@ -185,18 +186,42 @@ def _unescape_xml(text):
 
 def _latest_report(results_dir, stem):
     """Return the newest HTML report produced for `stem`, or '' when there is none."""
-    if not results_dir.is_dir():
+    if not results_dir:
         return ""
+    results_dir = Path(results_dir)
+    dirs_to_check = [results_dir]
+    if results_dir.parent and results_dir.parent.is_dir():
+        for candidate_name in ("results", "Results", "reports", "Reports"):
+            cand_path = results_dir.parent / candidate_name
+            if cand_path.is_dir() and cand_path not in dirs_to_check:
+                dirs_to_check.append(cand_path)
+
     candidates = []
-    prefix = f"run_{stem}_"
-    for run_dir in results_dir.iterdir():
-        if not run_dir.is_dir() or not run_dir.name.startswith(prefix):
+    prefix = f"run_{stem.lower()}_"
+    for rdir in dirs_to_check:
+        if not rdir.is_dir():
             continue
-        candidates.extend(run_dir.glob("*.html"))
-        # JMeter writes its dashboard as html/index.html.
-        dashboard = run_dir / "html" / "index.html"
-        if dashboard.is_file():
-            candidates.append(dashboard)
+        try:
+            for run_dir in rdir.iterdir():
+                if not run_dir.is_dir() or not run_dir.name.lower().startswith(prefix):
+                    continue
+                # JMeter writes its dashboard as html/index.html.
+                dashboard = run_dir / "html" / "index.html"
+                if dashboard.is_file():
+                    candidates.append(dashboard)
+                index_file = run_dir / "index.html"
+                if index_file.is_file() and index_file not in candidates:
+                    candidates.append(index_file)
+                # Locust writes <stem>_report.html
+                for html_file in run_dir.glob("*.html"):
+                    if html_file.is_file() and html_file not in candidates:
+                        candidates.append(html_file)
+                # Any other HTML in run_dir
+                for html_file in run_dir.rglob("*.html"):
+                    if html_file.is_file() and html_file not in candidates:
+                        candidates.append(html_file)
+        except OSError:
+            continue
     if not candidates:
         return ""
     newest = max(candidates, key=lambda p: p.stat().st_mtime)
@@ -770,13 +795,30 @@ def stream_run(perf_dir, script_file, host, mode="check", users=None, spawn_rate
             yield _sse("log", {"msg": f"[Stats] The run statistics could not be saved: {e}"})
 
     summary = _read_summary(csv_prefix, stats_rows)
+
+    # Locate the generated HTML report file in the current run folder or latest run folder
+    report_path = ""
+    target_report = Path(html_out)
+    for _ in range(8):
+        if target_report.is_file():
+            report_path = str(target_report)
+            break
+        html_candidates = list(result_dir.glob("*.html"))
+        if html_candidates:
+            report_path = str(max(html_candidates, key=lambda p: p.stat().st_mtime))
+            break
+        time.sleep(0.25)
+
+    if not report_path:
+        report_path = _latest_report(_results_path(perf_dir), stem)
+
     # Locust exits non-zero when requests failed or thresholds were not met, so a
     # non-zero code still produces a report worth showing.
     yield _sse("result", {
         "status": "success" if return_code == 0 else "failed",
         "return_code": return_code,
-        "report_url": report_url(html_out),
-        "report_path": html_out if os.path.exists(html_out) else "",
+        "report_url": report_url(report_path),
+        "report_path": report_path if (report_path and os.path.exists(report_path)) else "",
         "summary": summary,
     })
 

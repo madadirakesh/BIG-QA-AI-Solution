@@ -387,7 +387,8 @@ def install_prerequisites():
 
 install_prerequisites()
 
-from flask import Flask, render_template, request, redirect, url_for, session, flash, jsonify, Response, stream_with_context
+from flask import Flask, render_template, request, redirect, url_for, session, flash, jsonify, Response, stream_with_context, send_file
+import base64
 from flask_wtf.csrf import CSRFProtect, CSRFError
 import pytz
 from dotenv import load_dotenv
@@ -1480,11 +1481,29 @@ def performance_dashboard_data():
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
+def _encode_report_token(dir_path: str) -> str:
+    """Safely URL-encode a folder path for the report viewer."""
+    abs_dir = os.path.abspath(str(dir_path))
+    return base64.urlsafe_b64encode(abs_dir.encode('utf-8')).decode('ascii').rstrip('=')
+
+
+def _decode_report_token(token: str) -> str:
+    """Decode a folder path token produced by _encode_report_token."""
+    pad = len(token) % 4
+    if pad:
+        token += '=' * (4 - pad)
+    return base64.urlsafe_b64decode(token.encode('ascii')).decode('utf-8', errors='replace')
+
+
 def _report_url(report_path):
     """Build the viewer URL for a generated report file."""
     if not report_path:
         return ''
-    return '/api/script-runner/report?path=' + quote(str(report_path))
+    abs_path = os.path.abspath(str(report_path))
+    report_dir = os.path.dirname(abs_path)
+    file_name = os.path.basename(abs_path)
+    token = _encode_report_token(report_dir)
+    return f"/api/performance-test/report/{token}/{quote(file_name)}"
 
 
 def _performance_tool(record):
@@ -4384,6 +4403,125 @@ def _inject_report_cursor_affordances(report_html: str):
     return f"{pointer_overrides}{report_html}"
 
 
+def _is_allowed_report_path(abs_path):
+    """Ensure the path is located within registered projects, temp directory, or the app workspace."""
+    allowed_bases = []
+    try:
+        projects = fetch_data("SELECT project_path FROM ProjectDetails")
+        for p in projects:
+            if p.get('project_path'):
+                allowed_bases.append(os.path.abspath(p['project_path']))
+    except Exception:
+        pass
+
+    try:
+        perf_projects = fetch_data("SELECT project_name, project_path, framework_exists FROM PerformanceDetails")
+        for p in perf_projects:
+            if p.get('project_path'):
+                allowed_bases.append(os.path.abspath(p['project_path']))
+            try:
+                p_dir = performance_dir_path(p.get('project_name'), p.get('project_path'), bool(p.get('framework_exists')))
+                if p_dir:
+                    allowed_bases.append(os.path.abspath(p_dir))
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+    import tempfile
+    allowed_bases.append(os.path.abspath(tempfile.gettempdir()))
+    allowed_bases.append(os.path.abspath(str(ROOT_DIR)))
+
+    abs_norm = os.path.abspath(abs_path)
+    for base in allowed_bases:
+        try:
+            if os.path.commonpath([abs_norm, base]) == base:
+                return True
+        except ValueError:
+            continue
+    return False
+
+
+@app.route('/api/performance-test/report/<token>/', defaults={'filename': ''}, methods=['GET'])
+@app.route('/api/performance-test/report/<token>/<path:filename>', methods=['GET'])
+@login_required()
+def serve_performance_report_file(token, filename):
+    """
+    Serve HTML reports and their associated CSS, JS, fonts, images, and JSON data
+    under a path-based directory URL so relative links resolve naturally.
+    """
+    import mimetypes
+    from flask import Response
+    try:
+        base_dir = _decode_report_token(token)
+    except Exception:
+        return "Invalid report token", 400
+
+    base_dir = os.path.abspath(base_dir)
+    if not _is_allowed_report_path(base_dir):
+        return "Report not found or access denied", 404
+
+    if not filename or filename.strip() == '':
+        filename = 'index.html'
+
+    target_file = os.path.abspath(os.path.join(base_dir, filename))
+
+    # Path traversal check: target_file must be within base_dir or base_dir's parent
+    # (in case base_dir is html/ and relative paths refer to the run folder)
+    run_dir = base_dir
+    if os.path.basename(base_dir).lower() == 'html':
+        run_dir = os.path.dirname(base_dir)
+
+    try:
+        if os.path.commonpath([target_file, run_dir]) != run_dir:
+            return "Access denied", 403
+    except ValueError:
+        return "Access denied", 403
+
+    if not _is_allowed_report_path(target_file):
+        return "Access denied", 403
+
+    if not os.path.exists(target_file):
+        # If default was 'index.html' but does not exist, search for any HTML file in base_dir
+        if filename == 'index.html' and os.path.isdir(base_dir):
+            for f in os.listdir(base_dir):
+                if f.lower().endswith('.html'):
+                    target_file = os.path.join(base_dir, f)
+                    break
+        if not os.path.exists(target_file):
+            return "Report file not found", 404
+
+    if os.path.isdir(target_file):
+        index_in_dir = os.path.join(target_file, 'index.html')
+        if os.path.isfile(index_in_dir):
+            target_file = index_in_dir
+        else:
+            return "Report not found", 404
+
+    ext = os.path.splitext(target_file)[1].lower()
+    if ext in ('.html', '.htm'):
+        try:
+            with open(target_file, 'r', encoding='utf-8', errors='ignore') as f:
+                content = f.read()
+            return Response(_inject_report_cursor_affordances(content), mimetype='text/html; charset=utf-8')
+        except Exception as e:
+            return f"Error reading report: {e}", 500
+
+    mime_type, _ = mimetypes.guess_type(target_file)
+    if ext == '.js':
+        mime_type = 'text/javascript'
+    elif ext == '.css':
+        mime_type = 'text/css'
+    elif ext == '.json':
+        mime_type = 'application/json'
+    elif ext == '.woff2':
+        mime_type = 'font/woff2'
+    elif ext == '.woff':
+        mime_type = 'font/woff'
+
+    return send_file(target_file, mimetype=mime_type)
+
+
 @app.route('/api/script-runner/report', methods=['GET'])
 @login_required()
 def serve_report():
@@ -4391,40 +4529,8 @@ def serve_report():
     if not file_path:
         return "Path parameter is required", 400
         
-    # Resolve absolute path for safety check
     abs_path = os.path.abspath(file_path)
-    
-    # ── Path Traversal Security Verification ──
-    # Ensure the path is located within registered projects, temp directory, or the app workspace
-    allowed_bases = []
-    
-    projects = fetch_data("SELECT project_path FROM ProjectDetails")
-    for p in projects:
-        if p.get('project_path'):
-            allowed_bases.append(os.path.abspath(p['project_path']))
-
-    # Locust reports live under <performance project path>/<name>_perf/results/
-    perf_projects = fetch_data("SELECT project_path FROM PerformanceDetails")
-    for p in perf_projects:
-        if p.get('project_path'):
-            allowed_bases.append(os.path.abspath(p['project_path']))
-
-
-    import tempfile
-    allowed_bases.append(os.path.abspath(tempfile.gettempdir()))
-    allowed_bases.append(os.path.abspath(str(ROOT_DIR)))
-
-    is_allowed = False
-    for base in allowed_bases:
-        try:
-            if os.path.commonpath([abs_path, base]) == base:
-                is_allowed = True
-                break
-        except ValueError:
-            # Paths on different drives on Windows will raise ValueError
-            continue
-            
-    if not is_allowed or not os.path.exists(abs_path):
+    if not _is_allowed_report_path(abs_path) or not os.path.exists(abs_path):
         return "Report not found or access denied", 404
     
     import html
@@ -4450,7 +4556,9 @@ def serve_report():
             return Response(_render_dotnet_html_dashboard(content, abs_path), mimetype='text/html')
         if "window.CUCUMBER_MESSAGES" in content or "<title>Cucumber</title>" in content:
             return Response(_render_cucumber_html_light(content, abs_path), mimetype='text/html')
-        return Response(_inject_report_cursor_affordances(content), mimetype=mime_type or 'text/html')
+        # Redirect HTML reports to the path-based report viewer so all relative assets (CSS, JS, fonts) load cleanly!
+        token = _encode_report_token(os.path.dirname(abs_path))
+        return redirect(f"/api/performance-test/report/{token}/{quote(os.path.basename(abs_path))}")
 
     if extension == '.json' and os.path.basename(abs_path).lower() == 'behave_report.json':
         try:

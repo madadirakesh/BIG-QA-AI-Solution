@@ -653,7 +653,32 @@
         setGlobalActiveProject(globalSelect);
     }
 
-    async function loadPerformanceScripts() {
+    function addPerfReportBox(reportUrl) {
+        if (!reportUrl) return;
+        const log = document.getElementById('perfLog');
+        if (!log) return;
+        const card = document.createElement('div');
+        card.className = 'log-line log-report-card';
+        card.style.cssText = 'margin:12px 0;padding:12px 16px;background:rgba(34,197,94,0.12);border:1px solid rgba(34,197,94,0.45);border-radius:8px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;';
+        card.innerHTML = `
+            <div style="display:flex;align-items:center;gap:12px;">
+                <i class="fas fa-chart-pie" style="color:#22c55e;font-size:1.4rem;"></i>
+                <div>
+                    <strong style="color:#22c55e;font-size:0.95rem;display:block;">Latest HTML Performance Report Ready</strong>
+                    <div style="font-size:0.8rem;color:var(--text-secondary);margin-top:3px;word-break:break-all;">
+                        <a href="${perfEscape(reportUrl)}" target="_blank" rel="noopener" style="color:var(--text-secondary);text-decoration:underline;">${perfEscape(reportUrl)}</a>
+                    </div>
+                </div>
+            </div>
+            <a href="${perfEscape(reportUrl)}" target="_blank" rel="noopener" class="btn btn-primary" style="padding:8px 18px;font-size:0.9rem;text-decoration:none;display:inline-flex;align-items:center;gap:8px;font-weight:600;">
+                <i class="fas fa-arrow-up-right-from-square"></i> Open Report
+            </a>
+        `;
+        log.appendChild(card);
+        log.scrollTop = log.scrollHeight;
+    }
+
+    async function loadPerformanceScripts(completedScript) {
         const perfId = document.getElementById('perfProjectSelect').value;
         const empty = document.getElementById('perfScriptsEmpty');
         const wrapper = document.getElementById('perfScriptsTableWrapper');
@@ -718,7 +743,7 @@
             d.data.forEach((script, index) => {
                 const row = document.createElement('tr');
                 const lastRun = script.last_report_url
-                    ? `<a href="${perfEscape(script.last_report_url)}" target="_blank" rel="noopener">${perfEscape(script.last_run_at)}</a>`
+                    ? `<a href="${perfEscape(script.last_report_url)}" target="_blank" rel="noopener" title="Open latest HTML report"><i class="fas fa-file-lines" style="margin-right:6px;color:var(--accent-primary);"></i>${perfEscape(script.last_run_at)}</a>`
                     : '<span style="color:var(--text-secondary);">—</span>';
                 const dataAttrs = `data-script="${perfEscape(script.file_name)}" data-title="${perfEscape(script.title)}"`;
                 row.innerHTML = `
@@ -745,6 +770,16 @@
                 body.appendChild(row);
                 payloadSummaries[script.file_name] = script.payload || null;
             });
+
+            if (completedScript) {
+                const cleanName = completedScript.split(/[\\/]/).pop();
+                const matched = d.data.find(s => s.file_name === cleanName || s.relative_path === completedScript);
+                if (matched && matched.last_report_url) {
+                    const fullUrl = new URL(matched.last_report_url, window.location.origin).href;
+                    addPerfReportBox(fullUrl);
+                    renderPerfSummary(null, fullUrl);
+                }
+            }
         } catch (e) {
             showToast('Failed to load performance scripts.', 'error');
         }
@@ -2282,12 +2317,30 @@
             renderPerfSummary(data.summary, data.report_url);
             if (data.report_url) {
                 const absolute = new URL(data.report_url, window.location.origin).href;
-                addPerfLog(`[Report] ${absolute}`, 'log-success');
-                window.open(absolute, '_blank');
+                addPerfReportBox(absolute);
+
+                let popupBlocked = false;
+                try {
+                    const reportWin = window.open(absolute, '_blank');
+                    if (!reportWin || reportWin.closed || typeof reportWin.closed === 'undefined') {
+                        popupBlocked = true;
+                    } else {
+                        reportWin.focus();
+                    }
+                } catch (err) {
+                    popupBlocked = true;
+                }
+
+                if (popupBlocked) {
+                    addPerfLog('[Report] Automatic pop-up was blocked by browser. Click the "Open Report" button above.', 'log-warning');
+                    showToast('Execution completed! Click "Open Report" to view results.', 'info');
+                } else {
+                    showToast('Execution completed. Report opened in new tab.', 'success');
+                }
             } else {
                 addPerfLog('[Report] No HTML report was produced for this run.', 'log-system');
             }
-            loadPerformanceScripts();
+            loadPerformanceScripts(options.script);
         });
 
         perfEventSource.onerror = () => {
@@ -2299,8 +2352,15 @@
     }
 
     function renderPerfSummary(summary, reportUrl) {
-        if (!summary || !Object.keys(summary).length) return;
         const box = document.getElementById('perfSummary');
+        if (!box) return;
+        if (!summary || !Object.keys(summary).length) {
+            if (reportUrl) {
+                box.innerHTML = `<a class="perf-chip" href="${perfEscape(reportUrl)}" target="_blank" rel="noopener" style="font-weight:600;background:var(--accent-primary);color:#fff;"><i class="fas fa-file-lines"></i> Open report</a>`;
+                box.style.display = 'flex';
+            }
+            return;
+        }
         const chips = [
             ['Requests', summary.requests],
             ['Failures', summary.failures],
@@ -2312,7 +2372,7 @@
          .map(pair => `<span class="perf-chip">${pair[0]}: <strong>${perfEscape(pair[1])}</strong></span>`);
 
         if (reportUrl) {
-            chips.push(`<a class="perf-chip" href="${perfEscape(reportUrl)}" target="_blank" rel="noopener"><i class="fas fa-file-lines"></i> Open report</a>`);
+            chips.push(`<a class="perf-chip" href="${perfEscape(reportUrl)}" target="_blank" rel="noopener" style="font-weight:600;background:var(--accent-primary);color:#fff;"><i class="fas fa-file-lines"></i> Open report</a>`);
         }
         box.innerHTML = chips.join('');
         box.style.display = 'flex';

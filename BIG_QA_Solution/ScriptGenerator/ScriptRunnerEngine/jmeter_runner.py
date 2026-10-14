@@ -34,6 +34,7 @@ import os
 import re
 import shutil
 import subprocess
+import time
 from collections import Counter, defaultdict
 from datetime import datetime
 from pathlib import Path
@@ -42,6 +43,7 @@ from urllib.parse import urlsplit
 from ScriptRunnerEngine.performance_runner import (
     _runtime_env,
     _sse,
+    _latest_report,
     active_performance_processes,
     read_stats_history_rows,
     read_stats_rows,
@@ -521,8 +523,30 @@ def stream_jmeter_run(perf_dir, script_path, host, mode="check", users=None, spa
             yield _sse("log", {"msg": f"[Stats] The run statistics could not be saved: {error}"})
 
     summary = _read_summary(csv_prefix, stats_rows)
-    report = html_dir / "index.html"
-    report_path = str(report) if report.is_file() else ""
+
+    # Locate the generated HTML dashboard report in the current run folder or latest run folder
+    report_path = ""
+    for _ in range(8):
+        if (html_dir / "index.html").is_file():
+            report_path = str(html_dir / "index.html")
+            break
+        if (result_dir / "index.html").is_file():
+            report_path = str(result_dir / "index.html")
+            break
+        html_candidates = (list(html_dir.glob("*.html")) if html_dir.is_dir() else []) + list(result_dir.glob("*.html"))
+        if html_candidates:
+            report_path = str(max(html_candidates, key=lambda p: p.stat().st_mtime))
+            break
+        time.sleep(0.25)
+
+    if not report_path:
+        search_roots = [results_root or os.path.join(perf_dir, "Results"), os.path.join(perf_dir, "results")]
+        for rroot in search_roots:
+            if os.path.isdir(rroot):
+                latest = _latest_report(Path(rroot), stem)
+                if latest:
+                    report_path = latest
+                    break
     if not stats:
         yield _sse("log", {"msg": "[JMeter] The plan produced no samples - check the log above and "
                                   f"{result_dir / 'jmeter.log'}."})
