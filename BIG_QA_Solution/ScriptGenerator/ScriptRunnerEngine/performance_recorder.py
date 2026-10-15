@@ -260,7 +260,139 @@ _OVERLAY_JS = r"""
     step = next;
     ui.$('panel').classList.toggle('naming', next === 'naming');
     ui.$('panel').classList.toggle('closing', next === 'closing');
+    if (ui.$('form')) { ui.$('form').style.display = next === 'naming' ? 'block' : 'none'; }
+    if (ui.$('discard')) { ui.$('discard').style.display = next === 'closing' ? 'block' : 'none'; }
+    const controls = ui.root.querySelector('.controls');
+    if (controls) { controls.style.display = next ? 'none' : 'flex'; }
+    const saveBtn = ui.$('save');
+    if (saveBtn) { saveBtn.style.display = next ? 'none' : 'block'; }
     ui.$('state').textContent = STEP_MESSAGE[next] || lastMessage;
+  };
+
+  const PANEL_CSS = `
+    * { box-sizing: border-box; }
+    :host {
+      all: initial;
+      position: fixed;
+      top: 16px;
+      right: 16px;
+      z-index: 2147483647;
+      display: block;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      line-height: normal;
+      direction: ltr;
+    }
+    .panel {
+      box-sizing: border-box;
+      width: 268px; border-radius: 12px; overflow: hidden;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      font-size: 12px;
+      line-height: normal;
+      text-align: left;
+      letter-spacing: normal;
+      background: #11162a; color: #e8ecf8;
+      border: 1px solid rgba(255,255,255,0.14);
+      box-shadow: 0 18px 44px rgba(0,0,0,0.45);
+    }
+    .head {
+      display: flex; align-items: center; gap: 8px; cursor: move;
+      padding: 10px 12px; background: rgba(255,255,255,0.06);
+      border-bottom: 1px solid rgba(255,255,255,0.1);
+      user-select: none;
+    }
+    .dot { width: 9px; height: 9px; border-radius: 50%; background: #64748b; flex: none; }
+    .dot.rec { background: #ef4444; animation: pulse 1.2s ease-in-out infinite; }
+    .dot.paused { background: #fbbf24; }
+    .dot.done { background: #22c55e; }
+    @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.25; } }
+    .title { font-size: 12px; font-weight: 700; letter-spacing: 0.3px; flex: 1; }
+    .close {
+      background: none; border: none; color: #94a3b8; cursor: pointer;
+      font-size: 17px; line-height: 1; padding: 0 2px;
+    }
+    .close:hover { color: #fff; }
+    .body { padding: 12px; }
+    .state { font-size: 12px; margin-bottom: 10px; color: #cbd5f5; min-height: 32px; }
+    .counts { display: flex; gap: 8px; margin-bottom: 10px; }
+    .count {
+      flex: 1; text-align: center; padding: 6px 4px; border-radius: 8px;
+      background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.08);
+    }
+    .count b { display: block; font-size: 15px; }
+    .count span { font-size: 10px; color: #94a3b8; text-transform: uppercase; }
+    .row { display: flex; gap: 8px; }
+    button.act {
+      flex: 1; padding: 8px 6px; border-radius: 8px; cursor: pointer;
+      font-size: 12px; font-weight: 600; border: 1px solid transparent;
+      background: rgba(255,255,255,0.08); color: #e8ecf8;
+      font-family: inherit;
+    }
+    button.act:hover:not(:disabled) { background: rgba(255,255,255,0.16); }
+    button.act:disabled { opacity: 0.4; cursor: not-allowed; }
+    button.start { background: #dc2626; }
+    button.save  { background: #2563eb; margin-top: 8px; width: 100%; }
+    button.go    { background: #2563eb; }
+    button.danger { background: #dc2626; }
+    /* Two steps replace the record controls in place: naming (Save & close)
+       and the discard confirmation (the × in the header). Only one of the
+       two classes is ever set. */
+    .form, .discard { display: none; }
+    /* Scoped to .controls, not .row: each step has a .row of its own
+       buttons, and a bare .row selector hides those too. */
+    .panel.naming .controls, .panel.naming button.save,
+    .panel.closing .controls, .panel.closing button.save { display: none; }
+    .panel.naming .form { display: block; }
+    .panel.closing .discard { display: block; }
+    .warn { font-size: 12px; color: #fca5a5; margin-bottom: 10px; line-height: 1.45; }
+    .lbl {
+      display: block; font-size: 10px; text-transform: uppercase;
+      letter-spacing: 0.4px; color: #94a3b8; margin-bottom: 4px;
+    }
+    .inp {
+      width: 100%; margin-bottom: 9px; padding: 7px 8px; font-size: 12px;
+      border-radius: 7px; background: rgba(255,255,255,0.06); color: #e8ecf8;
+      border: 1px solid rgba(255,255,255,0.16); font-family: inherit;
+    }
+    .inp:focus { outline: none; border-color: #2563eb; }
+    .inp.bad { border-color: #ef4444; }
+    .err { font-size: 11px; color: #fca5a5; margin-bottom: 8px; min-height: 14px; }
+  `;
+
+  const applyStyles = (shadowRoot) => {
+    // 1. Constructable Stylesheet: avoids CSP inline <style> parsing checks in Chromium
+    if (shadowRoot.adoptedStyleSheets && 'replaceSync' in CSSStyleSheet.prototype) {
+      try {
+        const sheet = new CSSStyleSheet();
+        sheet.replaceSync(PANEL_CSS);
+        shadowRoot.adoptedStyleSheets = [sheet];
+      } catch (err) { /* fallback below */ }
+    }
+    // 2. Inline <style> tag: adopt page nonce if present (e.g. Appian, Salesforce)
+    try {
+      const styleEl = document.createElement('style');
+      const nonceEl = document.querySelector('style[nonce], script[nonce], link[rel="stylesheet"][nonce], [nonce]');
+      const nonce = (nonceEl && (nonceEl.nonce || nonceEl.getAttribute('nonce'))) || '';
+      if (nonce) {
+        styleEl.setAttribute('nonce', nonce);
+        try { styleEl.nonce = nonce; } catch (e) {}
+      }
+      styleEl.textContent = PANEL_CSS;
+      shadowRoot.appendChild(styleEl);
+    } catch (err) { /* ignore if style tag is forbidden */ }
+  };
+
+  const setHtml = (element, htmlString) => {
+    if (window.trustedTypes && window.trustedTypes.createPolicy) {
+      try {
+        const policy = window.trustedTypes.defaultPolicy ||
+          (window.__bigqaPolicy = window.__bigqaPolicy || window.trustedTypes.createPolicy('bigqaRecorderPolicy', {
+            createHTML: (s) => s,
+          }));
+        element.innerHTML = policy.createHTML(htmlString);
+        return;
+      } catch (e) {}
+    }
+    element.innerHTML = htmlString;
   };
 
   const build = () => {
@@ -270,77 +402,8 @@ _OVERLAY_JS = r"""
     // A shadow root keeps the page's CSS out of the panel and the panel's CSS
     // out of the page - important when recording an app with aggressive resets.
     const root = host.attachShadow({ mode: 'open' });
-    root.innerHTML = `
-      <style>
-        * { box-sizing: border-box; }
-        .panel {
-          width: 268px; border-radius: 12px; overflow: hidden;
-          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-          background: #11162a; color: #e8ecf8;
-          border: 1px solid rgba(255,255,255,0.14);
-          box-shadow: 0 18px 44px rgba(0,0,0,0.45);
-        }
-        .head {
-          display: flex; align-items: center; gap: 8px; cursor: move;
-          padding: 10px 12px; background: rgba(255,255,255,0.06);
-          border-bottom: 1px solid rgba(255,255,255,0.1);
-        }
-        .dot { width: 9px; height: 9px; border-radius: 50%; background: #64748b; flex: none; }
-        .dot.rec { background: #ef4444; animation: pulse 1.2s ease-in-out infinite; }
-        .dot.paused { background: #fbbf24; }
-        .dot.done { background: #22c55e; }
-        @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.25; } }
-        .title { font-size: 12px; font-weight: 700; letter-spacing: 0.3px; flex: 1; }
-        .close {
-          background: none; border: none; color: #94a3b8; cursor: pointer;
-          font-size: 17px; line-height: 1; padding: 0 2px;
-        }
-        .close:hover { color: #fff; }
-        .body { padding: 12px; }
-        .state { font-size: 12px; margin-bottom: 10px; color: #cbd5f5; min-height: 32px; }
-        .counts { display: flex; gap: 8px; margin-bottom: 10px; }
-        .count {
-          flex: 1; text-align: center; padding: 6px 4px; border-radius: 8px;
-          background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.08);
-        }
-        .count b { display: block; font-size: 15px; }
-        .count span { font-size: 10px; color: #94a3b8; text-transform: uppercase; }
-        .row { display: flex; gap: 8px; }
-        button.act {
-          flex: 1; padding: 8px 6px; border-radius: 8px; cursor: pointer;
-          font-size: 12px; font-weight: 600; border: 1px solid transparent;
-          background: rgba(255,255,255,0.08); color: #e8ecf8;
-        }
-        button.act:hover:not(:disabled) { background: rgba(255,255,255,0.16); }
-        button.act:disabled { opacity: 0.4; cursor: not-allowed; }
-        button.start { background: #dc2626; }
-        button.save  { background: #2563eb; margin-top: 8px; width: 100%; }
-        button.go    { background: #2563eb; }
-        button.danger { background: #dc2626; }
-        /* Two steps replace the record controls in place: naming (Save & close)
-           and the discard confirmation (the × in the header). Only one of the
-           two classes is ever set. */
-        .form, .discard { display: none; }
-        /* Scoped to .controls, not .row: each step has a .row of its own
-           buttons, and a bare .row selector hides those too. */
-        .panel.naming .controls, .panel.naming button.save,
-        .panel.closing .controls, .panel.closing button.save { display: none; }
-        .panel.naming .form { display: block; }
-        .panel.closing .discard { display: block; }
-        .warn { font-size: 12px; color: #fca5a5; margin-bottom: 10px; line-height: 1.45; }
-        .lbl {
-          display: block; font-size: 10px; text-transform: uppercase;
-          letter-spacing: 0.4px; color: #94a3b8; margin-bottom: 4px;
-        }
-        .inp {
-          width: 100%; margin-bottom: 9px; padding: 7px 8px; font-size: 12px;
-          border-radius: 7px; background: rgba(255,255,255,0.06); color: #e8ecf8;
-          border: 1px solid rgba(255,255,255,0.16); font-family: inherit;
-        }
-        .inp:focus { outline: none; border-color: #2563eb; }
-        .inp.bad { border-color: #ef4444; }
-        .err { font-size: 11px; color: #fca5a5; margin-bottom: 8px; min-height: 14px; }
-      </style>
+    applyStyles(root);
+    setHtml(root, `
       <div class="panel" id="panel">
         <div class="head" part="head">
           <span class="dot" id="dot"></span>
@@ -358,7 +421,7 @@ _OVERLAY_JS = r"""
             <button class="act" id="stop" disabled>Stop</button>
           </div>
           <button class="act save" id="save">Save &amp; close</button>
-          <div class="form" id="form">
+          <div class="form" id="form" style="display: none;">
             <label class="lbl" for="tname">Test title</label>
             <input class="inp" id="tname" type="text" maxlength="120" autocomplete="off"
                    placeholder="Checkout journey">
@@ -371,7 +434,7 @@ _OVERLAY_JS = r"""
               <button class="act go" id="confirm">Save</button>
             </div>
           </div>
-          <div class="discard" id="discard">
+          <div class="discard" id="discard" style="display: none;">
             <div class="warn">
               Are you sure you want to close the recording? Everything recorded
               so far is discarded and no script is saved.
@@ -382,7 +445,7 @@ _OVERLAY_JS = r"""
             </div>
           </div>
         </div>
-      </div>`;
+      </div>`);
     (document.documentElement || document.body).appendChild(host);
 
     const $ = (id) => root.getElementById(id);
@@ -471,9 +534,11 @@ _OVERLAY_JS = r"""
     });
     window.addEventListener('mousemove', (event) => {
       if (!drag) { return; }
-      host.style.left = Math.max(0, event.clientX - drag.dx) + 'px';
-      host.style.top = Math.max(0, event.clientY - drag.dy) + 'px';
-      host.style.right = 'auto';
+      const left = Math.max(0, event.clientX - drag.dx) + 'px';
+      const top = Math.max(0, event.clientY - drag.dy) + 'px';
+      host.style.setProperty('left', left, 'important');
+      host.style.setProperty('top', top, 'important');
+      host.style.setProperty('right', 'auto', 'important');
     }, true);
     window.addEventListener('mouseup', () => { drag = null; }, true);
 
@@ -881,6 +946,12 @@ class RecordingSession:
 
         self._client = CDPClient(find_page_ws_url(address))
         self._client.send("Page.enable")
+        # Bypass CSP so applications with strict Content Security Policies
+        # (like Appian, Salesforce, etc.) do not block injected panel styles or bindings.
+        try:
+            self._client.send("Page.setBypassCSP", {"enabled": True})
+        except Exception:
+            pass
         self._client.send("Network.enable")
         self._client.send("Runtime.enable")
         self._client.send("Runtime.addBinding", {"name": BINDING_NAME})
