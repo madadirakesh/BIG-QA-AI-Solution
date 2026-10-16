@@ -4936,6 +4936,10 @@ def handle_prompt_function(filename, function_name):
         return jsonify({"status": "success", "message": "Prompt updated successfully"})
 
 def open_browser(port=5000):
+    # Skip browser launch in headless/Docker environments — there is no display.
+    if is_headless():
+        print(f"Headless mode: skipping browser open. Access the app at http://localhost:{port}/")
+        return
     webbrowser.open_new(f'http://127.0.0.1:{port}/')
 
 def find_free_port(preferred=5000):

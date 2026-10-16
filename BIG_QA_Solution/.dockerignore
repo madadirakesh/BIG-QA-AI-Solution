@@ -1,0 +1,72 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# .dockerignore — files excluded from the Docker build context
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Git
+.git
+.gitignore
+.gitattributes
+
+# Python artifacts
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Virtual environments
+.venv/
+venv/
+env/
+.env.bak
+
+# IDE and editor files
+.vscode/
+.idea/
+*.code-workspace
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+ScriptGenerator/backend.log
+ScriptGenerator/debug_poll.log
+ScriptGenerator/error.log
+ScriptGenerator/studio_error.log
+
+# Local database — mounted as a volume at runtime, never baked into the image
+ScriptGenerator/local_database.db
+
+# Node / npm (if any UI tooling exists)
+node_modules/
+npm-debug.log
+
+# Test artifacts and reports
+.pytest_cache/
+htmlcov/
+.coverage
+coverage.xml
+
+# Docker files themselves (avoid recursive include)
+Dockerfile
+docker-compose.yml
+.dockerignore
+
+# Documentation
+DOCKER.md
+*.md
+
+# Temporary / scratch
+tmp/
+temp/
+.tmp/
+*.tmp
+
+# Windows-specific
+desktop.ini
+$RECYCLE.BIN/

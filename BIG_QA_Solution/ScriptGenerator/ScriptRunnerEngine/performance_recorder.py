@@ -934,6 +934,24 @@ class RecordingSession:
         options.add_experimental_option("excludeSwitches", ["enable-automation"])
         options.add_experimental_option("useAutomationExtension", False)
 
+        # Inside a Docker container Chrome cannot use its normal sandbox and
+        # relies on the host's /dev/shm.  Apply the required flags automatically
+        # so the recorder works without any manual configuration by the user.
+        _in_docker = (
+            os.environ.get("DOCKER") == "true"
+            or os.environ.get("HEADLESS") == "true"
+            or os.environ.get("HEADLESS_CLOUD") == "true"
+            or os.environ.get("CHROME_NO_SANDBOX") == "true"
+            or os.path.exists("/.dockerenv")
+        )
+        if _in_docker:
+            options.add_argument("--no-sandbox")
+            options.add_argument("--disable-dev-shm-usage")
+            options.add_argument("--headless=new")
+            options.add_argument("--disable-gpu")
+            options.add_argument("--remote-debugging-port=9222")
+            options.add_argument("--window-size=1920,1080")
+
         self._driver = webdriver.Chrome(options=options)
 
         chrome_caps = (self._driver.capabilities.get("goog:chromeOptions") or {})

@@ -1,0 +1,86 @@
+version: "3.9"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# BIG QA AI Solution — Docker Compose
+#
+# Usage:
+#   1. Copy .env.example to ScriptGenerator/.env and fill in your API keys
+#   2. docker-compose up --build
+#   3. Open http://localhost:5000 — log in with admin@big.com / admin123
+#
+# Volumes explained:
+#   db_data      → persists the SQLite database (users, projects) across restarts
+#   workspace    → host folder where generated test projects are stored locally
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+  bigqa:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: bigqa-solution:latest
+    container_name: bigqa
+    restart: unless-stopped
+
+    # ── Ports ─────────────────────────────────────────────────────────── #
+    ports:
+      - "5000:5000"   # Flask web UI  → http://localhost:5000
+      - "8000:8000"   # FastAPI AI backend
+
+    # ── Environment ───────────────────────────────────────────────────── #
+    environment:
+      - DOCKER=true
+      - HEADLESS=true
+      - HEADLESS_CLOUD=true
+      - CHROME_NO_SANDBOX=true
+      - WORKSPACE_PATH=/workspace
+      - FLASK_ENV=production
+      # Timezone (change to match your location, e.g. Europe/London, Asia/Kolkata)
+      - APP_TIMEZONE=${APP_TIMEZONE:-America/New_York}
+
+    # ── Secrets / config (from host .env file) ────────────────────────── #
+    # The .env file is mounted read-only so the container can read API keys
+    # without baking secrets into the image.
+    env_file:
+      - ./ScriptGenerator/.env
+
+    # ── Volumes ───────────────────────────────────────────────────────── #
+    volumes:
+      # SQLite database — survives container restarts and re-builds
+      - db_data:/app/ScriptGenerator/local_database.db
+
+      # Generated test projects — stored on your local machine at ./workspace
+      # Open this folder in VS Code or any editor on your host as normal.
+      - ${WORKSPACE_PATH:-./workspace}:/workspace
+
+      # Chrome cache & WebDriverManager cache — avoids re-downloading ChromeDriver
+      - chrome_cache:/root/.cache/google-chrome
+      - wdm_cache:/root/.wdm
+
+    # ── Shared memory ────────────────────────────────────────────────── #
+    # Chrome requires enough /dev/shm; the default 64 MB causes crashes.
+    shm_size: "2gb"
+
+    # ── Security ─────────────────────────────────────────────────────── #
+    # Chrome inside Docker needs the no-sandbox flag, which is set via
+    # CHROME_NO_SANDBOX=true above. CAP_SYS_ADMIN is the alternative,
+    # but it is more permissive. Prefer the env flag approach.
+
+    # ── Health check ─────────────────────────────────────────────────── #
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  Named volumes
+# ─────────────────────────────────────────────────────────────────────────────
+volumes:
+  db_data:
+    driver: local
+  chrome_cache:
+    driver: local
+  wdm_cache:
+    driver: local
