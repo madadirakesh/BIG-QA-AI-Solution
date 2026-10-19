@@ -13,6 +13,12 @@
     <span class="current">Test Case Generator</span>
 </div>
 
+<div style="margin: 0 0 18px;">
+    <button type="button" class="btn btn-outline" onclick="openPoFilesModal()" style="border-color:var(--accent-primary);color:var(--accent-primary);">
+        <i class="fas fa-folder-plus"></i> Create Files from PO
+    </button>
+</div>
+
 {% set active_step = 1 %}
 {% include 'partials/pipeline_stepper.html' %}
 
@@ -63,6 +69,7 @@
                             <div class="jira-view-header">
                                 <span class="text-secondary small">Select a Jira Project:</span>
                             </div>
+                            <input type="search" class="form-control jira-item-search" placeholder="Search projects by name or key..." aria-label="Search Jira projects" oninput="filterJiraItems(this, 'jiraProjectList')">
                             <div id="jiraProjectList" class="jira-list">
                                 <div class="text-center py-3"><i class="fas fa-spinner fa-spin"></i> Loading projects...</div>
                             </div>
@@ -73,6 +80,7 @@
                                 <button type="button" class="btn btn-link btn-sm p-0 me-2 text-decoration-none" onclick="showJiraProjects()"><i class="fas fa-arrow-left"></i> Projects</button>
                                 <span id="selectedProjectName" class="badge bg-primary"></span>
                             </div>
+                            <input type="search" class="form-control jira-item-search" placeholder="Search epics by summary or key..." aria-label="Search Jira epics" oninput="filterJiraItems(this, 'jiraEpicList')">
                             <div id="jiraEpicList" class="jira-list">
                                 <div class="text-center py-3"><i class="fas fa-spinner fa-spin"></i> Loading epics...</div>
                             </div>
@@ -83,6 +91,7 @@
                                 <button type="button" class="btn btn-link btn-sm p-0 me-2 text-decoration-none" onclick="showJiraEpics()"><i class="fas fa-arrow-left"></i> Epics</button>
                                 <span id="selectedEpicKey" class="badge bg-purple"></span>
                             </div>
+                            <input type="search" class="form-control jira-item-search" placeholder="Search stories by summary or key..." aria-label="Search Jira stories" oninput="filterJiraItems(this, 'jiraStoryList')">
                             <div id="jiraStoryList" class="jira-list">
                                 <div class="text-center py-3"><i class="fas fa-spinner fa-spin"></i> Loading stories...</div>
                             </div>
@@ -354,6 +363,7 @@
     .jira-header-inline { margin-bottom: 18px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--glass-border); padding-bottom: 12px; }
     .jira-header-inline h4 { margin: 0; font-size: 1.05rem; display: flex; align-items: center; gap: 8px; color: var(--accent-primary); }
     .jira-view-header { display: flex; align-items: center; margin-bottom: 15px; min-height: 32px; }
+    .jira-item-search { margin: 0 0 12px; }
     .jira-list { display: flex; flex-direction: column; gap: 10px; max-height: 250px; overflow-y: auto; padding-right: 5px; }
     .jira-item { padding: 12px 15px; background: rgba(255,255,255,0.03); border: 1px solid var(--glass-border); border-radius: 8px; cursor: pointer; transition: var(--transition); display: flex; justify-content: space-between; align-items: center; }
     .jira-item:hover { background: rgba(255,255,255,0.08); border-color: var(--accent-primary); transform: translateX(3px); }
@@ -1208,6 +1218,26 @@
         return 'task';
     }
 
+    function filterJiraItems(searchInput, listId) {
+        const query = searchInput.value.trim().toLocaleLowerCase();
+        const list = document.getElementById(listId);
+        if (!list) return;
+        let visibleCount = 0;
+        list.querySelectorAll('.jira-item').forEach(item => {
+            const matches = !query || item.textContent.toLocaleLowerCase().includes(query);
+            item.style.display = matches ? '' : 'none';
+            if (matches) visibleCount++;
+        });
+        let empty = list.querySelector('.jira-search-empty');
+        if (!empty) {
+            empty = document.createElement('div');
+            empty.className = 'jira-search-empty text-center py-3 text-secondary';
+            empty.textContent = 'No matching items.';
+            list.appendChild(empty);
+        }
+        empty.style.display = query && visibleCount === 0 ? 'block' : 'none';
+    }
+
     function toggleJiraSection() {
         const section = document.getElementById('jiraInlineSection');
         const btn = document.getElementById('jiraConnectBtn');
@@ -1225,6 +1255,7 @@
         hideAllJiraViews();
         document.getElementById('jiraProjectsView').style.display = 'block';
         const listEl = document.getElementById('jiraProjectList');
+        document.querySelector('#jiraProjectsView .jira-item-search').value = '';
         listEl.innerHTML = '<div class="text-center py-3"><i class="fas fa-spinner fa-spin"></i> Loading projects...</div>';
 
         try {
@@ -1271,6 +1302,7 @@
         hideAllJiraViews();
         document.getElementById('jiraEpicsView').style.display = 'block';
         const listEl = document.getElementById('jiraEpicList');
+        document.querySelector('#jiraEpicsView .jira-item-search').value = '';
         listEl.innerHTML = '<div class="text-center py-3"><i class="fas fa-spinner fa-spin"></i> Loading epics...</div>';
 
         try {
@@ -1307,6 +1339,7 @@
         hideAllJiraViews();
         document.getElementById('jiraStoriesView').style.display = 'block';
         const listEl = document.getElementById('jiraStoryList');
+        document.querySelector('#jiraStoriesView .jira-item-search').value = '';
         listEl.innerHTML = '<div class="text-center py-3"><i class="fas fa-spinner fa-spin"></i> Loading stories...</div>';
 
         try {

@@ -1234,6 +1234,225 @@ def test_case_generator():
     projects = fetch_data("SELECT id, project_name, project_path FROM ProjectDetails ORDER BY project_name ASC")
     return render_template('test_case_generator.html', projects=projects)
 
+@app.route('/api/create-files-from-po', methods=['POST'])
+@login_required()
+def generate_files_from_page_object():
+    if session.get('user_role', '').lower() not in ['qa', 'admin']:
+        return jsonify({'status': 'error', 'message': 'Not authorized'}), 403
+    data = request.get_json(silent=True) or {}
+    language = str(data.get('language', '')).strip().lower()
+    page_object = str(data.get('page_object', '')).strip()
+    reference_files = data.get('reference_files', [])
+    if language not in ('typescript', 'python'):
+        return jsonify({'status': 'error', 'message': 'Choose Playwright TypeScript or Selenium Python.'}), 400
+    if not page_object:
+        return jsonify({'status': 'error', 'message': 'Paste a rough page object first.'}), 400
+    if len(page_object) > 100_000:
+        return jsonify({'status': 'error', 'message': 'The page object is too large (100,000 character limit).'}), 413
+    if not isinstance(reference_files, list) or len(reference_files) > 30:
+        return jsonify({'status': 'error', 'message': 'Select no more than 30 reference page objects.'}), 400
+    normalized_references = []
+    for reference in reference_files:
+        if not isinstance(reference, dict):
+            continue
+        filename = str(reference.get('filename', '')).strip()
+        content = str(reference.get('content', ''))
+        if not filename or not filename.lower().endswith(('.ts', '.py')) or len(content) > 100_000:
+            return jsonify({'status': 'error', 'message': f'Invalid reference page object: {filename or "(unnamed)"}'}), 400
+        normalized_references.append((filename, content))
+
+    ai_state = read_ai_config(os.path.join(BASE_DIR, '.env'))
+    if not ai_state['is_complete']:
+        return jsonify({'status': 'error', 'message': build_ai_configuration_message(ai_state['missing_fields']), 'action': 'configure_ai'}), 400
+    tool, language_name, framework = ('Playwright', 'TypeScript', 'Cucumber') if language == 'typescript' else ('Selenium', 'Python', 'Behave')
+    instructions = (
+        'Create a coherent, runnable BDD test flow from the supplied rough page object. Infer user-visible actions and assertions from its methods and locators. '
+        'Return exactly the complete feature file, a polished Page Object based on the supplied code, and step definitions that connect every feature step to that Page Object. '
+        'Do not invent URLs, selectors, or credentials. Preserve meaningful supplied locators and behavior. '
+        'Use project conventions: Playwright TypeScript with Cucumber for TypeScript, or Selenium Python with Behave for Python. '
+        'Use paths in the conventional project layout (TypeScript: test/features, test/pageObjects, test/stepDefinitions; Python: features, pages, features/steps). '
+        'Do not generate configuration, hooks, or unrelated files. '
+        'For every selected existing Page Object reference, include an explicit import in the newly generated Page Object file and reuse its classes or methods where relevant.'
+    )
+    support = f'Tool: {tool}\nLanguage: {language_name}\nFramework: {framework}\nFile Mode: New\n\nROUGH PAGE OBJECT TO REFINE:\n{page_object}'
+    if normalized_references:
+        support += '\n\nEXISTING PROJECT PAGE OBJECTS (REFERENCE FILES):\n' + '\n\n'.join(f'--- {name} ---\n{content}' for name, content in normalized_references)
+        support += '\nUse these files to match the project conventions and import/reuse applicable existing page objects or shared methods. Do not duplicate existing page-object behavior.'
+    try:
+        generator = UniversalScriptGenerator(get_effective_ai_provider(), tool, language_name, framework)
+        loop = asyncio.new_event_loop()
+        try:
+            asyncio.set_event_loop(loop)
+            files = loop.run_until_complete(generator.generate(instructions, support, page_object))
+        finally:
+            loop.close()
+            asyncio.set_event_loop(None)
+        if not isinstance(files, dict):
+            raise ValueError('The AI response did not contain a file map.')
+        if normalized_references:
+            _add_reference_page_object_imports(files, normalized_references, language)
+        expected_ext = '.ts' if language == 'typescript' else '.py'
+        filtered = []
+        for filename, content in files.items():
+            normalized = str(filename).replace('\\', '/').lower()
+            if not isinstance(content, str) or not content.strip() or normalized.endswith(('package.json', 'tsconfig.json', 'requirements.txt', 'hooks.ts', 'environment.py')):
+                continue
+            is_feature = normalized.endswith('.feature')
+            is_page = ('page' in normalized or 'pom' in normalized) and normalized.endswith(expected_ext)
+            is_step = ('step' in normalized or 'definition' in normalized) and normalized.endswith(expected_ext)
+            if is_feature or is_page or is_step:
+                filtered.append({'filename': str(filename), 'content': content})
+        if not any(f['filename'].lower().endswith('.feature') for f in filtered):
+            raise ValueError('The AI response did not include a feature file. Please try generating again.')
+        if not any(('page' in f['filename'].lower() or 'pom' in f['filename'].lower()) for f in filtered):
+            raise ValueError('The AI response did not include a Page Object file. Please try generating again.')
+        if not any(('step' in f['filename'].lower() or 'definition' in f['filename'].lower()) for f in filtered):
+            raise ValueError('The AI response did not include step definitions. Please try generating again.')
+        return jsonify({'status': 'success', 'files': filtered})
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': normalize_ai_error_message(e)['message']}), 500
+
+def _add_reference_page_object_imports(files, reference_files, language):
+    """Ensure generated page objects visibly import selected existing PO classes."""
+    extension = '.ts' if language == 'typescript' else '.py'
+    generated_pages = [
+        (name, content) for name, content in files.items()
+        if isinstance(name, str) and isinstance(content, str)
+        and name.replace('\\', '/').lower().endswith(extension)
+        and ('page' in name.lower() or 'pom' in name.lower())
+    ]
+    if not generated_pages:
+        return
+    for generated_name, content in generated_pages:
+        imports = []
+        for reference_name, reference_content in reference_files:
+            class_pattern = r'^\s*export\s+class\s+(\w+)' if language == 'typescript' else r'^\s*class\s+(\w+)'
+            classes = re.findall(class_pattern, reference_content, re.MULTILINE)
+            if not classes:
+                continue
+            source_path = reference_name.replace('\\', '/')
+            if language == 'typescript':
+                source_no_ext = re.sub(r'\.tsx?$', '', source_path, flags=re.IGNORECASE)
+                generated_dir = os.path.dirname(generated_name.replace('\\', '/')) or '.'
+                module_path = os.path.relpath(source_no_ext, generated_dir).replace('\\', '/')
+                if not module_path.startswith('.'):
+                    module_path = './' + module_path
+                imports.extend(f'import {{ {class_name} }} from "{module_path}";' for class_name in classes)
+            else:
+                module_path = re.sub(r'\.py$', '', source_path, flags=re.IGNORECASE).replace('/', '.')
+                imports.extend(f'from {module_path} import {class_name}' for class_name in classes)
+        if not imports:
+            continue
+        existing_imports = set(re.findall(r'^\s*(?:import\s+.*|from\s+\S+\s+import\s+.*)$', content, re.MULTILINE))
+        imports = [line for line in dict.fromkeys(imports) if line not in existing_imports]
+        if not imports:
+            continue
+        lines = content.splitlines()
+        import_indexes = [index for index, line in enumerate(lines) if re.match(r'^\s*(?:import\s+|from\s+\S+\s+import\s+)', line)]
+        if import_indexes:
+            insert_at = import_indexes[-1] + 1
+            lines[insert_at:insert_at] = imports
+            files[generated_name] = '\n'.join(lines) + ('\n' if content.endswith('\n') else '')
+        else:
+            files[generated_name] = '\n'.join(imports) + '\n\n' + content
+
+@app.route('/api/list-project-page-objects', methods=['POST'])
+@login_required()
+def list_project_page_objects():
+    if session.get('user_role', '').lower() not in ['qa', 'admin']:
+        return jsonify({'status': 'error', 'message': 'Not authorized'}), 403
+    data = request.get_json(silent=True) or {}
+    project_id = str(data.get('project_id', '')).strip()
+    if not project_id or project_id != str(session.get('active_project_id', '')).strip():
+        return jsonify({'status': 'error', 'message': 'Select the project as Active Project before loading files.'}), 400
+    project = fetch_data('SELECT project_path FROM ProjectDetails WHERE id = ?', (project_id,))
+    if not project or not project[0].get('project_path'):
+        return jsonify({'status': 'error', 'message': 'The active project does not have a valid project path.'}), 400
+    root = os.path.realpath(project[0]['project_path'])
+    folder = str(data.get('folder', '')).strip()
+    if not folder:
+        return jsonify({'status': 'error', 'message': 'Enter a page-object folder path.'}), 400
+    folder_path = os.path.realpath(folder if os.path.isabs(folder) else os.path.join(root, folder))
+    if os.path.commonpath([root, folder_path]) != root:
+        return jsonify({'status': 'error', 'message': 'Choose a folder inside the active project.'}), 400
+    if not os.path.isdir(folder_path):
+        return jsonify({'status': 'error', 'message': 'That project folder does not exist.'}), 400
+    allowed_ext = ('.py',) if os.path.basename(folder_path).lower() == 'pages' else ('.ts', '.py')
+    files = []
+    for current, dirs, names in os.walk(folder_path):
+        dirs[:] = [name for name in dirs if name not in ('.git', 'node_modules', '__pycache__', 'venv', '.venv')]
+        for name in names:
+            if not name.lower().endswith(allowed_ext):
+                continue
+            path = os.path.join(current, name)
+            try:
+                if os.path.getsize(path) > 100_000:
+                    continue
+                with open(path, 'r', encoding='utf-8', errors='replace') as source:
+                    content = source.read()
+                files.append({'filename': os.path.relpath(path, root).replace('\\', '/'), 'content': content})
+                if len(files) >= 30:
+                    break
+            except OSError:
+                continue
+        if len(files) >= 30:
+            break
+    return jsonify({'status': 'success', 'files': files})
+
+@app.route('/api/save-po-generated-files', methods=['POST'])
+@login_required()
+def save_po_generated_files():
+    if session.get('user_role', '').lower() not in ['qa', 'admin']:
+        return jsonify({'status': 'error', 'message': 'Not authorized'}), 403
+    data = request.get_json(silent=True) or {}
+    project_id = str(data.get('project_id', '')).strip()
+    active_project_id = str(session.get('active_project_id', '')).strip()
+    files = data.get('files')
+    if not project_id or project_id != active_project_id:
+        return jsonify({'status': 'error', 'message': 'Select the project as Active Project before saving.'}), 400
+    if not isinstance(files, list) or not files:
+        return jsonify({'status': 'error', 'message': 'No generated files were provided.'}), 400
+    project = fetch_data('SELECT project_path FROM ProjectDetails WHERE id = ?', (project_id,))
+    if not project or not project[0].get('project_path'):
+        return jsonify({'status': 'error', 'message': 'The active project does not have a valid project path.'}), 400
+    project_root = os.path.realpath(project[0]['project_path'])
+    if not os.path.isdir(project_root):
+        return jsonify({'status': 'error', 'message': 'The active project folder could not be found.'}), 400
+
+    saved = 0
+    backup_id = int(datetime.now().timestamp())
+    for item in files:
+        if not isinstance(item, dict):
+            continue
+        relative = str(item.get('filename', '')).replace('\\', '/').strip('/')
+        content = item.get('content')
+        parts = relative.split('/')
+        if (not relative or any(part in ('', '.', '..') for part in parts)
+                or os.path.isabs(relative) or not isinstance(content, str)
+                or len(content) > 500_000
+                or not relative.lower().endswith(('.feature', '.ts', '.py'))):
+            return jsonify({'status': 'error', 'message': f'Invalid generated file: {relative or "(unnamed)"}'}), 400
+        target = os.path.realpath(os.path.join(project_root, *parts))
+        if os.path.commonpath([project_root, target]) != project_root:
+            return jsonify({'status': 'error', 'message': 'Generated file path is outside the active project.'}), 400
+        os.makedirs(os.path.dirname(target), exist_ok=True)
+        if os.path.isfile(target):
+            with open(target, 'rb') as existing:
+                old_content = existing.read()
+            insert_data(
+                'INSERT INTO Backupfiles (Project_ID, FileName, FileContent, FilePath, BackupID, CreatedOn, Type) VALUES (?, ?, ?, ?, ?, ?, ?)',
+                (project_id, os.path.basename(target), old_content, target, backup_id, datetime.now(), 'Backup')
+            )
+        else:
+            insert_data(
+                'INSERT INTO Backupfiles (Project_ID, FileName, FileContent, FilePath, BackupID, CreatedOn, Type) VALUES (?, ?, ?, ?, ?, ?, ?)',
+                (project_id, os.path.basename(target), b'', target, backup_id, datetime.now(), 'New')
+            )
+        with open(target, 'w', encoding='utf-8') as output:
+            output.write(content)
+        saved += 1
+    return jsonify({'status': 'success', 'saved_count': saved, 'project_path': project_root, 'backup_id': backup_id})
+
 @app.route('/api/project-inputs/<int:project_id>', methods=['GET'])
 @login_required()
 def get_project_inputs(project_id):

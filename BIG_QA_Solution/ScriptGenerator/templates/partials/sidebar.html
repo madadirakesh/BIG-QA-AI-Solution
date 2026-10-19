@@ -65,6 +65,181 @@
     </div>
 </aside>
 
+<div id="createPoFilesModal" class="confirm-backdrop" role="dialog" aria-modal="true" aria-labelledby="createPoFilesTitle">
+    <div class="confirm-dialog create-po-dialog">
+        <div class="create-po-header">
+            <div><h3 id="createPoFilesTitle"><i class="fas fa-folder-plus"></i> Create Files from PO</h3><p>Paste a rough page object to generate a feature, refined page object, and step definitions.</p></div>
+            <button type="button" class="create-po-close" onclick="closePoFilesModal()" aria-label="Close">&times;</button>
+        </div>
+        <div class="form-group">
+            <label>Page Object Language</label>
+            <div class="create-po-radios">
+                <label><input type="radio" name="roughPoLanguage" value="typescript" checked> Playwright TypeScript</label>
+                <label><input type="radio" name="roughPoLanguage" value="python"> Selenium Python</label>
+            </div>
+        </div>
+        <div class="create-po-project-path"><label><input id="importExistingPageObjects" type="checkbox" onchange="togglePoImport()"> Import existing Page Objects</label> &nbsp; <strong>Active project save location:</strong> <span id="createPoProjectPath">Select an Active Project in the header</span></div>
+        <div id="poImportSection" class="create-po-import-section" hidden>
+            <label for="poImportFolder">Page Object folder (project relative)</label>
+            <div class="create-po-folder-row"><input id="poImportFolder" class="form-control" type="text" placeholder="test/pageObjects"><button type="button" class="btn btn-outline" onclick="loadExistingPageObjects()"><i class="fas fa-folder-open"></i> Load files</button></div>
+            <small id="poImportFolderHint">Defaults to <code>test/pageObjects</code>. Change the folder if your project uses another location.</small>
+            <div id="poImportFiles" class="create-po-import-files"></div>
+        </div>
+        <div class="form-group">
+            <label for="roughPoInput">Rough Page Object</label>
+            <textarea id="roughPoInput" class="form-control create-po-textarea" rows="12" placeholder="Paste your rough page object code here..."></textarea>
+        </div>
+        <div class="create-po-actions">
+            <span id="createPoStatus" role="status"></span>
+            <button type="button" class="btn btn-primary" id="createPoGenerate" onclick="generatePoFiles()"><i class="fas fa-wand-magic-sparkles"></i> Generate Files</button>
+        </div>
+        <section id="createPoResults" class="create-po-results" hidden>
+            <div class="create-po-save-all"><strong>Generated files</strong><button type="button" class="btn btn-outline" onclick="saveAllPoFiles()"><i class="fas fa-save"></i> Save all to active project</button></div>
+            <div id="createPoFileList"></div>
+        </section>
+    </div>
+</div>
+<style>
+    .create-po-dialog { width:min(900px, calc(100vw - 32px)); max-width:900px; max-height:90vh; overflow:auto; text-align:left; }
+    .create-po-header,.create-po-save-all { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; }
+    .create-po-header { border-bottom:1px solid var(--glass-border); padding-bottom:14px; margin-bottom:18px; }
+    .create-po-header h3 { margin:0 0 6px; font-size:1.2rem; }
+    .create-po-header h3 i { color:var(--accent-primary); margin-right:8px; }
+    .create-po-header p { color:var(--text-secondary); margin:0; font-size:.9rem; }
+    .create-po-close { border:0; background:none; color:var(--text-secondary); font-size:1.6rem; cursor:pointer; }
+    .create-po-radios { display:flex; flex-wrap:wrap; gap:20px; }
+    .create-po-radios label { cursor:pointer; }
+    .create-po-textarea { min-height:220px; resize:vertical; font-family:Consolas,monospace; font-size:.88rem; line-height:1.5; }
+    .create-po-actions,.create-po-save-all { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+    #createPoStatus { color:var(--text-secondary); font-size:.88rem; }
+    .create-po-results { margin-top:20px; padding-top:16px; border-top:1px solid var(--glass-border); }
+    .create-po-project-path { color:var(--text-secondary); font-size:.8rem; margin:10px 0 14px; overflow-wrap:anywhere; }
+    .create-po-import-toggle { margin:12px 0 6px; }
+    .create-po-import-section { margin:8px 0 14px; padding:12px; border:1px solid var(--glass-border); border-radius:8px; }
+    .create-po-folder-row { display:flex; gap:8px; align-items:center; }
+    .create-po-folder-row input { margin:0; }
+    .create-po-import-section small { display:block; color:var(--text-secondary); margin-top:6px; }
+    .create-po-import-files { display:flex; flex-direction:column; gap:5px; margin-top:10px; max-height:180px; overflow:auto; }
+    .create-po-import-files label { display:flex; align-items:flex-start; gap:8px; overflow-wrap:anywhere; cursor:pointer; }
+    .create-po-file { display:grid; grid-template-columns:minmax(170px, 1fr) auto; align-items:start; gap:10px; padding:12px 0; border-bottom:1px solid var(--glass-border); }
+    .create-po-file-name { margin:0; font-family:Consolas,monospace; font-size:.82rem; }
+    .create-po-file textarea { grid-column:1 / -1; min-height:320px; height:320px; resize:vertical; font-family:Consolas,monospace; font-size:.82rem; line-height:1.5; white-space:pre; overflow:auto; }
+    .create-po-file-actions { display:flex; gap:8px; }
+    @media(max-width:620px) { .create-po-file { grid-template-columns:1fr; } .create-po-file textarea { grid-column:1; } .create-po-actions,.create-po-save-all { align-items:stretch; flex-direction:column; } }
+</style>
+<script>
+    let generatedPoFiles = [];
+    let importedPoFiles = [];
+    function updatePoProjectPath() {
+        const selector = document.getElementById('globalActiveProject');
+        const option = selector && selector.selectedOptions[0];
+        const path = option && selector.value ? option.getAttribute('data-path') : '';
+        const output = document.getElementById('createPoProjectPath');
+        if (output) output.textContent = path || 'Select an Active Project in the header';
+        const folder = document.getElementById('poImportFolder');
+        if (folder && !folder.dataset.userEdited) folder.value = path ? (document.querySelector('input[name="roughPoLanguage"]:checked')?.value === 'python' ? 'pages' : 'test/pageObjects') : '';
+    }
+    function openPoFilesModal() { updatePoProjectPath(); document.getElementById('createPoFilesModal').classList.add('active'); document.getElementById('roughPoInput').focus(); }
+    function closePoFilesModal() { document.getElementById('createPoFilesModal').classList.remove('active'); }
+    function togglePoImport() {
+        const enabled = document.getElementById('importExistingPageObjects').checked;
+        document.getElementById('poImportSection').hidden = !enabled;
+        if (enabled) loadExistingPageObjects();
+    }
+    async function loadExistingPageObjects() {
+        const projectSelector = document.getElementById('globalActiveProject'); const projectId = projectSelector && projectSelector.value;
+        const folder = document.getElementById('poImportFolder').value.trim(); const list = document.getElementById('poImportFiles');
+        if (!projectId || !folder) { list.textContent = 'Select an Active Project and enter its page-object folder.'; return; }
+        list.textContent = 'Loading page object files…';
+        try {
+            const response = await fetch('/api/list-project-page-objects', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({project_id:projectId, folder})});
+            const data = await response.json(); if (!response.ok || data.status !== 'success') throw new Error(data.message || 'Could not load page objects.');
+            importedPoFiles = data.files || []; list.replaceChildren();
+            if (!importedPoFiles.length) { list.textContent = 'No supported page-object files found in this folder.'; return; }
+            importedPoFiles.forEach((file, index) => {
+                const label = document.createElement('label'); const checkbox = document.createElement('input'); checkbox.type = 'checkbox'; checkbox.checked = true; checkbox.dataset.index = index;
+                const text = document.createElement('span'); text.textContent = `${file.filename} (${file.content.length.toLocaleString()} characters)`;
+                label.append(checkbox, text); list.appendChild(label);
+            });
+        } catch (error) { list.textContent = error.message || 'Could not load page objects.'; }
+    }
+    function poFileName(file) { return (file.filename || 'generated.txt').replace(/\\/g, '/').split('/').pop(); }
+    function downloadPoFile(file) {
+        const url = URL.createObjectURL(new Blob([file.content], {type:'text/plain;charset=utf-8'}));
+        const a = document.createElement('a'); a.href = url; a.download = poFileName(file); a.click(); URL.revokeObjectURL(url);
+    }
+    async function generatePoFiles() {
+        const content = document.getElementById('roughPoInput').value.trim();
+        const status = document.getElementById('createPoStatus'); const button = document.getElementById('createPoGenerate');
+        if (!content) { status.textContent = 'Paste a rough page object first.'; return; }
+        button.disabled = true; status.textContent = 'Generating files…';
+        try {
+            const language = document.querySelector('input[name="roughPoLanguage"]:checked').value;
+            const checkedIndexes = Array.from(document.querySelectorAll('#poImportFiles input[type="checkbox"]:checked')).map(input => Number(input.dataset.index));
+            const reference_files = document.getElementById('importExistingPageObjects').checked ? checkedIndexes.map(index => importedPoFiles[index]).filter(Boolean) : [];
+            const response = await fetch('/api/create-files-from-po', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({language, page_object:content, reference_files})});
+            const data = await response.json();
+            if (!response.ok || data.status !== 'success') throw new Error(data.message || 'Generation failed.');
+            generatedPoFiles = data.files || [];
+            if (!generatedPoFiles.length) throw new Error('The AI did not return any files. Please try again.');
+            renderPoFiles(); status.textContent = `${generatedPoFiles.length} files generated.`;
+        } catch (error) { status.textContent = error.message || 'Could not generate files.'; }
+        finally { button.disabled = false; }
+    }
+    function renderPoFiles() {
+        const results = document.getElementById('createPoResults'); const list = document.getElementById('createPoFileList');
+        list.replaceChildren();
+        generatedPoFiles.forEach((file, index) => {
+            const row = document.createElement('div'); row.className = 'create-po-file';
+            const name = document.createElement('input'); name.className = 'form-control create-po-file-name'; name.type = 'text'; name.value = file.filename; name.setAttribute('aria-label', `Generated file name ${index + 1}`);
+            name.addEventListener('input', () => generatedPoFiles[index].filename = name.value.trim());
+            const preview = document.createElement('textarea'); preview.className = 'form-control'; preview.rows = 20; preview.value = file.content; preview.setAttribute('aria-label', `Edit ${file.filename}`);
+            preview.addEventListener('input', () => generatedPoFiles[index].content = preview.value);
+            const actions = document.createElement('div'); actions.className = 'create-po-file-actions';
+            const save = document.createElement('button'); save.className = 'btn btn-outline'; save.type = 'button'; save.innerHTML = '<i class="fas fa-save"></i> Save to project'; save.addEventListener('click', () => savePoFilesToActiveProject([generatedPoFiles[index]]));
+            const download = document.createElement('button'); download.className = 'btn btn-outline'; download.type = 'button'; download.innerHTML = '<i class="fas fa-download"></i>'; download.title = 'Download this file'; download.addEventListener('click', () => downloadPoFile(generatedPoFiles[index]));
+            actions.append(save, download); row.append(name, actions, preview); list.appendChild(row);
+        });
+        results.hidden = false;
+    }
+    async function saveAllPoFiles() {
+        if (!generatedPoFiles.length) return;
+        await savePoFilesToActiveProject(generatedPoFiles);
+    }
+    async function savePoFilesToActiveProject(files) {
+        const projectSelector = document.getElementById('globalActiveProject');
+        const projectId = projectSelector && projectSelector.value;
+        if (!projectId) { document.getElementById('createPoStatus').textContent = 'Select an Active Project in the header before saving.'; return; }
+        try {
+            const response = await fetch('/api/save-po-generated-files', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({project_id:projectId, files})});
+            const data = await response.json();
+            if (!response.ok || data.status !== 'success') throw new Error(data.message || 'Could not save generated files.');
+            document.getElementById('createPoStatus').textContent = `Saved ${data.saved_count} file(s) to ${data.project_path}`;
+        } catch (error) { document.getElementById('createPoStatus').textContent = error.message || 'Could not save files.'; }
+    }
+    document.getElementById('createPoFilesModal').addEventListener('click', event => { if (event.target.id === 'createPoFilesModal') closePoFilesModal(); });
+    document.addEventListener('DOMContentLoaded', () => {
+        updatePoProjectPath();
+        const selector = document.getElementById('globalActiveProject');
+        if (selector) selector.addEventListener('change', updatePoProjectPath);
+        const folder = document.getElementById('poImportFolder');
+        if (folder) {
+            folder.addEventListener('input', () => folder.dataset.userEdited = 'true');
+            folder.addEventListener('change', () => { if (document.getElementById('importExistingPageObjects').checked) loadExistingPageObjects(); });
+        }
+        document.querySelectorAll('input[name="roughPoLanguage"]').forEach(radio => radio.addEventListener('change', () => {
+            const path = document.getElementById('createPoProjectPath').textContent;
+            const folderInput = document.getElementById('poImportFolder');
+            if (folderInput && path !== 'Select an Active Project in the header') {
+                folderInput.dataset.userEdited = '';
+                folderInput.value = radio.value === 'python' ? 'pages' : 'test/pageObjects';
+                document.getElementById('poImportFolderHint').innerHTML = radio.value === 'python' ? 'Defaults to <code>pages</code>. Change the folder if your project uses another location.' : 'Defaults to <code>test/pageObjects</code>. Change the folder if your project uses another location.';
+                if (document.getElementById('importExistingPageObjects').checked) loadExistingPageObjects();
+            }
+        }));
+    });
+</script>
+
 <!-- Configure AI Modal -->
 <div id="configureAIModal" class="confirm-backdrop" style="align-items:center;justify-content:center;">
     <div class="confirm-dialog" style="max-width:500px;">

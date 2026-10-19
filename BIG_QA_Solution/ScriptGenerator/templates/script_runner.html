@@ -259,7 +259,10 @@
 
         <div id="seqConfig" style="display: none;">
             <div class="form-group mt-3">
-                <label>Sequential Commands (One per line)</label>
+                <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:8px;">
+                    <label style="margin:0;">Sequential Commands (One per line)</label>
+                    <button type="button" id="loadCodegenBtn" class="btn btn-outline" style="display:none;white-space:nowrap;" onclick="loadProjectCodegenCommand()"></button>
+                </div>
                 <textarea id="seqCommands" class="form-control"
                     style="height: 120px; font-family: 'Courier New'; font-size: 0.9rem;"
                     placeholder="npm npx cucumber-js -- --tags '@smoke'&#10;npm run report"></textarea>
@@ -881,6 +884,34 @@
         return (opt && opt.getAttribute('data-project-name')) ? opt.getAttribute('data-project-name').trim() : '';
     }
 
+    function updateCodegenButton(opt) {
+        const button = document.getElementById('loadCodegenBtn');
+        if (!button) return;
+        const tool = (opt && opt.getAttribute('data-tool') || '').toLowerCase();
+        if (tool.includes('playwright')) {
+            button.style.display = 'inline-flex';
+            button.innerHTML = '<i class="fas fa-terminal"></i> Load Codegen';
+            button.dataset.command = 'npx playwright codegen';
+        } else if (tool.includes('selenium')) {
+            button.style.display = 'inline-flex';
+            button.innerHTML = '<i class="fas fa-terminal"></i> Load SeleniumBase Recorder';
+            button.dataset.command = 'sbase recorder';
+            button.title = 'Opens the SeleniumBase Recorder desktop app.';
+        } else {
+            button.style.display = 'none';
+            button.dataset.command = '';
+        }
+    }
+
+    function loadProjectCodegenCommand() {
+        const button = document.getElementById('loadCodegenBtn');
+        const input = document.getElementById('seqCommands');
+        if (!button || !input || !button.dataset.command) return;
+        input.value = '';
+        input.value = button.dataset.command;
+        input.focus();
+    }
+
     function syncRunnerSelectionToGlobalActiveProject() {
         const runnerProjectId = getSelectedProjectId();
         const globalSelect = document.getElementById('globalActiveProject');
@@ -932,6 +963,7 @@
         const modeDiv = document.getElementById('modeSelection');
 
         if (sel.value) {
+            updateCodegenButton(opt);
             syncRunnerSelectionToGlobalActiveProject();
             modeDiv.style.display = 'flex';
             if (document.getElementById('executionAction')) document.getElementById('executionAction').style.display = 'block';
@@ -949,6 +981,7 @@
                 setMode('seq');
             }
         } else {
+            updateCodegenButton(null);
             modeDiv.style.display = 'none';
             if (document.getElementById('seqConfig')) document.getElementById('seqConfig').style.display = 'none';
             if (document.getElementById('gitConfig')) document.getElementById('gitConfig').style.display = 'none';
