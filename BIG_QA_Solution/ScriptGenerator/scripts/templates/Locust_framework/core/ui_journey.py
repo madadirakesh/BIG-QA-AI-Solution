@@ -39,7 +39,7 @@ from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import Select, WebDriverWait
 
-LOADER_VERSION = 1
+LOADER_VERSION = 2
 REQUEST_TYPE = "UI"
 WAIT_SECONDS = float(os.getenv("PERF_UI_WAIT_SECONDS", "15"))
 SCREENSHOT_DIR = Path(__file__).resolve().parent.parent / "results" / "screenshots"
@@ -81,11 +81,15 @@ class UiSession:
     """The actions a recorded journey replays, each waiting for its element."""
 
     def __init__(self, environment=None, base_url="", driver=None, name="journey"):
+        if isinstance(environment, str) and not base_url:
+            base_url = environment
+            environment = None
         self.environment = environment
         self.base_url = (base_url or os.getenv("PERF_BASE_URL", "")).rstrip("/")
         self.name = name
         self.timings = []
         self._driver = driver
+        self._step_depth = 0
 
     @property
     def driver(self):
@@ -119,7 +123,15 @@ class UiSession:
                 error = AssertionError(
                     "Response time %.0f ms exceeded the %.0f ms threshold" % (elapsed_ms, limit))
         events = getattr(self.environment, "events", None)
-        if events is not None:
+        if events is None and hasattr(self.environment, "request"):
+            events = self.environment
+        if events is None:
+            try:
+                from locust import events as locust_events
+                events = locust_events
+            except Exception:
+                events = None
+        if events is not None and hasattr(events, "request"):
             events.request.fire(request_type=REQUEST_TYPE, name=label, response_time=elapsed_ms,
                                 response_length=0, exception=error, context={}, url=label)
         return error
@@ -133,6 +145,7 @@ class UiSession:
             driver.switch_to.default_content()
         except Exception:
             pass
+        self._step_depth += 1
         started = time.perf_counter()
         try:
             yield
@@ -144,6 +157,8 @@ class UiSession:
             _abort_iteration(error)
         else:
             self._report(label, started, None)
+        finally:
+            self._step_depth = max(0, self._step_depth - 1)
 
     # ── actions ─────────────────────────────────────────────────────────
 
@@ -153,14 +168,25 @@ class UiSession:
         return urljoin(self.base_url + "/", target.lstrip("/")) if self.base_url else target
 
     def open(self, target):
-        self.driver.get(self.url(target))
+        if self._step_depth == 0:
+            with self.step(f"Open {target}"):
+                self.driver.get(self.url(target))
+        else:
+            self.driver.get(self.url(target))
 
     def wait_for_url(self, fragment):
         """Wait for a navigation an earlier action triggered. Soft: redirects may land elsewhere."""
-        try:
-            WebDriverWait(self.driver, WAIT_SECONDS).until(lambda d: fragment in d.current_url)
-        except TimeoutException:
-            pass
+        def _wait():
+            try:
+                WebDriverWait(self.driver, WAIT_SECONDS).until(lambda d: fragment in d.current_url)
+            except TimeoutException:
+                pass
+
+        if self._step_depth == 0:
+            with self.step(f"Wait for URL containing '{fragment}'"):
+                _wait()
+        else:
+            _wait()
 
     def find(self, by, value, condition=EC.visibility_of_element_located):
         """Wait for the element in the page or any of its iframes."""
@@ -198,26 +224,57 @@ class UiSession:
             self.driver.execute_script("arguments[0].click();", element)
 
     def click(self, by, value):
-        self._click(self.find(by, value, EC.element_to_be_clickable))
+        if self._step_depth == 0:
+            with self.step(f"Click ({by}={value})"):
+                self._click(self.find(by, value, EC.element_to_be_clickable))
+        else:
+            self._click(self.find(by, value, EC.element_to_be_clickable))
 
     def set_checked(self, by, value, checked):
-        element = self.find(by, value, EC.presence_of_element_located)
-        if element.is_selected() != bool(checked):
-            self._click(element)
+        state_str = "checked" if checked else "unchecked"
+        if self._step_depth == 0:
+            with self.step(f"Set {state_str} ({by}={value})"):
+                element = self.find(by, value, EC.presence_of_element_located)
+                if element.is_selected() != bool(checked):
+                    self._click(element)
+        else:
+            element = self.find(by, value, EC.presence_of_element_located)
+            if element.is_selected() != bool(checked):
+                self._click(element)
 
     def type(self, by, value, text):
-        element = self.find(by, value)
-        element.clear()
-        element.send_keys("" if text is None else str(text))
+        is_secret = any(term in str(value).lower() for term in ("pass", "pwd", "secret", "token"))
+        val_repr = "'***'" if is_secret else (repr(text) if len(str(text)) <= 30 else repr(str(text)[:27] + "..."))
+        if self._step_depth == 0:
+            with self.step(f"Type {val_repr} into ({by}={value})"):
+                element = self.find(by, value)
+                element.clear()
+                element.send_keys("" if text is None else str(text))
+        else:
+            element = self.find(by, value)
+            element.clear()
+            element.send_keys("" if text is None else str(text))
 
     def select(self, by, value, option_text):
-        Select(self.find(by, value, EC.presence_of_element_located)).select_by_visible_text(str(option_text))
+        if self._step_depth == 0:
+            with self.step(f"Select '{option_text}' in ({by}={value})"):
+                Select(self.find(by, value, EC.presence_of_element_located)).select_by_visible_text(str(option_text))
+        else:
+            Select(self.find(by, value, EC.presence_of_element_located)).select_by_visible_text(str(option_text))
 
     def press_enter(self, by, value):
-        self.find(by, value).send_keys(Keys.ENTER)
+        if self._step_depth == 0:
+            with self.step(f"Press ENTER on ({by}={value})"):
+                self.find(by, value).send_keys(Keys.ENTER)
+        else:
+            self.find(by, value).send_keys(Keys.ENTER)
 
     def submit(self, by, value):
-        self.find(by, value, EC.presence_of_element_located).submit()
+        if self._step_depth == 0:
+            with self.step(f"Submit ({by}={value})"):
+                self.find(by, value, EC.presence_of_element_located).submit()
+        else:
+            self.find(by, value, EC.presence_of_element_located).submit()
 
     def _screenshot(self, label):
         try:

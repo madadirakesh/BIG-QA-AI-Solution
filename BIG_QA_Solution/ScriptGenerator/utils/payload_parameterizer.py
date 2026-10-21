@@ -391,8 +391,17 @@ def _is_ui_owner(node):
 
 def _is_ui_value_call(call):
     func = call.func
-    return (isinstance(func, ast.Attribute) and func.attr in UI_VALUE_METHODS
-            and _is_ui_owner(func.value) and len(call.args) > UI_VALUE_METHODS[func.attr])
+    if not (isinstance(func, ast.Attribute) and func.attr in UI_VALUE_METHODS
+            and _is_ui_owner(func.value)):
+        return False
+    # Accept both positional form  ui.type(by, locator, text)
+    # and keyword form             ui.type(by, locator, value=text)
+    min_args = UI_VALUE_METHODS[func.attr]
+    if len(call.args) > min_args:
+        return True
+    # Check for the value supplied as a keyword argument instead
+    value_kwarg_names = {"value", "text", "option"}
+    return any(kw.arg in value_kwarg_names for kw in call.keywords)
 
 
 def _ui_step_label(item):
@@ -567,13 +576,31 @@ def _collect_parameters(tree, source):
             occurrence["end"] = resolve(url_node.end_lineno, url_node.end_col_offset)
         parameter["occurrences"].append(occurrence)
 
+    # Named kwarg positions used by ui.type / ui.select when the value is a kwarg.
+    _UI_VALUE_KWARG_NAMES = {"value", "text", "option"}
+
     steps = _ui_step_index(tree)
     for node in ast.walk(tree):
         if isinstance(node, ast.Call) and _is_ui_value_call(node):
-            value_node = node.args[UI_VALUE_METHODS[node.func.attr]]
-            locator = node.args[1]
-            field = (locator.value if isinstance(locator, ast.Constant) and isinstance(locator.value, str)
-                     else _safe_unparse(locator) or "field")
+            min_args = UI_VALUE_METHODS[node.func.attr]
+            # Resolve the value node: positional if enough args exist, else keyword.
+            if len(node.args) > min_args:
+                value_node = node.args[min_args]
+            else:
+                value_node = next(
+                    (kw.value for kw in node.keywords if kw.arg in _UI_VALUE_KWARG_NAMES),
+                    None,
+                )
+            if value_node is None:
+                continue
+            # Resolve the locator (always the second positional arg).
+            locator = node.args[1] if len(node.args) > 1 else None
+            field = (
+                locator.value
+                if locator is not None and isinstance(locator, ast.Constant)
+                   and isinstance(locator.value, str)
+                else _safe_unparse(locator) or "field"
+            )
             sample = (value_node.value if isinstance(value_node, ast.Constant)
                       else _safe_unparse(value_node))
             record("input", UI_METHOD, steps.get(id(node)) or node.func.attr, field, value_node,
@@ -588,13 +615,23 @@ def _collect_parameters(tree, source):
 
         for keyword in node.keywords:
             source_kind = BODY_KEYWORDS.get(keyword.arg or "")
-            if not source_kind or not isinstance(keyword.value, (ast.Dict, ast.List, ast.Tuple)):
+            if not source_kind:
                 continue
-            leaves = []
-            _walk_literal(keyword.value, "", leaves)
-            for path, value_node in leaves:
-                record(source_kind, method, request, path, value_node, function,
-                       sample=_sample_text(_safe_unparse(value_node)))
+            kw_value = keyword.value
+            if isinstance(kw_value, (ast.Dict, ast.List, ast.Tuple)):
+                # Dict/list/tuple literal: walk every leaf so nested fields are
+                # each mapped individually, regardless of HTTP method.
+                leaves = []
+                _walk_literal(kw_value, "", leaves)
+                for path, value_node in leaves:
+                    record(source_kind, method, request, path, value_node, function,
+                           sample=_sample_text(_safe_unparse(value_node)))
+            else:
+                # Non-literal value (variable, call, f-string …): treat the whole
+                # expression as a single parameter named after the keyword itself.
+                # This covers GET params=dict_var, PUT/PATCH json=payload_var, etc.
+                record(source_kind, method, request, keyword.arg, kw_value, function,
+                       sample=_sample_text(_safe_unparse(kw_value)))
 
         # The query string of a literal URL is parameterisable too; an f-string
         # URL is skipped because its pieces are already computed at runtime.

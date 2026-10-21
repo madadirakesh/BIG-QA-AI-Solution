@@ -129,15 +129,32 @@ def declared_script_type(head):
     return _SCRIPT_TYPES.get(match.group(1).strip().lower(), "") if match else ""
 
 
+def is_ui_script(script_path):
+    """True for a Functional journey: a Locust Selenium script or a Selenium pytest."""
+    head = _read_head(script_path, limit=20_000)
+    return (
+        UI_SUPPORT_IMPORT in head
+        or "ui_journey" in head
+        or "UiSession" in head
+        or declared_script_type(head) == SCRIPT_TYPE_FUNCTIONAL
+        or layout.is_ui_journey_source(head)
+        or ("selenium" in head and ("def test_" in head or "class " in head))
+    )
+
+
 def locust_script_type(script_file):
     """
-    Type of a Locust script: its declared marker, else CLI for a browser
-    recording (its HTTP traffic replayed - the CLI choice in Create Test), else
-    API - the framework's own sample locustfiles are all protocol-level API tests.
+    Type of a Locust script: its declared marker, else Functional for a UI script,
+    else CLI for a browser recording (its HTTP traffic replayed - the CLI choice in Create Test),
+    else API - the framework's own sample locustfiles are all protocol-level API tests.
     """
     head = _read_head(script_file)
-    return declared_script_type(head) or (
-        SCRIPT_TYPE_CLI if _RECORDED_MARKER.search(head) else SCRIPT_TYPE_API)
+    declared = declared_script_type(head)
+    if declared:
+        return declared
+    if is_ui_script(script_file):
+        return SCRIPT_TYPE_FUNCTIONAL
+    return SCRIPT_TYPE_CLI if _RECORDED_MARKER.search(head) else SCRIPT_TYPE_API
 
 
 def extract_jmeter_script_host(script_path_or_content):
@@ -545,12 +562,6 @@ def _count_threshold_breaches(csv_prefix):
     return total
 
 
-def is_ui_script(script_path):
-    """True for a Functional journey: a Locust Selenium script or a Selenium pytest."""
-    head = _read_head(script_path, limit=20_000)
-    return UI_SUPPORT_IMPORT in head or layout.is_ui_journey_source(head)
-
-
 def ui_wrapper_source(target_name, levels):
     """A Locust script that runs the `test_*` functions of a Selenium pytest journey."""
     stem = Path(target_name).stem
@@ -560,6 +571,7 @@ def ui_wrapper_source(target_name, levels):
         "",
         "import importlib.util",
         "import sys",
+        "import time",
         "from pathlib import Path",
         "",
         "from locust import User, between, task",
@@ -587,7 +599,18 @@ def ui_wrapper_source(target_name, levels):
         "    @task",
         "    def journey(self):",
         "        for test in _TESTS:",
-        "            test(self.ui)",
+        "            test_name = getattr(test, '__name__', 'test').replace('_', ' ').strip()",
+        "            prior_count = len(getattr(self.ui, 'timings', []))",
+        "            started = time.perf_counter()",
+        "            try:",
+        "                test(self.ui)",
+        "                if len(getattr(self.ui, 'timings', [])) == prior_count:",
+        "                    self.ui._report(f'Test: {test_name}', started, None)",
+        "            except Exception as error:",
+        "                if not getattr(self.ui, '_step_depth', 0):",
+        "                    self.ui._report(f'Test: {test_name}', started, error)",
+        "                    self.ui._screenshot(test_name)",
+        "                raise",
         "",
     ])
 
@@ -597,13 +620,16 @@ def _locust_entry_point(perf_dir, script_path):
     The file to hand Locust. A Selenium pytest journey gets a generated Locust
     wrapper beside it; every other script runs as it is.
     """
-    if not layout.is_ui_journey_source(_read_head(script_path, limit=20_000)):
+    head = _read_head(script_path, limit=20_000)
+    if layout.is_locust_source(head):
         return script_path
-    folder = os.path.dirname(script_path)
-    wrapper = os.path.join(folder, f"{UI_WRAPPER_PREFIX}{Path(script_path).stem}.py")
-    with open(wrapper, "w", encoding="utf-8", newline="\n") as handle:
-        handle.write(ui_wrapper_source(os.path.basename(script_path), layout.depth_below_root(perf_dir, folder)))
-    return wrapper
+    if layout.is_ui_journey_source(head) or "def test_" in head:
+        folder = os.path.dirname(script_path)
+        wrapper = os.path.join(folder, f"{UI_WRAPPER_PREFIX}{Path(script_path).stem}.py")
+        with open(wrapper, "w", encoding="utf-8", newline="\n") as handle:
+            handle.write(ui_wrapper_source(os.path.basename(script_path), layout.depth_below_root(perf_dir, folder)))
+        return wrapper
+    return script_path
 
 
 def _module_available(python_exe, module, env):
