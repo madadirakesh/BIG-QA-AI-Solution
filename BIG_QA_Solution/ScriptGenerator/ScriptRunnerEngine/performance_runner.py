@@ -598,6 +598,7 @@ def ui_wrapper_source(target_name, levels):
         "",
         "    @task",
         "    def journey(self):",
+        "        self.ui.begin_pass()",
         "        for test in _TESTS:",
         "            test_name = getattr(test, '__name__', 'test').replace('_', ' ').strip()",
         "            prior_count = len(getattr(self.ui, 'timings', []))",
@@ -669,6 +670,33 @@ def _install_ui_requirements(perf_dir, python_exe, env):
                               f"{UI_REQUIREMENT}\" inside {perf_dir} and try again."))
 
 
+def _recorded_password_env(perf_dir, script_path, result_stem=None):
+    """
+    ({variable: password}, warning) for a run of a recorded script.
+
+    The passwords are looked up under the script the tester recorded
+    (`result_stem`), since a payload-driven run executes a generated copy. The
+    warning is '' unless the script types a password that is neither stored
+    nor set in this app's environment - a recording made before passwords were
+    kept, which would otherwise fail at its login with no hint why.
+    """
+    from utils import recorded_secrets
+    owner = result_stem or Path(script_path).stem
+    env = recorded_secrets.run_env(perf_dir, owner)
+    if env or recorded_secrets.has_secrets(perf_dir, owner) or os.environ.get(recorded_secrets.PASSWORD_ENV_VAR):
+        return env, ""
+    sources = [script_path]
+    if script_path.lower().endswith(".jmx"):
+        from utils.recorded_script_writers import companion_files
+        sources += companion_files(perf_dir, script_path)
+    if not any(recorded_secrets.PASSWORD_ENV_VAR in _read_head(path, limit=500_000) for path in sources):
+        return env, ""
+    return env, (f"[Setup] WARNING: this script types a recorded password, but none is stored for it "
+                 f"(it was recorded before passwords were kept). Re-record the script, or set "
+                 f"{recorded_secrets.PASSWORD_ENV_VAR} in the application's environment - otherwise "
+                 f"the password field is left empty.")
+
+
 def stream_run(perf_dir, script_file, host, mode="check", users=None, spawn_rate=None,
                run_duration=None, report_url_builder=None, result_stem=None, stats_sink=None,
                tool=""):
@@ -718,12 +746,19 @@ def stream_run(perf_dir, script_file, host, mode="check", users=None, spawn_rate
             yield _sse("result", {"status": "error", "message": "This performance project has no Application URL configured."})
         return
 
+    # A recording replays the passwords typed while it was made; the script
+    # itself only reads them from the environment.
+    password_env, password_warning = _recorded_password_env(perf_dir, script_path, result_stem)
+    if password_warning:
+        yield _sse("log", {"msg": password_warning})
+
     if tool == JMETER_TOOL:
         from ScriptRunnerEngine.jmeter_runner import stream_jmeter_run
         yield from stream_jmeter_run(
             perf_dir, script_path, host, mode=mode, users=users, spawn_rate=spawn_rate,
             run_duration=run_duration, report_url=report_url, result_stem=result_stem,
-            stats_sink=stats_sink, results_root=str(_results_path(perf_dir, JMETER_TOOL)))
+            stats_sink=stats_sink, results_root=str(_results_path(perf_dir, JMETER_TOOL)),
+            extra_env=password_env)
         return
 
     ui_journey = is_ui_script(script_path)
@@ -745,6 +780,7 @@ def stream_run(perf_dir, script_file, host, mode="check", users=None, spawn_rate
 
     python_exe = resolve_python(perf_dir)
     env = _runtime_env()
+    env.update(password_env)
     if not _locust_available(python_exe, env):
         yield _sse("result", {
             "status": "error",

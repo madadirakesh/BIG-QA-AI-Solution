@@ -52,6 +52,8 @@ from utils.locust_recorder_writer import (
 )
 from utils.api_script_generator import _header_manager, _prop, _x
 from utils import perf_project_layout as layout
+from utils import recorded_secrets
+from utils.recorded_secrets import password_env_var
 
 LOCUST_TOOL = "Locust"
 JMETER_TOOL = "Jmeter"
@@ -208,6 +210,16 @@ def _url_target(url, origin):
     return url, False
 
 
+def recorded_secret_values(steps):
+    """The distinct passwords typed in a journey, in the order they were first typed."""
+    values = []
+    for step in steps or []:
+        value = step.get("value") or ""
+        if (step.get("type") or "").lower() == "input" and step.get("secret") and value and value not in values:
+            values.append(value)
+    return values
+
+
 def ui_actions(steps, origin):
     """
     Turn recorded UI steps into replayable actions.
@@ -219,8 +231,12 @@ def ui_actions(steps, origin):
         is moved after it, so the text is typed before it is submitted;
       * a submit straight after a click or Enter is the form's own implicit
         submission and is dropped - replaying it would submit twice.
+
+    A password field's action carries `secret_index` - which of
+    recorded_secret_values(steps) it types - and never the value itself.
     """
     steps = [dict(s) for s in steps or []]
+    secrets = recorded_secret_values(steps)
     # Move a field's value before the Enter pressed in it.
     for index in range(len(steps) - 1):
         current, following = steps[index], steps[index + 1]
@@ -267,8 +283,11 @@ def ui_actions(steps, origin):
         elif kind == "click":
             actions.append({"kind": "click", "locator": locator, "label": label})
         elif kind == "input":
-            actions.append({"kind": "type", "locator": locator, "value": value,
-                            "secret": bool(step.get("secret")), "label": label})
+            secret = bool(step.get("secret"))
+            actions.append({"kind": "type", "locator": locator, "value": "" if secret else value,
+                            "secret": secret,
+                            "secret_index": secrets.index(value) if secret and value in secrets else 0,
+                            "label": label})
         elif kind == "select":
             actions.append({"kind": "select", "locator": locator, "value": value, "label": label})
         elif kind == "press":
@@ -327,6 +346,14 @@ def core_import_lines(levels):
     ]
 
 
+def _py_password_name(index):
+    return "PASSWORD" if index == 0 else f"PASSWORD_{index + 1}"
+
+
+def _secret_indexes(actions):
+    return sorted({a.get("secret_index", 0) for a in actions if a.get("secret")})
+
+
 def ui_action_call(action):
     """The UiSession call replaying one recorded action ('' for a note)."""
     kind = action["kind"]
@@ -339,7 +366,7 @@ def ui_action_call(action):
     if kind == "check":
         return f"ui.set_checked({_py_locator(action['locator'])}, {action['checked']})"
     if kind == "type":
-        text = "PASSWORD" if action["secret"] else repr(action["value"])
+        text = _py_password_name(action.get("secret_index", 0)) if action["secret"] else repr(action["value"])
         return f"ui.type({_py_locator(action['locator'])}, {text})"
     if kind == "select":
         return f"ui.select({_py_locator(action['locator'])}, {action['value']!r})"
@@ -367,7 +394,8 @@ def build_selenium_locust(journey, file_name, title, actions, levels=1, script_f
              "report shows what a real user waits for.",
              "Locators prefer test ids, ids and names; review CSS/XPath fallbacks after page changes."]
     if uses_password:
-        notes.append(f"Passwords are read from the {PASSWORD_ENV_VAR} environment variable.")
+        notes.append(f"Passwords are read from the {PASSWORD_ENV_VAR}[_N] environment variables; runs "
+                     "from the Performance Test page set them to the recorded values.")
     if any(a["kind"] == "note" for a in actions):
         notes.append("Some actions had no locator and are left as comments to complete by hand.")
 
@@ -382,8 +410,8 @@ def build_selenium_locust(journey, file_name, title, actions, levels=1, script_f
                                 "from selenium.webdriver.common.by import By", ""]
     lines += core_import_lines(levels)
     lines += ["", "from core.ui_journey import UiSession  # noqa: E402", ""]
-    if uses_password:
-        lines.append(f'PASSWORD = os.getenv("{PASSWORD_ENV_VAR}", "")')
+    for index in _secret_indexes(actions):
+        lines.append(f'{_py_password_name(index)} = os.getenv("{password_env_var(index)}", "")')
     lines += [
         "", "",
         f"class {class_name}(User):",
@@ -498,7 +526,8 @@ def build_java_journey(journey, class_name, file_name, title, actions, plan_path
         elif kind == "check":
             body = f"        setChecked({_java_locator(action['locator'])}, {str(action['checked']).lower()});"
         elif kind == "type":
-            text = f'env("{PASSWORD_ENV_VAR}")' if action["secret"] else _java_string(action["value"])
+            text = (f'env("{password_env_var(action.get("secret_index", 0))}")' if action["secret"]
+                    else _java_string(action["value"]))
             body = f"        type({_java_locator(action['locator'])}, {text});"
         elif kind == "select":
             body = f"        select({_java_locator(action['locator'])}, {_java_string(action['value'])});"
@@ -528,7 +557,8 @@ def build_java_journey(journey, class_name, file_name, title, actions, plan_path
         " * Each stepNN() is one JMeter sample in the plan, so the reports time every user action.",
     ]
     if uses_password:
-        doc.append(f" * Passwords are read from the {PASSWORD_ENV_VAR} environment variable.")
+        doc.append(f" * Passwords are read from the {PASSWORD_ENV_VAR}[_N] environment variables; runs from")
+        doc.append(" * the Performance Test page set them to the recorded values.")
     doc += [
         " *",
         " * Run it standalone from the project root:",
@@ -677,6 +707,40 @@ def _insert_before(text, anchor, snippet, after=None):
     return text[:index] + snippet + text[index:], True
 
 
+_JAVA_SUPPORT_VERSION_RE = re.compile(r"SUPPORT_VERSION\s*=\s*(\d+)\s*;")
+
+
+def _java_support_version(path):
+    try:
+        with open(path, "r", encoding="utf-8") as handle:
+            match = _JAVA_SUPPORT_VERSION_RE.search(handle.read())
+    except OSError:
+        return -1
+    return int(match.group(1)) if match else 0
+
+
+def refresh_selenium_support_files(perf_dir):
+    """
+    Write the shared Java support classes (SeleniumSupport, JourneySampler) into
+    the project, replacing a copy older than the bundled one (its
+    SUPPORT_VERSION), so fixes reach projects recorded earlier.
+    """
+    for class_name in SUPPORT_FILES:
+        target = os.path.join(perf_dir, JAVA_SOURCE_DIR, f"{class_name}.java")
+        source = os.path.join(_TEMPLATES_ROOT, "jmeter-framework", JAVA_SOURCE_DIR, f"{class_name}.java")
+        if os.path.normcase(os.path.abspath(target)) == os.path.normcase(os.path.abspath(source)):
+            continue
+        if not os.path.isfile(source):
+            continue
+        if os.path.isfile(target) and _java_support_version(target) >= _java_support_version(source):
+            continue
+        os.makedirs(os.path.dirname(target), exist_ok=True)
+        with open(source, "r", encoding="utf-8") as handle:
+            content = handle.read()
+        with open(target, "w", encoding="utf-8", newline="\n") as handle:
+            handle.write(content)
+
+
 def ensure_selenium_support(perf_dir):
     """
     Make a JMeter project able to compile and run Java Selenium journeys:
@@ -687,16 +751,7 @@ def ensure_selenium_support(perf_dir):
     Returns a list of human-readable notes about anything that could not be done.
     """
     notes = []
-    for class_name in SUPPORT_FILES:
-        target = os.path.join(perf_dir, JAVA_SOURCE_DIR, f"{class_name}.java")
-        source = os.path.join(_TEMPLATES_ROOT, "jmeter-framework", JAVA_SOURCE_DIR, f"{class_name}.java")
-        if os.path.isfile(target) or os.path.normcase(os.path.abspath(target)) == os.path.normcase(os.path.abspath(source)):
-            continue
-        os.makedirs(os.path.dirname(target), exist_ok=True)
-        with open(source, "r", encoding="utf-8") as handle:
-            content = handle.read()
-        with open(target, "w", encoding="utf-8", newline="\n") as handle:
-            handle.write(content)
+    refresh_selenium_support_files(perf_dir)
 
     pom_path = os.path.join(perf_dir, "pom.xml")
     if not os.path.isfile(pom_path):
@@ -937,9 +992,15 @@ def write_recording(perf_dir, tool, script_type, journey):
     directory = target_directory(perf_dir, tool, script_type)
     folder = _relative_folder(perf_dir, directory)
 
+    # The scripts only read passwords from the environment; the run sets it
+    # from what was typed here (see utils/recorded_secrets).
+    secret_values = (recorded_secret_values(journey.get("steps")) if script_type == SCRIPT_TYPE_FUNCTIONAL
+                     else [s for s in (journey.get("secrets") or []) if s])
+
     if tool == LOCUST_TOOL and script_type == SCRIPT_TYPE_CLI:
         path, file_name = write_recorded_script(
             directory, dict(journey, script_type=SCRIPT_TYPE_CLI, script_folder=folder))
+        recorded_secrets.store(perf_dir, file_name, secret_values)
         layout.invalidate(perf_dir)
         return {"path": path, "file_name": file_name,
                 "relative_path": f"{folder}{file_name}", "notes": [], "extra_files": []}
@@ -976,6 +1037,7 @@ def write_recording(perf_dir, tool, script_type, journey):
 
     with open(path, "w", encoding="utf-8", newline="\n") as handle:
         handle.write(source)
+    recorded_secrets.store(perf_dir, file_name, secret_values)
     layout.invalidate(perf_dir)
     return {"path": path, "file_name": file_name,
             "relative_path": os.path.relpath(path, perf_dir).replace("\\", "/"),

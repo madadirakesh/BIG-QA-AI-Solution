@@ -10,13 +10,19 @@ one request of type "UI". The Locust report, the HTML dashboard and the
 response-time thresholds therefore treat a user action exactly like an HTTP
 call - the time a real user waits for it.
 
+When a step fails, the rest of that pass cannot run (a failed login leaves no
+page to act on), but each remaining step is still reported - as a failure
+"Skipped: step ... failed" - so the report always lists every recorded action.
+
 Also usable from pytest: the methods match the `ui` fixture of the older
 functional/conftest.py, so a pytest journey can be driven by Locust too.
 
 Environment:
   PERF_UI_HEADED=1         show the browser (the Script Check sets this)
   PERF_UI_WAIT_SECONDS     how long a step waits for its element (default 15)
-  PERF_RECORDED_PASSWORD   value typed into recorded password fields
+  PERF_RECORDED_PASSWORD   value typed into recorded password fields (_2, _3, ...
+                           for further distinct passwords); set by the
+                           Performance Test page from the recording
 """
 
 import os
@@ -39,7 +45,7 @@ from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import Select, WebDriverWait
 
-LOADER_VERSION = 2
+LOADER_VERSION = 3
 REQUEST_TYPE = "UI"
 WAIT_SECONDS = float(os.getenv("PERF_UI_WAIT_SECONDS", "15"))
 SCREENSHOT_DIR = Path(__file__).resolve().parent.parent / "results" / "screenshots"
@@ -90,6 +96,12 @@ class UiSession:
         self.timings = []
         self._driver = driver
         self._step_depth = 0
+        # The step that failed in the current pass ('' while all is well).
+        # Every later step of that pass is reported as skipped.
+        self._failed_step = ""
+        self._skipping = False
+        self._first_label = None
+        self._explicit_passes = False
 
     @property
     def driver(self):
@@ -136,17 +148,54 @@ class UiSession:
                                 response_length=0, exception=error, context={}, url=label)
         return error
 
+    def begin_pass(self):
+        """A new pass of the journey starts: run every step again, even after a failed pass."""
+        self._explicit_passes = True
+        self._failed_step = ""
+
+    def _start_of_pass(self, label):
+        # Without begin_pass(), the journey's first step coming round again
+        # marks the next pass.
+        if self._first_label is None:
+            self._first_label = label
+        elif label == self._first_label and not self._explicit_passes:
+            self._failed_step = ""
+
     @contextmanager
     def step(self, label):
-        driver = self.driver
-        # Every step starts from the top-level document; find() switches into
-        # an iframe only when the element lives there.
-        try:
-            driver.switch_to.default_content()
-        except Exception:
-            pass
+        if self._step_depth == 0:
+            self._start_of_pass(label)
+        if not self._failed_step:
+            try:
+                driver = self.driver
+            except Exception:
+                # Reported as "Launch browser"; every step of this pass is skipped.
+                self._failed_step = "Launch browser"
+            else:
+                # Every step starts from the top-level document; find() switches
+                # into an iframe only when the element lives there.
+                try:
+                    driver.switch_to.default_content()
+                except Exception:
+                    pass
+
         self._step_depth += 1
         started = time.perf_counter()
+        if self._failed_step:
+            # An earlier step of this pass failed, so this one cannot run (its
+            # actions are no-ops). It is still reported, as a failure, so the
+            # results list every recorded action rather than stopping at the
+            # first failure.
+            skipped_after = self._failed_step
+            was_skipping, self._skipping = self._skipping, True
+            try:
+                yield
+            finally:
+                self._skipping = was_skipping
+                self._step_depth = max(0, self._step_depth - 1)
+            self._report(label, started, StepSkipped(f"Skipped: step '{skipped_after}' failed earlier in this pass"))
+            return
+
         try:
             yield
         except Exception as error:
@@ -154,11 +203,19 @@ class UiSession:
                 raise
             self._report(label, started, error)
             self._screenshot(label)
-            _abort_iteration(error)
+            self._failed_step = label
         else:
             self._report(label, started, None)
         finally:
             self._step_depth = max(0, self._step_depth - 1)
+
+    def _act(self, label, run):
+        """Run an action inside the current step, or as a step of its own when called outside one."""
+        if self._step_depth == 0:
+            with self.step(label):
+                self._act(label, run)
+        elif not self._skipping:
+            run()
 
     # ── actions ─────────────────────────────────────────────────────────
 
@@ -168,11 +225,7 @@ class UiSession:
         return urljoin(self.base_url + "/", target.lstrip("/")) if self.base_url else target
 
     def open(self, target):
-        if self._step_depth == 0:
-            with self.step(f"Open {target}"):
-                self.driver.get(self.url(target))
-        else:
-            self.driver.get(self.url(target))
+        self._act(f"Open {target}", lambda: self.driver.get(self.url(target)))
 
     def wait_for_url(self, fragment):
         """Wait for a navigation an earlier action triggered. Soft: redirects may land elsewhere."""
@@ -182,11 +235,7 @@ class UiSession:
             except TimeoutException:
                 pass
 
-        if self._step_depth == 0:
-            with self.step(f"Wait for URL containing '{fragment}'"):
-                _wait()
-        else:
-            _wait()
+        self._act(f"Wait for URL containing '{fragment}'", _wait)
 
     def find(self, by, value, condition=EC.visibility_of_element_located):
         """Wait for the element in the page or any of its iframes."""
@@ -224,57 +273,39 @@ class UiSession:
             self.driver.execute_script("arguments[0].click();", element)
 
     def click(self, by, value):
-        if self._step_depth == 0:
-            with self.step(f"Click ({by}={value})"):
-                self._click(self.find(by, value, EC.element_to_be_clickable))
-        else:
-            self._click(self.find(by, value, EC.element_to_be_clickable))
+        self._act(f"Click ({by}={value})",
+                  lambda: self._click(self.find(by, value, EC.element_to_be_clickable)))
 
     def set_checked(self, by, value, checked):
-        state_str = "checked" if checked else "unchecked"
-        if self._step_depth == 0:
-            with self.step(f"Set {state_str} ({by}={value})"):
-                element = self.find(by, value, EC.presence_of_element_located)
-                if element.is_selected() != bool(checked):
-                    self._click(element)
-        else:
+        def _set():
             element = self.find(by, value, EC.presence_of_element_located)
             if element.is_selected() != bool(checked):
                 self._click(element)
 
+        self._act(f"Set {'checked' if checked else 'unchecked'} ({by}={value})", _set)
+
     def type(self, by, value, text):
         is_secret = any(term in str(value).lower() for term in ("pass", "pwd", "secret", "token"))
         val_repr = "'***'" if is_secret else (repr(text) if len(str(text)) <= 30 else repr(str(text)[:27] + "..."))
-        if self._step_depth == 0:
-            with self.step(f"Type {val_repr} into ({by}={value})"):
-                element = self.find(by, value)
-                element.clear()
-                element.send_keys("" if text is None else str(text))
-        else:
+
+        def _type():
             element = self.find(by, value)
             element.clear()
             element.send_keys("" if text is None else str(text))
 
+        self._act(f"Type {val_repr} into ({by}={value})", _type)
+
     def select(self, by, value, option_text):
-        if self._step_depth == 0:
-            with self.step(f"Select '{option_text}' in ({by}={value})"):
-                Select(self.find(by, value, EC.presence_of_element_located)).select_by_visible_text(str(option_text))
-        else:
-            Select(self.find(by, value, EC.presence_of_element_located)).select_by_visible_text(str(option_text))
+        self._act(f"Select '{option_text}' in ({by}={value})",
+                  lambda: Select(self.find(by, value, EC.presence_of_element_located))
+                  .select_by_visible_text(str(option_text)))
 
     def press_enter(self, by, value):
-        if self._step_depth == 0:
-            with self.step(f"Press ENTER on ({by}={value})"):
-                self.find(by, value).send_keys(Keys.ENTER)
-        else:
-            self.find(by, value).send_keys(Keys.ENTER)
+        self._act(f"Press ENTER on ({by}={value})", lambda: self.find(by, value).send_keys(Keys.ENTER))
 
     def submit(self, by, value):
-        if self._step_depth == 0:
-            with self.step(f"Submit ({by}={value})"):
-                self.find(by, value, EC.presence_of_element_located).submit()
-        else:
-            self.find(by, value, EC.presence_of_element_located).submit()
+        self._act(f"Submit ({by}={value})",
+                  lambda: self.find(by, value, EC.presence_of_element_located).submit())
 
     def _screenshot(self, label):
         try:
@@ -286,18 +317,13 @@ class UiSession:
             pass
 
 
+class StepSkipped(Exception):
+    """Reported for a step that could not run because an earlier step of its pass failed."""
+
+
 def _is_locust_control(error):
     try:
         from locust.exception import InterruptTaskSet, RescheduleTask, StopUser
     except Exception:
         return False
     return isinstance(error, (InterruptTaskSet, RescheduleTask, StopUser))
-
-
-def _abort_iteration(error):
-    """End this pass of the journey; the failed step is already in the report."""
-    try:
-        from locust.exception import RescheduleTask
-    except Exception:
-        raise error
-    raise RescheduleTask() from error

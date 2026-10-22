@@ -181,6 +181,9 @@ def _prepare(perf_dir, plan_head, env):
     maven_project = _uses_maven_plugin(perf_dir)
     goals = []
     if maven_project and _needs_compile(perf_dir, plan_head):
+        # Pick up fixes to the shared journey classes before they are compiled.
+        from utils.recorded_script_writers import refresh_selenium_support_files
+        refresh_selenium_support_files(perf_dir)
         goals.append("test-compile")
     if maven_project and not _provisioned_jar(perf_dir):
         goals.append(_configure_goal(perf_dir))
@@ -449,11 +452,15 @@ def _write_csv(path, rows):
 
 def stream_jmeter_run(perf_dir, script_path, host, mode="check", users=None, spawn_rate=None,
                       run_duration=None, report_url=None, result_stem=None, stats_sink=None,
-                      results_root=None):
-    """Execute one JMeter plan and yield the same Server-Sent Events as a Locust run."""
+                      results_root=None, extra_env=None):
+    """
+    Execute one JMeter plan and yield the same Server-Sent Events as a Locust run.
+    `extra_env` is added to JMeter's environment (the recorded passwords).
+    """
     check = mode == "check"
     plan_head = _read(script_path, 200_000)
     env = _jmeter_env()
+    env.update(extra_env or {})
 
     outcome = (False, "")
     for item in _prepare(perf_dir, plan_head, env):

@@ -432,6 +432,7 @@ from utils import perf_project_layout
 from utils.payload_parameterizer import PayloadError
 from utils.locust_recorder_writer import sanitize_script_title
 from utils import recorded_script_writers
+from utils import recorded_secrets
 from ScriptRunnerEngine.performance_recorder import registry as recorder_registry
 
 # Load environment variables early
@@ -2268,6 +2269,10 @@ def performance_script_delete():
                 app.logger.warning("Could not delete %s", companion)
 
         _remove_generated_copy(perf_dir, script_file, tool)
+        try:
+            recorded_secrets.forget(perf_dir, script_file)
+        except Exception:
+            app.logger.warning("Could not remove the stored passwords of %s", script_file)
         # The Locust wrapper a Selenium pytest journey was run through.
         for wrapper in payload_parameterizer.generated_copies(
                 perf_dir, f"_bigqa_ui_{Path(script_file).stem}.py"):

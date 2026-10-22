@@ -10,6 +10,7 @@ import org.apache.jmeter.config.Arguments;
 import org.apache.jmeter.protocol.java.sampler.AbstractJavaSamplerClient;
 import org.apache.jmeter.protocol.java.sampler.JavaSamplerContext;
 import org.apache.jmeter.samplers.SampleResult;
+import org.apache.jmeter.samplers.Sampler;
 import org.apache.jmeter.threads.JMeterContextService;
 import org.apache.jmeter.threads.JMeterVariables;
 import org.apache.jmeter.util.JMeterUtils;
@@ -32,6 +33,9 @@ import org.openqa.selenium.WebDriver;
  * selenium.baseUrl (default: the journey's recorded DEFAULT_BASE_URL).
  */
 public class JourneySampler extends AbstractJavaSamplerClient {
+
+    /** Bumped on every change, so BIG QA refreshes the copy in projects recorded earlier. */
+    public static final int SUPPORT_VERSION = 2;
 
     private static final String JOURNEY_VAR = "selenium.journey";
     private static final String FAILED_VAR = "selenium.failed";
@@ -80,8 +84,16 @@ public class JourneySampler extends AbstractJavaSamplerClient {
             } else {
                 Object journey = vars.getObject(JOURNEY_VAR);
                 if (journey == null || vars.get(FAILED_VAR) != null) {
-                    // The browser did not start, or an earlier step failed: skip rather than time out.
-                    result.setIgnore();
+                    // The browser did not start, or an earlier step failed: skip rather than time
+                    // out, but still report the step so every recorded action is in the results.
+                    String cause = journey == null ? "the browser did not start"
+                            : "step '" + vars.get(FAILED_VAR) + "' failed earlier in this iteration";
+                    result.sampleStart();
+                    result.sampleEnd();
+                    result.setSuccessful(false);
+                    result.setResponseCode("SKIPPED");
+                    result.setResponseMessage("Skipped: " + cause);
+                    result.setResponseData("Skipped: " + cause, StandardCharsets.UTF_8.name());
                     return result;
                 }
                 Method step = journey.getClass().getMethod(context.getParameter("step"));
@@ -102,7 +114,9 @@ public class JourneySampler extends AbstractJavaSamplerClient {
             if (result.getEndTime() == 0) {
                 result.sampleEnd();
             }
-            vars.put(FAILED_VAR, "true");
+            if (vars.get(FAILED_VAR) == null) {
+                vars.put(FAILED_VAR, currentSamplerName());
+            }
             StringWriter trace = new StringWriter();
             cause.printStackTrace(new PrintWriter(trace));
             result.setSuccessful(false);
@@ -118,6 +132,11 @@ public class JourneySampler extends AbstractJavaSamplerClient {
         result.setResponseCodeOK();
         result.setResponseMessage(message);
         result.setResponseData(message, StandardCharsets.UTF_8.name());
+    }
+
+    private static String currentSamplerName() {
+        Sampler sampler = JMeterContextService.getContext().getCurrentSampler();
+        return sampler == null ? "unknown" : sampler.getName();
     }
 
     private static String firstLine(String message) {
