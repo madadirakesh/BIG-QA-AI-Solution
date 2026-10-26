@@ -64,6 +64,21 @@ ENV JMETER_HOME=/opt/jmeter
 ENV PATH="${JMETER_HOME}/bin:${PATH}"
 
 # --------------------------------------------------------------------------- #
+#  Node.js + Playwright MCP (Test Execution module)
+# Bookworm ships Node 18, the minimum @playwright/mcp supports. The package is
+# fetched at build time so the first run doesn't download it; it drives the
+# Google Chrome installed above.
+# --------------------------------------------------------------------------- #
+ARG PLAYWRIGHT_MCP_PACKAGE=@playwright/mcp@0.0.83
+RUN apt-get update -qq && \
+    apt-get install -y --no-install-recommends nodejs npm && \
+    apt-get clean && rm -rf /var/lib/apt/lists/* && \
+    npx -y ${PLAYWRIGHT_MCP_PACKAGE} --version
+ENV PLAYWRIGHT_MCP_PACKAGE=${PLAYWRIGHT_MCP_PACKAGE} \
+    # Root inside a container: Chrome needs --no-sandbox
+    TEST_EXECUTION_NO_SANDBOX=true
+
+# --------------------------------------------------------------------------- #
 #  Java environment (for JMeter and any Maven/Gradle projects)
 # --------------------------------------------------------------------------- #
 ENV JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64

@@ -2552,6 +2552,36 @@ def test_case_generator():
     projects = fetch_data("SELECT id, project_name, project_path FROM ProjectDetails ORDER BY project_name ASC")
     return render_template('test_case_generator.html', projects=projects)
 
+# ── Test Execution (runs manual test cases through Playwright MCP) ─────────────
+from db.app_db import DB_PATH as _APP_DB_PATH
+from test_execution.routes import create_blueprint as _create_test_execution_blueprint
+from test_execution.service import TestExecutionService
+
+
+def _test_execution_jira_client():
+    # Reuse the Jira client the Test Case Generator already uses (Configure Jira / .env).
+    from api import backend
+    return backend._get_jira_client()
+
+
+def _test_execution_project_settings(project_id):
+    rows = fetch_data("SELECT baseurl, username, password FROM ProjectData WHERE project_details_id = ?", (project_id,))
+    if not rows:
+        return {}
+    row = dict(rows[0])
+    row['password'] = decrypt_for_app(row.get('password')) or ''
+    return row
+
+
+test_execution_service = TestExecutionService(
+    data_root=os.environ.get("TEST_EXECUTION_DATA_DIR") or str(ROOT_DIR / "workspace" / "test_execution"),
+    db_path=_APP_DB_PATH,
+    jira_client_factory=_test_execution_jira_client,
+)
+app.register_blueprint(_create_test_execution_blueprint(
+    test_execution_service, _test_execution_project_settings, os.path.join(BASE_DIR, '.env')))
+
+
 @app.route('/api/project-inputs/<int:project_id>', methods=['GET'])
 @login_required()
 def get_project_inputs(project_id):

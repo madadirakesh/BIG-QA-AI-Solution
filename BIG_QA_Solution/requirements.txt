@@ -28,3 +28,5 @@ psutil
 websocket-client
 # Performance Test > Create Test > API: reads Swagger/OpenAPI .yaml documents
 PyYAML
+# Test Execution: openpyxl needs Pillow to embed screenshots in the results workbook
+Pillow

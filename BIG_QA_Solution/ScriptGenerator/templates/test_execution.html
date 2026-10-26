@@ -1,0 +1,327 @@
+{% extends "base.html" %}
+
+{% block title %}Test Execution - BIG AI QA Solution{% endblock %}
+{% block page_title %}Test Execution{% endblock %}
+{% block header_breadcrumb %}<a href="/home">Home</a> <span class="sep">/</span> <span class="current">Test Execution</span>{% endblock %}
+
+{% block extra_css %}
+<style>
+    .te-grid { display: grid; gap: 20px; }
+    .te-card { padding: 22px 24px; }
+    .te-card h3 { margin: 0 0 4px; font-size: 1.05rem; display: flex; align-items: center; gap: 10px; }
+    .te-card h3 .te-num { display: inline-flex; width: 26px; height: 26px; border-radius: 50%; align-items: center; justify-content: center;
+        background: var(--accent-soft); color: var(--accent-secondary); font-size: 0.8rem; border: 1px solid var(--accent-border); }
+    .te-sub { color: var(--text-secondary); font-size: 0.85rem; margin: 0 0 16px; }
+    .te-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 4px; }
+    .te-options { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; }
+    .te-option { border: 1px solid var(--glass-border); border-radius: var(--border-radius); padding: 14px 16px; cursor: pointer;
+        background: var(--bg-secondary); transition: border-color .15s, background .15s; text-align: left; color: var(--text-primary); font: inherit;
+        display: flex; flex-direction: column; justify-content: flex-start; }
+    .te-option:hover { border-color: var(--accent-border); }
+    .te-option.selected { border-color: var(--accent-primary); background: var(--accent-softer); }
+    .te-option i { color: var(--accent-secondary); margin-right: 6px; }
+    .te-option .te-opt-title { font-weight: 600; font-size: 0.92rem; }
+    .te-option .te-opt-desc { color: var(--text-secondary); font-size: 0.78rem; margin-top: 4px; }
+    .te-panel { margin-top: 18px; display: none; }
+    .te-panel.active { display: block; }
+    .te-row { display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-end; }
+    .te-row > .form-group { flex: 1 1 220px; margin-bottom: 0; }
+    .te-map { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 10px 16px; margin-top: 14px; }
+    .te-map label { font-size: 0.78rem; }
+    .te-list { max-height: 260px; overflow: auto; border: 1px solid var(--glass-border); border-radius: var(--border-radius); margin-top: 12px; }
+    .te-list button { display: flex; width: 100%; gap: 10px; align-items: center; padding: 9px 12px; background: none; border: 0;
+        border-bottom: 1px solid var(--border-subtle); color: var(--text-primary); cursor: pointer; text-align: left; font: inherit; font-size: 0.85rem; }
+    .te-list button:hover { background: var(--bg-hover); }
+    .te-list .te-key { font-weight: 600; color: var(--accent-secondary); min-width: 90px; }
+    .te-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 12px; margin: 6px 0 16px; }
+    .te-stat { border: 1px solid var(--glass-border); border-radius: var(--border-radius); padding: 12px 14px; background: var(--bg-secondary); }
+    .te-stat .v { font-size: 1.45rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+    .te-stat .l { font-size: 0.72rem; color: var(--text-secondary); text-transform: uppercase; letter-spacing: .05em; }
+    .te-stat.ok .v { color: var(--success); } .te-stat.bad .v { color: var(--error); } .te-stat.warn .v { color: var(--warning); }
+    .te-table td { white-space: normal; max-width: 420px; vertical-align: top; }
+    .te-table tr.te-detail td { background: var(--bg-sunken); }
+    .te-steps { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
+    .te-steps td, .te-steps th { padding: 6px 8px; border-bottom: 1px solid var(--border-subtle); text-align: left; vertical-align: top; white-space: normal; }
+    .te-steps th { color: var(--text-tertiary); font-size: 0.68rem; text-transform: uppercase; }
+    .te-thumbs { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 6px; }
+    .te-thumbs img { width: 150px; height: auto; border: 1px solid var(--glass-border); border-radius: 6px; cursor: zoom-in; }
+    .te-progress { height: 8px; border-radius: 99px; background: var(--bg-sunken); overflow: hidden; margin: 10px 0; }
+    .te-progress > div { height: 100%; width: 0; background: var(--accent-primary); transition: width .4s; }
+    .te-log { max-height: 180px; overflow: auto; font-family: ui-monospace, Consolas, monospace; font-size: 0.75rem; background: var(--bg-sunken);
+        border-radius: var(--border-radius); padding: 10px 12px; color: var(--text-secondary); }
+    .te-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+    .te-hint { font-size: 0.78rem; color: var(--text-tertiary); margin-top: 6px; }
+    .te-warn { border: 1px solid var(--warning-border); background: var(--warning-soft); color: var(--warning); border-radius: var(--border-radius);
+        padding: 10px 12px; font-size: 0.82rem; margin-top: 12px; }
+    .te-toggles { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 10px 18px; margin-top: 14px; }
+    .te-toggles label { display: flex; gap: 8px; align-items: flex-start; font-size: 0.84rem; color: var(--text-primary); cursor: pointer; }
+    .te-toggles small { display: block; color: var(--text-tertiary); font-size: 0.74rem; }
+    .te-filters { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 12px; }
+    .te-filters > * { flex: 0 1 200px; }
+    .te-lightbox { position: fixed; inset: 0; background: rgba(0,0,0,.82); display: none; align-items: center; justify-content: center; z-index: 3000; padding: 24px; }
+    .te-lightbox.open { display: flex; }
+    .te-lightbox img { max-width: 100%; max-height: 100%; border-radius: 8px; }
+    .te-hidden { display: none !important; }
+    .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+    @media (max-width: 720px) { .te-card { padding: 16px; } }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="breadcrumb animate-fade-in">
+    <i class="fas fa-home" style="font-size:0.75rem;"></i>
+    <span class="sep">/</span>
+    <a href="/home">Dashboard</a>
+    <span class="sep">/</span>
+    <span class="current">Test Execution</span>
+</div>
+
+<div class="page-header">
+    <h1><i class="fas fa-vial-circle-check"></i> Test Execution</h1>
+    <p>Run manual test cases from Excel, Jira or Zephyr in a real browser through Playwright MCP, capture evidence, and publish results back to the source.</p>
+</div>
+
+<div class="te-chips" id="teStatusChips" aria-live="polite"></div>
+
+<div class="te-grid" style="margin-top:14px;">
+    <!-- 1. Source -->
+    <section class="glassmorphism te-card" id="teSourceCard">
+        <h3><span class="te-num">1</span> Choose test case source</h3>
+        <p class="te-sub">Test cases are parsed once and validated before anything runs. Invalid rows are shown, never dropped.</p>
+        <div class="te-options" role="radiogroup" aria-label="Test case source">
+            <button type="button" class="te-option" data-source="excel" role="radio" aria-checked="false">
+                <div class="te-opt-title"><i class="fas fa-file-excel"></i>Excel workbook</div>
+                <div class="te-opt-desc">.xlsx / .xls, including Test Case Generator output</div>
+            </button>
+            <button type="button" class="te-option" data-source="jira" role="radio" aria-checked="false">
+                <div class="te-opt-title"><i class="fab fa-jira"></i>Jira</div>
+                <div class="te-opt-desc">Test issues, or Tests linked to a story</div>
+            </button>
+            <button type="button" class="te-option" data-source="zephyr" role="radio" aria-checked="false">
+                <div class="te-opt-title"><i class="fas fa-list-check"></i>Zephyr Scale</div>
+                <div class="te-opt-desc">Test cases by key, linked issue or project</div>
+            </button>
+        </div>
+
+        <div class="te-panel" id="tePanel-excel">
+            <div class="form-group">
+                <label for="teFile"><i class="fas fa-upload"></i> Workbook</label>
+                <input type="file" id="teFile" accept=".xlsx,.xls">
+                <span class="form-hint">Max 15 MB. The original file is kept; results go into a downloadable copy.</span>
+            </div>
+            <div id="teSheetBlock" class="te-hidden">
+                <div class="te-row">
+                    <div class="form-group">
+                        <label for="teSheet">Worksheet</label>
+                        <select id="teSheet"></select>
+                    </div>
+                    <div class="form-group" style="flex:0 0 auto;">
+                        <button type="button" class="btn btn-primary" id="tePreviewExcel"><i class="fas fa-eye"></i> Preview test cases</button>
+                    </div>
+                </div>
+                <p class="te-hint">Column mapping (auto-detected — adjust if your template differs). Test Steps is required.</p>
+                <div class="te-map" id="teMapping"></div>
+            </div>
+        </div>
+
+        <div class="te-panel" id="tePanel-jira">
+            <div class="te-row">
+                <div class="form-group">
+                    <label for="teJiraQuery">Issue key or JQL</label>
+                    <input type="text" id="teJiraQuery" placeholder='e.g. PROJ-123  or  project = PROJ AND issuetype = Test'>
+                </div>
+                <div class="form-group" style="flex:0 0 auto;">
+                    <button type="button" class="btn btn-primary" id="teJiraSearch"><i class="fas fa-search"></i> Search</button>
+                </div>
+            </div>
+            <div class="te-list te-hidden" id="teJiraResults" aria-label="Jira search results"></div>
+            <p class="te-hint">Pick a Test issue to run it, or a story to load the Test issues (and Zephyr test cases, if configured) linked to it.</p>
+        </div>
+
+        <div class="te-panel" id="tePanel-zephyr">
+            <div class="te-row">
+                <div class="form-group">
+                    <label for="teZephyrRef">Zephyr test case key, Jira issue key or project key</label>
+                    <input type="text" id="teZephyrRef" placeholder="e.g. PROJ-T12, PROJ-123 or PROJ">
+                </div>
+                <div class="form-group" style="flex:0 0 auto;">
+                    <button type="button" class="btn btn-primary" id="teZephyrLoad"><i class="fas fa-download"></i> Load</button>
+                </div>
+                <div class="form-group" style="flex:0 0 auto;">
+                    <button type="button" class="btn btn-outline" id="teZephyrConfigBtn"><i class="fas fa-key"></i> Configure Zephyr</button>
+                </div>
+            </div>
+            <p class="te-hint">Uses the Zephyr Scale Cloud REST API v2 (no Zephyr MCP server is available in this environment).</p>
+        </div>
+    </section>
+
+    <!-- 2. Preview -->
+    <section class="glassmorphism te-card te-hidden" id="tePreviewCard">
+        <h3><span class="te-num">2</span> Review test cases</h3>
+        <p class="te-sub">Steps marked <span class="badge badge-success">parser</span> run without any AI call; <span class="badge badge-warning">needs AI</span> steps are interpreted once (and cached) before execution.</p>
+        <div id="tePreviewNotes"></div>
+        <div class="te-stats" id="tePreviewStats"></div>
+        <div class="te-actions" style="margin-bottom:10px;">
+            <button type="button" class="btn btn-sm btn-secondary" id="teSelectAll">Select all valid</button>
+            <button type="button" class="btn btn-sm btn-secondary" id="teSelectNone">Clear selection</button>
+        </div>
+        <div class="table-wrapper">
+            <table class="data-table te-table">
+                <thead><tr><th style="width:36px;"><span class="sr-only">Select</span></th><th>Test Case</th><th>Title</th><th>Steps</th><th>Interpretation</th><th>Validation</th></tr></thead>
+                <tbody id="tePreviewBody"></tbody>
+            </table>
+        </div>
+    </section>
+
+    <!-- 3. Configure -->
+    <section class="glassmorphism te-card te-hidden" id="teConfigCard">
+        <h3><span class="te-num">3</span> Configure execution</h3>
+        <p class="te-sub">The browser may only open the base URL's host and the hosts you allow. Credentials come from the project configuration and are never shown in logs or sent to the AI.</p>
+        <div class="te-row">
+            <div class="form-group">
+                <label for="teProject">Project (base URL &amp; credentials)</label>
+                <select id="teProject">
+                    <option value="">— none —</option>
+                    {% for proj in global_projects %}
+                    <option value="{{ proj.id }}" {% if proj.id|string == active_project_id|string %}selected{% endif %}>{{ proj.project_name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="teBaseUrl">Base URL</label>
+                <input type="url" id="teBaseUrl" placeholder="https://test.example.com/login">
+            </div>
+            <div class="form-group">
+                <label for="teAllowedHosts">Additional allowed hosts</label>
+                <input type="text" id="teAllowedHosts" placeholder="sso.example.com, *.test.example.com">
+            </div>
+        </div>
+        <p class="te-hint" id="teCredHint"></p>
+
+        <div class="form-group" style="margin-top:16px;">
+            <label>Screenshots</label>
+            <div class="te-options" role="radiogroup" aria-label="Screenshot mode" id="teShotModes">
+                <button type="button" class="te-option" data-mode="none" role="radio"><div class="te-opt-title"><i class="fas fa-ban"></i>No screenshots</div><div class="te-opt-desc">Fastest, smallest output</div></button>
+                <button type="button" class="te-option" data-mode="every_step" role="radio"><div class="te-opt-title"><i class="fas fa-images"></i>After every step</div><div class="te-opt-desc">Full step-by-step evidence</div></button>
+                <button type="button" class="te-option selected" data-mode="final" role="radio"><div class="te-opt-title"><i class="fas fa-flag-checkered"></i>Final result only</div><div class="te-opt-desc">End state of each test, incl. failed/blocked</div></button>
+                <button type="button" class="te-option" data-mode="failure" role="radio"><div class="te-opt-title"><i class="fas fa-triangle-exclamation"></i>Failure evidence only</div><div class="te-opt-desc">Only when a step fails or is blocked</div></button>
+            </div>
+            <p class="te-hint" id="teShotEstimate"></p>
+        </div>
+
+        <div class="te-toggles">
+            <label class="te-excel-only"><input type="checkbox" id="teEmbed" checked><span>Embed screenshots in the Excel output<small>Otherwise linked; first 150 are embedded to keep the file small</small></span></label>
+            <label class="te-remote-only"><input type="checkbox" id="tePublish" checked><span>Publish results to Jira / Zephyr<small>Jira: a comment + screenshot attachments. Fields are never changed.</small></span></label>
+            <label><input type="checkbox" id="teIsolate" checked><span>Fresh browser storage per test<small>Prevents tests from affecting each other</small></span></label>
+            <label><input type="checkbox" id="teUseAi" checked><span>AI interpretation for unparsed steps<small>Only steps the parser could not read; cached per wording</small></span></label>
+            <label><input type="checkbox" id="teUseAiLocator" checked><span>AI element recovery<small>Once per step when an element can't be found</small></span></label>
+            <label><input type="checkbox" id="teHeadless" checked><span>Headless browser</span></label>
+        </div>
+
+        <div class="te-row te-remote-only" style="margin-top:14px;" id="teZephyrCycleRow">
+            <div class="form-group">
+                <label for="teZephyrCycle">Zephyr test cycle (required to publish to Zephyr)</label>
+                <select id="teZephyrCycle"><option value="">— not publishing to Zephyr —</option></select>
+            </div>
+        </div>
+
+        <details style="margin-top:14px;">
+            <summary style="cursor:pointer;color:var(--text-secondary);font-size:0.85rem;">Advanced</summary>
+            <div class="te-row" style="margin-top:12px;">
+                <div class="form-group"><label for="teConcurrency">Parallel browsers (1–4)</label><input type="number" id="teConcurrency" min="1" max="4" value="1"></div>
+                <div class="form-group"><label for="teActionTimeout">Element timeout (ms)</label><input type="number" id="teActionTimeout" min="1000" max="60000" value="8000"></div>
+                <div class="form-group"><label for="teTestTimeout">Per-test limit (s)</label><input type="number" id="teTestTimeout" min="30" max="3600" value="300"></div>
+                <div class="form-group"><label for="teRetries">Infrastructure retries (0–3)</label><input type="number" id="teRetries" min="0" max="3" value="1"></div>
+            </div>
+            <div class="form-group" style="margin-top:12px;">
+                <label for="teMask">Mask in screenshots (CSS selectors, comma separated)</label>
+                <input type="text" id="teMask" placeholder=".account-number, #ssn">
+            </div>
+        </details>
+
+        <div class="te-warn te-hidden" id="teProdWarn">
+            <label style="display:flex;gap:8px;align-items:center;color:inherit;"><input type="checkbox" id="teConfirmProd"> This base URL is a production host. I confirm I want to execute these tests against production.</label>
+        </div>
+
+        <div class="te-actions" style="margin-top:18px;">
+            <button type="button" class="btn btn-primary btn-lg" id="teStart"><i class="fas fa-play"></i> Start execution</button>
+            <span class="te-hint" id="teSelectedCount" style="align-self:center;"></span>
+        </div>
+    </section>
+
+    <!-- 4. Execution & results -->
+    <section class="glassmorphism te-card te-hidden" id="teRunCard" aria-live="polite">
+        <h3><span class="te-num">4</span> Execution <span class="badge" id="teRunStatus"></span> <small id="teRunId" style="color:var(--text-tertiary);font-weight:400;font-size:0.78rem;"></small></h3>
+        <div id="teProgressBlock">
+            <div class="te-progress" role="progressbar" aria-valuemin="0" aria-valuemax="100"><div id="teProgressBar"></div></div>
+            <div class="te-row" style="justify-content:space-between;align-items:center;">
+                <span class="te-hint" id="teProgressText"></span>
+                <button type="button" class="btn btn-sm btn-danger" id="teCancel"><i class="fas fa-stop"></i> Cancel</button>
+            </div>
+            <details style="margin-top:8px;"><summary style="cursor:pointer;color:var(--text-secondary);font-size:0.8rem;">Live log</summary><div class="te-log" id="teLog"></div></details>
+        </div>
+
+        <div class="te-stats" id="teSummary" style="margin-top:16px;"></div>
+        <p class="te-hint" id="tePassFormula"></p>
+        <div class="te-stats" id="teUsage"></div>
+        <div id="teNotes"></div>
+
+        <div class="te-actions" style="margin:12px 0 16px;">
+            <button type="button" class="btn btn-secondary btn-sm" id="teRetryFailed"><i class="fas fa-rotate-right"></i> Retry failed tests</button>
+            <button type="button" class="btn btn-secondary btn-sm" id="teRetryPub"><i class="fas fa-cloud-arrow-up"></i> Retry failed publications</button>
+            <a class="btn btn-secondary btn-sm te-hidden" id="teDownloadExcel"><i class="fas fa-file-excel"></i> Download updated Excel</a>
+            <a class="btn btn-outline btn-sm" id="teExportCsv"><i class="fas fa-file-csv"></i> Export summary (CSV)</a>
+            <a class="btn btn-outline btn-sm" id="teExportJson"><i class="fas fa-file-code"></i> Export (JSON)</a>
+        </div>
+
+        <div class="te-filters">
+            <input type="search" id="teSearch" placeholder="Search ID or title" aria-label="Search results">
+            <select id="teFilterStatus" aria-label="Filter by status"><option value="">All statuses</option><option>Passed</option><option>Failed</option><option>Blocked</option><option>Not Executed</option><option>In Progress</option></select>
+            <select id="teFilterSource" aria-label="Filter by source"><option value="">All sources</option><option value="excel">Excel</option><option value="jira">Jira</option><option value="zephyr">Zephyr</option></select>
+        </div>
+        <div class="table-wrapper">
+            <table class="data-table te-table">
+                <thead><tr><th>Test Case</th><th>Title</th><th>Source</th><th>Status</th><th>Duration</th><th>Failed Step</th><th>Failure Reason</th><th>Evidence</th><th>Publication</th><th>Details</th></tr></thead>
+                <tbody id="teResultsBody"></tbody>
+            </table>
+        </div>
+    </section>
+
+    <!-- Recent runs -->
+    <section class="glassmorphism te-card">
+        <h3><i class="fas fa-clock-rotate-left" style="color:var(--accent-secondary);"></i> Recent runs</h3>
+        <div class="table-wrapper" style="margin-top:12px;">
+            <table class="data-table">
+                <thead><tr><th>Run</th><th>Source</th><th>Status</th><th>Passed</th><th>Failed</th><th>Blocked</th><th>Started</th><th></th></tr></thead>
+                <tbody id="teRunsBody"><tr><td colspan="8" class="te-hint">Loading…</td></tr></tbody>
+            </table>
+        </div>
+    </section>
+</div>
+
+<!-- Zephyr configuration -->
+<div id="teZephyrModal" class="confirm-backdrop" style="align-items:center;justify-content:center;">
+    <div class="confirm-dialog" style="max-width:500px;" role="dialog" aria-labelledby="teZephyrTitle">
+        <h3 id="teZephyrTitle" style="margin:0 0 14px;font-size:1.1rem;"><i class="fas fa-key" style="color:var(--accent-secondary);margin-right:8px;"></i>Configure Zephyr Scale</h3>
+        <div class="form-group">
+            <label for="teZephyrToken">API access token</label>
+            <input type="password" id="teZephyrToken" placeholder="Leave blank to keep the current token" autocomplete="off">
+        </div>
+        <div class="form-group">
+            <label for="teZephyrBase">API base URL (optional)</label>
+            <input type="url" id="teZephyrBase" placeholder="https://api.zephyrscale.smartbear.com/v2">
+            <span class="form-hint">EU instances use https://eu.api.zephyrscale.smartbear.com/v2</span>
+        </div>
+        <div class="confirm-actions">
+            <button type="button" class="btn btn-secondary" id="teZephyrCancel">Cancel</button>
+            <button type="button" class="btn btn-primary" id="teZephyrSave">Save</button>
+        </div>
+    </div>
+</div>
+
+<div class="te-lightbox" id="teLightbox" role="dialog" aria-label="Screenshot preview"><img alt="Screenshot" id="teLightboxImg"></div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{{ url_for('static', filename='js/test_execution.js') }}?v=1.0"></script>
+{% endblock %}

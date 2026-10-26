@@ -27,6 +27,11 @@
                 </a>
             </li>
             <li class="test-mode-functional">
+                <a href="{{ url_for('test_execution.page') }}" class="{% if request.endpoint == 'test_execution.page' %}active{% endif %}">
+                    <i class="fas fa-vial-circle-check"></i> <span>Test Execution</span>
+                </a>
+            </li>
+            <li class="test-mode-functional">
                 <a href="#" onclick="launchElementLocator(); return false;" class="{% if request.endpoint == 'launch_element_locator' %}active{% endif %}">
                     <i class="fas fa-crosshairs"></i> <span>Element Locator</span>
                 </a>

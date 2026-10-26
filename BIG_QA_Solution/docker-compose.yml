@@ -35,6 +35,8 @@ services:
       - CHROME_NO_SANDBOX=true
       - WORKSPACE_PATH=/workspace
       - FLASK_ENV=production
+      # Test Execution uploads, screenshots and result workbooks persist on the workspace volume
+      - TEST_EXECUTION_DATA_DIR=/workspace/test_execution
       # Timezone (change to match your location, e.g. Europe/London, Asia/Kolkata)
       - APP_TIMEZONE=${APP_TIMEZONE:-America/New_York}
 
