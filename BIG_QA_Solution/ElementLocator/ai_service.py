@@ -212,6 +212,85 @@ class AIService:
 
         return result
 
+    @staticmethod
+    def _locator_spec_for_prompt(tool: str, language: str, locators: list) -> list:
+        """
+        Reduce captured locators to what the AI must use verbatim: name, type, value
+        and action. Alternatives / outerHtml are deliberately dropped so the model
+        cannot swap the captured locator for an XPath alternative. For Playwright,
+        the exact locator expression to emit is pre-rendered.
+        """
+        from code_generator import CodeGenerator
+        spec = []
+        for loc in locators:
+            item = {
+                "name": loc.get("name") or loc.get("nameHint") or "element",
+                "type": loc.get("type", "XPath"),
+                "value": loc.get("value", ""),
+                "action": loc.get("action", "Click"),
+            }
+            if loc.get("isFrame"):
+                item["isFrame"] = True
+            if tool.lower() == "playwright" and loc.get("action") != "SwitchToWindow":
+                item["playwright_expression"] = CodeGenerator.playwright_locator_expression(
+                    language, item["type"], item["value"])
+            spec.append(item)
+        return spec
+
+    @staticmethod
+    def _locator_rules_for_prompt(tool: str) -> str:
+        rule = (
+            "LOCATORS ARE FIXED: for every locator use exactly the captured 'type' and 'value'. "
+            "Do NOT convert a locator to XPath or CSS, do NOT substitute a different selector, and do NOT invent selectors, "
+            "even if the style reference uses a different locator strategy."
+        )
+        if tool.lower() == "playwright":
+            rule += (
+                " Each locator has a 'playwright_expression': create the element with exactly that expression "
+                "(Playwright getBy* locators MUST stay getByRole/getByLabel/getByText/... calls). The only allowed change is "
+                "the 'page' receiver, to match the sample (e.g. 'this.page' or a page field)."
+            )
+        return rule
+
+    @staticmethod
+    def _missing_locators(code: str, tool: str, locators: list) -> list:
+        """Captured locators whose value does not appear in the AI-generated code."""
+        from code_generator import CodeGenerator
+        missing = []
+        for loc in locators:
+            if loc.get("action") == "SwitchToWindow":
+                continue
+            l_type = loc.get("type", "XPath")
+            val = loc.get("value", "")
+            if not val:
+                continue
+            if tool.lower() == "playwright" and l_type.startswith("getBy"):
+                # Must remain a native call (getByRole / get_by_role / GetByRole) carrying the same text
+                snake = re.sub(r"(?<!^)([A-Z])", r"_\1", l_type).lower()
+                if not re.search(rf"\b(?:{l_type}|{snake}|{l_type[0].upper() + l_type[1:]})\s*\(", code):
+                    missing.append(loc)
+                    continue
+                if l_type == "getByRole":
+                    _, name = CodeGenerator._parse_get_by_role(val)
+                    val = name or ""
+                    if not val:
+                        continue
+            variants = {val, val.replace('"', '\\"'), val.replace("'", "\\'"), json.dumps(val)[1:-1]}
+            if not any(v in code for v in variants):
+                missing.append(loc)
+        return missing
+
+    def _verify_locators_kept(self, code: str, tool: str, locators: list, caller: str) -> str:
+        """Return the AI code, or '' (so callers use the deterministic generator) if it dropped captured locators."""
+        if not code:
+            return code
+        missing = self._missing_locators(code, tool, locators)
+        if missing:
+            print(f"[{caller}] AI output did not use the captured locators for: "
+                  f"{[m.get('nameHint') or m.get('name') for m in missing]}; using fallback generator.", flush=True)
+            return ""
+        return code
+
     def generate_styled_page_object(self, tool: str, language: str, page_name: str, locators: list, sample_code: str) -> str:
         """
         Asks AI to generate the page object class content matching the style/patterns of the provided sample code.
@@ -221,7 +300,7 @@ class AIService:
         import requests
         try:
             # Build the prompt
-            locators_str = json.dumps(locators, indent=2)
+            locators_str = json.dumps(self._locator_spec_for_prompt(tool, language, locators), indent=2)
             prompt = (
                 f"You are an expert QA automation engineer.\n"
                 f"Your task is to generate a new Page Object file named '{page_name}' using the automation tool '{tool}' and language '{language}'.\n\n"
@@ -237,7 +316,8 @@ class AIService:
                 f"3. Inherit from base classes if the sample code does so (e.g. BasePage).\n"
                 f"4. Replicate internal patterns (e.g. if the sample code uses wrapper methods/helper classes to perform clicks/actions, use them instead of raw driver calls).\n"
                 f"5. Each locator specifies an 'action' property (e.g., 'Click', 'Type', 'Clear', 'GetText', 'IsDisplayed', 'WaitForVisible', 'Hover', 'SelectByVisibleText', 'Check', 'Uncheck'). You MUST generate a corresponding method for each locator that performs that exact action. For example, if the action is 'IsDisplayed', the method should return a boolean checking if the element is visible/displayed using the appropriate framework/tool API (e.g., .isVisible(), .isDisplayed(), or .Displayed). Do NOT just default to click methods.\n"
-                f"6. Do NOT include markdown blocks, text explanations, or notes. ONLY output the raw, complete source code. The very first character should be the import or class declaration and nothing else."
+                f"6. {self._locator_rules_for_prompt(tool)}\n"
+                f"7. Do NOT include markdown blocks, text explanations, or notes. ONLY output the raw, complete source code. The very first character should be the import or class declaration and nothing else."
             )
 
             headers = {"Content-Type": "application/json"}
@@ -286,7 +366,7 @@ class AIService:
                     if lines and lines[-1].strip() == "```":
                         lines = lines[:-1]
                     text = "\n".join(lines)
-                return text.strip()
+                return self._verify_locators_kept(text.strip(), tool, locators, "generate_styled_page_object")
             else:
                 print(f"API Error in generate_styled_page_object: {response.status_code} - {response.text}")
                 return ""
@@ -302,7 +382,7 @@ class AIService:
             return ""
         import requests
         try:
-            locators_str = json.dumps(locators, indent=2)
+            locators_str = json.dumps(self._locator_spec_for_prompt(tool, language, locators), indent=2)
             prompt = (
                 f"You are an expert QA automation engineer.\n"
                 f"Your task is to merge new locators into an existing Page Object file for '{tool}' in '{language}'.\n\n"
@@ -315,7 +395,8 @@ class AIService:
                 f"2. Add the new locators/methods following the EXACT coding style, naming convention, and patterns of the existing code.\n"
                 f"3. If a locator or method with the same name already exists, update its value/locating logic or skip it if it is identical. Do not duplicate it.\n"
                 f"4. Each locator specifies an 'action' property (e.g., 'Click', 'Type', 'Clear', 'GetText', 'IsDisplayed', 'WaitForVisible', 'Hover', 'SelectByVisibleText', 'Check', 'Uncheck'). You MUST generate a corresponding method for each locator that performs that exact action (e.g. if 'IsDisplayed', return visible check) matching the style reference. Do NOT default to click methods.\n"
-                f"5. Return ONLY the raw merged file content. Do NOT include markdown blocks, text explanations, or notes."
+                f"5. {self._locator_rules_for_prompt(tool)}\n"
+                f"6. Return ONLY the raw merged file content. Do NOT include markdown blocks, text explanations, or notes."
             )
 
             headers = {"Content-Type": "application/json"}
@@ -364,7 +445,7 @@ class AIService:
                     if lines and lines[-1].strip() == "```":
                         lines = lines[:-1]
                     text = "\n".join(lines)
-                return text.strip()
+                return self._verify_locators_kept(text.strip(), tool, locators, "merge_locators_with_style")
             else:
                 return ""
         except Exception:

@@ -205,7 +205,7 @@ class MergeEngine:
             if tool.lower() == "playwright":
                 prop_lines.append(f"    readonly {name}: Locator;")
                 if l_type.startswith("getBy"):
-                    native_call = CodeGenerator._get_playwright_native_call(l_type, val)
+                    native_call = CodeGenerator._get_playwright_native_call(l_type, loc.get('value', ''))
                     init_lines.append(f"        this.{name} = {native_call};")
                 else:
                     init_lines.append(f"        this.{name} = page.locator('{val}');")

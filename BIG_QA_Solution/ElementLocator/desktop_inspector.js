@@ -369,6 +369,108 @@
         catch (e) { return 0; }
     }
 
+    // ─── Playwright getBy* matchers ──────────────────────────────────────────
+    // Mirror Playwright's default matching (whitespace-normalised, case-insensitive
+    // substring) so match counts reflect what the generated page.getBy*() call
+    // will actually resolve to at runtime.
+    const normWs = (s) => (s || '').replace(/\s+/g, ' ').trim();
+    const ciIncludes = (hay, needle) => normWs(hay).toLowerCase().includes(normWs(needle).toLowerCase());
+
+    const ROLE_TAGS = {
+        button:   'button,input[type="button"],input[type="submit"],input[type="reset"],input[type="image"]',
+        link:     'a',
+        checkbox: 'input[type="checkbox"]',
+        radio:    'input[type="radio"]',
+        textbox:  'input:not([type]),input[type="text"],input[type="email"],input[type="tel"],input[type="url"],textarea',
+        combobox: 'select',
+        heading:  'h1,h2,h3,h4,h5,h6'
+    };
+
+    function implicitRole(el) {
+        const explicit = el.getAttribute('role');
+        if (explicit) return explicit.trim().split(/\s+/)[0].toLowerCase();
+        const tag  = el.tagName.toLowerCase();
+        const type = (el.getAttribute('type') || '').toLowerCase();
+        if (tag === 'button') return 'button';
+        if (tag === 'a') return 'link';
+        if (tag === 'textarea') return 'textbox';
+        if (tag === 'select') return 'combobox';
+        if (/^h[1-6]$/.test(tag)) return 'heading';
+        if (tag === 'input') {
+            if (['button', 'submit', 'reset', 'image'].includes(type)) return 'button';
+            if (type === 'checkbox') return 'checkbox';
+            if (type === 'radio') return 'radio';
+            if (['', 'text', 'email', 'tel', 'url'].includes(type)) return 'textbox';
+        }
+        return null;
+    }
+
+    // Simplified accessible name: aria-label > associated <label> > text > value > title
+    function accessibleName(el) {
+        const aria = el.getAttribute('aria-label');
+        if (aria && aria.trim()) return normWs(aria);
+        if (el.labels && el.labels.length) {
+            const lt = normWs(el.labels[0].textContent);
+            if (lt) return lt;
+        }
+        const txt = normWs(el.textContent);
+        if (txt) return txt;
+        const tag = el.tagName.toLowerCase();
+        if (tag === 'input' && ['button', 'submit', 'reset'].includes((el.getAttribute('type') || '').toLowerCase())) {
+            return normWs(el.value);
+        }
+        return normWs(el.getAttribute('alt') || el.getAttribute('title') || '');
+    }
+
+    function findByRole(root, role, name) {
+        if (!role) return [];
+        const r = role.toLowerCase();
+        const sel = [`[role="${r.replace(/"/g, '\\"')}"]`, ROLE_TAGS[r]].filter(Boolean).join(',');
+        let nodes;
+        try { nodes = [...new Set([...root.querySelectorAll(sel), ...queryShadowDeep(root, sel, false)])]; }
+        catch (e) { return []; }
+        // An explicit role overrides the implicit one; getByRole skips unrendered elements
+        nodes = nodes.filter(n => {
+            const ar = n.getAttribute('role');
+            if (ar && ar.trim().split(/\s+/)[0].toLowerCase() !== r) return false;
+            return n.getClientRects().length > 0;
+        });
+        return name ? nodes.filter(n => ciIncludes(accessibleName(n), name)) : nodes;
+    }
+
+    // Smallest elements whose text contains the value (Playwright skips their ancestors)
+    function findByText(root, text) {
+        if (!normWs(text)) return [];
+        const out = [];
+        root.querySelectorAll('*').forEach(n => {
+            if (/^(SCRIPT|STYLE|NOSCRIPT|TEMPLATE|HEAD|TITLE)$/.test(n.tagName)) return;
+            if (!ciIncludes(n.textContent, text)) return;
+            if (Array.from(n.children).some(c => ciIncludes(c.textContent, text))) return;
+            out.push(n);
+        });
+        return out;
+    }
+
+    function findByLabel(root, text) {
+        const found = new Set();
+        root.querySelectorAll('[aria-label]').forEach(n => {
+            if (ciIncludes(n.getAttribute('aria-label'), text)) found.add(n);
+        });
+        root.querySelectorAll('label').forEach(lb => {
+            if (lb.control && ciIncludes(lb.textContent, text)) found.add(lb.control);
+        });
+        return [...found];
+    }
+
+    function findByAttrText(root, attr, text) {
+        return Array.from(root.querySelectorAll(`[${attr}]`)).filter(n => ciIncludes(n.getAttribute(attr), text));
+    }
+
+    // getByTestId is an exact match on data-testid only
+    function findByTestId(root, id) {
+        return Array.from(root.querySelectorAll('[data-testid]')).filter(n => n.getAttribute('data-testid') === id);
+    }
+
     /**
      * Build sibling-position-indexed XPath anchored to the nearest stable ancestor.
      * e.g.  //ul[@id='nav']/li[2]/a
@@ -663,8 +765,7 @@
         const ph      = el.getAttribute('placeholder');
         const alt     = el.getAttribute('alt');
         const titleAt = el.getAttribute('title');
-        const role    = el.getAttribute('role') ||
-                        (tag === 'button' ? 'button' : tag === 'a' ? 'link' : null);
+        const role    = implicitRole(el);
         const text    = el.textContent.trim();
 
         // Enterprise-specific
@@ -755,7 +856,10 @@
         if (testId) {
             const escapedTid = escapeCSSString(testId);
             list.push({ type: 'Test ID',     value: testId, count: cssCount(`[data-testid="${escapedTid}"],[data-test="${escapedTid}"],[data-automation-id="${escapedTid}"]`, searchRoot) });
-            list.push({ type: 'getByTestId', value: testId, count: cssCount(`[data-testid="${escapedTid}"],[data-test="${escapedTid}"]`, searchRoot) });
+        }
+        const dataTestId = el.getAttribute('data-testid');
+        if (dataTestId) {
+            list.push({ type: 'getByTestId', value: dataTestId, count: findByTestId(searchRoot, dataTestId).length });
         }
         if (id && !isDynamic(id)) {
             const c = cssCount(`#${CSS.escape(id)}`, searchRoot);
@@ -766,34 +870,37 @@
             list.push({ type: 'Name', value: name, count: cssCount(`[name="${escapeCSSString(name)}"]`, searchRoot) });
         }
         if (ph) {
-            list.push({ type: 'getByPlaceholder', value: ph, count: cssCount(`[placeholder="${escapeCSSString(ph)}"]`, searchRoot) });
+            list.push({ type: 'getByPlaceholder', value: ph, count: findByAttrText(searchRoot, 'placeholder', ph).length });
         }
-        if (aria) {
-            list.push({ type: 'getByLabel', value: aria, count: cssCount(`[aria-label="${escapeCSSString(aria)}"]`, searchRoot) });
+        const labelText = aria || (el.labels && el.labels.length ? normWs(el.labels[0].textContent) : '');
+        if (labelText) {
+            list.push({ type: 'getByLabel', value: labelText, count: findByLabel(searchRoot, labelText).length });
         }
         if (alt) {
-            list.push({ type: 'getByAltText', value: alt, count: cssCount(`[alt="${escapeCSSString(alt)}"]`, searchRoot) });
+            list.push({ type: 'getByAltText', value: alt, count: findByAttrText(searchRoot, 'alt', alt).length });
         }
         if (titleAt) {
-            list.push({ type: 'getByTitle', value: titleAt, count: cssCount(`[title="${escapeCSSString(titleAt)}"]`, searchRoot) });
+            list.push({ type: 'getByTitle', value: titleAt, count: findByAttrText(searchRoot, 'title', titleAt).length });
         }
 
         // ── Playwright semantic role ─────────────────────────────────────────
-        if (role && text && text.length < 50) {
+        const accName = accessibleName(el);
+        if (role && accName && accName.length < 50) {
             const escapedRole = role.replace(/'/g, "\\'");
-            const escapedText = text.replace(/'/g, "\\'");
-            list.push({ type: 'getByRole', value: `'${escapedRole}', {name: '${escapedText}'}`, count: 1 });
+            const escapedName = accName.replace(/'/g, "\\'");
+            list.push({ type: 'getByRole', value: `'${escapedRole}', {name: '${escapedName}'}`, count: findByRole(searchRoot, role, accName).length });
         } else if (role) {
             const escapedRole = role.replace(/'/g, "\\'");
-            list.push({ type: 'getByRole', value: `'${escapedRole}'`, count: cssCount(`[role='${role}']`, searchRoot) });
+            list.push({ type: 'getByRole', value: `'${escapedRole}'`, count: findByRole(searchRoot, role, '').length });
         }
 
         // Text-based
-        if (text && text.length > 0 && text.length < 60) {
+        const normText = normWs(text);
+        if (normText && normText.length < 60) {
             if (tag === 'a') {
                 list.push({ type: 'Link Text', value: text, count: xpathCount(`//a[normalize-space()=${escapeXPath(text)}]`, searchRoot) });
             }
-            list.push({ type: 'getByText', value: text, count: 1 });
+            list.push({ type: 'getByText', value: normText, count: findByText(searchRoot, normText).length });
         }
 
         // ── XPaths from smart engine ─────────────────────────────────────────
@@ -1035,32 +1142,26 @@
                     domResults = Array.from(d.querySelectorAll(`[data-testid="${escVal}"],[data-test="${escVal}"],[data-automation-id="${escVal}"]`));
                 }
                 else if (uType === 'GETBYTESTID') {
-                    domResults = Array.from(d.querySelectorAll(`[data-testid="${escVal}"],[data-test="${escVal}"]`));
+                    domResults = findByTestId(d, locVal);
                 }
                 else if (uType === 'GETBYPLACEHOLDER') {
-                    domResults = Array.from(d.querySelectorAll(`[placeholder="${escVal}"]`));
+                    domResults = findByAttrText(d, 'placeholder', locVal);
                 }
                 else if (uType === 'GETBYLABEL') {
-                    domResults = Array.from(d.querySelectorAll(`[aria-label="${escVal}"]`));
+                    domResults = findByLabel(d, locVal);
                 }
                 else if (uType === 'GETBYALTTEXT') {
-                    domResults = Array.from(d.querySelectorAll(`[alt="${escVal}"]`));
+                    domResults = findByAttrText(d, 'alt', locVal);
                 }
                 else if (uType === 'GETBYTITLE') {
-                    domResults = Array.from(d.querySelectorAll(`[title="${escVal}"]`));
+                    domResults = findByAttrText(d, 'title', locVal);
                 }
                 else if (uType === 'GETBYTEXT') {
-                    domResults = Array.from(d.querySelectorAll('*')).filter(n => n.children.length === 0 && n.textContent.trim() === locVal);
+                    domResults = findByText(d, locVal);
                 }
                 else if (uType === 'GETBYROLE') {
                     const parsed = parseGetByRole(locVal);
-                    const role = parsed.role;
-                    const name = parsed.name;
-                    const tagMap = { 'link': 'a', 'checkbox': 'input[type="checkbox"]', 'textbox': 'input[type="text"],textarea', 'heading': 'h1,h2,h3,h4,h5,h6' };
-                    const tagSelector = tagMap[role] || role;
-                    const selector = `[role="${escapeCSSString(role)}"],${tagSelector}`;
-                    const allNodes = [...Array.from(d.querySelectorAll(selector)), ...queryShadowDeep(d, selector, false)];
-                    domResults = name ? allNodes.filter(e => e.textContent.trim().includes(name)) : allNodes;
+                    domResults = findByRole(d, parsed.role, parsed.name);
                 } else {
                     try {
                         domResults = Array.from(d.querySelectorAll(locVal));
@@ -1183,25 +1284,20 @@
                                                         for(let i=0; i<s.snapshotLength; i++) allNodes.push(s.snapshotItem(i));
                                                     }
             else if (uType === 'TESTID')            allNodes = Array.from(document.querySelectorAll(`[data-testid="${escVal}"],[data-test="${escVal}"],[data-automation-id="${escVal}"]`));
-            else if (uType === 'GETBYTESTID')       allNodes = Array.from(document.querySelectorAll(`[data-testid="${escVal}"],[data-test="${escVal}"]`));
-            else if (uType === 'GETBYPLACEHOLDER')  allNodes = Array.from(document.querySelectorAll(`[placeholder="${escVal}"]`));
-            else if (uType === 'GETBYLABEL')        allNodes = Array.from(document.querySelectorAll(`[aria-label="${escVal}"]`));
-            else if (uType === 'GETBYALTTEXT')      allNodes = Array.from(document.querySelectorAll(`[alt="${escVal}"]`));
-            else if (uType === 'GETBYTITLE')        allNodes = Array.from(document.querySelectorAll(`[title="${escVal}"]`));
-            else if (uType === 'GETBYTEXT')         allNodes = Array.from(document.querySelectorAll('*')).filter(n => n.children.length === 0 && n.textContent.trim() === value);
+            else if (uType === 'GETBYTESTID')       allNodes = findByTestId(document, value);
+            else if (uType === 'GETBYPLACEHOLDER')  allNodes = findByAttrText(document, 'placeholder', value);
+            else if (uType === 'GETBYLABEL')        allNodes = findByLabel(document, value);
+            else if (uType === 'GETBYALTTEXT')      allNodes = findByAttrText(document, 'alt', value);
+            else if (uType === 'GETBYTITLE')        allNodes = findByAttrText(document, 'title', value);
+            else if (uType === 'GETBYTEXT')         allNodes = findByText(document, value);
             else if (uType === 'GETBYROLE') {
                 const parsed = parseGetByRole(value);
-                const role = parsed.role;
-                const name = parsed.name;
-                const tagMap = { 'link': 'a', 'checkbox': 'input[type="checkbox"]', 'textbox': 'input[type="text"],textarea', 'heading': 'h1,h2,h3,h4,h5,h6' };
-                const tagSelector = tagMap[role] || role;
-                const selector = `[role="${escapeCSSString(role)}"],${tagSelector}`;
-                const rawNodes = [...Array.from(document.querySelectorAll(selector)), ...queryShadowDeep(document, selector, false)];
-                allNodes = name ? rawNodes.filter(e => e.textContent.trim().includes(name)) : rawNodes;
+                allNodes = findByRole(document, parsed.role, parsed.name);
             }
 
-            // Shadow DOM fallback (Salesforce LWC / Creatio / Appian iframes)
-            if (allNodes.length === 0 && uType !== 'GETBYROLE') { // GETBYROLE already handles shadow DOM above
+            // Shadow DOM fallback (Salesforce LWC / Creatio / Appian iframes) — only for raw selectors;
+            // getBy* values are not CSS/XPath (GETBYROLE already searches shadow roots above)
+            if (allNodes.length === 0 && !uType.startsWith('GETBY')) {
                 const isXpath = uType === 'XPATH';
                 allNodes = queryShadowDeep(document, value, isXpath);
                 if (allNodes.length > 0) source = 'Shadow DOM';

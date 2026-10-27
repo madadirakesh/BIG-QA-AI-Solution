@@ -54,7 +54,7 @@ class CodeGenerator:
                         val = CodeGenerator.escape_quotes(loc.get("value", ""))
                         l_type = loc.get("type", "XPath")
                         if l_type.startswith("getBy"):
-                            native_call = CodeGenerator._get_playwright_native_call_java(l_type, val)
+                            native_call = CodeGenerator._get_playwright_native_call_java(l_type, loc.get("value", ""))
                             lines.append(f"        this.{name} = {native_call};")
                         else:
                             lines.append(f"        this.{name} = this.page.locator(\"{val}\");")
@@ -103,7 +103,7 @@ class CodeGenerator:
                         category = loc.get("category", "Ok")
                         lines.append(f"        # Priority: {category}")
                         if l_type.startswith("getBy"):
-                            native_call = CodeGenerator._get_playwright_native_call_python(l_type, val)
+                            native_call = CodeGenerator._get_playwright_native_call_python(l_type, loc.get("value", ""))
                             lines.append(f"        self.{name} = {native_call}")
                         else:
                             lines.append(f"        self.{name} = page.locator(\"{val}\")")
@@ -160,7 +160,7 @@ class CodeGenerator:
                         val = CodeGenerator.escape_quotes(loc.get("value", ""))
                         l_type = loc.get("type", "XPath")
                         if l_type.startswith("getBy"):
-                            native_call = CodeGenerator._get_playwright_native_call_csharp(l_type, val)
+                            native_call = CodeGenerator._get_playwright_native_call_csharp(l_type, loc.get("value", ""))
                             lines.append(f"        this._{name} = {native_call};")
                         else:
                             lines.append(f"        this._{name} = page.Locator(\"{val}\");")
@@ -247,7 +247,7 @@ class CodeGenerator:
                     lines.append(f"        // Priority: {category}")
                     if is_pw:
                         if l_type.startswith("getBy"):
-                            native_call = CodeGenerator._get_playwright_native_call(l_type, val)
+                            native_call = CodeGenerator._get_playwright_native_call(l_type, loc.get("value", ""))
                             lines.append(f"        this.{name} = {native_call};")
                         else:
                             lines.append(f"        this.{name} = page.locator(\"{val}\");")
@@ -288,18 +288,30 @@ class CodeGenerator:
         return "\n".join(lines)
 
     @staticmethod
+    def playwright_locator_expression(language: str, l_type: str, val: str) -> str:
+        """Exact Playwright locator expression (receiver `page`) for a captured locator."""
+        lang = (language or "").lower()
+        if lang == "python":
+            return CodeGenerator._get_playwright_native_call_python(l_type, val)
+        if lang == "java":
+            return CodeGenerator._get_playwright_native_call_java(l_type, val)
+        if lang == "c#":
+            return CodeGenerator._get_playwright_native_call_csharp(l_type, val)
+        return CodeGenerator._get_playwright_native_call(l_type, val)
+
+    @staticmethod
     def _parse_get_by_role(val: str) -> tuple[str, str | None]:
         val_stripped = val.strip()
-        
+
         # Check for JavaScript options format: 'button', {name: 'Login'}
         if "," in val_stripped:
             parts = val_stripped.split(",", 1)
             role = parts[0].strip().strip("'").strip('"')
             rest = parts[1].strip()
-            import re
-            name_match = re.search(r"name\s*[:=]\s*['\"](.*?)['\"]", rest)
+            # Honour backslash-escaped quotes inside the name, e.g. {name: 'Don\'t'}
+            name_match = re.search(r"name\s*[:=]\s*(['\"])((?:\\.|(?!\1).)*)\1", rest)
             if name_match:
-                return role, name_match.group(1)
+                return role, re.sub(r"\\(.)", r"\1", name_match.group(2))
             return role, None
             
         # Heuristic for || or : separator
@@ -321,7 +333,7 @@ class CodeGenerator:
         if l_type == "getByRole":
             role, name = CodeGenerator._parse_get_by_role(val)
             if name:
-                return f"page.getByRole('{role}', {{ name: '{name}' }})"
+                return f"page.getByRole('{role}', {{ name: {json.dumps(name)} }})"
             return f"page.getByRole('{role}')"
             
         safe_val = json.dumps(val)
@@ -345,8 +357,7 @@ class CodeGenerator:
         if l_type == "getByRole":
             role, name = CodeGenerator._parse_get_by_role(val)
             if name:
-                escaped_name = name.replace('"', '\\"')
-                return f"page.get_by_role(\"{role}\", name=\"{escaped_name}\")"
+                return f"page.get_by_role(\"{role}\", name={json.dumps(name)})"
             return f"page.get_by_role(\"{role}\")"
             
         safe_val = json.dumps(val)
@@ -371,8 +382,7 @@ class CodeGenerator:
             role, name = CodeGenerator._parse_get_by_role(val)
             role_enum = role.upper()
             if name:
-                escaped_name = name.replace('"', '\\"')
-                return f"page.getByRole(AriaRole.{role_enum}, new Page.GetByRoleOptions().setName(\"{escaped_name}\"))"
+                return f"page.getByRole(AriaRole.{role_enum}, new Page.GetByRoleOptions().setName({json.dumps(name)}))"
             return f"page.getByRole(AriaRole.{role_enum})"
             
         safe_val = json.dumps(val)
@@ -397,8 +407,7 @@ class CodeGenerator:
             role, name = CodeGenerator._parse_get_by_role(val)
             role_pascal = role[0].upper() + role[1:] if role else ""
             if name:
-                escaped_name = name.replace('"', '\\"')
-                return f"page.GetByRole(AriaRole.{role_pascal}, new PageGetByRoleOptions {{ Name = \"{escaped_name}\" }})"
+                return f"page.GetByRole(AriaRole.{role_pascal}, new PageGetByRoleOptions {{ Name = {json.dumps(name)} }})"
             return f"page.GetByRole(AriaRole.{role_pascal})"
             
         safe_val = json.dumps(val)

@@ -884,7 +884,7 @@ class MergeWindow(QMainWindow):
                                 merged_code = self._parent_studio.ai_service.merge_locators_with_style(
                                     self.tool, self.lang, original_code, self.locators
                                 )
-                            else:
+                            if not merged_code:
                                 merged_code = MergeEngine.merge_locators(original_code, self.locators, self.tool, self.lang)
                         except Exception as e:
                             print(f"Error auto-reading matching PO: {e}")

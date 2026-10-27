@@ -2468,6 +2468,42 @@
             refreshLocatorsForNewTool();
         }
 
+        // Playwright-Native Mode: user-facing getBy* locators first (Playwright's recommended
+        // order), then CSS/ID/Name, with XPath as the last resort. 'Test ID' / 'Link Text'
+        // have no native Playwright call, so they rank after XPath.
+        const PW_NATIVE_ORDER = ['getByRole', 'getByTestId', 'getByLabel', 'getByPlaceholder', 'getByText', 'getByAltText', 'getByTitle'];
+
+        function locatorTypeRank(type, tool, isPwNative) {
+            if (tool !== 'Playwright' || !isPwNative) return 0;
+            const i = PW_NATIVE_ORDER.indexOf(type);
+            if (i !== -1) return i;
+            if (['CSS', 'ID', 'Name'].includes(type)) return 10;
+            if (type === 'XPath') return 20;
+            return 30;
+        }
+
+        // Unique matches first, then the tool's type preference, then fewest matches
+        function rankLocators(locs, tool, isPwNative) {
+            return locs
+                .filter(l => l.count == null || l.count > 0)
+                .sort((a, b) => {
+                    const ac = a.count ?? 99, bc = b.count ?? 99;
+                    if (ac === 1 && bc !== 1) return -1;
+                    if (bc === 1 && ac !== 1) return 1;
+                    const ta = locatorTypeRank(a.type, tool, isPwNative);
+                    const tb = locatorTypeRank(b.type, tool, isPwNative);
+                    if (ta !== tb) return ta - tb;
+                    return ac - bc;
+                });
+        }
+
+        function pickBestLocator(ranked, tool) {
+            if (tool === 'Selenium') {
+                return ranked.find(l => l.type === 'XPath' && l.count === 1) || ranked[0];
+            }
+            return ranked[0];
+        }
+
         function refreshLocatorsForNewTool() {
             if (!capturedElements || capturedElements.length === 0) return;
 
@@ -2493,34 +2529,8 @@
                 }
 
 
-                // Rank
-                const ranked = uniqueLocs
-                    .filter(l => l.count == null || l.count > 0)
-                    .sort((a, b) => {
-                        const ac = a.count ?? 99, bc = b.count ?? 99;
-                        if (ac === 1 && bc !== 1) return -1;
-                        if (bc === 1 && ac !== 1) return 1;
-                        return ac - bc;
-                    });
-
-                // Pick best matching preference
-                let bestLoc = ranked[0];
-                if (!bestLoc) {
-                    bestLoc = uniqueLocs[0];
-                } else {
-                    if (selectedTool === 'Selenium') {
-                        const xp = ranked.find(l => l.type === 'XPath' && l.count === 1);
-                        if (xp) bestLoc = xp;
-                    } else if (isPwNative) {
-                        const xp = ranked.find(l => l.type === 'XPath' && l.count === 1);
-                        if (xp) {
-                            bestLoc = xp;
-                        } else {
-                            const pw = ranked.find(l => l.type.startsWith('getBy') && (l.count ?? 2) === 1);
-                            if (pw) bestLoc = pw;
-                        }
-                    }
-                }
+                const ranked = rankLocators(uniqueLocs, selectedTool, isPwNative);
+                const bestLoc = pickBestLocator(ranked, selectedTool) || uniqueLocs[0];
 
                 if (bestLoc) {
                     bestLoc.action = el.action || 'Click';
@@ -3003,34 +3013,9 @@
                 filteredLocators = locators.filter(l => l && l.type && !l.type.startsWith('getBy') && l.type !== 'Test ID');
             }
 
-            const ranked = filteredLocators
-                .filter(l => l.count == null || l.count > 0)
-                .sort((a, b) => {
-                    const ac = a.count ?? 99, bc = b.count ?? 99;
-                    if (ac === 1 && bc !== 1) return -1;
-                    if (bc === 1 && ac !== 1) return 1;
-                    return ac - bc;
-                });
-
-            // Pick "best" based on tool preference
-            let bestLoc = ranked[0];
-            if (!bestLoc) {
-                // fallback if all locators were filtered out
-                bestLoc = filteredLocators[0];
-            } else {
-                if (selectedTool === 'Selenium') {
-                    const xp = ranked.find(l => l.type === 'XPath' && l.count === 1);
-                    if (xp) bestLoc = xp;
-                } else if (isPwNative) {
-                    const xp = ranked.find(l => l.type === 'XPath' && l.count === 1);
-                    if (xp) {
-                        bestLoc = xp;
-                    } else {
-                        const pw = ranked.find(l => l.type.startsWith('getBy') && (l.count ?? 2) === 1);
-                        if (pw) bestLoc = pw;
-                    }
-                }
-            }
+            const ranked = rankLocators(filteredLocators, selectedTool, isPwNative);
+            // Fall back to the first raw locator if every candidate was filtered out
+            const bestLoc = pickBestLocator(ranked, selectedTool) || filteredLocators[0];
 
             if (!bestLoc) return;
 
