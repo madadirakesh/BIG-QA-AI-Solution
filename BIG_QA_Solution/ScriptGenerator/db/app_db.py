@@ -93,6 +93,29 @@ def insert_data(query, params=None):
     return execute_update(query, params)
 
 
+def save_project_requirement(project_id, req_name, requirement, source_metadata=None):
+    """
+    Stores a requirement for a project, unless the exact same text is already stored
+    for that project. Returns {"id", "req_name", "duplicate"}; raises on database errors.
+    """
+    conn = open_own_connection()
+    try:
+        with conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT id, req_name FROM ProjectInputs WHERE projectId = ? AND requirement = ? LIMIT 1",
+                           (project_id, requirement))
+            existing = cursor.fetchone()
+            if existing:
+                return {"id": existing["id"], "req_name": existing["req_name"], "duplicate": True}
+            cursor.execute(
+                "INSERT INTO ProjectInputs (projectId, req_name, requirement, source_metadata, created_at) "
+                "VALUES (?, ?, ?, ?, datetime('now', 'localtime'))",
+                (project_id, req_name, requirement, source_metadata))
+            return {"id": cursor.lastrowid, "req_name": req_name, "duplicate": False}
+    finally:
+        conn.close()
+
+
 def purge_transient_test_projects():
     """
     Remove only known transient MCP verification project records.
@@ -658,6 +681,16 @@ def init_db():
 
             try:
                 cursor.execute("ALTER TABLE PerformanceRunStats ADD COLUMN run_id INTEGER")
+            except Exception: pass
+
+            # Test Case Generator: where a stored requirement came from (Jira tickets,
+            # information types, documents) and when it was stored.
+            try:
+                cursor.execute("ALTER TABLE ProjectInputs ADD COLUMN source_metadata TEXT")
+            except Exception: pass
+
+            try:
+                cursor.execute("ALTER TABLE ProjectInputs ADD COLUMN created_at TEXT")
             except Exception: pass
 
             # Projects created before the tool choice existed are Locust scaffolds.

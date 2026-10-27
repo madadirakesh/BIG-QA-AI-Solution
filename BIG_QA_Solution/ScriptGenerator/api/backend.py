@@ -7,7 +7,7 @@ import re
 import hashlib
 import logging
 from typing import Dict, List, Optional
-from fastapi import FastAPI, BackgroundTasks, HTTPException, Request, Depends
+from fastapi import FastAPI, BackgroundTasks, HTTPException, Request, Depends, UploadFile, File
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi_csrf_protect import CsrfProtect
@@ -19,6 +19,11 @@ try:
     from jira import JIRA
 except ImportError:
     JIRA = None
+
+try:
+    from . import requirement_sources as req_sources
+except ImportError:  # backend.py run directly from the api folder
+    import requirement_sources as req_sources
 
 # Setup logging
 logging.basicConfig(
@@ -272,6 +277,14 @@ class GenerateTestCasesRequest(BaseModel):
     steps_format: str = "single_cell"
 
 
+class ImportJiraIssuesRequest(BaseModel):
+    keys:                        List[str]
+    include_description:         bool = True
+    include_acceptance_criteria: bool = False
+    include_comments:            bool = False
+    include_attachments:         bool = False
+
+
 class GeneratedFilesResponse(BaseModel):
     files: Dict[str, str]
 
@@ -483,6 +496,82 @@ async def call_ai(prompt: str, provider: str = "", expect_json: bool = True, ret
             wait_time = 2 ** attempt
             logger.info(f"Retrying in {wait_time} seconds...")
             await asyncio.sleep(wait_time)
+
+
+def read_image_text_with_ai(data: bytes, mime: str) -> str:
+    """
+    Transcribes an image (screenshot, mock-up, scanned page) through the configured AI
+    provider's vision support. Synchronous: callers run it in a worker thread.
+    """
+    import base64
+    reload_env()
+    if not (os.getenv("AI_MODEL", "") or "").strip() or not API_KEY:
+        raise RuntimeError(build_missing_ai_configuration_message(
+            missing_model=not (os.getenv("AI_MODEL", "") or "").strip(), missing_key=not API_KEY))
+    import prompts.test_case_generation_prompts as tcg_prompts
+    prompt = tcg_prompts.get_image_text_extraction_prompt()
+    provider = get_effective_ai_provider()
+
+    if provider == "gemini":
+        from google.genai import types
+        response = _get_gemini_client().models.generate_content(
+            model=AI_MODEL, contents=[types.Part.from_bytes(data=data, mime_type=mime), prompt])
+        return response.text or ""
+
+    encoded = base64.b64encode(data).decode("ascii")
+    if provider == "anthropic":
+        import anthropic
+        client = anthropic.Anthropic(api_key=API_KEY, timeout=AI_REQUEST_TIMEOUT_SECONDS)
+        response = client.messages.create(
+            model=AI_MODEL, max_tokens=4096, temperature=0,
+            messages=[{"role": "user", "content": [
+                {"type": "image", "source": {"type": "base64", "media_type": mime, "data": encoded}},
+                {"type": "text", "text": prompt},
+            ]}])
+        return "".join(getattr(block, "text", "") for block in response.content)
+
+    client = _get_openai_client()
+    if not client:
+        raise RuntimeError("OpenAI client not initialized. Check if 'openai' package is installed and API_KEY is set.")
+    response = client.with_options(timeout=AI_REQUEST_TIMEOUT_SECONDS).chat.completions.create(
+        model=AI_MODEL, temperature=0,
+        messages=[{"role": "user", "content": [
+            {"type": "text", "text": prompt},
+            {"type": "image_url", "image_url": {"url": f"data:{mime};base64,{encoded}"}},
+        ]}])
+    return response.choices[0].message.content or ""
+
+
+async def _prepare_requirement_context(requirements: str, provider: str) -> tuple:
+    """
+    Returns (context for the prompt, notes for the user). A context larger than the
+    direct limit is condensed part by part (map step) so nothing is silently dropped.
+    """
+    text = requirements.strip()
+    if len(text) <= req_sources.MAX_DIRECT_CONTEXT_CHARS:
+        return req_sources.neutralize_markers_in_prompt(text), []
+
+    import prompts.test_case_generation_prompts as tcg_prompts
+    chunks = req_sources.split_into_chunks(text, req_sources.CONDENSE_CHUNK_CHARS)
+    logger.info(f"Requirement context of {len(text)} chars condensed in {len(chunks)} parts")
+    limiter = asyncio.Semaphore(3)
+
+    async def condense(number: int, chunk: str) -> str:
+        async with limiter:
+            prompt = tcg_prompts.get_requirement_condensation_prompt(
+                req_sources.neutralize_markers_in_prompt(chunk), number, len(chunks))
+            return await call_ai(prompt, provider, expect_json=False)
+
+    parts = await asyncio.gather(*(condense(i, c) for i, c in enumerate(chunks, 1)))
+    condensed = "\n\n".join(f"### Condensed requirement extract {i} of {len(parts)}\n{p.strip()}"
+                            for i, p in enumerate(parts, 1))
+    notes = [f"The combined requirement context ({len(text):,} characters) exceeded the "
+             f"{req_sources.MAX_DIRECT_CONTEXT_CHARS:,}-character limit, so it was condensed in {len(chunks)} "
+             "parts before generation, keeping every requirement, acceptance criterion, conflict and its source."]
+    if len(condensed) > req_sources.MAX_DIRECT_CONTEXT_CHARS:
+        notes.append("The condensed context is still very large; the model may take longer or truncate its answer. "
+                     "Consider generating per ticket or per document.")
+    return req_sources.neutralize_markers_in_prompt(condensed), notes
 
 
 def parse_json_result(result: str, fallback_key: str) -> dict:
@@ -1646,15 +1735,15 @@ async def generate_bdd_scenarios(req: GenerateBDDScenariosRequest, request: Requ
     import prompts.test_case_generation_prompts as tcg_prompts
 
     provider = req.ai_provider.strip().lower() if req.ai_provider.strip() else DEFAULT_AI_PROVIDER
-    
-    prompt = tcg_prompts.get_bdd_scenario_generation_prompt(req.requirements)
-    
+
     try:
+        context, notes = await _prepare_requirement_context(req.requirements, provider)
+        prompt = tcg_prompts.get_bdd_scenario_generation_prompt(context)
         # expect_json must be False here to get raw Gherkin text
         content = await call_ai(prompt, provider, expect_json=False)
         # Strip any accidental markdown fences if they still appear
         content = re.sub(r"```(?:gherkin|feature)?\s*", "", content).replace("```", "").strip()
-        return {"status": "success", "filename": "scenarios.feature", "content": content}
+        return {"status": "success", "filename": "scenarios.feature", "content": content, "context_notes": notes}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -1673,15 +1762,14 @@ async def generate_formatted_test_cases(req: GenerateTestCasesRequest, request: 
 
     provider = req.ai_provider.strip().lower() if req.ai_provider.strip() else DEFAULT_AI_PROVIDER
     steps_format = req.steps_format.strip().lower() if req.steps_format else "single_cell"
-    
-    prompt = tcg_prompts.get_test_case_generation_prompt(req.requirements, req.template, steps_format=steps_format)
-    
+
     try:
+        context, notes = await _prepare_requirement_context(req.requirements, provider)
+        prompt = tcg_prompts.get_test_case_generation_prompt(context, req.template, steps_format=steps_format)
         content = await call_ai(prompt, provider, expect_json=True)
         # Strip any accidental markdown fences
         content = re.sub(r"```[a-z]*\s*", "", content).replace("```", "").strip()
-        print(content)
-        return {"status": "success", "content": content}
+        return {"status": "success", "content": content, "context_notes": notes}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -1706,6 +1794,52 @@ async def get_jira_epics(project_key: str):
         return [{"key": i.key, "summary": i.fields.summary, "status": str(i.fields.status)} for i in issues]
     except Exception as e:
         logger.error(f"Jira Epics Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/jira/projects/{project_key}/search")
+async def search_jira_issues(project_key: str, q: str = ""):
+    """Search Epics / Stories / Tasks in a project by issue key (e.g. ABC-123 or 123) or title text."""
+    project_key = project_key.strip().upper()
+    if not re.fullmatch(r"[A-Z][A-Z0-9_]*", project_key):
+        raise HTTPException(status_code=400, detail="Invalid project key")
+    query = q.strip()
+    if not query:
+        return []
+
+    def _row(i):
+        return {
+            "key": i.key,
+            "summary": i.fields.summary,
+            "type": str(i.fields.issuetype),
+            "status": str(i.fields.status),
+        }
+
+    try:
+        jira = _get_jira_client()
+        results = {}
+
+        # Exact key lookup: "ABC-123" or just "123" (prefixed with the project key)
+        key_match = re.fullmatch(r"(?:([A-Za-z][A-Za-z0-9_]*)-)?(\d+)", query)
+        if key_match:
+            issue_key = f"{(key_match.group(1) or project_key).upper()}-{key_match.group(2)}"
+            try:
+                issue = jira.issue(issue_key, fields="summary,issuetype,status,project")
+                if issue.fields.project.key.upper() == project_key:
+                    results[issue.key] = _row(issue)
+            except Exception:
+                pass  # key does not exist - fall through to the text search
+
+        # Title search; strip Lucene/JQL reserved characters so free text never breaks the query
+        text = re.sub(r'[+\-&|!(){}\[\]^~*?\\:"/]', " ", query).strip()
+        if text:
+            jql = f'project="{project_key}" AND summary ~ "{text}*" ORDER BY updated DESC'
+            for i in jira.search_issues(jql, maxResults=50, fields="summary,issuetype,status"):
+                results.setdefault(i.key, _row(i))
+
+        return list(results.values())
+    except Exception as e:
+        logger.error(f"Jira Search Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -1750,6 +1884,100 @@ async def get_jira_story_children(story_key: str):
     except Exception as e:
         logger.error(f"Jira Story Children Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+JIRA_TICKET_IMPORT_TIMEOUT_SECONDS = 300
+DOCUMENT_EXTRACT_TIMEOUT_SECONDS = 300
+
+
+@app.post("/jira/issues/import")
+async def import_jira_issues(req: ImportJiraIssuesRequest, request: Request, csrf_protect: CsrfProtect = Depends()):
+    """
+    Imports the selected information types (description, acceptance criteria, comments,
+    attachments) for several tickets. One ticket failing never fails the others.
+    """
+    await csrf_protect.validate_csrf(request)
+    keys = list(dict.fromkeys(k.strip().upper() for k in req.keys if k and k.strip()))
+    if not keys:
+        raise HTTPException(status_code=400, detail="Select at least one Jira ticket.")
+    if len(keys) > req_sources.MAX_TICKETS_PER_IMPORT:
+        raise HTTPException(status_code=400,
+                            detail=f"Select at most {req_sources.MAX_TICKETS_PER_IMPORT} tickets per import.")
+    invalid = [k for k in keys if not req_sources.ISSUE_KEY.match(k)]
+    if invalid:
+        raise HTTPException(status_code=400, detail=f"Invalid Jira issue key(s): {', '.join(invalid[:5])}")
+    include = {
+        "description": req.include_description,
+        "acceptance_criteria": req.include_acceptance_criteria,
+        "comments": req.include_comments,
+        "attachments": req.include_attachments,
+    }
+    if not any(include.values()):
+        raise HTTPException(status_code=400, detail="Select at least one type of information to import.")
+
+    try:
+        jira = _get_jira_client()
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=str(e))
+    ac_fields = (await asyncio.to_thread(req_sources.acceptance_criteria_field_ids, jira)
+                 if include["acceptance_criteria"] else [])
+    registry = req_sources.AttachmentRegistry()
+    image_reader = read_image_text_with_ai if include["attachments"] else None
+    limiter = asyncio.Semaphore(4)
+
+    async def import_one(key: str) -> dict:
+        async with limiter:
+            try:
+                return await asyncio.wait_for(
+                    asyncio.to_thread(req_sources.import_ticket, jira, key, include, ac_fields, image_reader, registry),
+                    timeout=JIRA_TICKET_IMPORT_TIMEOUT_SECONDS)
+            except asyncio.TimeoutError:
+                return {"key": key, "ok": False, "warnings": [],
+                        "error": f"Timed out after {JIRA_TICKET_IMPORT_TIMEOUT_SECONDS} seconds."}
+            except Exception as exc:
+                logger.error(f"Jira import of {key} failed: {type(exc).__name__}")
+                return {"key": key, "ok": False, "warnings": [], "error": f"Could not import {key}: {exc}"}
+
+    tickets = await asyncio.gather(*(import_one(k) for k in keys))
+    imported = sum(1 for t in tickets if t["ok"])
+    logger.info(f"Jira import: {imported}/{len(keys)} tickets imported "
+                f"(info types: {', '.join(k for k, v in include.items() if v)})")
+    return {"tickets": tickets, "imported": imported, "failed": len(keys) - imported}
+
+
+@app.post("/documents/extract")
+async def extract_requirement_documents(request: Request, files: List[UploadFile] = File(...),
+                                        csrf_protect: CsrfProtect = Depends()):
+    """Extracts readable text from uploaded requirement documents; each file succeeds or fails on its own."""
+    await csrf_protect.validate_csrf(request)
+    if len(files) > req_sources.MAX_FILES_PER_UPLOAD:
+        raise HTTPException(status_code=400,
+                            detail=f"Upload at most {req_sources.MAX_FILES_PER_UPLOAD} files at a time.")
+    documents = []
+    for upload in files:
+        name = os.path.basename(upload.filename or "document")
+        data = await upload.read(req_sources.MAX_FILE_BYTES + 1)
+        await upload.close()
+        entry = {"name": name, "size": len(data), "extension": os.path.splitext(name)[1].lstrip(".").lower(),
+                 "sha256": hashlib.sha256(data).hexdigest(), "status": "failed", "message": "",
+                 "warnings": [], "characters": 0, "block": ""}
+        try:
+            doc = await asyncio.wait_for(
+                asyncio.to_thread(req_sources.extract_document, name, data, read_image_text_with_ai),
+                timeout=DOCUMENT_EXTRACT_TIMEOUT_SECONDS)
+            entry.update(status="extracted", warnings=doc.warnings, characters=len(doc.text),
+                         message=f"{len(doc.text):,} characters extracted.",
+                         block=req_sources.render_document_block(doc))
+        except req_sources.DocumentError as exc:
+            entry["message"] = str(exc)
+        except asyncio.TimeoutError:
+            entry["message"] = f"Processing timed out after {DOCUMENT_EXTRACT_TIMEOUT_SECONDS} seconds."
+        except Exception as exc:
+            logger.error(f"Document extraction failed ({entry['extension']}, {len(data)} bytes): {type(exc).__name__}")
+            entry["message"] = f"The file could not be processed: {exc}"
+        logger.info(f"Document extraction: .{entry['extension']} {len(data)} bytes -> {entry['status']}")
+        documents.append(entry)
+    return {"documents": documents}
 
 
 @app.get("/jira/tasks/{issue_key}")

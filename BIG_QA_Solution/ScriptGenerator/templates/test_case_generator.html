@@ -47,6 +47,10 @@
                     <label>What are we testing? <small class="text-secondary">(Describe features or user stories)</small></label>
                     <textarea id="requirementInput" rows="8"
                         placeholder="e.g., User should be able to search for products, filter by category, and add items to the shopping cart."></textarea>
+                    <small class="text-secondary d-block mt-1">
+                        <i class="fas fa-info-circle"></i> Imported Jira tickets and documents are added below your text as labelled blocks
+                        (<code>===== JIRA TICKET ... =====</code>, <code>===== SUPPORTING DOCUMENT ... =====</code>). You can edit them; deleting a block removes that source.
+                    </small>
                     <div class="mt-3">
                         <button type="button" id="jiraConnectBtn" class="btn btn-outline-primary btn-sm" onclick="toggleJiraSection()">
                             <i class="fab fa-jira"></i> Connect with Jira
@@ -57,6 +61,22 @@
                         <div class="jira-header-inline">
                             <h4><i class="fab fa-jira"></i> Jira Integration</h4>
                             <button type="button" class="close-jira" style="font-size: 1rem;" onclick="toggleJiraSection()">&times;</button>
+                        </div>
+
+                        <div class="jira-info-types">
+                            <span class="jira-info-label"><i class="fas fa-filter"></i> Information to import:</span>
+                            <label title="The ticket's Description field (the requirement text). This is the existing behaviour.">
+                                <input type="checkbox" class="jira-child-checkbox" id="jiraIncDescription" checked> Requirement / Description
+                            </label>
+                            <label title="The ticket's 'Acceptance Criteria' field. If the field is empty or not configured, an 'Acceptance Criteria' section in the description is used.">
+                                <input type="checkbox" class="jira-child-checkbox" id="jiraIncAC"> Acceptance Criteria
+                            </label>
+                            <label title="All comments your Jira account can see, with author and date.">
+                                <input type="checkbox" class="jira-child-checkbox" id="jiraIncComments"> Comments
+                            </label>
+                            <label title="Readable content of PDF, DOCX, TXT, MD, CSV, JSON, PNG, JPEG, XLSX and XLS attachments (up to 15 MB each, 10 per ticket). Images are read by the configured AI model.">
+                                <input type="checkbox" class="jira-child-checkbox" id="jiraIncAttachments"> Attachments
+                            </label>
                         </div>
 
                         <div id="jiraProjectsView">
@@ -73,6 +93,12 @@
                                 <button type="button" class="btn btn-link btn-sm p-0 me-2 text-decoration-none" onclick="showJiraProjects()"><i class="fas fa-arrow-left"></i> Projects</button>
                                 <span id="selectedProjectName" class="badge bg-primary"></span>
                             </div>
+                            <div class="jira-search-box">
+                                <i class="fas fa-search"></i>
+                                <input type="text" id="jiraSearchInput" class="form-control form-control-sm" placeholder="Search Epic / Story / Task by ID (e.g. ABC-123) or title..." autocomplete="off" oninput="onJiraSearchInput()">
+                                <button type="button" id="jiraSearchClear" class="jira-search-clear" style="display:none;" onclick="clearJiraSearch()" title="Clear search">&times;</button>
+                            </div>
+                            <div id="jiraSearchResults" class="jira-list" style="display: none;"></div>
                             <div id="jiraEpicList" class="jira-list">
                                 <div class="text-center py-3"><i class="fas fa-spinner fa-spin"></i> Loading epics...</div>
                             </div>
@@ -90,7 +116,7 @@
 
                         <div id="jiraChildrenView" style="display: none;">
                             <div class="jira-view-header">
-                                <button type="button" class="btn btn-link btn-sm p-0 me-2 text-decoration-none" onclick="showJiraStories()"><i class="fas fa-arrow-left"></i> Stories</button>
+                                <button type="button" id="childrenBackBtn" class="btn btn-link btn-sm p-0 me-2 text-decoration-none" onclick="backFromJiraChildren()"><i class="fas fa-arrow-left"></i> Stories</button>
                                 <span id="selectedStoryKey" class="badge bg-success"></span>
                             </div>
                             <div id="jiraChildList" class="jira-list">
@@ -127,10 +153,28 @@
                             </div>
                             <div id="jiraDetailCardsContainer" style="display: flex; flex-direction: column; gap: 12px;"></div>
                             <div class="text-end mt-3">
-                                <button type="button" class="btn btn-primary btn-sm" onclick="copyAllSelectedDescriptions()">
-                                    <i class="fas fa-copy"></i> Copy All to Input
+                                <button type="button" id="jiraImportBtn" class="btn btn-primary btn-sm" onclick="importSelectedJiraTickets()">
+                                    <i class="fas fa-file-import"></i> Import Selected into Requirements
                                 </button>
                             </div>
+                        </div>
+                        <div id="jiraImportStatus" class="source-status-box" style="display:none;"></div>
+                    </div>
+
+                    <div id="requirementSourcesPanel" class="req-sources-panel">
+                        <div class="req-sources-header">
+                            <span><i class="fas fa-layer-group"></i> Requirement Sources <span id="sourcesCountBadge" class="sources-count">0</span></span>
+                            <small class="text-secondary">Review, retry or remove sources before generating.</small>
+                        </div>
+                        <div id="sourcesEmpty" class="text-secondary small mb-2">No Jira tickets or documents added yet.</div>
+                        <div id="ticketSourceList" class="source-list"></div>
+                        <div id="documentSourceList" class="source-list"></div>
+                        <div id="docDropzone" class="custom-file-upload doc-dropzone" role="button" tabindex="0">
+                            <input type="file" id="requirementDocsInput" multiple hidden
+                                accept=".pdf,.docx,.txt,.md,.csv,.json,.png,.jpg,.jpeg,.xlsx,.xls">
+                            <i class="fas fa-file-upload fa-lg mb-1" style="color: var(--accent-primary);"></i>
+                            <p class="mb-0 small"><strong>Upload supporting documents</strong> — click or drop files here</p>
+                            <p class="text-secondary mb-0" style="font-size:0.72rem;">PDF, DOCX, TXT, MD, CSV, JSON, PNG, JPG, XLSX, XLS · up to 15 MB each · up to 10 files at a time</p>
                         </div>
                     </div>
                 </div>
@@ -254,6 +298,13 @@
                         <div id="summaryGrid" class="summary-grid"></div>
                     </div>
 
+                    <div id="generationNotesSection" style="display: none; margin-bottom: 25px;">
+                        <h4 class="text-light mb-3" style="font-size: 1.05rem; font-weight: 600; letter-spacing: 0.5px; display: flex; align-items: center; gap: 8px;">
+                            <i class="fas fa-clipboard-list text-primary"></i> Requirement Analysis &amp; Processing Notes
+                        </h4>
+                        <div id="generationNotes"></div>
+                    </div>
+
                     <div class="code-window">
                         <div class="window-header">
                             <div class="window-controls">
@@ -355,6 +406,12 @@
     .jira-view-header { display: flex; align-items: center; margin-bottom: 15px; min-height: 32px; }
     .jira-list { display: flex; flex-direction: column; gap: 10px; max-height: 250px; overflow-y: auto; padding-right: 5px; }
     .jira-item { padding: 12px 15px; background: rgba(255,255,255,0.03); border: 1px solid var(--glass-border); border-radius: 8px; cursor: pointer; transition: var(--transition); display: flex; justify-content: space-between; align-items: center; }
+    .jira-search-box { position: relative; margin-bottom: 12px; }
+    .jira-search-box .fa-search { position: absolute; left: 11px; top: 50%; transform: translateY(-50%); color: var(--text-secondary); font-size: 0.8rem; pointer-events: none; }
+    .jira-search-box input { padding-left: 32px; padding-right: 30px; background: rgba(255,255,255,0.04); border: 1px solid var(--glass-border); color: inherit; }
+    .jira-search-box input:focus { background: rgba(255,255,255,0.06); border-color: var(--accent-primary); color: inherit; box-shadow: 0 0 0 2px var(--accent-glow); }
+    .jira-search-clear { position: absolute; right: 8px; top: 50%; transform: translateY(-50%); background: none; border: none; color: var(--text-secondary); font-size: 1.1rem; line-height: 1; cursor: pointer; padding: 0 4px; }
+    .jira-search-clear:hover { color: var(--accent-primary); }
     .jira-item:hover { background: rgba(255,255,255,0.08); border-color: var(--accent-primary); transform: translateX(3px); }
     .jira-item .item-name { font-weight: 500; font-size: 0.9rem; }
     .jira-item .item-key { font-size: 0.75rem; color: var(--text-secondary); background: rgba(0,0,0,0.2); padding: 2px 8px; border-radius: 4px; }
@@ -379,6 +436,59 @@
     .jira-detail-card-header { display: flex; align-items: center; justify-content: space-between; padding: 9px 14px; background: rgba(255,255,255,0.03); border-bottom: 1px solid var(--glass-border); }
     .jira-detail-card-body { padding: 12px 14px; font-size: 0.85rem; line-height: 1.6; color: #cbd5e1; white-space: pre-wrap; max-height: 180px; overflow-y: auto; }
     .jira-detail-loading { display: flex; align-items: center; gap: 8px; color: var(--text-secondary); font-size: 0.82rem; padding: 8px 0; }
+
+    /* Jira information types */
+    .jira-info-types { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 18px; padding: 10px 12px; margin-bottom: 16px; border: 1px solid var(--glass-border); border-radius: 8px; background: rgba(255,255,255,0.02); font-size: 0.82rem; }
+    .jira-info-types label { display: inline-flex; align-items: center; gap: 7px; cursor: pointer; margin: 0; }
+    .jira-info-label { color: var(--text-secondary); font-weight: 600; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.6px; }
+
+    /* Requirement sources (imported tickets + uploaded documents) */
+    .req-sources-panel { margin-top: 18px; border: 1px solid var(--glass-border); border-radius: 12px; padding: 14px 16px; background: rgba(0,0,0,0.18); }
+    .req-sources-header { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; font-size: 0.8rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.8px; color: var(--accent-primary); }
+    .req-sources-header small { text-transform: none; letter-spacing: 0; font-weight: 400; }
+    .sources-count { margin-left: 6px; background: rgba(0,120,212,0.15); border: 1px solid rgba(0,120,212,0.3); font-size: 0.65rem; padding: 1px 7px; border-radius: 10px; }
+    .source-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 8px; }
+    .source-list:empty { display: none; }
+    .source-item { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; padding: 10px 12px; border: 1px solid var(--glass-border); border-left: 3px solid var(--success, #10b981); border-radius: 8px; background: rgba(255,255,255,0.03); font-size: 0.84rem; }
+    .source-item.processing { border-left-color: var(--accent-primary); }
+    .source-item.has-warnings { border-left-color: #f59e0b; }
+    .source-item.failed { border-left-color: #ef4444; background: rgba(239,68,68,0.05); }
+    .source-item.duplicate { border-left-color: #9ca3af; opacity: 0.8; }
+    .source-main { min-width: 0; flex: 1; }
+    .source-title-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .source-title { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+    .source-meta { font-size: 0.72rem; color: var(--text-secondary); margin-top: 3px; }
+    .source-chips { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 6px; }
+    .source-chip { font-size: 0.66rem; padding: 1px 7px; border-radius: 10px; background: rgba(16,185,129,0.12); color: #6ee7b7; border: 1px solid rgba(16,185,129,0.25); }
+    .source-chip.muted { background: rgba(156,163,175,0.1); color: #9ca3af; border-color: rgba(156,163,175,0.25); }
+    .source-error { color: #f87171; font-size: 0.78rem; margin-top: 4px; }
+    .source-warnings { margin-top: 5px; font-size: 0.76rem; color: #fbbf24; }
+    .source-warnings summary { cursor: pointer; }
+    .source-warnings ul { margin: 4px 0 0 0; padding-left: 18px; color: #fcd34d; }
+    .source-actions { display: flex; gap: 4px; flex-shrink: 0; }
+    .source-actions button { background: none; border: 1px solid transparent; color: var(--text-secondary); border-radius: 6px; padding: 2px 7px; cursor: pointer; font-size: 0.8rem; }
+    .source-actions button:hover { color: var(--accent-primary); border-color: var(--glass-border); }
+    .doc-dropzone { padding: 14px; margin-top: 4px; }
+    .doc-dropzone.dragover { border-color: var(--accent-primary); background: var(--accent-softer, rgba(0,120,212,0.08)); }
+    .source-status-box { margin-top: 14px; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--glass-border); font-size: 0.82rem; background: rgba(255,255,255,0.03); }
+    .source-status-box.success { border-color: rgba(16,185,129,0.4); }
+    .source-status-box.warning { border-color: rgba(245,158,11,0.5); }
+    .source-status-box.error { border-color: rgba(239,68,68,0.5); color: #fca5a5; }
+    .source-status-box ul { margin: 6px 0 0 0; padding-left: 18px; }
+
+    /* Requirement analysis notes (review step) */
+    .notes-block { border: 1px solid var(--glass-border); border-radius: 10px; padding: 12px 14px; margin-bottom: 12px; background: rgba(255,255,255,0.02); font-size: 0.84rem; }
+    .notes-block h5 { font-size: 0.78rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.7px; color: var(--text-secondary); margin-bottom: 8px; }
+    .notes-block ul { margin: 0; padding-left: 18px; }
+    .notes-block li { margin-bottom: 3px; }
+    .notes-table { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
+    .notes-table th, .notes-table td { border-bottom: 1px solid var(--glass-border); padding: 6px 8px; text-align: left; vertical-align: top; }
+    .notes-table th { color: var(--text-secondary); font-weight: 600; }
+    .notes-scroll { max-height: 260px; overflow: auto; }
+    .gap-badge { font-size: 0.65rem; font-weight: 700; text-transform: uppercase; padding: 1px 7px; border-radius: 4px; white-space: nowrap; }
+    .gap-badge.contradiction { background: rgba(239,68,68,0.15); color: #f87171; border: 1px solid rgba(239,68,68,0.3); }
+    .gap-badge.ambiguity { background: rgba(245,158,11,0.15); color: #fbbf24; border: 1px solid rgba(245,158,11,0.3); }
+    .gap-badge.missing { background: rgba(59,130,246,0.15); color: #93c5fd; border: 1px solid rgba(59,130,246,0.3); }
 
     /* Before Preview Section Styles */
     .summary-grid {
@@ -558,12 +668,12 @@
             const response = await fetch(`/api/save-project-input`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ projectId, req_name: reqName, requirement })
+                body: JSON.stringify({ projectId, req_name: reqName, requirement, source_metadata: buildSourceMetadata(true, []) })
             });
             const result = await response.json();
-            
+
             if (response.ok) {
-                alert("Requirement saved successfully!");
+                alert(result.duplicate ? result.message : "Requirement saved successfully!");
                 document.getElementById('reqNameInput').value = '';
             } else {
                 alert("Error: " + (result.message || result.detail || "Unknown error"));
@@ -597,17 +707,21 @@
         document.getElementById('option1-card').classList.toggle('selected', opt === 1);
         document.getElementById('option2-card').classList.toggle('selected', opt === 2);
         document.getElementById('template-section').style.display = (opt === 2) ? 'block' : 'none';
-        document.getElementById('projectSelectionSection').style.display = (opt === 1) ? 'block' : 'none';
+        // Requirement storing is available for both BDD scenarios and manual test cases.
+        document.getElementById('projectSelectionSection').style.display = (opt === 1 || opt === 2) ? 'block' : 'none';
     }
 
     async function startGeneration() {
+        syncSourcesWithRequirementText();
         let requirement = document.getElementById('requirementInput').value.trim();
-        
+        let selectedReqNames = [];
+
         const isNewReq = document.getElementById('newReqYes').checked;
         if (!isNewReq) {
             const select = document.getElementById('savedReqSelect');
             const selectedReqIds = Array.from(select.selectedOptions).map(opt => opt.value).filter(val => val !== "");
-            
+            selectedReqNames = Array.from(select.selectedOptions).filter(opt => opt.value !== "").map(opt => opt.textContent);
+
             if (selectedReqIds.length > 0) {
                 let combinedExistingText = "";
                 selectedReqIds.forEach(id => {
@@ -618,6 +732,11 @@
                 requirement = combinedExistingText + requirement;
                 requirement = requirement.trim();
             }
+        }
+
+        if (jiraImportInProgress || documentSources.some(d => d.status === 'processing')) {
+            alert('Please wait until the Jira import and document processing have finished.');
+            return;
         }
 
         if (!requirement) {
@@ -634,19 +753,36 @@
         document.getElementById('loadingStatus').style.display = 'block';
         document.getElementById('resultContent').style.display = 'none';
 
+        // Store the combined requirement (new or existing+new) while the AI works; never blocks generation.
+        const storePromise = autoStoreRequirement(requirement, isNewReq, selectedReqNames);
+
         try {
+            let analysis;
             if (selectedOptValue === 1) {
-                await generateBDDScenarios(requirement);
+                analysis = await generateBDDScenarios(requirement);
                 document.getElementById('previewTitle').innerText = generatedFileDownloadName;
             } else {
-                await generateFormattedTestCases(requirement);
+                analysis = await generateFormattedTestCases(requirement);
             }
+            renderGenerationNotes(analysis, await storePromise);
             document.getElementById('loadingStatus').style.display = 'none';
             document.getElementById('resultContent').style.display = 'block';
         } catch (error) {
-            alert('Generation failed: ' + error.message);
+            const stored = await storePromise;
+            alert('Generation failed: ' + error.message + (stored && stored.level === 'success' ? '\n\n' + stored.text : ''));
             nextStep(1);
         }
+    }
+
+    function countStoriesConsidered(requirement) {
+        const keys = new Set();
+        for (const m of requirement.matchAll(/^===== JIRA TICKET: ([A-Z][A-Z0-9_]*-\d+) \|/gm)) keys.add(m[1]);
+        for (const m of requirement.matchAll(/\[([A-Za-z0-9]+-\d+)\]/g)) keys.add(m[1].toUpperCase());
+        return keys.size || 1;
+    }
+
+    function countDocumentsConsidered(requirement) {
+        return (requirement.match(/^===== SUPPORTING DOCUMENT: /gm) || []).length;
     }
 
     async function generateBDDScenarios(requirement) {
@@ -667,12 +803,44 @@
 
             // Render BDD Summary
             const scenarioCount = countBDDScenarios(content);
-            const storiesMatches = requirement.match(/\[[A-Za-z0-9]+-\d+\]/g);
-            const storiesCount = storiesMatches ? storiesMatches.length : 1;
-            renderBDDSummary(scenarioCount, storiesCount);
+            renderBDDSummary(scenarioCount, countStoriesConsidered(requirement), countDocumentsConsidered(requirement));
+            window.lastTraceability = parseBDDTraceability(content);
+            window.lastRequirementGaps = parseBDDGaps(content);
+            return { contextNotes: data.context_notes || [], gaps: window.lastRequirementGaps, traceability: window.lastTraceability };
         } else {
             throw new Error(data.detail || 'Failed to generate BDD');
         }
+    }
+
+    // "# Source: ..." comment lines above a scenario's tags (see the BDD prompt).
+    function parseBDDTraceability(content) {
+        const rows = [];
+        let pendingSource = '';
+        content.split('\n').forEach(line => {
+            const t = line.trim();
+            const src = t.match(/^#\s*Source:\s*(.+)$/i);
+            if (src) { pendingSource = src[1].trim(); return; }
+            const sc = t.match(/^Scenario(?: Outline| Template)?:\s*(.*)$/);
+            if (sc) {
+                rows.push({ test_case: sc[1].trim(), sources: pendingSource ? pendingSource.split(/;\s*/) : [] });
+                pendingSource = '';
+            }
+        });
+        return rows.some(r => r.sources.length) ? rows : [];
+    }
+
+    // "# REQUIREMENT GAP [Type]: description (Source: ...)" comment lines (see the BDD prompt).
+    function parseBDDGaps(content) {
+        const gaps = [];
+        for (const m of content.matchAll(/^\s*#\s*REQUIREMENT GAP\s*\[([^\]]+)\]:\s*(.+)$/gim)) {
+            const src = m[2].match(/\(Source:\s*([^)]*)\)\s*$/i);
+            gaps.push({
+                type: m[1].trim(),
+                description: src ? m[2].slice(0, src.index).trim() : m[2].trim(),
+                sources: src ? src[1].split(/;\s*|,\s*/).filter(Boolean) : []
+            });
+        }
+        return gaps;
     }
 
     async function generateFormattedTestCases(requirement) {
@@ -744,10 +912,13 @@
             ? parseInt(summaryObj.low_priority_count) : stats.low;
 
         // Calculate stories considered by counting Jira issue keys or defaulting to 1
-        const storiesMatches = requirement.match(/\[[A-Za-z0-9]+-\d+\]/g);
-        const storiesCount = storiesMatches ? storiesMatches.length : 1;
+        const storiesCount = countStoriesConsidered(requirement);
 
-        renderManualSummary(testCases.length, positive, negative, high, medium, low, storiesCount);
+        renderManualSummary(testCases.length, positive, negative, high, medium, low, storiesCount, countDocumentsConsidered(requirement));
+
+        const isObj = parsed && typeof parsed === 'object' && !Array.isArray(parsed);
+        window.lastTraceability = isObj && Array.isArray(parsed.traceability) ? parsed.traceability : [];
+        window.lastRequirementGaps = isObj && Array.isArray(parsed.requirement_gaps) ? parsed.requirement_gaps : [];
 
         // Header adjustment for separate_rows layout
         if (stepsFormat === 'separate_rows') {
@@ -848,6 +1019,7 @@
 
         document.getElementById('resultEditor').value = markdown;
         document.getElementById('previewTitle').innerText = "Manual Test Case Preview (Editable Table)";
+        return { contextNotes: data.context_notes || [], gaps: window.lastRequirementGaps, traceability: window.lastTraceability };
     }
 
     function countBDDScenarios(content) {
@@ -987,7 +1159,21 @@
         return { positive, negative, high, medium, low };
     }
 
-    function renderBDDSummary(count, storiesCount) {
+    function documentsSummaryCard(docsCount) {
+        if (!docsCount) return '';
+        return `
+            <div class="summary-card animate-slide-up" style="animation-delay: 0.2s;">
+                <div class="summary-card-icon" style="background: rgba(245, 158, 11, 0.15); color: #f59e0b;">
+                    <i class="fas fa-file-lines"></i>
+                </div>
+                <div class="summary-card-content">
+                    <div class="summary-card-val">${docsCount}</div>
+                    <div class="summary-card-label">Documents Used</div>
+                </div>
+            </div>`;
+    }
+
+    function renderBDDSummary(count, storiesCount, docsCount = 0) {
         const grid = document.getElementById('summaryGrid');
         grid.innerHTML = `
             <div class="summary-card animate-slide-up">
@@ -1008,10 +1194,10 @@
                     <div class="summary-card-label">Stories Considered</div>
                 </div>
             </div>
-        `;
+        ` + documentsSummaryCard(docsCount);
     }
 
-    function renderManualSummary(total, positive, negative, high, medium, low, storiesCount) {
+    function renderManualSummary(total, positive, negative, high, medium, low, storiesCount, docsCount = 0) {
         const grid = document.getElementById('summaryGrid');
         grid.innerHTML = `
             <div class="summary-card animate-slide-up" style="animation-delay: 0.05s;">
@@ -1072,8 +1258,10 @@
                     <div class="summary-card-label" style="margin-top: 6px;">Priority Breakdown</div>
                 </div>
             </div>
-        `;
+        ` + documentsSummaryCard(docsCount);
     }
+
+    const listText = (v) => Array.isArray(v) ? v.join('; ') : (v || '');
 
     function createExportBlob(data, headers, ext) {
         const ws = XLSX.utils.json_to_sheet(data, { header: headers });
@@ -1082,6 +1270,18 @@
 
         if (ext === '.csv') {
             return new Blob([XLSX.utils.sheet_to_csv(ws)], { type: 'text/csv' });
+        }
+        // Workbooks also carry the traceability matrix and the requirement gaps, on their own sheets
+        // so the test case sheet keeps the template's exact columns.
+        const trace = window.lastTraceability || [];
+        if (trace.length) {
+            XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(
+                trace.map(t => ({ 'Test Case': t.test_case || '', 'Sources': listText(t.sources) }))), "Traceability");
+        }
+        const gaps = window.lastRequirementGaps || [];
+        if (gaps.length) {
+            XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(
+                gaps.map(g => ({ 'Type': g.type || '', 'Description': g.description || '', 'Sources': listText(g.sources) }))), "Requirement Gaps");
         }
         const wbout = XLSX.write(wb, { bookType: ext === '.xls' ? 'biff8' : 'xlsx', type: 'array' });
         return new Blob([wbout], { type: 'application/octet-stream' });
@@ -1262,12 +1462,111 @@
     async function selectJiraProject(project) {
         currentJiraProject = project;
         document.getElementById('selectedProjectName').innerText = project.name;
+        document.getElementById('jiraSearchInput').value = '';
+        document.getElementById('jiraSearchClear').style.display = 'none';
+        showJiraSearchResults(false);
         showJiraEpics();
+    }
+
+    // ── Search within the selected project (by issue key or title) ──
+    let jiraSearchTimer = null;
+    let jiraSearchSeq = 0;
+    let childrenBackToSearch = false;
+
+    function escapeJiraHtml(value) {
+        return String(value ?? '').replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+    }
+
+    function showJiraSearchResults(show) {
+        document.getElementById('jiraSearchResults').style.display = show ? 'flex' : 'none';
+        document.getElementById('jiraEpicList').style.display = show ? 'none' : 'flex';
+    }
+
+    function onJiraSearchInput() {
+        const q = document.getElementById('jiraSearchInput').value.trim();
+        document.getElementById('jiraSearchClear').style.display = q ? 'block' : 'none';
+        clearTimeout(jiraSearchTimer);
+        if (!q) { jiraSearchSeq++; showJiraSearchResults(false); return; }
+        jiraSearchTimer = setTimeout(() => runJiraSearch(q), 400);
+    }
+
+    function clearJiraSearch() {
+        document.getElementById('jiraSearchInput').value = '';
+        onJiraSearchInput();
+        document.getElementById('jiraSearchInput').focus();
+    }
+
+    async function runJiraSearch(q) {
+        const seq = ++jiraSearchSeq;
+        const listEl = document.getElementById('jiraSearchResults');
+        showJiraSearchResults(true);
+        listEl.innerHTML = '<div class="text-center py-3"><i class="fas fa-spinner fa-spin"></i> Searching...</div>';
+
+        try {
+            const url = `${BACKEND_URL}/jira/projects/${encodeURIComponent(currentJiraProject.key)}/search?q=${encodeURIComponent(q)}`;
+            const response = await fetch(url);
+            if (!response.ok) {
+                const errData = await response.json().catch(() => ({}));
+                throw new Error(errData.detail || 'Search failed');
+            }
+            const issues = await response.json();
+            if (seq !== jiraSearchSeq) return; // a newer search has started
+            if (issues.length === 0) {
+                listEl.innerHTML = `<div class="text-center py-3 text-secondary">No issues match "${escapeJiraHtml(q)}".</div>`;
+                return;
+            }
+            listEl.innerHTML = '';
+            issues.forEach(i => listEl.appendChild(createJiraSearchItem(i)));
+        } catch (error) {
+            if (seq !== jiraSearchSeq) return;
+            listEl.innerHTML = `<div class="text-center py-3 text-danger">Error: ${escapeJiraHtml(error.message)}</div>`;
+        }
+    }
+
+    function createJiraSearchItem(issue) {
+        const badgeClass = getTypeBadgeClass(issue.type);
+        const item = document.createElement('div');
+        item.dataset.key = issue.key;
+        const infoHtml = `
+            <span class="item-name">${escapeJiraHtml(issue.summary)}</span>
+            <div class="item-meta">
+                <span class="jira-type-badge ${badgeClass}">${escapeJiraHtml(issue.type)}</span>
+                <span class="item-status">${escapeJiraHtml(issue.status)}</span>
+                <span class="item-key">${escapeJiraHtml(issue.key)}</span>
+            </div>`;
+
+        // Every result can be selected for import; clicking an epic opens its stories,
+        // clicking a story opens its tasks, clicking a task toggles it
+        item.className = 'jira-item has-checkbox';
+        const cb = document.createElement('input');
+        cb.type = 'checkbox';
+        cb.className = 'jira-child-checkbox';
+        cb.id = 'cb_' + issue.key;
+        if (checkedChildren[issue.key]) cb.checked = true;
+        cb.addEventListener('change', () => onChildCheckChange(issue, cb.checked));
+
+        const info = document.createElement('div');
+        info.style.cssText = 'display:flex; align-items:center; justify-content:space-between; flex:1; cursor:pointer;';
+        info.innerHTML = infoHtml;
+        if (badgeClass === 'epic') info.onclick = () => selectJiraEpic(issue);
+        else if (badgeClass === 'story') info.onclick = () => selectJiraStory(issue, true);
+        else info.onclick = () => { cb.checked = !cb.checked; onChildCheckChange(issue, cb.checked); };
+
+        item.appendChild(cb);
+        item.appendChild(info);
+        return item;
+    }
+
+    function backFromJiraChildren() {
+        if (childrenBackToSearch) showJiraEpics();
+        else showJiraStories();
     }
 
     async function showJiraEpics() {
         hideAllJiraViews();
         document.getElementById('jiraEpicsView').style.display = 'block';
+        const searchQuery = document.getElementById('jiraSearchInput').value.trim();
+        if (searchQuery) runJiraSearch(searchQuery); // refresh results (checkbox states) when coming back
         const listEl = document.getElementById('jiraEpicList');
         listEl.innerHTML = '<div class="text-center py-3"><i class="fas fa-spinner fa-spin"></i> Loading epics...</div>';
 
@@ -1278,16 +1577,32 @@
             if (epics.length === 0) { listEl.innerHTML = '<div class="text-center py-3 text-secondary">No epics found in this project.</div>'; return; }
             listEl.innerHTML = '';
             epics.forEach(e => {
+                e.type = e.type || 'Epic';
                 const item = document.createElement('div');
-                item.className = 'jira-item';
-                item.onclick = () => selectJiraEpic(e);
-                item.innerHTML = `
+                item.className = 'jira-item has-checkbox';
+                item.dataset.key = e.key;
+
+                // Epics can be selected for import as well as opened
+                const cb = document.createElement('input');
+                cb.type = 'checkbox';
+                cb.className = 'jira-child-checkbox';
+                cb.id = 'cb_' + e.key;
+                if (checkedChildren[e.key]) cb.checked = true;
+                cb.addEventListener('change', () => onChildCheckChange(e, cb.checked));
+
+                const info = document.createElement('div');
+                info.style.cssText = 'display:flex; align-items:center; justify-content:space-between; flex:1; cursor:pointer;';
+                info.innerHTML = `
                     <span class="item-name">${e.summary}</span>
                     <div class="item-meta">
                         <span class="jira-type-badge epic">Epic</span>
                         <span class="item-status">${e.status}</span>
                         <span class="item-key">${e.key}</span>
                     </div>`;
+                info.onclick = () => selectJiraEpic(e);
+
+                item.appendChild(cb);
+                item.appendChild(info);
                 listEl.appendChild(item);
             });
         } catch (error) {
@@ -1346,8 +1661,12 @@
         }
     }
 
-    async function selectJiraStory(story) {
+    async function selectJiraStory(story, fromSearch = false) {
         currentJiraStory = story;
+        childrenBackToSearch = fromSearch;
+        document.getElementById('childrenBackBtn').innerHTML = fromSearch
+            ? '<i class="fas fa-arrow-left"></i> Search'
+            : '<i class="fas fa-arrow-left"></i> Stories';
         document.getElementById('selectedStoryKey').innerText = story.key + ' — ' + story.summary;
         showJiraChildren();
     }
@@ -1478,23 +1797,97 @@
         document.getElementById('jiraSelectedDetailsPanel').style.display = 'none';
     }
 
-    function copyAllSelectedDescriptions() {
-        const parts = Object.values(checkedChildren).map(({ issue, description }) => {
-            return `[${issue.key}] ${issue.summary}\n${description || '(No description)'}`;
-        });
-        if (parts.length === 0) return;
-        const combined = parts.join('\n\n---\n\n');
-        document.getElementById('requirementInput').value = combined;
+    // ── Import selected tickets (multiple tickets, selected information types) ──
+    let jiraImportInProgress = false;
+    const JIRA_INFO_TYPES = [
+        { id: 'jiraIncDescription', field: 'include_description', label: 'Description' },
+        { id: 'jiraIncAC', field: 'include_acceptance_criteria', label: 'Acceptance Criteria' },
+        { id: 'jiraIncComments', field: 'include_comments', label: 'Comments' },
+        { id: 'jiraIncAttachments', field: 'include_attachments', label: 'Attachments' },
+    ];
 
-        const btn = document.querySelector('#jiraSelectedDetailsPanel .btn-primary');
-        const orig = btn.innerHTML;
-        btn.innerHTML = '<i class="fas fa-check"></i> Copied to Input!';
-        btn.classList.replace('btn-primary', 'btn-success');
-        setTimeout(() => {
-            btn.innerHTML = orig;
-            btn.classList.replace('btn-success', 'btn-primary');
-            toggleJiraSection();
-        }, 1500);
+    function getSelectedJiraInfoTypes() {
+        const include = {};
+        JIRA_INFO_TYPES.forEach(t => include[t.field] = document.getElementById(t.id).checked);
+        return include;
+    }
+
+    function showJiraImportStatus(level, html) {
+        const box = document.getElementById('jiraImportStatus');
+        box.className = 'source-status-box ' + level;
+        box.innerHTML = html;
+        box.style.display = html ? 'block' : 'none';
+    }
+
+    async function importSelectedJiraTickets(keysOverride, includeOverride) {
+        const keys = keysOverride || Object.keys(checkedChildren);
+        if (keys.length === 0 || jiraImportInProgress) return;
+        const include = includeOverride || getSelectedJiraInfoTypes();
+        if (!Object.values(include).some(Boolean)) {
+            showJiraImportStatus('warning', '<i class="fas fa-exclamation-triangle"></i> Select at least one type of information to import.');
+            return;
+        }
+
+        jiraImportInProgress = true;
+        const btn = document.getElementById('jiraImportBtn');
+        const origBtn = btn.innerHTML;
+        btn.disabled = true;
+        btn.innerHTML = `<i class="fas fa-spinner fa-spin"></i> Importing ${keys.length} ticket(s)...`;
+        const typeLabels = JIRA_INFO_TYPES.filter(t => include[t.field]).map(t => t.label);
+        showJiraImportStatus('', `<i class="fas fa-spinner fa-spin"></i> Retrieving ${escapeJiraHtml(typeLabels.join(', '))} from ${keys.length} ticket(s)...`
+            + (include.include_attachments ? ' Attachments can take a while.' : ''));
+
+        try {
+            const response = await fetch(`${BACKEND_URL}/jira/issues/import`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ keys, ...include })
+            });
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok) throw new Error(data.detail || `Import failed (HTTP ${response.status})`);
+
+            const failed = [];
+            let warningCount = 0;
+            data.tickets.forEach(t => {
+                t.included = typeLabels;
+                if (t.ok) {
+                    ticketSources[t.key] = t;
+                    upsertRequirementBlock(ticketBlockRegex(t.key), t.block);
+                    delete t.block;
+                    warningCount += (t.warnings || []).length;
+                } else {
+                    failed.push(t);
+                    // A failed re-import keeps the ticket's earlier successful content
+                    if (!(ticketSources[t.key] && ticketSources[t.key].ok)) ticketSources[t.key] = t;
+                }
+            });
+            renderRequirementSources();
+
+            const okCount = data.tickets.length - failed.length;
+            let html = `<i class="fas ${failed.length ? 'fa-exclamation-circle' : 'fa-check-circle'}"></i> `
+                + `Imported ${okCount} of ${data.tickets.length} ticket(s) into the requirements.`;
+            if (warningCount) html += ` ${warningCount} warning(s): see Requirement Sources below.`;
+            if (failed.length) {
+                html += '<ul>' + failed.map(t => `<li><strong>${escapeJiraHtml(t.key)}</strong>: ${escapeJiraHtml(t.error)}</li>`).join('') + '</ul>';
+            }
+            showJiraImportStatus(failed.length ? 'error' : (warningCount ? 'warning' : 'success'), html);
+            showToast(`Imported ${okCount} of ${data.tickets.length} Jira ticket(s)`, failed.length ? 'warning' : 'success');
+
+            if (!failed.length && !keysOverride) {
+                clearChildSelections();
+                setTimeout(() => {
+                    if (document.getElementById('jiraInlineSection').style.display !== 'none') toggleJiraSection();
+                    showJiraImportStatus('', '');
+                }, 1500);
+            }
+        } catch (error) {
+            showJiraImportStatus('error', `<i class="fas fa-times-circle"></i> ${escapeJiraHtml(error.message)}`);
+            showToast('Jira import failed', 'error');
+        } finally {
+            jiraImportInProgress = false;
+            btn.disabled = false;
+            btn.innerHTML = origBtn;
+        }
     }
 
     async function showIssueDetail(issue, backTo) {
@@ -1552,6 +1945,372 @@
             btn.classList.replace('btn-success', 'btn-primary');
             toggleJiraSection();
         }, 1500);
+    }
+
+    // ── Requirement sources: imported tickets and uploaded documents ──
+    // The "What are we testing?" box is the single source of truth: every source is a labelled
+    // block in it, so the user sees (and can edit) exactly what the AI reads and what gets stored.
+    const ticketSources = {};    // key -> import result (ok, summary, type, warnings, attachments, included...)
+    const documentSources = [];  // {id, name, size, extension, status, message, warnings, sha256, marker}
+    let documentSeq = 0;
+    const DOC_EXTENSIONS = ['pdf', 'docx', 'txt', 'md', 'csv', 'json', 'png', 'jpg', 'jpeg', 'xlsx', 'xls'];
+    const MAX_DOC_BYTES = 15 * 1024 * 1024;
+    const MAX_DOCS_PER_UPLOAD = 10;
+
+    const escapeRegExp = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+    function ticketBlockRegex(key) {
+        const k = escapeRegExp(key);
+        return new RegExp(`(^|\\n)===== JIRA TICKET: ${k} \\|[\\s\\S]*?\\n===== END JIRA TICKET: ${k} =====`);
+    }
+
+    function documentBlockRegex(marker) {
+        const n = escapeRegExp(marker);
+        return new RegExp(`(^|\\n)===== SUPPORTING DOCUMENT: ${n} \\|[\\s\\S]*?\\n===== END SUPPORTING DOCUMENT: ${n} =====`);
+    }
+
+    // Replaces the source's block if it is already in the box (no duplicates), else appends it
+    // after the existing text (never overwrites what the user typed).
+    function upsertRequirementBlock(regex, block) {
+        const ta = document.getElementById('requirementInput');
+        if (regex.test(ta.value)) {
+            ta.value = ta.value.replace(regex, (m, lead) => lead + block);
+        } else {
+            const current = ta.value.replace(/\s+$/, '');
+            ta.value = current ? current + '\n\n' + block : block;
+        }
+    }
+
+    function removeRequirementBlock(regex) {
+        const ta = document.getElementById('requirementInput');
+        ta.value = ta.value.replace(regex, '').replace(/\n{3,}/g, '\n\n').trim();
+    }
+
+    function humanSize(bytes) {
+        if (bytes < 1024) return `${bytes} B`;
+        if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+        return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+    }
+
+    function warningsHtml(warnings) {
+        if (!warnings || !warnings.length) return '';
+        return `<details class="source-warnings"><summary><i class="fas fa-exclamation-triangle"></i> ${warnings.length} warning(s)</summary>
+            <ul>${warnings.map(w => `<li>${escapeJiraHtml(w)}</li>`).join('')}</ul></details>`;
+    }
+
+    function ticketChipsHtml(t) {
+        const chips = [];
+        const included = t.included || [];
+        if (included.includes('Description')) chips.push(['Description', !!t.description]);
+        if (included.includes('Acceptance Criteria')) chips.push(['Acceptance Criteria', !!t.acceptance_criteria]);
+        if (included.includes('Comments')) chips.push([`Comments (${(t.comments || []).length})`, (t.comments || []).length > 0]);
+        if (included.includes('Attachments')) {
+            const atts = t.attachments || [];
+            const used = atts.filter(a => a.status === 'extracted').length;
+            chips.push([`Attachments (${used}/${atts.length})`, used > 0]);
+        }
+        return chips.map(([label, ok]) => `<span class="source-chip ${ok ? '' : 'muted'}" title="${ok ? 'Included' : 'Selected but empty or unavailable'}">${escapeJiraHtml(label)}</span>`).join('');
+    }
+
+    function renderRequirementSources() {
+        const ticketList = document.getElementById('ticketSourceList');
+        const docList = document.getElementById('documentSourceList');
+        ticketList.innerHTML = '';
+        docList.innerHTML = '';
+
+        Object.values(ticketSources).forEach(t => {
+            const row = document.createElement('div');
+            const warnings = t.warnings || [];
+            row.className = 'source-item' + (t.ok ? (warnings.length ? ' has-warnings' : '') : ' failed');
+            row.innerHTML = `
+                <div class="source-main">
+                    <div class="source-title-row">
+                        <i class="fab fa-jira" style="color:var(--accent-primary);"></i>
+                        <span class="item-key">${escapeJiraHtml(t.key)}</span>
+                        ${t.type ? `<span class="jira-type-badge ${getTypeBadgeClass(t.type)}">${escapeJiraHtml(t.type)}</span>` : ''}
+                        <span class="source-title" title="${escapeJiraHtml(t.summary)}">${escapeJiraHtml(t.summary || '')}</span>
+                    </div>
+                    ${t.ok ? `<div class="source-chips">${ticketChipsHtml(t)}</div>` : `<div class="source-error"><i class="fas fa-times-circle"></i> ${escapeJiraHtml(t.error)}</div>`}
+                    ${warningsHtml(warnings)}
+                </div>
+                <div class="source-actions">
+                    ${t.ok ? '' : '<button type="button" title="Retry import" data-action="retry"><i class="fas fa-redo"></i></button>'}
+                    <button type="button" title="${t.ok ? 'Remove this ticket from the requirements' : 'Dismiss'}" data-action="remove"><i class="fas fa-times"></i></button>
+                </div>`;
+            row.querySelector('[data-action="remove"]').onclick = () => removeTicketSource(t.key);
+            const retry = row.querySelector('[data-action="retry"]');
+            if (retry) retry.onclick = () => retryTicketSource(t);
+            ticketList.appendChild(row);
+        });
+
+        documentSources.forEach(d => {
+            const row = document.createElement('div');
+            const warnings = d.warnings || [];
+            const stateClass = { processing: ' processing', failed: ' failed', duplicate: ' duplicate' }[d.status]
+                || (warnings.length ? ' has-warnings' : '');
+            const statusHtml = {
+                processing: '<i class="fas fa-spinner fa-spin"></i> Processing...',
+                extracted: `<i class="fas fa-check-circle" style="color:#10b981;"></i> ${escapeJiraHtml(d.message)}`,
+                duplicate: `<i class="fas fa-clone"></i> ${escapeJiraHtml(d.message)}`,
+            }[d.status] || '';
+            row.className = 'source-item' + stateClass;
+            row.innerHTML = `
+                <div class="source-main">
+                    <div class="source-title-row">
+                        <i class="fas ${['png', 'jpg', 'jpeg'].includes(d.extension) ? 'fa-file-image' : 'fa-file-alt'}" style="color:var(--accent-primary);"></i>
+                        <span class="source-title" title="${escapeJiraHtml(d.name)}">${escapeJiraHtml(d.name)}</span>
+                    </div>
+                    <div class="source-meta">${escapeJiraHtml((d.extension || '?').toUpperCase())} · ${humanSize(d.size)} ${statusHtml ? '· ' + statusHtml : ''}</div>
+                    ${d.status === 'failed' ? `<div class="source-error"><i class="fas fa-times-circle"></i> ${escapeJiraHtml(d.message)}</div>` : ''}
+                    ${warningsHtml(warnings)}
+                </div>
+                <div class="source-actions">
+                    <button type="button" title="Remove this document" data-action="remove"><i class="fas fa-times"></i></button>
+                </div>`;
+            row.querySelector('[data-action="remove"]').onclick = () => removeDocumentSource(d.id);
+            docList.appendChild(row);
+        });
+
+        const count = Object.keys(ticketSources).length + documentSources.length;
+        document.getElementById('sourcesCountBadge').textContent = count;
+        document.getElementById('sourcesEmpty').style.display = count ? 'none' : 'block';
+    }
+
+    function removeTicketSource(key) {
+        const t = ticketSources[key];
+        if (t && t.ok) removeRequirementBlock(ticketBlockRegex(key));
+        delete ticketSources[key];
+        renderRequirementSources();
+    }
+
+    function retryTicketSource(t) {
+        const include = {};
+        JIRA_INFO_TYPES.forEach(type => include[type.field] = (t.included || []).includes(type.label));
+        importSelectedJiraTickets([t.key], include);
+    }
+
+    function removeDocumentSource(id) {
+        const idx = documentSources.findIndex(d => d.id === id);
+        if (idx === -1) return;
+        const d = documentSources[idx];
+        if (d.status === 'extracted' && d.marker) removeRequirementBlock(documentBlockRegex(d.marker));
+        documentSources.splice(idx, 1);
+        renderRequirementSources();
+    }
+
+    // A block the user deleted by hand from the box is no longer a source.
+    function syncSourcesWithRequirementText() {
+        const text = document.getElementById('requirementInput').value;
+        let changed = false;
+        Object.values(ticketSources).forEach(t => {
+            if (t.ok && !ticketBlockRegex(t.key).test(text)) { delete ticketSources[t.key]; changed = true; }
+        });
+        for (let i = documentSources.length - 1; i >= 0; i--) {
+            const d = documentSources[i];
+            if (d.status === 'extracted' && d.marker && !documentBlockRegex(d.marker).test(text)) {
+                documentSources.splice(i, 1);
+                changed = true;
+            }
+        }
+        if (changed) renderRequirementSources();
+    }
+
+    function uniqueDocumentName(name) {
+        const taken = new Set(documentSources.filter(d => d.status !== 'failed').map(d => d.name.toLowerCase()));
+        if (!taken.has(name.toLowerCase())) return name;
+        const dot = name.lastIndexOf('.');
+        const base = dot > 0 ? name.slice(0, dot) : name;
+        const ext = dot > 0 ? name.slice(dot) : '';
+        let n = 2;
+        while (taken.has(`${base} (${n})${ext}`.toLowerCase())) n++;
+        return `${base} (${n})${ext}`;
+    }
+
+    async function handleDocumentFiles(files) {
+        if (!files.length) return;
+        if (files.length > MAX_DOCS_PER_UPLOAD) {
+            showToast(`Up to ${MAX_DOCS_PER_UPLOAD} files can be uploaded at a time; ${files.length - MAX_DOCS_PER_UPLOAD} file(s) were not added.`, 'warning', 6000);
+            files = files.slice(0, MAX_DOCS_PER_UPLOAD);
+        }
+        const uploads = [];
+        files.forEach(file => {
+            const name = uniqueDocumentName(file.name);
+            const ext = name.includes('.') ? name.split('.').pop().toLowerCase() : '';
+            const entry = { id: ++documentSeq, name, size: file.size, extension: ext, status: 'processing', message: '', warnings: [] };
+            if (!DOC_EXTENSIONS.includes(ext)) {
+                Object.assign(entry, { status: 'failed', message: ext === 'doc'
+                    ? 'Legacy .doc files are not supported. Save the file as .docx and upload it again.'
+                    : `Unsupported file type '.${ext || 'none'}'. Supported: ${DOC_EXTENSIONS.join(', ').toUpperCase()}.` });
+            } else if (file.size === 0) {
+                Object.assign(entry, { status: 'failed', message: 'The file is empty.' });
+            } else if (file.size > MAX_DOC_BYTES) {
+                Object.assign(entry, { status: 'failed', message: `The file is ${humanSize(file.size)}; the limit is 15 MB.` });
+            }
+            documentSources.push(entry);
+            if (entry.status === 'processing') {
+                uploads.push({ entry, file: name === file.name ? file : new File([file], name, { type: file.type }) });
+            }
+        });
+        renderRequirementSources();
+        // One request per file, so every file reports its own status
+        await Promise.all(uploads.map(({ entry, file }) => uploadRequirementDocument(entry, file)));
+        const failed = documentSources.filter(d => d.status === 'failed').length;
+        if (uploads.length) showToast('Document processing finished' + (failed ? ` (${failed} failed: see Requirement Sources)` : ''), failed ? 'warning' : 'success');
+    }
+
+    async function uploadRequirementDocument(entry, file) {
+        const formData = new FormData();
+        formData.append('files', file);
+        try {
+            const response = await fetch(`${BACKEND_URL}/documents/extract`, { method: 'POST', body: formData });
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok) throw new Error(data.detail || `Upload failed (HTTP ${response.status})`);
+            const doc = (data.documents || [])[0];
+            if (!doc) throw new Error('The server returned no result for this file.');
+            if (!documentSources.includes(entry)) return;   // removed while processing
+            Object.assign(entry, { status: doc.status, message: doc.message, warnings: doc.warnings || [], sha256: doc.sha256 });
+            if (doc.status === 'extracted') {
+                const same = documentSources.find(d => d !== entry && d.status === 'extracted' && d.sha256 === doc.sha256);
+                if (same) {
+                    Object.assign(entry, { status: 'duplicate', message: `Same content as "${same.name}"; included only once.` });
+                } else {
+                    const marker = doc.block.match(/^===== SUPPORTING DOCUMENT: (.*?) \| /);
+                    entry.marker = marker ? marker[1] : entry.name;
+                    upsertRequirementBlock(documentBlockRegex(entry.marker), doc.block);
+                }
+            }
+        } catch (error) {
+            if (!documentSources.includes(entry)) return;
+            Object.assign(entry, { status: 'failed', message: error.message === 'Failed to fetch'
+                ? 'Could not reach the AI backend (port 8000). Make sure it is running.' : error.message });
+        }
+        renderRequirementSources();
+    }
+
+    function initRequirementSources() {
+        const zone = document.getElementById('docDropzone');
+        const input = document.getElementById('requirementDocsInput');
+        zone.addEventListener('click', () => input.click());
+        zone.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); input.click(); } });
+        input.addEventListener('change', () => { handleDocumentFiles(Array.from(input.files)); input.value = ''; });
+        ['dragenter', 'dragover'].forEach(evt => zone.addEventListener(evt, e => { e.preventDefault(); zone.classList.add('dragover'); }));
+        ['dragleave', 'drop'].forEach(evt => zone.addEventListener(evt, e => { e.preventDefault(); zone.classList.remove('dragover'); }));
+        zone.addEventListener('drop', e => handleDocumentFiles(Array.from(e.dataTransfer.files || [])));
+
+        let syncTimer = null;
+        document.getElementById('requirementInput').addEventListener('input', () => {
+            clearTimeout(syncTimer);
+            syncTimer = setTimeout(syncSourcesWithRequirementText, 600);
+        });
+        renderRequirementSources();
+    }
+    document.addEventListener('DOMContentLoaded', initRequirementSources);
+
+    // ── Storing the combined requirement ──
+    function buildSourceMetadata(isNewReq, combinedWith) {
+        const tickets = Object.values(ticketSources);
+        return {
+            output_format: selectedOptValue === 1 ? 'BDD Scenarios' : (selectedOptValue === 2 ? 'Manual Test Cases' : ''),
+            is_new_requirement: isNewReq,
+            combined_with_saved_requirements: combinedWith,
+            jira_tickets: tickets.filter(t => t.ok).map(t => ({
+                key: t.key, summary: t.summary, type: t.type, status: t.status,
+                information_types: t.included || [],
+                acceptance_criteria_source: t.acceptance_criteria_source || '',
+                comments: (t.comments || []).length,
+                attachments: (t.attachments || []).map(a => ({ name: a.name, status: a.status })),
+                warnings: t.warnings || [],
+            })),
+            failed_jira_tickets: tickets.filter(t => !t.ok).map(t => ({ key: t.key, error: t.error })),
+            documents: documentSources.map(d => ({ name: d.name, type: d.extension, size: d.size, status: d.status, message: d.message })),
+            stored_at: new Date().toISOString(),
+        };
+    }
+
+    function defaultRequirementName(isNewReq, combinedWith) {
+        const stamp = new Date().toLocaleString([], { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+        if (!isNewReq && combinedWith.length) return `${combinedWith.join(' + ')} (combined ${stamp})`.slice(0, 200);
+        const keys = Object.values(ticketSources).filter(t => t.ok).map(t => t.key);
+        const docs = documentSources.filter(d => d.status === 'extracted').length;
+        const parts = [];
+        if (keys.length) parts.push(`Jira ${keys.slice(0, 3).join(', ')}${keys.length > 3 ? ` +${keys.length - 3}` : ''}`);
+        if (docs) parts.push(`${docs} document(s)`);
+        return `${parts.length ? parts.join(' + ') : 'Requirement'} · ${stamp}`;
+    }
+
+    // Stores the combined requirement for the selected project, for new and existing requirements alike.
+    // Returns a note for the review step; never throws.
+    async function autoStoreRequirement(requirement, isNewReq, combinedWith) {
+        const projectId = document.getElementById('projectSelect').value;
+        if (!projectId) {
+            return { level: 'info', text: 'Requirement not stored: select a project under "Select Project" to store requirements in the database.' };
+        }
+        const typedName = document.getElementById('reqNameInput').value.trim();
+        const reqName = (isNewReq && typedName) ? typedName : defaultRequirementName(isNewReq, combinedWith);
+        try {
+            const response = await fetch('/api/save-project-input', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ projectId, req_name: reqName, requirement, source_metadata: buildSourceMetadata(isNewReq, combinedWith) })
+            });
+            const result = await response.json().catch(() => ({}));
+            if (!response.ok) throw new Error(result.message || result.detail || `HTTP ${response.status}`);
+            return { level: 'success', text: result.duplicate
+                ? `Requirement already stored in the project database as "${result.req_name}" (not stored twice).`
+                : `Requirement stored in the project database as "${result.req_name}".` };
+        } catch (error) {
+            return { level: 'warning', text: `The requirement could not be stored in the database: ${error.message}` };
+        }
+    }
+
+    // ── Review step: processing notes, requirement gaps and traceability ──
+    function renderGenerationNotes(analysis, storeResult) {
+        analysis = analysis || {};
+        const processing = [];
+        if (storeResult) processing.push([storeResult.level, storeResult.text]);
+        (analysis.contextNotes || []).forEach(n => processing.push(['info', n]));
+        Object.values(ticketSources).forEach(t => {
+            if (!t.ok) processing.push(['error', `${t.key} could not be imported and was not used: ${t.error}`]);
+            else (t.warnings || []).forEach(w => processing.push(['warning', `${t.key}: ${w}`]));
+        });
+        documentSources.forEach(d => {
+            if (d.status === 'failed') processing.push(['error', `${d.name} was not used: ${d.message}`]);
+            if (d.status === 'duplicate') processing.push(['info', `${d.name}: ${d.message}`]);
+            (d.warnings || []).forEach(w => processing.push(['warning', `${d.name}: ${w}`]));
+        });
+
+        const icons = { success: 'fa-check-circle" style="color:#10b981', info: 'fa-info-circle" style="color:var(--accent-primary)',
+                        warning: 'fa-exclamation-triangle" style="color:#f59e0b', error: 'fa-times-circle" style="color:#ef4444' };
+        let html = '';
+        if (processing.length) {
+            html += `<div class="notes-block"><h5>Import &amp; processing</h5><ul>${processing.map(([lvl, txt]) =>
+                `<li><i class="fas ${icons[lvl] || icons.info}"></i> ${escapeJiraHtml(txt)}</li>`).join('')}</ul></div>`;
+        }
+
+        const gaps = analysis.gaps || [];
+        html += `<div class="notes-block"><h5>Requirement gaps flagged by AI (${gaps.length})</h5>`;
+        if (gaps.length) {
+            html += `<div class="notes-scroll"><table class="notes-table"><thead><tr><th>Type</th><th>Description</th><th>Sources</th></tr></thead><tbody>${
+                gaps.map(g => {
+                    const type = String(g.type || 'Gap');
+                    const cls = /contradict/i.test(type) ? 'contradiction' : (/missing/i.test(type) ? 'missing' : 'ambiguity');
+                    return `<tr><td><span class="gap-badge ${cls}">${escapeJiraHtml(type)}</span></td><td>${escapeJiraHtml(g.description || '')}</td><td>${escapeJiraHtml(listText(g.sources))}</td></tr>`;
+                }).join('')}</tbody></table></div>`;
+        } else {
+            html += '<div class="text-secondary small">No ambiguities, contradictions or missing information were reported.</div>';
+        }
+        html += '</div>';
+
+        const trace = analysis.traceability || [];
+        if (trace.length) {
+            html += `<div class="notes-block"><h5>Traceability (${trace.length})</h5><div class="notes-scroll"><table class="notes-table"><thead><tr><th>Test case / scenario</th><th>Sources</th></tr></thead><tbody>${
+                trace.map(t => `<tr><td>${escapeJiraHtml(t.test_case || '')}</td><td>${escapeJiraHtml(listText(t.sources))}</td></tr>`).join('')}</tbody></table></div>`
+                + (selectedOptValue === 2 ? '<div class="text-secondary small mt-2"><i class="fas fa-info-circle"></i> Excel downloads include this matrix and the gaps on separate sheets.</div>' : '')
+                + '</div>';
+        }
+
+        document.getElementById('generationNotes').innerHTML = html;
+        document.getElementById('generationNotesSection').style.display = 'block';
     }
 </script>
 {% endblock %}

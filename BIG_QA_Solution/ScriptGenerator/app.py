@@ -402,7 +402,7 @@ from ProjectBootstrapper.environment_setup import EnvironmentSetup
 from db.app_db import (
     fetch_data, insert_data, update_data, init_db, get_db,
     purge_transient_test_projects, insert_performance_run_stats,
-    insert_performance_run_history,
+    insert_performance_run_history, save_project_requirement,
 )
 # encrypt_for_app / decrypt_for_app protect the password stored in ProjectData with an app master
 # key (Flask .env). decrypt_for_app passes legacy plaintext rows through unchanged.
@@ -2595,15 +2595,21 @@ def save_project_input():
     project_id = data.get('projectId')
     req_name = data.get('req_name', '').strip()
     requirement = data.get('requirement', '').strip()
-    
+    # Where the requirement came from (Jira tickets, information types, documents), for traceability.
+    source_metadata = data.get('source_metadata')
+
     if not project_id:
         return jsonify({"status": "error", "message": "Project selection is required to save a requirement."}), 400
     if not req_name or not requirement:
         return jsonify({"status": "error", "message": "Requirement name and content are required."}), 400
-        
+    if source_metadata is not None:
+        source_metadata = json.dumps(source_metadata, ensure_ascii=False)[:200_000]
+
     try:
-        insert_data("INSERT INTO ProjectInputs (projectId, req_name, requirement) VALUES (?, ?, ?)", (project_id, req_name, requirement))
-        return jsonify({"status": "success", "message": "Requirement saved successfully."})
+        saved = save_project_requirement(project_id, req_name, requirement, source_metadata)
+        message = (f"An identical requirement is already stored as '{saved['req_name']}'."
+                   if saved["duplicate"] else "Requirement saved successfully.")
+        return jsonify({"status": "success", "message": message, **saved})
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 

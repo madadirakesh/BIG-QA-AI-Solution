@@ -30,3 +30,6 @@ websocket-client
 PyYAML
 # Test Execution: openpyxl needs Pillow to embed screenshots in the results workbook
 Pillow
+# Test Case Generator: requirement document uploads (multipart) and PDF text extraction
+python-multipart
+pdfplumber
