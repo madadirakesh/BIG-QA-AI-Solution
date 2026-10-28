@@ -785,11 +785,26 @@
         return (requirement.match(/^===== SUPPORTING DOCUMENT: /gm) || []).length;
     }
 
+    // "Project domain and Description" of the selected project (Configurations > Project Configuration),
+    // sent as background domain context for BDD / test case generation. Never blocks generation.
+    async function fetchProjectContext() {
+        const projectId = document.getElementById('projectSelect').value;
+        if (!projectId) return '';
+        try {
+            const response = await fetch(`/api/project-description/${projectId}`);
+            const result = await response.json();
+            return result.status === 'success' ? (result.project_description || '') : '';
+        } catch (err) {
+            return '';
+        }
+    }
+
     async function generateBDDScenarios(requirement) {
+        const projectContext = await fetchProjectContext();
         const response = await fetch('http://127.0.0.1:8000/generate-bdd-scenarios', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ requirements: requirement })
+            body: JSON.stringify({ requirements: requirement, project_context: projectContext })
         });
 
         const data = await response.json();
@@ -874,13 +889,15 @@
             }
         }
 
+        const projectContext = await fetchProjectContext();
         const response = await fetch('http://127.0.0.1:8000/generate-formatted-test-cases', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 requirements: requirement,
                 template: templateText,
-                steps_format: stepsFormat
+                steps_format: stepsFormat,
+                project_context: projectContext
             })
         });
 

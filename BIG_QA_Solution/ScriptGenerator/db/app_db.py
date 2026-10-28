@@ -667,6 +667,11 @@ def init_db():
                 cursor.execute("ALTER TABLE ProjectDetails ADD COLUMN run_commands TEXT")
             except Exception: pass
 
+            # Domain / project overview used as context for test case and BDD generation.
+            try:
+                cursor.execute("ALTER TABLE ProjectDetails ADD COLUMN project_description TEXT")
+            except Exception: pass
+
             try:
                 cursor.execute("ALTER TABLE ProjectTemplates ADD COLUMN default_run_commands TEXT")
             except Exception: pass

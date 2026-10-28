@@ -263,7 +263,7 @@
         </div>
 
         <!-- 11. Is the local directory configured with Git -->
-        <div class="form-group" style="margin-bottom:1.5rem;">
+        <div class="form-group" style="margin-bottom:1.25rem;">
             <label style="margin-bottom:6px;display:block;font-size:0.9rem;color:var(--text-secondary);">Is the local directory configured with git</label>
             <div class="switch-container">
                 <label class="switch">
@@ -272,6 +272,13 @@
                 </label>
                 <span id="gitConfiguredLabel" class="toggle-label-span">No</span>
             </div>
+        </div>
+
+        <!-- 12. Project domain and Description -->
+        <div class="form-group" style="margin-bottom:1.5rem;">
+            <label for="projectDescriptionInput" style="margin-bottom:6px;display:block;font-size:0.9rem;color:var(--text-secondary);">Project domain and Description</label>
+            <textarea id="projectDescriptionInput" placeholder="e.g. Insurance domain - policy administration portal used by agents to create quotes, issue policies and manage renewals..." style="height:120px;"></textarea>
+            <small class="help-text"><i class="fas fa-info-circle"></i> This will be used to get the domain and project context while developing the test cases or BDD scenarios.</small>
         </div>
 
         <!-- Submit/Update Button -->
@@ -505,6 +512,7 @@
         document.getElementById('gitTokenInput').value = '';
         document.getElementById('projectPathInput').value = '';
         document.getElementById('runCommandsInput').value = '';
+        document.getElementById('projectDescriptionInput').value = '';
         document.getElementById('gitConfiguredToggle').checked = false;
         document.getElementById('gitConfiguredLabel').innerText = "No";
         updateGitMandatoryStars();
@@ -570,7 +578,8 @@
                 document.getElementById('gitTokenInput').value = data.git_pa_token || '';
                 document.getElementById('projectPathInput').value = data.project_path || '';
                 document.getElementById('runCommandsInput').value = data.run_commands || '';
-                
+                document.getElementById('projectDescriptionInput').value = data.project_description || '';
+
                 const gitConfigured = data.is_git_configured || false;
                 document.getElementById('gitConfiguredToggle').checked = gitConfigured;
                 document.getElementById('gitConfiguredLabel').innerText = gitConfigured ? "Yes" : "No";
@@ -611,6 +620,7 @@
         const gitPaToken = document.getElementById('gitTokenInput').value.trim();
         const runCommands = document.getElementById('runCommandsInput').value.trim();
         const isGitConfigured = document.getElementById('gitConfiguredToggle').checked;
+        const projectDescription = document.getElementById('projectDescriptionInput').value.trim();
 
         if (!validateProjectConfiguration({
             isNew,
@@ -640,7 +650,8 @@
                 git_username: gitUsername,
                 git_pa_token: gitPaToken,
                 run_commands: runCommands,
-                is_git_configured: isGitConfigured
+                is_git_configured: isGitConfigured,
+                project_description: projectDescription
             };
 
             const r = await fetch('/api/save-project-config', {

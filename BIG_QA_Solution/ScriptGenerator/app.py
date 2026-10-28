@@ -3061,6 +3061,7 @@ def save_project_config():
         has_git_username = 'git_username' in data
         has_git_pa_token = 'git_pa_token' in data
         has_run_commands = 'run_commands' in data
+        has_project_description = 'project_description' in data
 
         project_name = (data.get('project_name', '') or '').strip()
         project_path = normalize_project_path(data.get('project_path', ''))
@@ -3071,6 +3072,7 @@ def save_project_config():
         git_username = (data.get('git_username', '') or '').strip()
         git_pa_token = (data.get('git_pa_token', '') or '').strip()
         run_commands = (data.get('run_commands', '') or '').strip()
+        project_description = (data.get('project_description', '') or '').strip()
         is_git_configured = data.get('is_git_configured', False)
         existing_project = {}
         existing_project_data = {}
@@ -3108,6 +3110,8 @@ def save_project_config():
                 project_path = normalize_project_path(existing_project.get('project_path', ''))
             if not has_run_commands:
                 run_commands = (existing_project.get('run_commands') or '').strip()
+            if not has_project_description:
+                project_description = (existing_project.get('project_description') or '').strip()
             if not has_baseurl:
                 baseurl = (existing_project_data.get('baseurl') or '').strip()
             if not has_app_username:
@@ -3217,13 +3221,13 @@ def save_project_config():
         # 4. Insert or Update ProjectDetails
         if is_new_project:
             insert_data(
-                "INSERT INTO ProjectDetails (project_name, project_path, project_lang, project_fw, project_tool, package_manager, project_type, run_commands) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                "INSERT INTO ProjectDetails (project_name, project_path, project_lang, project_fw, project_tool, package_manager, project_type, run_commands, project_description) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (project_name, project_path,
                  det_language or prov_language,
                  det_framework or prov_framework,
                  det_tool or prov_tool,
                  det_packager or prov_packager,
-                 'Existing', run_commands)
+                 'Existing', run_commands, project_description)
             )
             new_p = fetch_data("SELECT id FROM ProjectDetails WHERE project_name = ?", (project_name,))
             if new_p:
@@ -3245,8 +3249,8 @@ def save_project_config():
             final_project_path = project_path or normalize_project_path(cur.get('project_path', ''))
             final_run_commands = run_commands if has_run_commands else (cur.get('run_commands') or '')
             update_data(
-                "UPDATE ProjectDetails SET project_name=?, project_path=?, project_lang=?, project_fw=?, project_tool=?, package_manager=?, run_commands=? WHERE id=?",
-                (project_name, final_project_path, final_language, final_framework, final_tool, final_packager, final_run_commands, project_id)
+                "UPDATE ProjectDetails SET project_name=?, project_path=?, project_lang=?, project_fw=?, project_tool=?, package_manager=?, run_commands=?, project_description=? WHERE id=?",
+                (project_name, final_project_path, final_language, final_framework, final_tool, final_packager, final_run_commands, project_description, project_id)
             )
             project_path = final_project_path
             run_commands = final_run_commands
@@ -3313,6 +3317,7 @@ def get_project_config(project_id):
                 "project_name": pd_row.get('project_name', ''),
                 "project_path": pd_row.get('project_path', ''),
                 "run_commands": pd_row.get('run_commands', ''),
+                "project_description": pd_row.get('project_description') or '',
                 "baseurl": pdata_row.get('baseurl', ''),
                 "app_username": pdata_row.get('username', ''),
                 "app_password": pdata_row.get('password', ''),
@@ -3322,6 +3327,19 @@ def get_project_config(project_id):
                 "is_git_configured": is_git_configured
             }
         })
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+
+@app.route('/api/project-description/<int:project_id>', methods=['GET'])
+@login_required()
+def get_project_description(project_id):
+    """Domain / project overview the Test Case Generator sends as context for test case and BDD generation."""
+    try:
+        rows = fetch_data("SELECT project_description FROM ProjectDetails WHERE id = ?", (project_id,))
+        if not rows:
+            return jsonify({"status": "error", "message": "Project not found"}), 404
+        return jsonify({"status": "success", "project_description": rows[0].get('project_description') or ''})
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500
 

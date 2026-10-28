@@ -266,15 +266,17 @@ class GenerateCodeRequest(BaseModel):
 
 
 class GenerateBDDScenariosRequest(BaseModel):
-    requirements: str
-    ai_provider:  str = ""
+    requirements:    str
+    ai_provider:     str = ""
+    project_context: str = ""
 
 
 class GenerateTestCasesRequest(BaseModel):
-    requirements: str
-    template:     str
-    ai_provider:  str = ""
-    steps_format: str = "single_cell"
+    requirements:    str
+    template:        str
+    ai_provider:     str = ""
+    steps_format:    str = "single_cell"
+    project_context: str = ""
 
 
 class ImportJiraIssuesRequest(BaseModel):
@@ -540,6 +542,12 @@ def read_image_text_with_ai(data: bytes, mime: str) -> str:
             {"type": "image_url", "image_url": {"url": f"data:{mime};base64,{encoded}"}},
         ]}])
     return response.choices[0].message.content or ""
+
+
+def _prepare_project_context(project_context: str) -> str:
+    """The project domain / description must not be able to close the prompt's <project_context> or <requirements_data> sections."""
+    text = re.sub(r"</?\s*project_context\s*>", "[project_context tag removed]", project_context or "", flags=re.I)
+    return req_sources.neutralize_markers_in_prompt(text).strip()
 
 
 async def _prepare_requirement_context(requirements: str, provider: str) -> tuple:
@@ -1738,7 +1746,8 @@ async def generate_bdd_scenarios(req: GenerateBDDScenariosRequest, request: Requ
 
     try:
         context, notes = await _prepare_requirement_context(req.requirements, provider)
-        prompt = tcg_prompts.get_bdd_scenario_generation_prompt(context)
+        prompt = tcg_prompts.get_bdd_scenario_generation_prompt(
+            context, project_context=_prepare_project_context(req.project_context))
         # expect_json must be False here to get raw Gherkin text
         content = await call_ai(prompt, provider, expect_json=False)
         # Strip any accidental markdown fences if they still appear
@@ -1765,7 +1774,9 @@ async def generate_formatted_test_cases(req: GenerateTestCasesRequest, request: 
 
     try:
         context, notes = await _prepare_requirement_context(req.requirements, provider)
-        prompt = tcg_prompts.get_test_case_generation_prompt(context, req.template, steps_format=steps_format)
+        prompt = tcg_prompts.get_test_case_generation_prompt(
+            context, req.template, steps_format=steps_format,
+            project_context=_prepare_project_context(req.project_context))
         content = await call_ai(prompt, provider, expect_json=True)
         # Strip any accidental markdown fences
         content = re.sub(r"```[a-z]*\s*", "", content).replace("```", "").strip()
