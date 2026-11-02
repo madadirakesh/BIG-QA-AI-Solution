@@ -2368,6 +2368,10 @@
             return;
         }
         const chips = [
+            // Functional journeys report their steps, so a journey that broke early reads as such.
+            ['Steps passed', summary.steps_passed],
+            ['Steps failed', summary.steps_failed],
+            ['Steps skipped', summary.steps_skipped],
             ['Requests', summary.requests],
             ['Failures', summary.failures],
             ['Over threshold', summary.threshold_failures],

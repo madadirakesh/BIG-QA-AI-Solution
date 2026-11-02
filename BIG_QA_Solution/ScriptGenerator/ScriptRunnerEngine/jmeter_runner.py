@@ -29,6 +29,7 @@ the run's report.
 
 import csv
 import glob
+import html
 import math
 import os
 import re
@@ -62,6 +63,8 @@ _POM_PROPERTIES = re.compile(r"<properties>(.*?)</properties>", re.DOTALL)
 _POM_USER_PROPERTIES = re.compile(r"<propertiesUser>(.*?)</propertiesUser>", re.DOTALL)
 _XML_ENTRY = re.compile(r"<([A-Za-z_][\w.\-]*)>([^<]*)</\1>")
 _MAVEN_REF = re.compile(r"\$\{([^}]+)\}")
+_PLAN_SAMPLER_NAME = re.compile(r'<(?:\w*Sampler\w*|TransactionController)\b[^>]*\btestname="([^"]*)"')
+_PLAN_TITLE = re.compile(r'<TestPlan\b[^>]*\btestname="([^"]*)"')
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -363,8 +366,21 @@ def _stats_row(request_type, name, samples, span_seconds):
     return row
 
 
-def summarise_jtl(rows):
-    """Return (stats rows, history rows, failure rows) in Locust's CSV shapes."""
+def plan_sampler_order(plan_text):
+    """The plan's sampler / transaction names in the order they are defined - the recorded order."""
+    return [html.unescape(name) for name in _PLAN_SAMPLER_NAME.findall(plan_text or "")]
+
+
+def _order_key(order):
+    rank = {name: index for index, name in enumerate(order or [])}
+    return lambda label: rank.get(label, len(rank))
+
+
+def summarise_jtl(rows, order=None):
+    """
+    Return (stats rows, history rows, failure rows) in Locust's CSV shapes.
+    `order` (the plan's sampler names) lists the per-label rows in plan order.
+    """
     samples = []
     for row in rows:
         try:
@@ -390,8 +406,12 @@ def summarise_jtl(rows):
     by_label = defaultdict(list)
     for sample in samples:
         by_label[sample["label"]].append(sample)
-    stats = [_stats_row("TX" if entries[0]["transaction"] else _request_type(label), label, entries, span)
-             for label, entries in by_label.items()]
+    # First appearance is the order a single user ran them; the plan's own order
+    # wins where it is known, since a load run interleaves users.
+    labels = sorted(by_label, key=_order_key(order))
+    stats = [_stats_row("TX" if by_label[label][0]["transaction"] else _request_type(label), label,
+                        by_label[label], span)
+             for label in labels]
     # A transaction sample wraps the requests it contains; counting both in the
     # totals would double the request count (JMeter's own summary skips them).
     requests = [s for s in samples if not s["transaction"]] or samples
@@ -434,6 +454,131 @@ def summarise_jtl(rows):
             failures[(_request_type(sample["label"]), sample["label"], _failure_text(sample["row"]))] += 1
     failure_rows = [{"Method": m, "Name": n, "Error": e, "Occurrences": c} for (m, n, e), c in failures.items()]
     return stats, history, failure_rows
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Functional journeys: a step-by-step report in recorded order
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# JMeter's dashboard sorts its tables by label or score and lists its chart
+# series in no particular order, and it counts a skipped step (JourneySampler
+# reports one after an earlier step failed) as a sample like any other - so a
+# journey that broke at login still looks fully executed there. This report
+# lists every recorded step in plan order with what actually happened to it.
+
+STEP_PASSED, STEP_FAILED, STEP_SKIPPED, STEP_PARTIAL, STEP_NOT_RUN = (
+    "Passed", "Failed", "Skipped", "Partly skipped", "Not run")
+
+
+def functional_steps(rows, order):
+    """One entry per journey step, in plan order, with its pass / fail / skip counts."""
+    steps = {}
+    for position, row in enumerate(rows):
+        label = row.get("label") or ""
+        if _TRANSACTION_SAMPLE.match(row.get("responseMessage") or ""):
+            continue
+        step = steps.setdefault(label, {"name": label, "first": position, "passed": 0, "failed": 0,
+                                        "skipped": 0, "elapsed": [], "error": ""})
+        skipped = (row.get("responseCode") or "").strip().upper() == "SKIPPED"
+        if skipped:
+            step["skipped"] += 1
+        elif str(row.get("success", "true")).strip().lower() == "true":
+            step["passed"] += 1
+        else:
+            step["failed"] += 1
+        if not skipped:
+            try:
+                step["elapsed"].append(int(float(row.get("elapsed") or 0)))
+            except ValueError:
+                pass
+        if not step["error"] and str(row.get("success", "true")).strip().lower() != "true":
+            step["error"] = (row.get("failureMessage") or "").strip() or (row.get("responseMessage") or "").strip()
+
+    # A step the plan defines but that never produced a sample (the run was
+    # stopped, or JMeter failed) is still listed.
+    for name in order or []:
+        steps.setdefault(name, {"name": name, "first": len(rows), "passed": 0, "failed": 0,
+                                "skipped": 0, "elapsed": [], "error": ""})
+    rank = _order_key(order)
+    result = sorted(steps.values(), key=lambda s: (rank(s["name"]), s["first"]))
+    for step in result:
+        if step["failed"]:
+            step["status"] = STEP_FAILED
+        elif step["skipped"] and step["passed"]:
+            step["status"] = STEP_PARTIAL
+        elif step["skipped"]:
+            step["status"] = STEP_SKIPPED
+        elif step["passed"]:
+            step["status"] = STEP_PASSED
+        else:
+            step["status"] = STEP_NOT_RUN
+    return result
+
+
+def _step_counts(steps):
+    return {status: sum(1 for s in steps if s["status"] == status)
+            for status in (STEP_PASSED, STEP_FAILED, STEP_SKIPPED, STEP_PARTIAL, STEP_NOT_RUN)}
+
+
+_STEP_COLOURS = {STEP_PASSED: "#15803d", STEP_FAILED: "#b91c1c", STEP_SKIPPED: "#6b7280",
+                 STEP_PARTIAL: "#b45309", STEP_NOT_RUN: "#6b7280"}
+
+
+def write_functional_report(path, title, steps, run_info, dashboard_link):
+    """Write the step-by-step HTML report of a functional journey run."""
+    esc = html.escape
+    counts = _step_counts(steps)
+    overall = STEP_FAILED if counts[STEP_FAILED] or counts[STEP_SKIPPED] or counts[STEP_NOT_RUN] \
+        or counts[STEP_PARTIAL] else STEP_PASSED
+    body = []
+    for number, step in enumerate(steps, start=1):
+        elapsed = step["elapsed"]
+        avg = f"{round(sum(elapsed) / len(elapsed))}" if elapsed else "-"
+        executed = step["passed"] + step["failed"]
+        colour = _STEP_COLOURS[step["status"]]
+        body.append(
+            f"<tr><td class='num'>{number}</td><td>{esc(step['name'])}</td>"
+            f"<td><span class='badge' style='background:{colour}'>{esc(step['status'])}</span></td>"
+            f"<td class='num'>{executed}</td><td class='num'>{step['passed']}</td>"
+            f"<td class='num'>{step['failed']}</td><td class='num'>{step['skipped']}</td>"
+            f"<td class='num'>{avg}</td><td class='num'>{max(elapsed) if elapsed else '-'}</td>"
+            f"<td class='err'>{esc(step['error'])}</td></tr>")
+    tiles = "".join(
+        f"<div class='tile'><b style='color:{_STEP_COLOURS[status]}'>{count}</b><span>{esc(status)}</span></div>"
+        for status, count in counts.items() if count or status in (STEP_PASSED, STEP_FAILED, STEP_SKIPPED))
+    info = " · ".join(esc(f"{k}: {v}") for k, v in run_info.items() if v not in (None, ""))
+    dashboard = (f"<p><a href='{esc(dashboard_link)}'>Open the JMeter dashboard</a> (timings and charts; "
+                 "note that it sorts steps by name and counts skipped steps as samples)</p>"
+                 if dashboard_link else "")
+    with open(path, "w", encoding="utf-8") as handle:
+        handle.write(f"""<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{esc(title)} - Step Report</title>
+<style>
+body{{font-family:Segoe UI,Arial,sans-serif;margin:24px;color:#111827;background:#fff}}
+h1{{font-size:20px;margin:0 0 4px}} .meta{{color:#4b5563;font-size:13px;margin-bottom:16px}}
+.overall{{display:inline-block;padding:4px 12px;border-radius:12px;color:#fff;font-weight:600;
+background:{_STEP_COLOURS[overall]}}}
+.tiles{{display:flex;gap:12px;margin:16px 0;flex-wrap:wrap}}
+.tile{{border:1px solid #e5e7eb;border-radius:8px;padding:8px 16px;text-align:center;min-width:90px}}
+.tile b{{display:block;font-size:22px}} .tile span{{font-size:12px;color:#4b5563}}
+table{{border-collapse:collapse;width:100%;font-size:13px}}
+th,td{{border:1px solid #e5e7eb;padding:6px 8px;text-align:left;vertical-align:top}}
+th{{background:#f3f4f6}} td.num{{text-align:right;white-space:nowrap}}
+td.err{{color:#b91c1c;font-family:Consolas,monospace;font-size:12px;word-break:break-word}}
+.badge{{color:#fff;border-radius:10px;padding:2px 8px;font-size:12px;white-space:nowrap}}
+</style></head><body>
+<h1>{esc(title)}</h1>
+<div class="meta">{info}</div>
+<span class="overall">{"Journey passed" if overall == STEP_PASSED else "Journey failed"}</span>
+<div class="tiles">{tiles}</div>
+{dashboard}
+<table><thead><tr><th>#</th><th>Step (recorded order)</th><th>Status</th><th>Executed</th><th>Passed</th>
+<th>Failed</th><th>Skipped</th><th>Avg ms</th><th>Max ms</th><th>First error</th></tr></thead>
+<tbody>{"".join(body)}</tbody></table>
+</body></html>
+""")
+    return counts
 
 
 def _write_csv(path, rows):
@@ -507,7 +652,10 @@ def stream_jmeter_run(perf_dir, script_path, host, mode="check", users=None, spa
         else:
             yield _sse("log", {"msg": item})
 
-    stats, history, failure_rows = summarise_jtl(read_jtl(jtl))
+    plan_text = _read(script_path, 5_000_000)
+    order = plan_sampler_order(plan_text)
+    jtl_rows = read_jtl(jtl)
+    stats, history, failure_rows = summarise_jtl(jtl_rows, order)
     csv_prefix = str(result_dir / stem)
     _write_csv(f"{csv_prefix}_stats.csv", stats)
     _write_csv(f"{csv_prefix}_stats_history.csv", history)
@@ -554,6 +702,33 @@ def stream_jmeter_run(perf_dir, script_path, host, mode="check", users=None, spa
                 if latest:
                     report_path = latest
                     break
+    step_counts = None
+    if JAVA_JOURNEY_MARKER in plan_text:
+        # A functional journey's report is its step list, in recorded order; the
+        # JMeter dashboard stays one link away.
+        steps = functional_steps(jtl_rows, order)
+        for number, step in enumerate(steps, start=1):
+            elapsed = f" {step['elapsed'][-1]} ms" if step["elapsed"] else ""
+            error = f" - {step['error']}" if step["error"] else ""
+            yield _sse("log", {"msg": f"[Step {number:02d}] {step['status'].upper()}{elapsed}  {step['name']}{error}"})
+        title = _PLAN_TITLE.search(plan_text)
+        steps_report = result_dir / f"{stem}_steps.html"
+        dashboard = html_dir / "index.html"
+        try:
+            step_counts = write_functional_report(
+                str(steps_report), html.unescape(title.group(1)) if title else stem, steps,
+                {"Script": Path(script_path).name, "Mode": "Script check" if check else "Performance test",
+                 "Users": threads, "Run at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")},
+                "html/index.html" if dashboard.is_file() else "")
+            report_path = str(steps_report)
+        except OSError as error:
+            yield _sse("log", {"msg": f"[Report] The step report could not be written: {error}"})
+        if step_counts:
+            summary.update({"steps_passed": step_counts[STEP_PASSED],
+                            "steps_failed": step_counts[STEP_FAILED],
+                            "steps_skipped": step_counts[STEP_SKIPPED] + step_counts[STEP_NOT_RUN]
+                                             + step_counts[STEP_PARTIAL]})
+
     if not stats:
         yield _sse("log", {"msg": "[JMeter] The plan produced no samples - check the log above and "
                                   f"{result_dir / 'jmeter.log'}."})
