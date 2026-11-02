@@ -433,6 +433,7 @@ from utils.payload_parameterizer import PayloadError
 from utils.locust_recorder_writer import sanitize_script_title
 from utils import recorded_script_writers
 from utils import recorded_secrets
+from utils import script_editor
 from ScriptRunnerEngine.performance_recorder import registry as recorder_registry
 
 # Load environment variables early
@@ -450,6 +451,15 @@ performance_setup_jobs = {}
 # goes through the AI provider, which can take a minute, so the Create Test
 # dialog polls this dict rather than holding the upload request open.
 api_script_jobs = {}
+
+# AI change requests from the Edit Script dialog, polled the same way.
+script_ai_edit_jobs = {}
+
+# Data files attached to an Edit Script prompt, parsed and held here until the
+# script is saved (only then are they written into the project's data folder,
+# so a cancelled edit leaves nothing behind). Keyed by attachment id.
+script_editor_attachments = {}
+SCRIPT_ATTACHMENT_TTL_SECONDS = 12 * 3600
 
 # Tracks the currently running Element Locator Studio subprocess.
 # Prevents launching a duplicate when the user accidentally clicks the
@@ -2291,6 +2301,8 @@ def performance_script_delete():
                     (perf_id, script_file))
         update_data("DELETE FROM PerformanceRunHistory WHERE project_id = ? AND script_file = ?",
                     (perf_id, script_file))
+        update_data("DELETE FROM PerformanceScriptVersions WHERE perf_id = ? AND script_file = ?",
+                    (perf_id, script_file))
 
         removed = []
         if companions:
@@ -2308,6 +2320,283 @@ def performance_script_delete():
         }), 500
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Edit Script
+#
+# The Edit dialog shows a script's text for hand editing next to a prompt box
+# that asks the AI for a change. Every save is stored in
+# PerformanceScriptVersions with a description, version 1 being the script as
+# it was before its first edit, so any version can be loaded back.
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _editable_script(perf_id, script_file):
+    """Return (record, performance dir, script path, error response) for a script of a performance project."""
+    script_file = os.path.basename((script_file or '').strip())
+    if not perf_id or not script_file:
+        return None, '', '', (jsonify({"status": "error", "message": "A project and script are required."}), 400)
+    record, perf_dir = _performance_project(perf_id)
+    if not record:
+        return None, '', '', (jsonify({"status": "error", "message": "Performance project not found."}), 404)
+    # Only a script the project discovery found, never an arbitrary path.
+    script_path = resolve_performance_script(perf_dir, script_file, _performance_tool(record))
+    if not script_path:
+        return None, '', '', (jsonify({
+            "status": "error", "message": f"{script_file} is no longer in this project. Refresh the list."
+        }), 404)
+    return record, perf_dir, script_path, None
+
+
+def _purge_script_attachments():
+    cutoff = time.time() - SCRIPT_ATTACHMENT_TTL_SECONDS
+    for attachment_id in [k for k, v in script_editor_attachments.items() if v['created_at'] < cutoff]:
+        script_editor_attachments.pop(attachment_id, None)
+
+
+def _script_attachments(ids, perf_id, script_file):
+    """Return (staged data files `ids` of this script, error message when one has expired)."""
+    found = []
+    for attachment_id in dict.fromkeys(ids or []):
+        attachment = script_editor_attachments.get(str(attachment_id))
+        if not attachment or attachment['perf_id'] != perf_id or attachment['script_file'] != script_file:
+            return None, "An attached data file is no longer available. Remove it and attach it again."
+        found.append(attachment)
+    return found, ''
+
+
+def _script_versions(perf_id, script_file):
+    return fetch_data(
+        "SELECT version_no, description, content, created_by, created_at FROM PerformanceScriptVersions "
+        "WHERE perf_id = ? AND script_file = ? ORDER BY version_no ASC",
+        (perf_id, script_file))
+
+
+def _add_script_version(perf_id, script_file, content, description):
+    latest = fetch_data(
+        "SELECT MAX(version_no) AS latest FROM PerformanceScriptVersions WHERE perf_id = ? AND script_file = ?",
+        (perf_id, script_file))
+    version_no = ((latest[0].get('latest') if latest else None) or 0) + 1
+    insert_data(
+        "INSERT INTO PerformanceScriptVersions "
+        "(perf_id, script_file, version_no, description, content, created_by, created_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (perf_id, script_file, version_no, description, content,
+         session.get('user_name', ''), datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
+    return version_no
+
+
+def _version_list(versions, current_content):
+    """The dropdown entries (no script text); `current` marks the version on disk."""
+    current = next((v['version_no'] for v in reversed(versions) if v['content'] == current_content), None)
+    return [{
+        "version_no": v['version_no'],
+        "description": v.get('description') or '',
+        "created_by": v.get('created_by') or '',
+        "created_at": v.get('created_at') or '',
+        "current": v['version_no'] == current,
+    } for v in versions]
+
+
+@app.route('/api/performance-test/script/content', methods=['GET'])
+@login_required()
+def performance_script_content():
+    try:
+        perf_id = request.args.get('perf_id', type=int)
+        script_file = os.path.basename(request.args.get('script', ''))
+        record, _, script_path, error = _editable_script(perf_id, script_file)
+        if error:
+            return error
+        content, _ = script_editor.read_script(script_path)
+        return jsonify({
+            "status": "success",
+            "content": content,
+            "tool": _performance_tool(record),
+            "versions": _version_list(_script_versions(perf_id, script_file), content),
+        })
+    except script_editor.ScriptEditError as e:
+        return jsonify({"status": "error", "message": str(e)}), 400
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.route('/api/performance-test/script/version', methods=['GET'])
+@login_required()
+def performance_script_version():
+    perf_id = request.args.get('perf_id', type=int)
+    script_file = os.path.basename(request.args.get('script', ''))
+    version_no = request.args.get('version', type=int)
+    rows = fetch_data(
+        "SELECT version_no, description, content, created_by, created_at FROM PerformanceScriptVersions "
+        "WHERE perf_id = ? AND script_file = ? AND version_no = ?",
+        (perf_id, script_file, version_no))
+    if not rows:
+        return jsonify({"status": "error", "message": f"Version {version_no} of {script_file} was not found."}), 404
+    return jsonify({"status": "success", "version": rows[0]})
+
+
+@app.route('/api/performance-test/script/save', methods=['POST'])
+@login_required()
+def performance_script_save():
+    """
+    Write the edited script and record it as a new version.
+
+    The first save also stores the script as it was on disk as version 1, and
+    a script changed outside the dialog since its last saved version gets
+    that state recorded too, so no edit is ever lost from the history.
+    """
+    try:
+        data = request.json or {}
+        perf_id = data.get('perf_id')
+        script_file = os.path.basename((data.get('script') or '').strip())
+        record, perf_dir, script_path, error = _editable_script(perf_id, script_file)
+        if error:
+            return error
+
+        content = script_editor.normalize(data.get('content'))
+        problem = script_editor.validate(script_file, content)
+        if problem:
+            return jsonify({"status": "error", "message": f"Not saved. {problem}"}), 400
+        attachments, attachment_error = _script_attachments(data.get('attachments'), perf_id, script_file)
+        if attachment_error:
+            return jsonify({"status": "error", "message": f"Not saved. {attachment_error}"}), 400
+
+        on_disk, newline = script_editor.read_script(script_path)
+        versions = _script_versions(perf_id, script_file)
+        if not versions:
+            _add_script_version(perf_id, script_file, on_disk, "Original script")
+        elif versions[-1]['content'] != on_disk:
+            _add_script_version(perf_id, script_file, on_disk, "Changes made outside the editor")
+
+        if content == on_disk:
+            return jsonify({
+                "status": "success", "unchanged": True,
+                "message": "No changes to save.",
+                "versions": _version_list(_script_versions(perf_id, script_file), on_disk),
+            })
+
+        description = (data.get('description') or '').strip()[:1000] \
+            or script_editor.describe_changes(on_disk, content)
+        # The data files first: a script that reads a file must not land without it.
+        data_dir = perf_project_layout.data_dir(perf_dir, _performance_tool(record))
+        stored = [os.path.basename(script_editor.store_attachment(data_dir, a)) for a in attachments]
+        script_editor.write_script(script_path, content, newline)
+        version_no = _add_script_version(perf_id, script_file, content, description)
+        for attachment in attachments:
+            script_editor_attachments.pop(attachment['id'], None)
+        detail = f" Data file(s) saved: {', '.join(stored)}." if stored else ""
+        return jsonify({
+            "status": "success",
+            "message": f"Saved {script_file} as version {version_no}.{detail}",
+            "version_no": version_no,
+            "versions": _version_list(_script_versions(perf_id, script_file), content),
+        })
+    except script_editor.ScriptEditError as e:
+        return jsonify({"status": "error", "message": str(e)}), 400
+    except OSError as e:
+        return jsonify({"status": "error",
+                        "message": f"Could not write the script: {e}. It may be open in another program."}), 500
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+def _script_ai_edit_worker(job_id, instruction, content, context):
+    try:
+        updated, summary = script_editor.ai_edit(instruction, content, context, _api_script_ai_call)
+        script_ai_edit_jobs[job_id] = {"status": "completed", "content": updated, "summary": summary}
+    except script_editor.ScriptEditError as e:
+        script_ai_edit_jobs[job_id] = {"status": "error", "message": str(e)}
+    except Exception as e:
+        app.logger.exception("AI script edit failed")
+        script_ai_edit_jobs[job_id] = {"status": "error", "message": f"The AI request failed: {e}"}
+
+
+@app.route('/api/performance-test/script/ai-edit', methods=['POST'])
+@login_required()
+def performance_script_ai_edit():
+    """
+    Ask the AI to change the script text currently in the editor. Nothing is
+    written: the result goes back into the editor for review and Save.
+    """
+    try:
+        data = request.json or {}
+        perf_id = data.get('perf_id')
+        script_file = os.path.basename((data.get('script') or '').strip())
+        instruction = (data.get('prompt') or '').strip()
+        record, _, _, error = _editable_script(perf_id, script_file)
+        if error:
+            return error
+        attachments, attachment_error = _script_attachments(data.get('attachments'), perf_id, script_file)
+        if attachment_error:
+            return jsonify({"status": "error", "message": attachment_error}), 400
+        if not instruction:
+            return jsonify({"status": "error", "message": "Describe the change you want the AI to make."}), 400
+        content = script_editor.normalize(data.get('content'))
+        if not content.strip():
+            return jsonify({"status": "error", "message": "The script is empty."}), 400
+
+        context = {
+            "tool": _performance_tool(record),
+            "script_type": data.get('script_type') or '',
+            "file_name": script_file,
+            "application_url": record.get('application_url', ''),
+            "attachments": attachments,
+        }
+        job_id = str(uuid.uuid4())
+        script_ai_edit_jobs[job_id] = {"status": "processing"}
+        threading.Thread(target=_script_ai_edit_worker,
+                         args=(job_id, instruction, content, context), daemon=True).start()
+        return jsonify({"status": "success", "job_id": job_id})
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.route('/api/performance-test/script/attachment', methods=['POST'])
+@login_required()
+def performance_script_attachment():
+    """
+    Parse a CSV / JSON / XML data file attached to an Edit Script prompt and
+    hold it until Save. The reply describes it for the dialog: its columns or
+    nodes, record count, and the path the script will read it from.
+    """
+    try:
+        perf_id = request.form.get('perf_id', type=int)
+        script_file = os.path.basename(request.form.get('script', ''))
+        record, perf_dir, script_path, error = _editable_script(perf_id, script_file)
+        if error:
+            return error
+        upload = request.files.get('file')
+        if not upload or not (upload.filename or '').strip():
+            return jsonify({"status": "error", "message": "Choose a data file to attach."}), 400
+
+        tool = _performance_tool(record)
+        attachment = script_editor.prepare_attachment(
+            upload.read(script_editor.MAX_ATTACHMENT_BYTES + 1), upload.filename, script_file, tool)
+        target = os.path.join(perf_project_layout.data_dir(perf_dir, tool), attachment['stored_name'])
+        attachment['relative_path'] = os.path.relpath(target, os.path.dirname(script_path)).replace(os.sep, '/')
+
+        _purge_script_attachments()
+        attachment.update(id=str(uuid.uuid4()), perf_id=perf_id, script_file=script_file, created_at=time.time())
+        script_editor_attachments[attachment['id']] = attachment
+        return jsonify({"status": "success", "attachment": {
+            key: attachment[key] for key in ("id", "file_name", "payload_type", "stored_type", "stored_name",
+                                             "relative_path", "nodes", "row_count", "record_tag")
+        }})
+    except script_editor.ScriptEditError as e:
+        return jsonify({"status": "error", "message": str(e)}), 400
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.route('/api/performance-test/script/ai-edit/status/<job_id>', methods=['GET'])
+@login_required()
+def performance_script_ai_edit_status(job_id):
+    job = script_ai_edit_jobs.get(job_id)
+    if not job:
+        return jsonify({"status": "error", "message": "AI request not found."})
+    if job.get("status") in ("completed", "error"):
+        script_ai_edit_jobs.pop(job_id, None)
+    return jsonify(job)
 
 
 # ─────────────────────────────────────────────────────────────────────────────

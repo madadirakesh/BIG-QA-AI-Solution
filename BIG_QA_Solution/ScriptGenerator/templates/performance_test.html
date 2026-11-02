@@ -297,6 +297,66 @@
     </div>
 </div>
 
+<!-- Edit Script lightbox: the script in an editor (80%) beside an AI prompt panel (20%) -->
+<div id="perfScriptEditorModal" class="confirm-backdrop" style="align-items:center;justify-content:center;display:none;z-index:1050;">
+    <div class="confirm-dialog script-editor-dialog">
+        <div class="script-editor-head">
+            <div style="min-width:0;">
+                <h3 style="margin:0;font-size:1.15rem;"><i class="fas fa-pen-to-square" style="color:var(--accent-secondary);margin-right:8px;"></i>Edit Script</h3>
+                <p id="scriptEditorLabel" class="script-editor-label"></p>
+            </div>
+            <span id="scriptEditorDirty" class="script-editor-dirty" style="display:none;"><i class="fas fa-circle"></i> Unsaved changes</span>
+            <button onclick="cancelScriptEditor()" style="background:none;border:none;color:var(--text-secondary);font-size:1.5rem;cursor:pointer;line-height:1;">&times;</button>
+        </div>
+
+        <div class="script-editor-body">
+            <div class="script-editor-pane">
+                <div id="scriptVersionInfo" class="script-version-info" style="display:none;"></div>
+                <div class="script-code-wrap">
+                    <pre id="scriptEditorGutter" class="script-code-gutter" aria-hidden="true"></pre>
+                    <textarea id="scriptEditorText" class="script-code-text" spellcheck="false" wrap="off"
+                              oninput="onScriptEditorInput()" onscroll="syncScriptEditorGutter()"
+                              onkeydown="onScriptEditorKeydown(event)"></textarea>
+                </div>
+                <small class="error-text" id="scriptEditorTextError"></small>
+            </div>
+
+            <div class="script-ai-pane">
+                <h4><i class="fas fa-wand-magic-sparkles" style="color:var(--accent-secondary);margin-right:6px;"></i>Change with AI</h4>
+                <p class="script-ai-hint">Describe what to change - payload, headers, extra steps, checks, think time, correlation. Attach a CSV / JSON / XML file to drive fields from test data. The result lands in the editor for review; nothing is saved until you click Save.</p>
+                <textarea id="scriptAiPrompt" class="script-ai-prompt"
+                          placeholder="e.g. Send the login request body as JSON and add an Authorization: Bearer ${token} header to every request after login."
+                          onkeydown="if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') { event.preventDefault(); submitScriptAiPrompt(); }"></textarea>
+                <div class="script-ai-attach">
+                    <input type="file" id="scriptAiFileInput" accept=".csv,.json,.xml" multiple style="display:none;" onchange="attachScriptDataFiles(this)">
+                    <button type="button" id="scriptAiAttachBtn" class="btn btn-secondary" onclick="document.getElementById('scriptAiFileInput').click()" title="Attach CSV / JSON / XML test data, then refer to its columns or nodes in the prompt"><i class="fas fa-paperclip"></i> Attach data file</button>
+                    <div id="scriptAiAttachments" class="script-ai-attachments"></div>
+                </div>
+                <button type="button" id="scriptAiApplyBtn" class="btn btn-primary" onclick="submitScriptAiPrompt()"><i class="fas fa-wand-magic-sparkles"></i> Apply with AI</button>
+                <div id="scriptAiStatus" class="api-script-status" style="display:none;"></div>
+                <div class="script-ai-log-head">
+                    <span>Changes in this session</span>
+                    <button type="button" id="scriptAiUndoBtn" class="btn btn-secondary" onclick="undoScriptAiChange()" style="display:none;" title="Put back the script as it was before the last AI change"><i class="fas fa-rotate-left"></i> Undo</button>
+                </div>
+                <ul id="scriptAiLog" class="script-ai-log"><li class="script-ai-empty">No AI changes yet.</li></ul>
+            </div>
+        </div>
+
+        <div class="script-editor-actions">
+            <div class="form-group script-description-group">
+                <label for="scriptChangeDescription">Change description</label>
+                <input type="text" id="scriptChangeDescription" maxlength="1000" placeholder="Briefly describe what this version changes (filled in from AI changes; a line count is used if left empty)">
+            </div>
+            <div id="scriptVersionGroup" class="form-group script-version-group" style="display:none;">
+                <label for="scriptVersionSelect">Version</label>
+                <select id="scriptVersionSelect" onchange="loadScriptVersion(this.value)"></select>
+            </div>
+            <button type="button" id="scriptEditorSaveBtn" class="btn btn-primary" onclick="saveScriptEditor()"><i class="fas fa-floppy-disk"></i> Save</button>
+            <button type="button" class="btn btn-secondary" onclick="cancelScriptEditor()"><i class="fas fa-times"></i> Cancel</button>
+        </div>
+    </div>
+</div>
+
 <style>
     .perf-meta {
         display: flex;
@@ -600,6 +660,222 @@
         border: 1px solid rgba(0, 120, 212, 0.35);
         color: var(--text-secondary);
     }
+
+    /* ----------------------------- Edit Script ----------------------------- */
+    .script-editor-dialog {
+        width: 97vw;
+        max-width: 97vw;
+        height: 94vh;
+        max-height: 94vh;
+        display: flex;
+        flex-direction: column;
+        padding: 1.1rem 1.25rem;
+    }
+    .script-editor-head {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        border-bottom: 1px solid var(--glass-border);
+        padding-bottom: 0.8rem;
+        margin-bottom: 0.9rem;
+        flex: none;
+    }
+    .script-editor-head > div { flex: 1 1 auto; }
+    .script-editor-label {
+        margin: 4px 0 0 0;
+        font-size: 0.82rem;
+        color: var(--text-secondary);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+    .script-editor-dirty { font-size: 0.78rem; color: #fbbf24; white-space: nowrap; }
+    .script-editor-dirty i { font-size: 0.5rem; vertical-align: middle; margin-right: 4px; }
+    .script-editor-body {
+        display: flex;
+        gap: 14px;
+        flex: 1 1 auto;
+        min-height: 0;
+    }
+    .script-editor-pane {
+        flex: 0 0 calc(80% - 7px);
+        display: flex;
+        flex-direction: column;
+        min-width: 0;
+        min-height: 0;
+    }
+    .script-ai-pane {
+        flex: 0 0 calc(20% - 7px);
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        min-width: 0;
+        min-height: 0;
+        padding: 12px;
+        border: 1px solid var(--glass-border);
+        border-radius: 10px;
+        background: rgba(255, 255, 255, 0.02);
+    }
+    .script-ai-pane h4 { margin: 0; font-size: 0.95rem; }
+    .script-ai-hint { margin: 0; font-size: 0.76rem; line-height: 1.45; color: var(--text-secondary); }
+    .script-ai-prompt {
+        flex: 0 0 auto;
+        min-height: 170px;
+        resize: vertical;
+        font-size: 0.85rem;
+        line-height: 1.45;
+    }
+    .script-ai-pane .btn { justify-content: center; }
+    .script-ai-attach { display: flex; flex-direction: column; gap: 6px; }
+    .script-ai-attach > .btn { padding: 6px 10px; font-size: 0.78rem; }
+    .script-ai-attachments { display: flex; flex-direction: column; gap: 6px; }
+    .script-ai-file {
+        padding: 7px 9px;
+        border-radius: 8px;
+        border: 1px solid rgba(0, 120, 212, 0.35);
+        background: rgba(0, 120, 212, 0.08);
+        font-size: 0.76rem;
+    }
+    .script-ai-file-head { display: flex; align-items: center; gap: 6px; min-width: 0; }
+    .script-ai-file-head strong {
+        flex: 1 1 auto;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        color: var(--text-primary);
+    }
+    .script-ai-file-head button {
+        background: none;
+        border: none;
+        color: var(--text-secondary);
+        cursor: pointer;
+        font-size: 1rem;
+        line-height: 1;
+        padding: 0 2px;
+    }
+    .script-ai-file-meta { color: var(--text-secondary); margin: 2px 0 4px 0; }
+    .script-ai-file-nodes { display: flex; flex-wrap: wrap; gap: 4px; max-height: 84px; overflow-y: auto; }
+    .script-ai-node {
+        padding: 1px 7px;
+        border-radius: 10px;
+        border: 1px solid var(--glass-border);
+        background: var(--bg-primary);
+        color: var(--text-primary);
+        font-size: 0.7rem;
+        cursor: pointer;
+    }
+    .script-ai-node:hover { border-color: var(--accent-secondary); }
+    .script-ai-file.is-busy { opacity: 0.7; border-style: dashed; }
+    .script-ai-pane .api-script-status { font-size: 0.78rem; }
+    .script-ai-log-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        font-size: 0.8rem;
+        color: var(--text-secondary);
+        border-top: 1px solid var(--glass-border);
+        padding-top: 10px;
+    }
+    .script-ai-log-head .btn { padding: 4px 9px; font-size: 0.72rem; }
+    .script-ai-log {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        overflow-y: auto;
+        flex: 1 1 auto;
+        min-height: 0;
+        font-size: 0.78rem;
+        line-height: 1.45;
+    }
+    .script-ai-log li {
+        padding: 7px 9px;
+        margin-bottom: 6px;
+        border-radius: 8px;
+        border: 1px solid var(--glass-border);
+        background: var(--bg-primary);
+        color: var(--text-primary);
+    }
+    .script-ai-log li small { display: block; color: var(--text-secondary); margin-bottom: 3px; }
+    .script-ai-log li.script-ai-empty { color: var(--text-secondary); border-style: dashed; background: none; }
+    .script-code-wrap {
+        display: flex;
+        flex: 1 1 auto;
+        min-height: 0;
+        border: 1px solid var(--glass-border);
+        border-radius: 8px;
+        background: rgba(0, 0, 0, 0.35);
+        overflow: hidden;
+    }
+    .script-code-gutter,
+    .script-code-text {
+        font-family: 'JetBrains Mono', 'Fira Code', 'Courier New', monospace;
+        font-size: 0.82rem;
+        line-height: 1.5;
+        padding: 12px 10px;
+        margin: 0;
+        tab-size: 4;
+    }
+    .script-code-gutter {
+        flex: none;
+        min-width: 3.2em;
+        text-align: right;
+        color: #64748b;
+        user-select: none;
+        overflow: hidden;
+        border-right: 1px solid var(--glass-border);
+        background: rgba(0, 0, 0, 0.2);
+    }
+    .script-code-text {
+        flex: 1 1 auto;
+        resize: none;
+        border: none !important;
+        border-radius: 0;
+        background: transparent !important;
+        color: var(--text-primary);
+        white-space: pre;
+        overflow: auto;
+        outline: none;
+        box-shadow: none !important;
+    }
+    .script-version-info {
+        flex: none;
+        margin-bottom: 10px;
+        padding: 10px 12px;
+        border-radius: 8px;
+        font-size: 0.8rem;
+        max-height: 150px;
+        overflow-y: auto;
+        background: rgba(0, 120, 212, 0.08);
+        border: 1px solid rgba(0, 120, 212, 0.35);
+        color: var(--text-secondary);
+    }
+    .script-version-info strong { color: var(--text-primary); }
+    .script-version-info ol { margin: 6px 0 0 18px; padding: 0; }
+    .script-version-info li { margin-bottom: 2px; }
+    .script-version-info li.is-selected { color: var(--text-primary); font-weight: 600; }
+    .script-editor-actions {
+        display: flex;
+        align-items: flex-end;
+        gap: 10px;
+        padding-top: 0.9rem;
+        margin-top: 0.9rem;
+        border-top: 1px solid var(--glass-border);
+        flex: none;
+    }
+    .script-editor-actions .form-group { margin: 0; }
+    .script-editor-actions label { display: block; margin-bottom: 5px; font-size: 0.8rem; color: var(--text-secondary); }
+    .script-description-group { flex: 1 1 auto; }
+    .script-version-group { flex: 0 0 340px; }
+    .script-version-group select { width: 100%; }
+    .script-editor-actions .btn { min-width: 110px; justify-content: center; }
+    @media (max-width: 900px) {
+        .script-editor-body { flex-direction: column; }
+        .script-editor-pane, .script-ai-pane { flex: 1 1 auto; }
+        .script-editor-actions { flex-wrap: wrap; }
+        .script-version-group { flex: 1 1 100%; }
+    }
 </style>
 
 <script>
@@ -757,6 +1033,7 @@
                     <td>${lastRun}</td>
                     <td>
                         <div class="perf-actions">
+                            <button type="button" class="btn btn-secondary" ${dataAttrs} data-type="${perfEscape(script.script_type || '')}" onclick="openScriptEditor(this)"><i class="fas fa-pen-to-square"></i> Edit</button>
                             <button type="button" class="btn btn-secondary" ${dataAttrs} onclick="openPayloadModal(this)"><i class="fas fa-database"></i> Configure Payload</button>
                             <button type="button" class="btn btn-secondary" ${dataAttrs} onclick="runScriptCheck(this)"><i class="fas fa-vial"></i> Run Script Check</button>
                             <button type="button" class="btn btn-primary" ${dataAttrs} onclick="openRunConfigModal(this)"><i class="fas fa-bolt"></i> Run performance test</button>
@@ -1139,6 +1416,496 @@
             showToast('Could not delete the script.', 'error');
             button.disabled = false;
         }
+    }
+
+    /* ------------------------------- Edit Script ------------------------------ */
+    /* The script is edited by hand on the left and by AI prompts on the right.
+     * Nothing touches the file until Save, which also records a new version with
+     * its description; the version dropdown appears once a script has been saved
+     * at least once and loads any earlier version back into the editor. */
+
+    let scriptEditor = null;
+    let scriptAiTimer = null;
+
+    function openScriptEditor(button) {
+        if (isRunActive()) {
+            showToast('A run is in progress. Stop it before editing a script.', 'error');
+            return;
+        }
+        const perfId = document.getElementById('perfProjectSelect').value;
+        if (!perfId) {
+            showToast('Select a performance project first.', 'error');
+            return;
+        }
+        scriptEditor = {
+            perfId: parseInt(perfId),
+            script: button.getAttribute('data-script'),
+            title: button.getAttribute('data-title'),
+            scriptType: button.getAttribute('data-type') || '',
+            saved: '',          // the script as it is on disk
+            baseline: '',       // the text last loaded into the editor (file or a version)
+            versions: [],
+            selectedVersion: '',
+            aiNotes: [],        // summaries of the AI changes made since opening
+            undoStack: [],      // editor text before each AI change
+            attachments: [],    // data files attached to the prompt (held on the server until Save)
+            uploading: 0,
+            aiJob: null
+        };
+        button.disabled = true;
+        fetch('/api/performance-test/script/content?perf_id=' + encodeURIComponent(perfId)
+              + '&script=' + encodeURIComponent(scriptEditor.script))
+            .then(r => r.json())
+            .then(d => {
+                if (d.status !== 'success') {
+                    showToast(d.message || 'Could not open the script.', 'error');
+                    scriptEditor = null;
+                    return;
+                }
+                scriptEditor.saved = d.content;
+                scriptEditor.baseline = d.content;
+                scriptEditor.versions = d.versions || [];
+                document.getElementById('scriptEditorLabel').textContent =
+                    `${scriptEditor.title} · ${scriptEditor.script} · ${d.tool}${scriptEditor.scriptType ? ' · ' + scriptEditor.scriptType : ''}`;
+                document.getElementById('scriptEditorText').value = d.content;
+                document.getElementById('scriptAiPrompt').value = '';
+                document.getElementById('scriptChangeDescription').value = '';
+                document.getElementById('scriptEditorTextError').textContent = '';
+                setScriptAiStatus('');
+                renderScriptAiLog();
+                renderScriptAttachments();
+                renderScriptVersions();
+                onScriptEditorInput();
+                document.getElementById('perfScriptEditorModal').style.display = 'flex';
+                document.getElementById('scriptEditorText').scrollTop = 0;
+                document.getElementById('scriptEditorText').focus();
+            })
+            .catch(() => {
+                showToast('Could not open the script.', 'error');
+                scriptEditor = null;
+            })
+            .finally(() => { button.disabled = false; });
+    }
+
+    function scriptEditorIsDirty() {
+        return !!scriptEditor && document.getElementById('scriptEditorText').value !== scriptEditor.saved;
+    }
+
+    function onScriptEditorInput() {
+        const text = document.getElementById('scriptEditorText').value;
+        const lines = text.split('\n').length;
+        const gutter = document.getElementById('scriptEditorGutter');
+        if (gutter.dataset.lines !== String(lines)) {
+            gutter.textContent = Array.from({ length: lines }, (_, i) => i + 1).join('\n');
+            gutter.dataset.lines = String(lines);
+        }
+        document.getElementById('scriptEditorDirty').style.display = scriptEditorIsDirty() ? 'inline' : 'none';
+        document.getElementById('scriptEditorTextError').textContent = '';
+        syncScriptEditorGutter();
+    }
+
+    function syncScriptEditorGutter() {
+        document.getElementById('scriptEditorGutter').scrollTop = document.getElementById('scriptEditorText').scrollTop;
+    }
+
+    function onScriptEditorKeydown(event) {
+        if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
+            event.preventDefault();
+            saveScriptEditor();
+            return;
+        }
+        if (event.key === 'Tab' && !event.shiftKey && !event.ctrlKey && !event.altKey) {
+            // Indent instead of leaving the editor; execCommand keeps the
+            // browser's own undo history working.
+            event.preventDefault();
+            if (!document.execCommand('insertText', false, '    ')) {
+                const area = event.target;
+                const start = area.selectionStart;
+                area.setRangeText('    ', start, area.selectionEnd, 'end');
+                onScriptEditorInput();
+            }
+        }
+    }
+
+    /** Replace the editor text programmatically (AI result, a loaded version, an undo). */
+    function setScriptEditorText(text) {
+        const area = document.getElementById('scriptEditorText');
+        const scroll = area.scrollTop;
+        area.value = text;
+        area.scrollTop = scroll;
+        onScriptEditorInput();
+    }
+
+    function renderScriptVersions() {
+        const group = document.getElementById('scriptVersionGroup');
+        const select = document.getElementById('scriptVersionSelect');
+        const versions = scriptEditor.versions;
+        // Only version 1 (the original) means nothing has been saved yet.
+        if (versions.length < 2) {
+            group.style.display = 'none';
+            select.innerHTML = '';
+            renderScriptVersionInfo();
+            return;
+        }
+        const current = versions.find(v => v.current);
+        select.innerHTML = (current ? '' : '<option value="">Current file (not a saved version)</option>')
+            + versions.slice().reverse().map(v => {
+                const label = `v${v.version_no}${v.current ? ' (current)' : ''} · ${v.created_at || ''} · ${v.description || ''}`;
+                return `<option value="${v.version_no}" title="${perfEscape(v.description)}">${perfEscape(label.length > 90 ? label.slice(0, 87) + '…' : label)}</option>`;
+            }).join('');
+        scriptEditor.selectedVersion = current ? String(current.version_no) : '';
+        select.value = scriptEditor.selectedVersion;
+        group.style.display = 'block';
+        renderScriptVersionInfo();
+    }
+
+    /** The selected version's description, plus every change that led up to it. */
+    function renderScriptVersionInfo() {
+        const box = document.getElementById('scriptVersionInfo');
+        const selected = parseInt(scriptEditor && scriptEditor.selectedVersion, 10);
+        const version = selected && scriptEditor.versions.find(v => v.version_no === selected);
+        if (!version || scriptEditor.versions.length < 2) {
+            box.style.display = 'none';
+            box.innerHTML = '';
+            return;
+        }
+        const history = scriptEditor.versions.filter(v => v.version_no <= selected);
+        box.innerHTML = `<strong>Version ${version.version_no}${version.current ? ' (current file)' : ' (loaded - Save to make it current)'}</strong>`
+            + ` · ${perfEscape(version.created_at)}${version.created_by ? ' by ' + perfEscape(version.created_by) : ''}`
+            + '<ol>' + history.map(v =>
+                `<li class="${v.version_no === selected ? 'is-selected' : ''}" value="${v.version_no}">${perfEscape(v.description || '(no description)')}</li>`
+            ).join('') + '</ol>';
+        box.style.display = 'block';
+    }
+
+    async function loadScriptVersion(value) {
+        const select = document.getElementById('scriptVersionSelect');
+        if (!value) {
+            // "Current file": back to what is on disk.
+            if (document.getElementById('scriptEditorText').value !== scriptEditor.baseline
+                    && !await confirmDiscardScriptEdits('Load the current file')) {
+                select.value = scriptEditor.selectedVersion;
+                return;
+            }
+            scriptEditor.selectedVersion = '';
+            scriptEditor.baseline = scriptEditor.saved;
+            scriptEditor.undoStack = [];
+            scriptEditor.aiNotes = [];
+            setScriptEditorText(scriptEditor.saved);
+            document.getElementById('scriptChangeDescription').value = '';
+            renderScriptAiLog();
+            renderScriptVersionInfo();
+            return;
+        }
+        // Edits are only at risk when the editor differs from what was last loaded into it.
+        if (document.getElementById('scriptEditorText').value !== scriptEditor.baseline
+                && !await confirmDiscardScriptEdits(`Load version ${value}`)) {
+            select.value = scriptEditor.selectedVersion;
+            return;
+        }
+        try {
+            const r = await fetch('/api/performance-test/script/version?perf_id=' + scriptEditor.perfId
+                + '&script=' + encodeURIComponent(scriptEditor.script) + '&version=' + encodeURIComponent(value));
+            const d = await r.json();
+            if (d.status !== 'success') {
+                showToast(d.message || 'Could not load that version.', 'error');
+                select.value = scriptEditor.selectedVersion;
+                return;
+            }
+            const entry = scriptEditor.versions.find(v => String(v.version_no) === String(value));
+            scriptEditor.selectedVersion = String(value);
+            scriptEditor.baseline = d.version.content;
+            // The AI changes made so far are not in the loaded text (nor are
+            // the data files they read), so the session log starts again.
+            scriptEditor.undoStack = [];
+            scriptEditor.aiNotes = [];
+            setScriptEditorText(d.version.content);
+            document.getElementById('scriptChangeDescription').value = entry && entry.current
+                ? '' : `Restored version ${value}: ${d.version.description || ''}`.trim();
+            renderScriptAiLog();
+            renderScriptVersionInfo();
+        } catch (e) {
+            showToast('Could not load that version.', 'error');
+            select.value = scriptEditor.selectedVersion;
+        }
+    }
+
+    function confirmDiscardScriptEdits(action) {
+        return showConfirm(
+            'Discard unsaved changes?',
+            `${action} and lose the changes made in the editor since it was opened or last loaded?`,
+            '⚠️', 'Discard changes', 'background:var(--error);color:white;'
+        );
+    }
+
+    function setScriptAiStatus(message, state) {
+        const box = document.getElementById('scriptAiStatus');
+        if (!message) {
+            box.style.display = 'none';
+            box.innerHTML = '';
+            return;
+        }
+        const icon = state === 'busy' ? 'fa-spinner fa-spin' : state === 'error' ? 'fa-circle-exclamation' : 'fa-circle-check';
+        box.innerHTML = `<i class="fas ${icon}"${state === 'error' ? ' style="color:#ef4444;"' : ''}></i>${perfEscape(message)}`;
+        box.style.display = 'block';
+    }
+
+    function setScriptAiBusy(busy) {
+        document.getElementById('scriptAiApplyBtn').disabled = busy;
+        document.getElementById('scriptAiPrompt').disabled = busy;
+        document.getElementById('scriptEditorText').readOnly = busy;
+        document.getElementById('scriptEditorSaveBtn').disabled = busy;
+        document.getElementById('scriptVersionSelect').disabled = busy;
+        document.getElementById('scriptAiUndoBtn').disabled = busy;
+        document.getElementById('scriptAiAttachBtn').disabled = busy;
+    }
+
+    /* Data files for the prompt. Each is parsed on upload, so the chip can show
+     * its columns / nodes (click one to put its name in the prompt), and is
+     * written to the project's data folder only when the script is saved. */
+    async function attachScriptDataFiles(input) {
+        const editor = scriptEditor;
+        const files = Array.from(input.files || []);
+        input.value = '';
+        if (!editor || !files.length) return;
+        const room = 5 - editor.attachments.length;
+        if (files.length > room) {
+            setScriptAiStatus('Up to 5 data files can be attached to a prompt.', 'error');
+            files.splice(Math.max(room, 0));
+        }
+        for (const file of files) {
+            if (!/\.(csv|json|xml)$/i.test(file.name)) {
+                setScriptAiStatus(`${file.name}: attach a .csv, .json or .xml file.`, 'error');
+                continue;
+            }
+            const placeholder = { id: 'uploading-' + Math.random(), file_name: file.name, uploading: true, nodes: [] };
+            editor.attachments.push(placeholder);
+            editor.uploading += 1;
+            renderScriptAttachments();
+            const form = new FormData();
+            form.append('perf_id', editor.perfId);
+            form.append('script', editor.script);
+            form.append('file', file);
+            let attached = null;
+            try {
+                const r = await fetch('/api/performance-test/script/attachment', { method: 'POST', body: form });
+                const d = await r.json();
+                if (d.status === 'success') attached = d.attachment;
+                else setScriptAiStatus(d.message || `Could not attach ${file.name}.`, 'error');
+            } catch (e) {
+                setScriptAiStatus(`Could not attach ${file.name}.`, 'error');
+            }
+            editor.uploading -= 1;
+            const index = editor.attachments.indexOf(placeholder);
+            if (index !== -1) {
+                if (attached) editor.attachments.splice(index, 1, attached);
+                else editor.attachments.splice(index, 1);
+            }
+            if (scriptEditor === editor) renderScriptAttachments();
+        }
+    }
+
+    function renderScriptAttachments() {
+        const box = document.getElementById('scriptAiAttachments');
+        const attachments = scriptEditor ? scriptEditor.attachments : [];
+        box.innerHTML = attachments.map(a => {
+            if (a.uploading) {
+                return `<div class="script-ai-file is-busy"><div class="script-ai-file-head">`
+                    + `<i class="fas fa-spinner fa-spin"></i><strong>${perfEscape(a.file_name)}</strong></div></div>`;
+            }
+            const converted = a.stored_type !== a.payload_type ? ` → ${a.stored_type.toUpperCase()}` : '';
+            const recordTag = a.record_tag ? ` · &lt;${perfEscape(a.record_tag)}&gt;` : '';
+            const nodes = a.nodes.map(n =>
+                `<span class="script-ai-node" data-node="${perfEscape(n)}" onclick="insertScriptAiNode(this.dataset.node)" title="Add to the prompt">${perfEscape(n)}</span>`
+            ).join('');
+            return `<div class="script-ai-file">`
+                + `<div class="script-ai-file-head"><i class="fas fa-file-lines" style="color:var(--accent-secondary);"></i>`
+                + `<strong title="Saved as ${perfEscape(a.relative_path)}">${perfEscape(a.file_name)}</strong>`
+                + `<button type="button" onclick="removeScriptAttachment('${perfEscape(a.id)}')" title="Remove from the prompt">&times;</button></div>`
+                + `<div class="script-ai-file-meta">${perfEscape(a.payload_type.toUpperCase())}${converted} · ${a.row_count} record(s)${recordTag}</div>`
+                + `<div class="script-ai-file-nodes">${nodes}</div></div>`;
+        }).join('');
+    }
+
+    function removeScriptAttachment(id) {
+        if (!scriptEditor) return;
+        // Only drops it from later prompts: an AI change that already uses the
+        // file still has it saved with the script.
+        scriptEditor.attachments = scriptEditor.attachments.filter(a => a.id !== id);
+        renderScriptAttachments();
+    }
+
+    function insertScriptAiNode(name) {
+        const area = document.getElementById('scriptAiPrompt');
+        if (area.disabled) return;
+        const start = area.selectionStart ?? area.value.length;
+        area.setRangeText(name, start, area.selectionEnd ?? start, 'end');
+        area.focus();
+    }
+
+    /** Every data file an AI change still in the editor relies on - these are saved with the script. */
+    function scriptAttachmentsInUse() {
+        if (!scriptEditor) return [];
+        return [...new Set(scriptEditor.aiNotes.flatMap(note => note.attachments.map(a => a.id)))];
+    }
+
+    function renderScriptAiLog() {
+        const log = document.getElementById('scriptAiLog');
+        const notes = scriptEditor ? scriptEditor.aiNotes : [];
+        log.innerHTML = notes.length
+            ? notes.slice().reverse().map(note =>
+                `<li><small>${perfEscape(note.prompt.length > 120 ? note.prompt.slice(0, 117) + '…' : note.prompt)}</small>${perfEscape(note.summary)}`
+                + (note.attachments.length
+                    ? `<small style="margin:4px 0 0 0;"><i class="fas fa-paperclip"></i> ${perfEscape(note.attachments.map(a => a.stored_name).join(', '))}</small>`
+                    : '')
+                + '</li>'
+            ).join('')
+            : '<li class="script-ai-empty">No AI changes yet.</li>';
+        document.getElementById('scriptAiUndoBtn').style.display =
+            scriptEditor && scriptEditor.undoStack.length ? 'inline-flex' : 'none';
+    }
+
+    /** The save description defaults to the AI summaries of this session. */
+    function syncScriptDescriptionFromAi(previousDefault) {
+        const input = document.getElementById('scriptChangeDescription');
+        const generated = scriptEditor.aiNotes.map(n => n.summary).join(' ');
+        // Leave a description the tester typed themselves alone.
+        if (!input.value.trim() || input.value === previousDefault) input.value = generated;
+    }
+
+    async function submitScriptAiPrompt() {
+        if (!scriptEditor || scriptEditor.aiJob) return;
+        const prompt = document.getElementById('scriptAiPrompt').value.trim();
+        if (!prompt) {
+            setScriptAiStatus('Describe the change you want first.', 'error');
+            document.getElementById('scriptAiPrompt').focus();
+            return;
+        }
+        if (scriptEditor.uploading) {
+            setScriptAiStatus('Wait for the data file(s) to finish attaching.', 'error');
+            return;
+        }
+        const content = document.getElementById('scriptEditorText').value;
+        const attachments = scriptEditor.attachments.slice();
+        setScriptAiBusy(true);
+        setScriptAiStatus('Asking the AI to update the script… this can take a minute.', 'busy');
+        try {
+            const r = await fetch('/api/performance-test/script/ai-edit', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    perf_id: scriptEditor.perfId, script: scriptEditor.script,
+                    script_type: scriptEditor.scriptType, prompt: prompt, content: content,
+                    attachments: attachments.map(a => a.id)
+                })
+            });
+            const d = await r.json();
+            if (d.status !== 'success') {
+                setScriptAiBusy(false);
+                setScriptAiStatus(d.message || 'The AI request could not be started.', 'error');
+                return;
+            }
+            scriptEditor.aiJob = { id: d.job_id, prompt: prompt, before: content, attachments: attachments };
+            pollScriptAiEdit(scriptEditor);
+        } catch (e) {
+            setScriptAiBusy(false);
+            setScriptAiStatus('The AI request could not be started.', 'error');
+        }
+    }
+
+    function pollScriptAiEdit(editor) {
+        clearTimeout(scriptAiTimer);
+        scriptAiTimer = setTimeout(async () => {
+            // The dialog was closed (or reopened on another script) meanwhile.
+            if (scriptEditor !== editor || !editor.aiJob) return;
+            try {
+                const r = await fetch('/api/performance-test/script/ai-edit/status/' + encodeURIComponent(editor.aiJob.id));
+                const d = await r.json();
+                if (scriptEditor !== editor) return;
+                if (d.status === 'processing') {
+                    pollScriptAiEdit(editor);
+                    return;
+                }
+                const job = editor.aiJob;
+                editor.aiJob = null;
+                setScriptAiBusy(false);
+                if (d.status !== 'completed') {
+                    setScriptAiStatus(d.message || 'The AI could not make this change.', 'error');
+                    return;
+                }
+                const previousDefault = editor.aiNotes.map(n => n.summary).join(' ');
+                editor.undoStack.push(job.before);
+                editor.aiNotes.push({ prompt: job.prompt, summary: d.summary, attachments: job.attachments });
+                setScriptEditorText(d.content);
+                document.getElementById('scriptAiPrompt').value = '';
+                syncScriptDescriptionFromAi(previousDefault);
+                renderScriptAiLog();
+                setScriptAiStatus('Done: ' + d.summary + ' Review the script, then Save.', 'done');
+            } catch (e) {
+                pollScriptAiEdit(editor);
+            }
+        }, 1500);
+    }
+
+    function undoScriptAiChange() {
+        if (!scriptEditor || !scriptEditor.undoStack.length) return;
+        const previousDefault = scriptEditor.aiNotes.map(n => n.summary).join(' ');
+        setScriptEditorText(scriptEditor.undoStack.pop());
+        const undone = scriptEditor.aiNotes.pop();
+        syncScriptDescriptionFromAi(previousDefault);
+        renderScriptAiLog();
+        setScriptAiStatus(`Undid: ${undone ? undone.summary : 'the last AI change'}`, 'done');
+    }
+
+    async function saveScriptEditor() {
+        if (!scriptEditor || scriptEditor.aiJob) return;
+        if (isRunActive()) {
+            showToast('A run is in progress. Stop it before saving the script.', 'error');
+            return;
+        }
+        const content = document.getElementById('scriptEditorText').value;
+        if (!scriptEditorIsDirty()) {
+            showToast('No changes to save.', 'info');
+            return;
+        }
+        const button = document.getElementById('scriptEditorSaveBtn');
+        button.disabled = true;
+        try {
+            const r = await fetch('/api/performance-test/script/save', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    perf_id: scriptEditor.perfId, script: scriptEditor.script, content: content,
+                    description: document.getElementById('scriptChangeDescription').value.trim(),
+                    attachments: scriptAttachmentsInUse()
+                })
+            });
+            const d = await r.json();
+            if (d.status !== 'success') {
+                document.getElementById('scriptEditorTextError').textContent = d.message || 'Could not save the script.';
+                showToast(d.message || 'Could not save the script.', 'error');
+                return;
+            }
+            showToast(d.message, 'success');
+            closeScriptEditor();
+        } catch (e) {
+            showToast('Could not save the script.', 'error');
+        } finally {
+            button.disabled = false;
+        }
+    }
+
+    async function cancelScriptEditor() {
+        if (!scriptEditor) return;
+        if (scriptEditorIsDirty() && !await confirmDiscardScriptEdits('Close the editor')) return;
+        closeScriptEditor();
+    }
+
+    function closeScriptEditor() {
+        clearTimeout(scriptAiTimer);
+        setScriptAiBusy(false);
+        scriptEditor = null;
+        document.getElementById('perfScriptEditorModal').style.display = 'none';
     }
 
     /* ------------------------------ Test Recorder ----------------------------- */

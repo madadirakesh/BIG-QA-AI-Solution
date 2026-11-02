@@ -616,6 +616,25 @@ def init_db():
     );
     """
 
+    # Every saved revision of a performance script from the Edit Script dialog.
+    # Version 1 is the script as it was on disk before its first edit, so any
+    # later version can be rolled back to the original. `content` is the full
+    # script text; `description` says what that version changed.
+    create_performance_script_versions_table = """
+    CREATE TABLE IF NOT EXISTS PerformanceScriptVersions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        perf_id INTEGER NOT NULL,
+        script_file TEXT NOT NULL,
+        version_no INTEGER NOT NULL,
+        description TEXT,
+        content TEXT NOT NULL,
+        created_by TEXT,
+        created_at TEXT,
+        UNIQUE(perf_id, script_file, version_no),
+        FOREIGN KEY(perf_id) REFERENCES PerformanceDetails(id)
+    );
+    """
+
     create_project_git_config_table = """
     CREATE TABLE IF NOT EXISTS ProjectGitConfig (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -643,6 +662,7 @@ def init_db():
             cursor.execute(create_performance_payload_table)
             cursor.execute(create_performance_run_stats_table)
             cursor.execute(create_performance_run_history_table)
+            cursor.execute(create_performance_script_versions_table)
             cursor.execute(create_project_git_config_table)
             
             # Indexes

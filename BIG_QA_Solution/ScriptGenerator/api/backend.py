@@ -43,7 +43,34 @@ load_dotenv(dotenv_path=env_path)
 AI_TOOL     = os.getenv("AI_TOOL", "GEMINI").upper()
 AI_MODEL    = os.getenv("AI_MODEL", "gemini-2.5-flash")
 API_KEY     = os.getenv("API_KEY", "")
-AI_REQUEST_TIMEOUT_SECONDS = 90
+# How long one AI request may take. Large prompts (test case generation from
+# several requirement sources) on a slower model routinely need over a minute,
+# so the default is generous; AI_REQUEST_TIMEOUT_SECONDS in .env overrides it.
+DEFAULT_AI_REQUEST_TIMEOUT_SECONDS = 500
+
+
+def _ai_request_timeout():
+    raw = (os.getenv("AI_REQUEST_TIMEOUT_SECONDS", "") or "").strip()
+    try:
+        value = int(float(raw))
+    except ValueError:
+        return DEFAULT_AI_REQUEST_TIMEOUT_SECONDS
+    return value if value > 0 else DEFAULT_AI_REQUEST_TIMEOUT_SECONDS
+
+
+AI_REQUEST_TIMEOUT_SECONDS = _ai_request_timeout()
+
+
+class AITimeoutError(RuntimeError):
+    """The AI provider did not answer within AI_REQUEST_TIMEOUT_SECONDS."""
+
+
+def _timeout_error():
+    return AITimeoutError(
+        f"AI request timed out after {AI_REQUEST_TIMEOUT_SECONDS} seconds. "
+        "The selected model may need more time for this request. Try again, use a faster model, "
+        "or raise AI_REQUEST_TIMEOUT_SECONDS in the .env file."
+    )
 DEFAULT_AI_MODELS = {
     "gemini": "gemini-2.5-flash",
     "anthropic": "claude-sonnet-4-6",
@@ -138,12 +165,13 @@ def _is_auth_error(exc: Exception) -> bool:
     return any(marker in text for marker in markers)
 
 def reload_env():
-    global AI_TOOL, AI_MODEL, API_KEY, DEFAULT_AI_PROVIDER
+    global AI_TOOL, AI_MODEL, API_KEY, DEFAULT_AI_PROVIDER, AI_REQUEST_TIMEOUT_SECONDS
     load_dotenv(dotenv_path=env_path, override=True)
     AI_TOOL     = os.getenv("AI_TOOL", "GEMINI").upper()
     AI_MODEL    = get_effective_ai_model()
     API_KEY     = os.getenv("API_KEY", "")
     DEFAULT_AI_PROVIDER = get_effective_ai_provider()
+    AI_REQUEST_TIMEOUT_SECONDS = _ai_request_timeout()
 
 # Initialize API clients
 _openai_client = None
@@ -364,10 +392,7 @@ async def call_openai(prompt: str, expect_json: bool = True) -> str:
     try:
         return await asyncio.wait_for(asyncio.to_thread(_call), timeout=AI_REQUEST_TIMEOUT_SECONDS)
     except asyncio.TimeoutError as e:
-        raise RuntimeError(
-            f"AI request timed out after {AI_REQUEST_TIMEOUT_SECONDS} seconds. "
-            "The selected model may need more time for this request. Please try again or use a faster model."
-        ) from e
+        raise _timeout_error() from e
 
 
 async def call_gemini(prompt: str, expect_json: bool = True) -> str:
@@ -400,10 +425,7 @@ async def call_gemini(prompt: str, expect_json: bool = True) -> str:
     try:
         return await asyncio.wait_for(asyncio.to_thread(_call), timeout=AI_REQUEST_TIMEOUT_SECONDS)
     except asyncio.TimeoutError as e:
-        raise RuntimeError(
-            f"AI request timed out after {AI_REQUEST_TIMEOUT_SECONDS} seconds. "
-            "The selected model may need more time for this request. Please try again or use a faster model."
-        ) from e
+        raise _timeout_error() from e
 
 
 async def call_anthropic(prompt: str, expect_json: bool = True) -> str:
@@ -439,10 +461,7 @@ async def call_anthropic(prompt: str, expect_json: bool = True) -> str:
     try:
         return await asyncio.wait_for(asyncio.to_thread(_call), timeout=AI_REQUEST_TIMEOUT_SECONDS)
     except asyncio.TimeoutError as e:
-        raise RuntimeError(
-            f"AI request timed out after {AI_REQUEST_TIMEOUT_SECONDS} seconds. "
-            "The selected model may need more time for this request. Please try again or use a faster model."
-        ) from e
+        raise _timeout_error() from e
 
 
 async def call_ai(prompt: str, provider: str = "", expect_json: bool = True, retries: int = 3) -> str:
@@ -487,6 +506,11 @@ async def call_ai(prompt: str, provider: str = "", expect_json: bool = True, ret
             return result
         except Exception as e:
             logger.error(f"AI Call failed on attempt {attempt + 1}: {e}")
+            if isinstance(e, AITimeoutError):
+                # The same prompt on the same model will take just as long
+                # again, and the timed-out call is still running in its thread.
+                logger.error("AI request timed out. Skipping retries.")
+                raise
             if _is_auth_error(e):
                 logger.error("Detected AI authentication/credential failure. Skipping retries.")
                 raise RuntimeError(
