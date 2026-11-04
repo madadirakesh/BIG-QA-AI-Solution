@@ -357,6 +357,72 @@
     </div>
 </div>
 
+<!-- Generate Test Data lightbox: options, then a paged preview of the generated data with Save File -->
+<div id="perfTestDataModal" class="confirm-backdrop" style="align-items:center;justify-content:center;display:none;z-index:1050;">
+    <div class="confirm-dialog payload-dialog test-data-dialog" id="testDataDialog">
+        <div class="payload-dialog-head">
+            <div style="min-width:0;">
+                <h3 style="margin:0;font-size:1.2rem;"><i class="fas fa-table-list" style="color:var(--accent-secondary);margin-right:8px;"></i>Generate Test Data</h3>
+                <p id="testDataScriptLabel" class="script-editor-label"></p>
+            </div>
+            <button onclick="closeTestDataModal()" style="background:none;border:none;color:var(--text-secondary);font-size:1.5rem;cursor:pointer;line-height:1;">&times;</button>
+        </div>
+
+        <div class="payload-dialog-body">
+            <div id="testDataOptions">
+                <p class="payload-hint" style="margin-bottom:1.1rem;">The script is analysed for the data it sends - request body fields, query and path parameters, typed values, CSV Data Set columns, variables and the data files it reads - and synthetic records are generated to match their names, formats and recorded values.</p>
+                <div class="form-group" style="margin-bottom:1.1rem;">
+                    <label style="margin-bottom:6px;display:block;font-size:0.9rem;color:var(--text-secondary);">Output format <span style="color:#ef4444;">*</span></label>
+                    <div class="payload-type-group" id="testDataFormatGroup">
+                        <label class="payload-type"><input type="radio" name="testDataFormat" value="xml" onchange="clearPerfFieldError('testDataFormatGroup')"> XML</label>
+                        <label class="payload-type"><input type="radio" name="testDataFormat" value="json" onchange="clearPerfFieldError('testDataFormatGroup')"> JSON</label>
+                        <label class="payload-type"><input type="radio" name="testDataFormat" value="csv" onchange="clearPerfFieldError('testDataFormatGroup')"> CSV</label>
+                    </div>
+                    <small class="error-text" id="testDataFormatGroupError"></small>
+                </div>
+                <div class="form-group" style="margin-bottom:0.5rem;">
+                    <label for="testDataCountInput" style="margin-bottom:6px;display:block;font-size:0.9rem;color:var(--text-secondary);">Number of records <span style="color:#ef4444;">*</span></label>
+                    <input type="number" id="testDataCountInput" min="1" max="{{ test_data_max_records }}" step="1"
+                           value="{{ test_data_default_records }}" oninput="clearPerfFieldError('testDataCountInput')"
+                           onkeydown="if (event.key === 'Enter') { event.preventDefault(); generateTestData(); }"
+                           style="max-width:220px;">
+                    <small class="error-text" id="testDataCountInputError"></small>
+                    <small style="display:block;margin-top:5px;font-size:0.78rem;color:var(--text-secondary);">Between 1 and {{ '{:,}'.format(test_data_max_records) }}.</small>
+                </div>
+            </div>
+
+            <div id="testDataStatus" class="api-script-status" style="display:none;"></div>
+
+            <div id="testDataPreview" style="display:none;">
+                <div id="testDataMeta" class="perf-meta" style="margin-bottom:0.9rem;"></div>
+                <details id="testDataFieldsBox" class="test-data-fields">
+                    <summary id="testDataFieldsSummary"></summary>
+                    <div class="test-data-table-wrap test-data-fields-table">
+                        <table class="data-table">
+                            <thead><tr><th>Field</th><th>Type</th><th>Required</th><th>Unique</th><th>Found in</th><th>Example</th></tr></thead>
+                            <tbody id="testDataFieldsBody"></tbody>
+                        </table>
+                    </div>
+                </details>
+                <div id="testDataViewer" class="test-data-viewer"></div>
+                <div class="test-data-pager">
+                    <button type="button" id="testDataPrevBtn" class="btn btn-secondary" onclick="loadTestDataPage(-1)"><i class="fas fa-chevron-left"></i> Previous</button>
+                    <span id="testDataPageInfo"></span>
+                    <button type="button" id="testDataNextBtn" class="btn btn-secondary" onclick="loadTestDataPage(1)">Next <i class="fas fa-chevron-right"></i></button>
+                </div>
+            </div>
+        </div>
+
+        <div class="payload-dialog-actions">
+            <button type="button" id="testDataGenerateBtn" class="btn btn-primary" onclick="generateTestData()" style="flex:1;"><i class="fas fa-wand-magic-sparkles"></i> Generate</button>
+            <button type="button" id="testDataRegenerateBtn" class="btn btn-secondary" onclick="generateTestData(true)" style="display:none;" title="Generate a new set of records with the same options"><i class="fas fa-rotate"></i> Regenerate</button>
+            <button type="button" id="testDataOptionsBtn" class="btn btn-secondary" onclick="showTestDataOptions()" style="display:none;"><i class="fas fa-sliders"></i> Change options</button>
+            <button type="button" id="testDataSaveBtn" class="btn btn-primary" onclick="saveTestDataFile()" style="display:none;flex:1;"><i class="fas fa-floppy-disk"></i> Save File</button>
+            <button type="button" id="testDataCancelBtn" class="btn btn-secondary" onclick="closeTestDataModal()" style="flex:1;"><i class="fas fa-times"></i> Cancel</button>
+        </div>
+    </div>
+</div>
+
 <style>
     .perf-meta {
         display: flex;
@@ -876,6 +942,61 @@
         .script-editor-actions { flex-wrap: wrap; }
         .script-version-group { flex: 1 1 100%; }
     }
+
+    /* --------------------------- Generate Test Data --------------------------- */
+    /* Compact while choosing the options, near full screen once there is data to preview. */
+    .test-data-dialog { max-width: 620px; }
+    .test-data-dialog.has-preview { max-width: 92vw; width: 92vw; height: 90vh; max-height: 90vh; }
+    .test-data-dialog.has-preview .payload-dialog-body { display: flex; flex-direction: column; overflow: hidden; }
+    .test-data-dialog #testDataPreview { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; }
+    .test-data-dialog .payload-dialog-actions .btn { justify-content: center; }
+    .test-data-dialog .perf-meta { margin-top: 0; }
+    .test-data-fields {
+        flex: none;
+        margin-bottom: 0.9rem;
+        border: 1px solid var(--glass-border);
+        border-radius: 8px;
+        padding: 8px 12px;
+        font-size: 0.85rem;
+    }
+    .test-data-fields summary { cursor: pointer; color: var(--text-secondary); }
+    .test-data-fields summary strong { color: var(--text-primary); }
+    .test-data-fields-table { max-height: 30vh; margin-top: 8px; }
+    .test-data-table-wrap { overflow: auto; }
+    .test-data-table-wrap .data-table { font-size: 0.8rem; }
+    .test-data-table-wrap .data-table th { position: sticky; top: 0; z-index: 1; background: var(--bg-secondary, #1e293b); }
+    .test-data-table-wrap .data-table td { white-space: pre; max-width: 360px; overflow: hidden; text-overflow: ellipsis; }
+    .test-data-fields-table .data-table td { white-space: normal; }
+    .test-data-viewer {
+        flex: 1 1 auto;
+        min-height: 180px;
+        overflow: auto;
+        border: 1px solid var(--glass-border);
+        border-radius: 8px;
+        background: rgba(0, 0, 0, 0.35);
+    }
+    .test-data-viewer pre {
+        margin: 0;
+        padding: 12px 14px;
+        font-family: 'JetBrains Mono', 'Fira Code', 'Courier New', monospace;
+        font-size: 0.8rem;
+        line-height: 1.5;
+        color: var(--text-primary);
+        white-space: pre;
+    }
+    .test-data-viewer .test-data-table-wrap { height: 100%; }
+    .test-data-row-no { color: var(--text-secondary); text-align: right; }
+    .test-data-pager {
+        flex: none;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 14px;
+        padding-top: 0.8rem;
+        font-size: 0.82rem;
+        color: var(--text-secondary);
+    }
+    .test-data-pager .btn { padding: 5px 12px; font-size: 0.78rem; }
 </style>
 
 <script>
@@ -1035,6 +1156,7 @@
                         <div class="perf-actions">
                             <button type="button" class="btn btn-secondary" ${dataAttrs} data-type="${perfEscape(script.script_type || '')}" onclick="openScriptEditor(this)"><i class="fas fa-pen-to-square"></i> Edit</button>
                             <button type="button" class="btn btn-secondary" ${dataAttrs} onclick="openPayloadModal(this)"><i class="fas fa-database"></i> Configure Payload</button>
+                            <button type="button" class="btn btn-secondary" ${dataAttrs} onclick="openTestDataModal(this)"><i class="fas fa-table-list"></i> Generate Test Data</button>
                             <button type="button" class="btn btn-secondary" ${dataAttrs} onclick="runScriptCheck(this)"><i class="fas fa-vial"></i> Run Script Check</button>
                             <button type="button" class="btn btn-primary" ${dataAttrs} onclick="openRunConfigModal(this)"><i class="fas fa-bolt"></i> Run performance test</button>
                             <button type="button" class="btn btn-danger" ${dataAttrs}
@@ -2925,6 +3047,348 @@
         document.getElementById('perfPayloadModal').style.display = 'none';
         document.getElementById('payloadFileInput').value = '';
         payloadActiveScript = null;
+    }
+
+    /* --------------------------- Generate Test Data --------------------------- */
+    /* Options -> a background generation job (polled) -> a paged preview of the
+     * data set held on the server -> Save File downloads the complete file. */
+
+    let testData = null;
+    let testDataTimer = null;
+    const TEST_DATA_MAX_RECORDS = {{ test_data_max_records | int }};
+
+    function openTestDataModal(button) {
+        const perfId = document.getElementById('perfProjectSelect').value;
+        if (!perfId) {
+            showToast('Select a performance project first.', 'error');
+            return;
+        }
+        clearTimeout(testDataTimer);
+        testData = {
+            perfId: parseInt(perfId),
+            script: button.getAttribute('data-script'),
+            title: button.getAttribute('data-title') || '',
+            jobId: null,        // the generation in progress
+            result: null,       // the completed data set being previewed
+            page: 1,
+            busy: false
+        };
+        document.getElementById('testDataScriptLabel').textContent =
+            testData.title ? `${testData.title} · ${testData.script}` : testData.script;
+        document.querySelectorAll('input[name="testDataFormat"]').forEach(r => { r.checked = false; });
+        const count = document.getElementById('testDataCountInput');
+        count.value = count.defaultValue;
+        clearPerfFieldError('testDataFormatGroup');
+        clearPerfFieldError('testDataCountInput');
+        showTestDataOptions();
+        document.getElementById('perfTestDataModal').style.display = 'flex';
+    }
+
+    function closeTestDataModal() {
+        clearTimeout(testDataTimer);
+        testData = null;
+        document.getElementById('perfTestDataModal').style.display = 'none';
+        document.getElementById('testDataViewer').innerHTML = '';
+    }
+
+    function setTestDataFieldError(fieldId, message) {
+        if (typeof setFieldError === 'function') {
+            setFieldError(fieldId, message);
+            return;
+        }
+        const input = document.getElementById(fieldId);
+        const error = document.getElementById(fieldId + 'Error');
+        if (input) input.classList.add('is-invalid');
+        if (error) {
+            error.textContent = message;
+            error.classList.add('show');
+        }
+    }
+
+    function setTestDataStatus(message, state) {
+        const box = document.getElementById('testDataStatus');
+        if (!message) {
+            box.style.display = 'none';
+            box.innerHTML = '';
+            return;
+        }
+        const icon = state === 'busy' ? 'fa-spinner fa-spin' : state === 'error' ? 'fa-circle-exclamation' : 'fa-circle-check';
+        box.innerHTML = `<i class="fas ${icon}"${state === 'error' ? ' style="color:#ef4444;"' : ''}></i>${perfEscape(message)}`;
+        box.style.display = 'block';
+    }
+
+    // Which buttons and panels show: the options form, or the preview of a data set.
+    function setTestDataMode(mode) {
+        const preview = mode === 'preview';
+        document.getElementById('testDataDialog').classList.toggle('has-preview', preview);
+        document.getElementById('testDataOptions').style.display = preview ? 'none' : 'block';
+        document.getElementById('testDataPreview').style.display = preview ? 'flex' : 'none';
+        document.getElementById('testDataGenerateBtn').style.display = preview ? 'none' : '';
+        ['testDataRegenerateBtn', 'testDataOptionsBtn', 'testDataSaveBtn'].forEach(id => {
+            document.getElementById(id).style.display = preview ? '' : 'none';
+        });
+        document.getElementById('testDataCancelBtn').innerHTML = preview
+            ? '<i class="fas fa-times"></i> Close' : '<i class="fas fa-times"></i> Cancel';
+    }
+
+    function setTestDataBusy(busy) {
+        if (testData) testData.busy = busy;
+        ['testDataGenerateBtn', 'testDataRegenerateBtn', 'testDataOptionsBtn', 'testDataSaveBtn',
+         'testDataPrevBtn', 'testDataNextBtn', 'testDataCountInput'].forEach(id => {
+            document.getElementById(id).disabled = busy;
+        });
+        document.querySelectorAll('input[name="testDataFormat"]').forEach(r => { r.disabled = busy; });
+        if (!busy) renderTestDataPagerState();
+    }
+
+    function showTestDataOptions() {
+        if (testData && testData.result) {
+            // Keep the options the shown data set was generated with.
+            const radio = document.querySelector(`input[name="testDataFormat"][value="${testData.result.format}"]`);
+            if (radio) radio.checked = true;
+            document.getElementById('testDataCountInput').value = testData.result.count;
+        }
+        setTestDataStatus('');
+        setTestDataBusy(false);
+        setTestDataMode('options');
+    }
+
+    function readTestDataOptions() {
+        const format = (document.querySelector('input[name="testDataFormat"]:checked') || {}).value || '';
+        const raw = document.getElementById('testDataCountInput').value.trim();
+        let valid = true;
+        clearPerfFieldError('testDataFormatGroup');
+        clearPerfFieldError('testDataCountInput');
+        if (!format) {
+            setTestDataFieldError('testDataFormatGroup', 'Choose XML, JSON or CSV.');
+            valid = false;
+        }
+        if (!/^[1-9]\d*$/.test(raw)) {
+            setTestDataFieldError('testDataCountInput', 'Enter a whole number greater than zero.');
+            valid = false;
+        } else if (parseInt(raw, 10) > TEST_DATA_MAX_RECORDS) {
+            setTestDataFieldError('testDataCountInput', `The number of records cannot exceed ${TEST_DATA_MAX_RECORDS.toLocaleString()}.`);
+            valid = false;
+        }
+        return valid ? { format: format, count: parseInt(raw, 10) } : null;
+    }
+
+    async function generateTestData(again) {
+        if (!testData || testData.busy) return;
+        const options = again && testData.result
+            ? { format: testData.result.format, count: testData.result.count }
+            : readTestDataOptions();
+        if (!options) return;
+
+        const session = testData;
+        setTestDataBusy(true);
+        setTestDataStatus(`Analysing ${session.script} and generating ${options.count.toLocaleString()} record(s)...`, 'busy');
+        if (!again) setTestDataMode('options');
+        try {
+            const r = await fetch('/api/performance-test/test-data/generate', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    perf_id: session.perfId,
+                    script: session.script,
+                    title: session.title,
+                    format: options.format,
+                    count: options.count,
+                    replaces: session.result ? session.result.jobId : ''
+                })
+            });
+            const d = await r.json();
+            if (testData !== session) return;
+            if (d.status !== 'success') {
+                setTestDataBusy(false);
+                setTestDataStatus(d.message || 'The test data could not be generated.', 'error');
+                return;
+            }
+            session.jobId = d.job_id;
+            pollTestData(session);
+        } catch (e) {
+            if (testData !== session) return;
+            setTestDataBusy(false);
+            setTestDataStatus('The test data could not be generated. Check the connection and try again.', 'error');
+        }
+    }
+
+    function pollTestData(session) {
+        clearTimeout(testDataTimer);
+        testDataTimer = setTimeout(async () => {
+            // The dialog was closed (or opened on another script) meanwhile.
+            if (testData !== session || !session.jobId) return;
+            try {
+                const r = await fetch('/api/performance-test/test-data/status/' + encodeURIComponent(session.jobId));
+                const d = await r.json();
+                if (testData !== session) return;
+                if (d.status === 'processing') {
+                    if (d.message) setTestDataStatus(d.message, 'busy');
+                    pollTestData(session);
+                    return;
+                }
+                const jobId = session.jobId;
+                session.jobId = null;
+                setTestDataBusy(false);
+                if (d.status !== 'completed') {
+                    setTestDataStatus(d.message || 'The test data could not be generated.', 'error');
+                    showToast('Test data generation failed.', 'error');
+                    return;
+                }
+                session.result = Object.assign({ jobId: jobId }, d);
+                session.page = 1;
+                setTestDataStatus('');
+                renderTestDataResult();
+                setTestDataMode('preview');
+                showToast(`Generated ${d.count.toLocaleString()} ${d.format.toUpperCase()} record(s) for ${session.script}.`, 'success');
+            } catch (e) {
+                pollTestData(session);
+            }
+        }, 900);
+    }
+
+    function formatBytes(bytes) {
+        if (bytes < 1024) return `${bytes} B`;
+        if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+        return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+    }
+
+    function renderTestDataResult() {
+        const result = testData.result;
+        const chips = [
+            `<span class="perf-chip">Script: <strong>${perfEscape(result.title || result.script)}</strong></span>`,
+            `<span class="perf-chip">Format: <strong>${perfEscape(result.format.toUpperCase())}</strong></span>`,
+            `<span class="perf-chip">Records: <strong>${result.count.toLocaleString()}</strong></span>`,
+            `<span class="perf-chip">File: <strong>${perfEscape(result.file_name)}</strong> (${formatBytes(result.size)})</span>`
+        ];
+        if (result.data_files && result.data_files.length) {
+            chips.push(`<span class="perf-chip" title="Data files the script reads; their values guided the generated formats and ranges">Based on: <strong>${perfEscape(result.data_files.join(', '))}</strong></span>`);
+        }
+        document.getElementById('testDataMeta').innerHTML = chips.join('');
+
+        document.getElementById('testDataFieldsSummary').innerHTML =
+            `<strong>${result.fields.length}</strong> field(s) identified in the script - click to see the types and where each was found`;
+        const yes = '<i class="fas fa-check" style="color:#34d399;"></i>';
+        document.getElementById('testDataFieldsBody').innerHTML = result.fields.map(f => `
+            <tr>
+                <td><code>${perfEscape(f.path)}</code></td>
+                <td>${perfEscape(f.type)}</td>
+                <td>${f.required ? yes : '<span style="color:var(--text-secondary);">Optional</span>'}</td>
+                <td>${f.unique ? yes : ''}</td>
+                <td style="color:var(--text-secondary);">${perfEscape(f.source)}</td>
+                <td>${perfEscape(f.example)}</td>
+            </tr>`).join('');
+        renderTestDataPage(result.preview);
+    }
+
+    function renderTestDataPage(page) {
+        const viewer = document.getElementById('testDataViewer');
+        if (page.columns) {
+            const head = '<th>#</th>' + page.columns.map(c => `<th>${perfEscape(c)}</th>`).join('');
+            const rows = page.rows.map((row, i) =>
+                `<tr><td class="test-data-row-no">${page.first + i}</td>${row.map(v => `<td title="${perfEscape(v)}">${perfEscape(v)}</td>`).join('')}</tr>`
+            ).join('');
+            viewer.innerHTML = `<div class="test-data-table-wrap"><table class="data-table"><thead><tr>${head}</tr></thead><tbody>${rows}</tbody></table></div>`;
+        } else {
+            const pre = document.createElement('pre');
+            pre.textContent = page.text;
+            viewer.innerHTML = '';
+            viewer.appendChild(pre);
+        }
+        viewer.scrollTop = 0;
+        testData.page = page.page;
+        document.getElementById('testDataPageInfo').textContent =
+            `Records ${page.first.toLocaleString()}-${page.last.toLocaleString()} of ${page.total.toLocaleString()} · page ${page.page} of ${page.pages}`;
+        document.getElementById('testDataPrevBtn').disabled = page.page <= 1;
+        document.getElementById('testDataNextBtn').disabled = page.page >= page.pages;
+    }
+
+    async function loadTestDataPage(step) {
+        if (!testData || !testData.result || testData.busy) return;
+        const session = testData;
+        try {
+            const r = await fetch(`/api/performance-test/test-data/${encodeURIComponent(session.result.jobId)}/preview?page=${session.page + step}`);
+            const d = await r.json();
+            if (testData !== session) return;
+            if (d.status !== 'success') {
+                showToast(d.message || 'Could not load the page.', 'error');
+                return;
+            }
+            renderTestDataPage(d.preview);
+        } catch (e) {
+            showToast('Could not load the page.', 'error');
+        }
+    }
+
+    // Save File: the browser's own save dialog where it has one (the tester picks
+    // the folder), otherwise a regular download into the browser's download folder.
+    // Either way the complete data set is fetched, not just the previewed page.
+    async function saveTestDataFile() {
+        if (!testData || !testData.result || testData.busy) return;
+        const result = testData.result;
+        const url = `/api/performance-test/test-data/${encodeURIComponent(result.jobId)}/download`;
+        const extension = '.' + result.format;
+        const mime = { json: 'application/json', xml: 'application/xml', csv: 'text/csv' }[result.format];
+
+        if (window.showSaveFilePicker) {
+            let handle;
+            try {
+                // Opened first: the picker needs the click that started this.
+                handle = await window.showSaveFilePicker({
+                    suggestedName: result.file_name,
+                    types: [{ description: result.format.toUpperCase() + ' file', accept: { [mime]: [extension] } }]
+                });
+            } catch (e) {
+                if (e && e.name === 'AbortError') return;
+                handle = null;   // picker unavailable here (e.g. not a secure context): fall back
+            }
+            if (handle) {
+                setTestDataBusy(true);
+                try {
+                    const r = await fetch(url);
+                    if (!r.ok) throw new Error((await r.json().catch(() => ({}))).message || 'The file could not be downloaded.');
+                    const blob = await r.blob();
+                    if (!blob.size) throw new Error('The downloaded file is empty.');
+                    const writable = await handle.createWritable();
+                    await writable.write(blob);
+                    await writable.close();
+                    showToast(`Saved ${handle.name} (${formatBytes(blob.size)}).`, 'success');
+                } catch (e) {
+                    showToast('Could not save the file: ' + (e.message || e), 'error');
+                } finally {
+                    setTestDataBusy(false);
+                }
+                return;
+            }
+        }
+
+        setTestDataBusy(true);
+        try {
+            const r = await fetch(url);
+            if (!r.ok) throw new Error((await r.json().catch(() => ({}))).message || 'The file could not be downloaded.');
+            const blob = await r.blob();
+            if (!blob.size) throw new Error('The downloaded file is empty.');
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = result.file_name;
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            setTimeout(() => URL.revokeObjectURL(link.href), 30000);
+            showToast(`Downloading ${result.file_name} (${formatBytes(blob.size)}).`, 'success');
+        } catch (e) {
+            showToast('Could not save the file: ' + (e.message || e), 'error');
+        } finally {
+            setTestDataBusy(false);
+        }
+    }
+
+    // The pager buttons as the current page allows (busy states disable both).
+    function renderTestDataPagerState() {
+        if (!testData || !testData.result) return;
+        const pages = Math.max(1, Math.ceil(testData.result.count / testData.result.preview.page_size));
+        document.getElementById('testDataPrevBtn').disabled = testData.page <= 1;
+        document.getElementById('testDataNextBtn').disabled = testData.page >= pages;
     }
 
     /* --------------------------- Run Configuration --------------------------- */

@@ -434,6 +434,7 @@ from utils.locust_recorder_writer import sanitize_script_title
 from utils import recorded_script_writers
 from utils import recorded_secrets
 from utils import script_editor
+from utils import test_data_generator
 from ScriptRunnerEngine.performance_recorder import registry as recorder_registry
 
 # Load environment variables early
@@ -460,6 +461,12 @@ script_ai_edit_jobs = {}
 # so a cancelled edit leaves nothing behind). Keyed by attachment id.
 script_editor_attachments = {}
 SCRIPT_ATTACHMENT_TTL_SECONDS = 12 * 3600
+
+# Generate Test Data requests, polled like the jobs above. A finished job keeps
+# its records for the paged preview and the download until it expires.
+test_data_jobs = {}
+TEST_DATA_JOB_TTL_SECONDS = 2 * 3600
+TEST_DATA_JOBS_PER_USER = 3
 
 # Tracks the currently running Element Locator Studio subprocess.
 # Prevents launching a duplicate when the user accidentally clicks the
@@ -1341,7 +1348,9 @@ def performance_test():
     projects = fetch_data(
         "SELECT id, project_name FROM PerformanceDetails ORDER BY project_name ASC"
     )
-    return render_template('performance_test.html', performance_projects=projects)
+    return render_template('performance_test.html', performance_projects=projects,
+                           test_data_default_records=test_data_generator.DEFAULT_RECORDS,
+                           test_data_max_records=test_data_generator.max_records())
 
 
 @app.route('/qa/performance-dashboard', methods=['GET'])
@@ -2597,6 +2606,153 @@ def performance_script_ai_edit_status(job_id):
     if job.get("status") in ("completed", "error"):
         script_ai_edit_jobs.pop(job_id, None)
     return jsonify(job)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Generate Test Data
+#
+# Analyses a script for the data it consumes and generates synthetic records
+# as JSON / XML / CSV. Generation runs in a worker thread the dialog polls; the
+# finished data set stays here so the preview can page through it and Save can
+# download the complete file, until it expires or the tester regenerates.
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _purge_test_data_jobs():
+    cutoff = time.time() - TEST_DATA_JOB_TTL_SECONDS
+    for job_id in [k for k, v in test_data_jobs.items() if v['created_at'] < cutoff]:
+        test_data_jobs.pop(job_id, None)
+    # Data sets run to tens of MB; keep only each tester's most recent ones.
+    per_user = {}
+    for job_id, job in sorted(test_data_jobs.items(), key=lambda item: item[1]['created_at'], reverse=True):
+        kept = per_user.setdefault(job['user'], 0)
+        if kept >= TEST_DATA_JOBS_PER_USER:
+            test_data_jobs.pop(job_id, None)
+        else:
+            per_user[job['user']] = kept + 1
+
+
+def _test_data_job(job_id):
+    """The tester's own generation job, or None."""
+    job = test_data_jobs.get(job_id)
+    if not job or job['user'] != session.get('user_name', ''):
+        return None
+    return job
+
+
+def _test_data_worker(job_id, script_path, tool, perf_dir):
+    job = test_data_jobs.get(job_id)
+    if not job:
+        return
+
+    def progress(message):
+        job['message'] = message
+
+    try:
+        result = test_data_generator.build(script_path, tool, perf_dir, job['format'], job['count'],
+                                           progress=progress)
+        records, fields = result['records'], result['fields']
+        job.update(
+            status="completed",
+            message="",
+            records=records,
+            fields=fields,
+            record_tag=result['record_tag'],
+            content=result['content'],
+            file_name=test_data_generator.download_name(job['title'], job['script'], job['format']),
+            schema=test_data_generator.describe_fields(fields, records[0] if records else None),
+            data_files=result['schema']['data_files'],
+        )
+        if job.get('replaces'):
+            test_data_jobs.pop(job['replaces'], None)
+    except test_data_generator.TestDataError as e:
+        job.update(status="error", message=str(e))
+    except Exception as e:
+        app.logger.exception("Test data generation failed")
+        job.update(status="error", message=f"The test data could not be generated: {e}")
+
+
+@app.route('/api/performance-test/test-data/generate', methods=['POST'])
+@login_required()
+def performance_test_data_generate():
+    try:
+        data = request.json or {}
+        perf_id = data.get('perf_id')
+        script_file = os.path.basename((data.get('script') or '').strip())
+        record, perf_dir, script_path, error = _editable_script(perf_id, script_file)
+        if error:
+            return error
+        output_format, count = test_data_generator.validate_request(data.get('format'), data.get('count'))
+
+        _purge_test_data_jobs()
+        # Regenerating replaces the data set being previewed - once the new one
+        # is ready, so a failed attempt leaves the previous preview usable.
+        replaces = str(data.get('replaces') or '')
+        job_id = str(uuid.uuid4())
+        test_data_jobs[job_id] = {
+            "status": "processing", "message": "Starting...", "user": session.get('user_name', ''),
+            "script": script_file, "title": (data.get('title') or '').strip()[:200],
+            "format": output_format, "count": count, "created_at": time.time(),
+            "replaces": replaces if _test_data_job(replaces) else '',
+        }
+        threading.Thread(target=_test_data_worker,
+                         args=(job_id, script_path, _performance_tool(record), perf_dir), daemon=True).start()
+        return jsonify({"status": "success", "job_id": job_id})
+    except test_data_generator.TestDataError as e:
+        return jsonify({"status": "error", "message": str(e)}), 400
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.route('/api/performance-test/test-data/status/<job_id>', methods=['GET'])
+@login_required()
+def performance_test_data_status(job_id):
+    job = _test_data_job(job_id)
+    if not job:
+        return jsonify({"status": "error", "message": "The test data request has expired. Generate it again."})
+    if job['status'] == 'processing':
+        return jsonify({"status": "processing", "message": job.get('message', '')})
+    if job['status'] == 'error':
+        test_data_jobs.pop(job_id, None)
+        return jsonify({"status": "error", "message": job['message']})
+    return jsonify({
+        "status": "completed",
+        "script": job['script'],
+        "title": job['title'],
+        "format": job['format'],
+        "count": len(job['records']),
+        "file_name": job['file_name'],
+        "size": len(job['content'].encode('utf-8')),
+        "fields": job['schema'],
+        "data_files": job['data_files'],
+        "preview": test_data_generator.preview_page(job['records'], job['fields'], job['format'], 1,
+                                                    job['record_tag']),
+    })
+
+
+@app.route('/api/performance-test/test-data/<job_id>/preview', methods=['GET'])
+@login_required()
+def performance_test_data_preview(job_id):
+    job = _test_data_job(job_id)
+    if not job or job['status'] != 'completed':
+        return jsonify({"status": "error", "message": "The test data has expired. Generate it again."}), 404
+    page = request.args.get('page', default=1, type=int)
+    return jsonify({"status": "success", "preview": test_data_generator.preview_page(
+        job['records'], job['fields'], job['format'], page, job['record_tag'])})
+
+
+@app.route('/api/performance-test/test-data/<job_id>/download', methods=['GET'])
+@login_required()
+def performance_test_data_download(job_id):
+    """The complete generated file, whatever part of it the preview shows."""
+    job = _test_data_job(job_id)
+    if not job or job['status'] != 'completed':
+        return jsonify({"status": "error", "message": "The test data has expired. Generate it again."}), 404
+    return Response(
+        job['content'].encode('utf-8'),
+        mimetype=test_data_generator.MIME_TYPES[job['format']],
+        headers={"Content-Disposition": f"attachment; filename=\"{job['file_name']}\"",
+                 "Cache-Control": "no-store"},
+    )
 
 
 # ─────────────────────────────────────────────────────────────────────────────
