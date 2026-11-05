@@ -16,12 +16,12 @@ import json
 import re
 from typing import Awaitable, Callable, Optional
 
-from .models import ACTION_SCHEMA, Action, TestCase, UsageMetrics
+from .models import ACTION_SCHEMA, ASSERTION_ACTIONS, Action, TestCase, UsageMetrics
 from .step_parser import validate_action
 
 AICall = Callable[[str], Awaitable[str]]
 SNAPSHOT_EXCERPT_CHARS = 6000
-PLAN_VERSION = "v1"   # bump to invalidate cached plans when the schema changes
+PLAN_VERSION = "v2"   # bump to invalidate cached plans when the schema changes
 
 try:
     import tiktoken
@@ -43,6 +43,22 @@ def estimate_tokens(text: str) -> int:
 
 def _schema_line() -> str:
     return "; ".join(f"{k}: {','.join(v['required']) or '-'}" for k, v in ACTION_SCHEMA.items())
+
+
+def _invented_url(a: Action, step, tc: TestCase) -> Optional[str]:
+    """
+    The AI may only navigate to "/" (the configured base URL) or a URL/path written in the
+    test case itself; anything else is a guess about the application's URLs.
+    """
+    if a.type != "navigate":
+        return None
+    value = a.value.strip().strip("'\"")
+    if value == "/":
+        return None
+    written = " ".join(x or "" for x in (step.action_text, step.expected, step.test_data, tc.test_data, tc.preconditions))
+    if value and value.lower() in written.lower():
+        return None
+    return f"navigate URL '{value[:100]}' is not in the test case (only the configured base URL or a URL written in the step may be opened)"
 
 
 def _extract_json(raw: str) -> dict:
@@ -82,10 +98,12 @@ class AIPlanner:
         for s in tc.steps:
             if s.plan_source != "unresolved":
                 continue
-            h = plan_hash(s.action_text, s.expected, s.test_data or tc.test_data)
+            # Expected-only steps are cached by the expected wording alone (empty action text),
+            # so the same check is reused whatever action precedes it.
+            h = plan_hash("" if s.expected_only else s.action_text, s.expected, s.test_data or tc.test_data)
             cached = self.store.get_plan(h) if self.store else None
             if cached is not None:
-                s.actions = [Action.from_dict({**a, "source": "cache"}) for a in cached]
+                s.actions = s.parser_actions + [Action.from_dict({**a, "source": "cache"}) for a in cached]
                 s.plan_source, s.plan_error = "cache", ""
                 self.usage.plan_cache_hits += 1
             else:
@@ -97,8 +115,8 @@ class AIPlanner:
                 s.plan_error += " (AI interpretation is turned off)"
             return
 
-        steps_payload = [{"number": s.number, "action": s.action_text, "expected": s.expected,
-                          **({"data": s.test_data} if s.test_data else {})} for s, _ in pending]
+        steps_payload = [{"number": s.number, **({"check_only": True} if s.expected_only else {"action": s.action_text}),
+                          "expected": s.expected, **({"data": s.test_data} if s.test_data else {})} for s, _ in pending]
         from prompts.test_execution_prompts import get_step_interpretation_prompt
         prompt = get_step_interpretation_prompt(
             tc.title, tc.preconditions[:500], json.dumps(steps_payload, ensure_ascii=False), _schema_line())
@@ -131,7 +149,9 @@ class AIPlanner:
                 except Exception as exc:
                     errors.append(f"malformed action ({exc.__class__.__name__})")
                     continue
-                err = validate_action(a)
+                err = validate_action(a) or _invented_url(a, s, tc)
+                if not err and s.expected_only and a.type not in ASSERTION_ACTIONS:
+                    err = f"'{a.type}' is not a check (only the expected result was asked for)"
                 if err:
                     errors.append(err)
                 else:
@@ -140,7 +160,7 @@ class AIPlanner:
                 # Reject the whole step rather than run half a plan.
                 s.plan_error = "AI plan rejected: " + ("; ".join(errors) if errors else "no actions")
                 continue
-            s.actions, s.plan_source, s.plan_error = actions, "ai", ""
+            s.actions, s.plan_source, s.plan_error = s.parser_actions + actions, "ai", ""
             self.usage.steps_planned_by_ai += 1
             if self.store:
                 self.store.put_plan(h, [a.to_dict() for a in actions])

@@ -299,6 +299,8 @@ def plan_step(step: TestStep, test_data: str, has_base_url: bool, has_credential
     exp = parse_expected_text(step.expected) if step.expected else []
     if acts is None or exp is None:
         step.actions = []
+        # Keep an understood action so the AI is asked about the expected result only.
+        step.parser_actions = acts or []
         step.plan_source = "unresolved"
         missing = []
         if acts is None:
@@ -308,6 +310,7 @@ def plan_step(step: TestStep, test_data: str, has_base_url: bool, has_credential
         step.plan_error = "Could not interpret the " + " and ".join(missing) + " deterministically"
         return step
     step.actions = (acts or []) + (exp or [])
+    step.parser_actions = []
     if not step.actions:
         step.actions = [Action("note", value=step.action_text[:200])]
     step.plan_source = "parser"

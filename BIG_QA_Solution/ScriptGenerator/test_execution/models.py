@@ -102,7 +102,12 @@ class Action:
 
     @staticmethod
     def from_dict(d: dict) -> "Action":
+        # AI output lands here too: reject wrong shapes instead of letting them crash validation later.
+        if not isinstance(d.get("type"), str):
+            raise ValueError("action type must be a string")
         t = d.get("target")
+        if isinstance(t, dict) and not all(isinstance(t.get(k, ""), str) for k in ("kind", "value", "role")):
+            raise ValueError("target fields must be strings")
         return Action(
             type=d["type"],
             target=Target(**t) if isinstance(t, dict) else None,
@@ -123,16 +128,25 @@ class TestStep:
     actions: list[Action] = field(default_factory=list)
     plan_source: str = ""               # parser | ai | cache | unresolved
     plan_error: str = ""
+    # The parser's actions when only the expected result needs the AI: the AI then plans
+    # the checks alone and these run first, unchanged.
+    parser_actions: list[Action] = field(default_factory=list)
+
+    @property
+    def expected_only(self) -> bool:
+        return self.plan_source == "unresolved" and bool(self.parser_actions)
 
     def to_dict(self) -> dict:
         d = asdict(self)
         d["actions"] = [a.to_dict() for a in self.actions]
+        d["parser_actions"] = [a.to_dict() for a in self.parser_actions]
         return d
 
     @staticmethod
     def from_dict(d: dict) -> "TestStep":
         d = dict(d)
         d["actions"] = [Action.from_dict(a) for a in d.get("actions", [])]
+        d["parser_actions"] = [Action.from_dict(a) for a in d.get("parser_actions", [])]
         return TestStep(**d)
 
 

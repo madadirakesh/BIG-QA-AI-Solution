@@ -438,7 +438,7 @@
                 <td>${esc(r.run_id)}</td><td>${esc(r.source)}</td><td>${esc(r.status)}</td>
                 <td>${esc((r.summary || {}).passed ?? '—')}</td><td>${esc((r.summary || {}).failed ?? '—')}</td><td>${esc((r.summary || {}).blocked ?? '—')}</td>
                 <td>${esc((r.created_at || '').replace('T', ' ').slice(0, 19))}</td>
-                <td><button type="button" class="btn btn-ghost btn-sm" data-run="${esc(r.run_id)}">Open</button></td></tr>`).join('')
+                <td><button type="button" class="btn btn-secondary btn-sm" data-run="${esc(r.run_id)}" aria-label="Open run ${esc(r.run_id)}"><i class="fas fa-folder-open"></i> Open</button></td></tr>`).join('')
                 || '<tr><td colspan="8" class="te-hint">No runs yet.</td></tr>';
             $('teRunsBody').querySelectorAll('[data-run]').forEach((b) => b.addEventListener('click', () => openRun(b.dataset.run)));
         } catch (e) { $('teRunsBody').innerHTML = `<tr><td colspan="8" class="te-hint">${esc(e.message)}</td></tr>`; }
