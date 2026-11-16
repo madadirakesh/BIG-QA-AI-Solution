@@ -27,7 +27,7 @@ from .models import (
 )
 from .playwright_mcp import MCPInfraError, PlaywrightMCPSession
 from .security import NavigationPolicy, PolicyError, Redactor
-from .step_parser import PLACEHOLDER_USERNAME
+from .step_parser import PLACEHOLDER_USERNAME, SECRET_PASSWORD
 
 STATE_CHANGING = {"click", "double_click", "type", "select", "check", "uncheck", "press"}
 POLL_INTERVAL_S = 0.75
@@ -321,7 +321,7 @@ class ExecutionEngine:
                     raise StepFailure(BLOCKED, FAIL_INTERPRET, step.plan_error or "Step could not be interpreted")
                 outcomes = []
                 for action in step.actions:
-                    outcomes.append(await self._perform(session, action, step.action_text))
+                    outcomes.append(await self._perform(session, action, step.action_text, state))
                     if action.type in STATE_CHANGING:
                         state["mutated"] = True
                 sres.status = PASSED
@@ -362,7 +362,8 @@ class ExecutionEngine:
         self.on_event({"type": "test_finished", "test_key": tc.key, "status": result.status})
 
     # ── actions ─────────────────────────────────────────────────────────
-    async def _perform(self, session, a: Action, step_text: str) -> str:
+    async def _perform(self, session, a: Action, step_text: str, state: Optional[dict] = None) -> str:
+        state = state if state is not None else {}
         t = a.type
         if t == "note":
             return "Informational step (no browser action)"
@@ -405,10 +406,15 @@ class ExecutionEngine:
         if t == "assert_visible":
             return f"{desc} is visible"
         if t == "assert_value":
-            val, err = await session.evaluate_json("(el) => (el.value !== undefined ? el.value : el.textContent)", target)
+            info, err = await session.evaluate_json(_READ_VALUE_JS, target)
             if err:
                 raise StepFailure(FAILED, FAIL_ASSERTION, f"Could not read value of {desc}: {_first_error(err)}")
-            if a.value.lower() in str(val or "").lower():
+            info = info if isinstance(info, dict) else {"value": info, "password": False}
+            expected = self._expected_value(a)
+            if info.get("password") or a.secret or a.value == SECRET_PASSWORD or _looks_like_password(a.target):
+                return self._assert_password(info, expected, a.target, desc, state)
+            val = str(info.get("value") or "")
+            if expected.lower() in val.lower():
                 return f'{desc} contains "{a.value}"'
             raise StepFailure(FAILED, FAIL_ASSERTION, f'{desc} has value "{val}", expected "{a.value}"')
         if t in ("click", "double_click", "hover"):
@@ -432,6 +438,9 @@ class ExecutionEngine:
             r = await session.call("browser_type", {"target": target, "text": value, "element": desc})
             if not r.ok:
                 raise StepFailure(FAILED, FAIL_ELEMENT, f"Could not type into {desc}: {_first_error(r.text)}")
+            # Remember what went into which field: password inputs often can't be read back.
+            typed = self.credentials.get("password", "") if a.secret else value
+            state.setdefault("typed", {})[_field_key(a.target)] = typed
             shown = "******" if a.secret else value
             return f'Entered "{shown}" in {desc}'
         if t == "select":
@@ -449,6 +458,35 @@ class ExecutionEngine:
                     raise StepFailure(FAILED, FAIL_ELEMENT, f"Could not {t} {desc}: {_first_error(r.text)}")
             return f"{'Checked' if t == 'check' else 'Unchecked'} {desc}"
         raise StepFailure(BLOCKED, FAIL_INTERPRET, f"Unsupported action '{t}'")
+
+    def _expected_value(self, a: Action) -> str:
+        value = a.value or ""
+        if a.secret or value == SECRET_PASSWORD:
+            return self.credentials.get("password", "")
+        if PLACEHOLDER_USERNAME in value:
+            value = value.replace(PLACEHOLDER_USERNAME, self.credentials.get("username", ""))
+        return value
+
+    def _assert_password(self, info: dict, expected: str, target: Optional[Target], desc: str, state: dict) -> str:
+        """Password fields: compare without echoing values; if the app hides the value, fall back to
+        what this test typed into the same field (the type step itself was confirmed by Playwright)."""
+        val = str(info.get("value") or "")
+        if val:
+            if val == expected:
+                return f"{desc} contains the expected password (masked)"
+            raise StepFailure(FAILED, FAIL_ASSERTION,
+                              f"{desc} does not contain the expected password (values masked)")
+        typed = state.get("typed", {})
+        key = _field_key(target)
+        candidates = [typed[key]] if key in typed else [v for k, v in typed.items() if "password" in k or "passcode" in k]
+        if any(v == expected for v in candidates):
+            return (f"{desc} contains the expected password (the application does not expose a password field's "
+                    f"value, so this was verified from the successful entry earlier in the test)")
+        if candidates:
+            raise StepFailure(FAILED, FAIL_ASSERTION,
+                              f"{desc}: the password entered earlier in this test differs from the expected value (values masked)")
+        raise StepFailure(FAILED, FAIL_ASSERTION,
+                          f"{desc} has no readable value and no password was entered into it in this test")
 
     def _check_landing(self, page_url: str):
         """Redirects can't be stopped by --allowed-origins, so verify where we ended up."""
@@ -566,6 +604,23 @@ class _DeadSession:
 
     async def reset(self):
         return None
+
+
+_READ_VALUE_JS = """(el) => {
+  const val = (el.value !== undefined ? el.value : el.textContent) || '';
+  const ac = (el.getAttribute && el.getAttribute('autocomplete')) || '';
+  const pw = (el.type === 'password') || /password/i.test(ac);
+  return {value: val, password: pw};
+}"""
+
+
+def _field_key(target: Optional[Target]) -> str:
+    return " ".join((target.value if target else "").lower().split())
+
+
+def _looks_like_password(target: Optional[Target]) -> bool:
+    k = _field_key(target)
+    return "password" in k or "passcode" in k
 
 
 def _first_error(text: str) -> str:
