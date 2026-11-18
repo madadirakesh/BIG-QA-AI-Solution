@@ -35,7 +35,10 @@ _APP_PLACES = re.compile(
     r"^(?:the\s+)?(?:application|app|website|web site|site|portal|home ?page|landing page|login page|"
     r"log ?in page|sign ?in page|base url|application url|app url|url)\b", re.I)
 _VERIFY_PREFIX = re.compile(r"^(?:verify|validate|check|ensure|confirm|assert|observe|see)\s+(?:that\s+)?", re.I)
-_SHOWN = r"(?:is |are |should be |must be |gets |get |will be )?(?:displayed|shown|visible|present|appears?|seen|rendered)"
+_TYPE_VERB = r"(?:enter|type|input|fill(?:\s+in)?|provide|key\s+in|insert)"
+# Trailing "(Data: 'x')" / "(Test Data - x)" / "(Value = x)" annotation carrying the value to type.
+_INLINE_DATA = re.compile(r"\(\s*(?:test\s*)?(?:data|value|input)\s*[:=-]\s*(.+?)\s*\)\s*$", re.I)
+_SHOWN = r"(?:is |are|should be |must be |gets |get |will be )?(?:displayed|shown|visible|present|appears?|seen|rendered)"
 
 
 def _clean(text: str) -> str:
@@ -170,8 +173,19 @@ def parse_action_text(text: str, test_data: str = "", has_base_url: bool = True,
             kind = "uncheck" if m.group(1).lower().replace(" ", "") in ("uncheck", "untick", "deselect") else "check"
             return [Action(kind, target=target)]
 
-    # type: Enter "value" in/into <field>
-    m = re.match(rf"^(?:enter|type|input|fill(?:\s+in)?|provide|key\s+in|insert)\s+{_Q}(.*?){_Q}\s+(?:in|into|on|for|as)\s+(?:the\s+)?(.+?)$", t, re.I)
+    # type with inline data: Enter valid Email in the Email field (Data: 'x@y.com')
+    m = _INLINE_DATA.search(t)
+    if m and re.match(_TYPE_VERB, t, re.I):
+        value, secret = _resolve_literal(m.group(1).strip().strip("\"'“”‘’").strip())
+        rest = re.sub(rf"^{_TYPE_VERB}\s+", "", t[:m.start()].strip(" -,:"), flags=re.I)
+        f = re.search(r"\s(?:in|into|on)\s+(?:the\s+)?(.+)$", rest, re.I)
+        phrase = f.group(1) if f else re.sub(r"^(?:a|an|the)\s+|^(?:valid|correct|registered|invalid|wrong|incorrect)\s+", "", rest, flags=re.I)
+        target = _target_from_phrase(phrase, default_role="textbox")
+        if target and value:
+            return [Action("type", target=_as_field(target), value=value, secret=secret)]
+
+    # type: Enter "value" in/into <field>  /  Enter valid Email "value" in the Email field
+    m = re.match(rf"^{_TYPE_VERB}\s+(?:[^\"'“”‘’]+?\s+)?{_Q}(.*?){_Q}\s+(?:in|into|on|for|as)\s+(?:the\s+)?(.+?)$", t, re.I)
     if m:
         target = _target_from_phrase(m.group(2), default_role="textbox")
         if target:
