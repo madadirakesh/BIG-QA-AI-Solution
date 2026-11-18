@@ -253,7 +253,10 @@ def _finalize(cases: list[TestCase]):
     seen: dict[str, int] = {}
     for idx, tc in enumerate(cases, start=1):
         if not tc.key:
-            tc.issues.append("Missing Test Case ID")
+            # The ID is optional: a titled case runs under a row-based key. Only a case with
+            # neither ID nor title can't be identified.
+            if not tc.title:
+                tc.issues.append("Missing Test Case ID and title")
             tc.key = f"ROW-{tc.source_ref.get('row', idx)}"
         if tc.key in seen:
             seen[tc.key] += 1
